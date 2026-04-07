@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+# check_lint.sh - Lint validation (read-only, no modifications)
+# Purpose: Check code quality without making changes
+# Usage: ./scripts/git/check_lint.sh [OPTIONS]
+#
+# Globals:
+#   SCRIPT_DIR     - Directory containing this script
+#   PROJECT_ROOT   - Auto-detected git repo root (set by _config.sh)
+#   logfile        - Set by init_logging
+#   CGW_LINT_CMD   - Lint tool to use (default: ruff; empty = skip)
+# Returns:
+#   0 on lint pass, 1 on lint errors
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/_common.sh"
+
+main() {
+  local modified_only=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --help|-h)
+        echo "Usage: ./scripts/git/check_lint.sh [OPTIONS]"
+        echo ""
+        echo "Run lint and format checks (read-only, no modifications)."
+        echo ""
+        echo "Options:"
+        echo "  --modified-only   Only check files modified vs HEAD"
+        echo "  --no-venv         Use system lint tool instead of .venv"
+        echo "  -h, --help        Show this help"
+        echo ""
+        echo "Environment:"
+        echo "  CGW_NO_VENV=1          Same as --no-venv"
+        echo "  CGW_LINT_CMD=<tool>    Override lint tool (default: ruff)"
+        echo "  (Also: CLAUDE_GIT_NO_VENV)"
+        exit 0
+        ;;
+      --no-venv) CGW_NO_VENV=1; SKIP_VENV=1; shift ;;
+      --modified-only) modified_only=1; shift ;;
+      *) echo "[ERROR] Unknown flag: $1" >&2; exit 1 ;;
+    esac
+  done
+
+  if [[ -z "${CGW_LINT_CMD}" ]]; then
+    echo "[OK] Lint check skipped (CGW_LINT_CMD not set — configure in .cgw.conf)"
+    exit 0
+  fi
+
+  cd "${PROJECT_ROOT}" || {
+    err "Cannot find project root"
+    exit 1
+  }
+
+  get_lint_exclusions
+
+  # Determine lint binary (venv or PATH)
+  local lint_cmd="${CGW_LINT_CMD}"
+  if [[ "${CGW_LINT_CMD}" == "ruff" ]]; then
+    get_python_path 2>/dev/null || true
+    if [[ -n "${PYTHON_BIN:-}" ]] && [[ -f "${PYTHON_BIN}/ruff${PYTHON_EXT:-}" ]]; then
+      lint_cmd="${PYTHON_BIN}/ruff${PYTHON_EXT:-}"
+    fi
+  fi
+
+  # Handle --modified-only mode
+  if [[ "${modified_only}" -eq 1 ]]; then
+    local modified_files
+    modified_files=$(git diff --name-only --diff-filter=ACMR HEAD -- '*.py')
+    if [[ -z "$modified_files" ]]; then
+      echo "[OK] No modified files to check"
+      exit 0
+    fi
+
+    echo "=== Modified-Only Lint Check ==="
+    echo "Files: $modified_files"
+    echo ""
+
+    local EXIT_CODE=0
+
+    echo "[LINT CHECK]"
+    # shellcheck disable=SC2086
+    "${lint_cmd}" check $modified_files || EXIT_CODE=1
+
+    if [[ -n "${CGW_FORMAT_CMD}" ]]; then
+      echo ""
+      echo "[FORMAT CHECK]"
+      # shellcheck disable=SC2086
+      "${CGW_FORMAT_CMD}" format --check $modified_files || EXIT_CODE=1
+    fi
+
+    exit $EXIT_CODE
+  fi
+
+  # Full lint check with logging
+  init_logging "check_lint"
+
+  local script_start
+  script_start=$(date +%s)
+
+  {
+    echo "========================================="
+    echo "Lint Validation Log"
+    echo "========================================="
+    echo "Start Time: $(date)"
+    echo "Working Directory: ${PROJECT_ROOT}"
+    echo "Lint tool: ${CGW_LINT_CMD}"
+  } > "$logfile"
+
+  local -a results=()
+  local lint_status=0 format_status=0
+
+  # LINT CHECK
+  local lint_start lint_end lint_duration
+  lint_start=$(date +%s)
+  # shellcheck disable=SC2086
+  if ! run_tool_with_logging "LINT CHECK" "$logfile" \
+      "${lint_cmd}" ${CGW_LINT_CHECK_ARGS} ${CGW_LINT_EXCLUDES}; then
+    lint_status=1
+  fi
+  lint_end=$(date +%s)
+  lint_duration=$((lint_end - lint_start))
+  results+=("Lint:$([ $lint_status -eq 0 ] && echo PASSED || echo FAILED):${TOOL_ERROR_COUNT}:${lint_duration}")
+
+  # FORMAT CHECK
+  if [[ -n "${CGW_FORMAT_CMD}" ]]; then
+    local format_start format_end format_duration
+    format_start=$(date +%s)
+    # shellcheck disable=SC2086
+    if ! run_tool_with_logging "FORMAT CHECK" "$logfile" \
+        "${CGW_FORMAT_CMD}" ${CGW_FORMAT_CHECK_ARGS} ${CGW_FORMAT_EXCLUDES}; then
+      format_status=1
+    fi
+    format_end=$(date +%s)
+    format_duration=$((format_end - format_start))
+    results+=("Format:$([ $format_status -eq 0 ] && echo PASSED || echo FAILED):${TOOL_ERROR_COUNT}:${format_duration}")
+  fi
+
+  log_summary_table "$logfile" "${results[@]}"
+
+  local script_end total_duration overall_status
+  script_end=$(date +%s)
+  total_duration=$((script_end - script_start))
+
+  if [[ $lint_status -eq 0 ]] && [[ $format_status -eq 0 ]]; then
+    overall_status="PASSED"
+  else
+    overall_status="FAILED"
+  fi
+
+  {
+    echo ""
+    echo "End Time: $(date)"
+    echo "Total Duration: ${total_duration}s"
+    echo "STATUS: $overall_status"
+  } | tee -a "$logfile"
+
+  echo ""
+  echo "Full log: $logfile"
+
+  [[ "$overall_status" == "PASSED" ]] && exit 0 || exit 1
+}
+
+main "$@"
