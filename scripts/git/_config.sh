@@ -54,8 +54,8 @@ if [[ -f "${_CGW_CONF}" ]]; then
   # This ensures env vars take priority AND derived values (e.g. CGW_PROTECTED_BRANCHES
   # referencing CGW_TARGET_BRANCH) stay consistent with the values actually used.
   while IFS= read -r _line; do
-    [[ "${_line}" =~ ^[[:space:]]*#  ]] && continue  # skip comments
-    [[ "${_line}" =~ ^[[:space:]]*$  ]] && continue  # skip blank lines
+    [[ "${_line}" =~ ^[[:space:]]*# ]] && continue  # skip comments
+    [[ "${_line}" =~ ^[[:space:]]*$ ]] && continue  # skip blank lines
     # Only accept CGW_* assignment lines (optionally prefixed with export).
     # Reject anything else to prevent eval of arbitrary shell statements.
     if [[ "${_line}" =~ ^[[:space:]]*(export[[:space:]]+)?(CGW_[A-Z0-9_]+)= ]]; then

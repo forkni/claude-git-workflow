@@ -259,7 +259,7 @@ main() {
 
       local lint_output format_output
 
-      # shellcheck disable=SC2086
+      # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_CHECK_ARGS/CGW_LINT_EXCLUDES contain multiple flags
       lint_output=$("${lint_cmd}" ${CGW_LINT_CHECK_ARGS} ${CGW_LINT_EXCLUDES} 2>&1) || python_lint_error=1
       if [[ -n "$lint_output" ]] && [[ "$lint_output" != *"All checks passed"* ]]; then
         echo "[LINT ERRORS]" | tee -a "$logfile"
@@ -267,7 +267,7 @@ main() {
       fi
 
       if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-        # shellcheck disable=SC2086
+        # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_CHECK_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
         format_output=$("${CGW_FORMAT_CMD}" ${CGW_FORMAT_CHECK_ARGS} ${CGW_FORMAT_EXCLUDES} 2>&1) || python_lint_error=1
         if [[ -n "$format_output" ]] && [[ "$format_output" == *"would reformat"* ]]; then
           echo "[FORMAT ERRORS]" | tee -a "$logfile"
@@ -281,10 +281,10 @@ main() {
         echo "[!] Lint errors detected"
         if [[ ${non_interactive} -eq 1 ]]; then
           echo "[Non-interactive] Auto-fixing lint issues..."
-          # shellcheck disable=SC2086
+          # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_FIX_ARGS/CGW_LINT_EXCLUDES contain multiple flags
           "${lint_cmd}" ${CGW_LINT_FIX_ARGS} ${CGW_LINT_EXCLUDES} 2>&1 | tee -a "$logfile"
           if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-            # shellcheck disable=SC2086
+            # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_FIX_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
             "${CGW_FORMAT_CMD}" ${CGW_FORMAT_FIX_ARGS} ${CGW_FORMAT_EXCLUDES} 2>&1 | tee -a "$logfile"
           fi
 
@@ -295,7 +295,7 @@ main() {
 
           # Re-check
           python_lint_error=0
-          # shellcheck disable=SC2086
+          # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_CHECK_ARGS/CGW_LINT_EXCLUDES contain multiple flags
           "${lint_cmd}" ${CGW_LINT_CHECK_ARGS} ${CGW_LINT_EXCLUDES} 2>&1 | tee -a "$logfile" || python_lint_error=1
 
           if [[ ${python_lint_error} -eq 1 ]]; then
@@ -306,10 +306,10 @@ main() {
           read -rp "Auto-fix lint issues? (yes/no/skip): " fix_lint
           case "$fix_lint" in
             yes|y)
-              # shellcheck disable=SC2086
+              # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_FIX_ARGS/CGW_LINT_EXCLUDES contain multiple flags
               "${lint_cmd}" ${CGW_LINT_FIX_ARGS} ${CGW_LINT_EXCLUDES}
               if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-                # shellcheck disable=SC2086
+                # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_FIX_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
                 "${CGW_FORMAT_CMD}" ${CGW_FORMAT_FIX_ARGS} ${CGW_FORMAT_EXCLUDES}
               fi
               git add .

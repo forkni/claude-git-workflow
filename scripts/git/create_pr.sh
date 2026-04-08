@@ -147,13 +147,15 @@ main() {
   # Verify target branch exists on remote
   if ! git ls-remote --exit-code origin "refs/heads/${CGW_TARGET_BRANCH}" > /dev/null 2>&1; then
     err "Target branch '${CGW_TARGET_BRANCH}' does not exist on origin"
-    echo "  Create it with: git push origin HEAD:${CGW_TARGET_BRANCH}" >&2
+    echo "  Create it with: ./scripts/git/push_validated.sh --branch ${CGW_TARGET_BRANCH}" >&2
     log_section_end "BRANCH VALIDATION" "$logfile" "1"
     exit 1
   fi
 
   # Fetch latest remote refs so comparisons below use current state
-  git fetch origin "${CGW_SOURCE_BRANCH}" "${CGW_TARGET_BRANCH}" 2>/dev/null || true
+  if ! git fetch origin "${CGW_SOURCE_BRANCH}" "${CGW_TARGET_BRANCH}" 2>/dev/null; then
+    echo "⚠ WARNING: git fetch failed — comparisons may use stale refs" | tee -a "$logfile"
+  fi
 
   # Warn if local source branch has commits not yet pushed to remote
   local local_sha remote_sha
@@ -253,11 +255,12 @@ ${formatted_log}
   gh_flags+=(--body "${pr_body}")
   [[ ${draft} -eq 1 ]] && gh_flags+=(--draft)
 
-  local pr_url
-  if pr_url=$(gh pr create "${gh_flags[@]}" 2>&1 | tee -a "$logfile"); then
+  local pr_url gh_output
+  if gh_output=$(gh pr create "${gh_flags[@]}" 2>&1 | tee -a "$logfile"); then
+    pr_url=$(echo "${gh_output}" | grep -oE 'https://github\.com/[^ ]+' | head -1)
     log_section_end "CREATE PR" "$logfile" "0"
     echo "" | tee -a "$logfile"
-    echo "✓ PR created: ${pr_url}" | tee -a "$logfile"
+    echo "✓ PR created: ${pr_url:-${gh_output}}" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
     if [[ ${draft} -eq 0 ]]; then
       echo "Charlie CI will auto-review this PR." | tee -a "$logfile"

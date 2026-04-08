@@ -74,6 +74,7 @@ main() {
   done
 
   [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
+  [[ "${CGW_SKIP_LINT:-0}" == "1" ]]      && skip_lint=1
   [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]]   && skip_md_lint=1
 
   {
