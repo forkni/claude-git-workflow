@@ -239,8 +239,10 @@ _install_hook() {
   done
 
   # Create .githooks/ and write patched hook
+  # Escape | in files_pattern so it doesn't conflict with sed's | delimiter
+  local sed_files_pattern="${files_pattern//|/\\|}"
   mkdir -p "${PROJECT_ROOT}/.githooks"
-  sed "s|__CGW_LOCAL_FILES_PATTERN__|${files_pattern}|g" \
+  sed "s|__CGW_LOCAL_FILES_PATTERN__|${sed_files_pattern}|g" \
     "${hook_template}" > "${PROJECT_ROOT}/.githooks/pre-commit"
   chmod +x "${PROJECT_ROOT}/.githooks/pre-commit"
 
