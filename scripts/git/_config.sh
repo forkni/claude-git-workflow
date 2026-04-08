@@ -66,7 +66,7 @@ if [[ -f "${_CGW_CONF}" ]]; then
         eval "${_line}"
       fi
     else
-      err "Ignoring unsupported line in .cgw.conf: ${_line}"
+      printf '%s\n' "[WARN] Ignoring unsupported line in .cgw.conf: ${_line}" >&2
     fi
   done < "${_CGW_CONF}"
   unset _line _cgw_var

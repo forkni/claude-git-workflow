@@ -241,90 +241,111 @@ main() {
   else
     get_lint_exclusions
 
-    local python_lint_error=0
-
-    if [[ -z "${CGW_LINT_CMD}" ]]; then
-      echo "  (lint check skipped — CGW_LINT_CMD not set)"
-    else
-      log_section_start "LINT CHECK" "$logfile"
-
-      # Determine lint binary (venv or PATH)
-      local lint_cmd="${CGW_LINT_CMD}"
-      if [[ "${CGW_LINT_CMD}" == "ruff" ]]; then
-        get_python_path 2>/dev/null || true
-        if [[ -n "${PYTHON_BIN:-}" ]] && [[ -f "${PYTHON_BIN}/ruff${PYTHON_EXT:-}" ]]; then
-          lint_cmd="${PYTHON_BIN}/ruff${PYTHON_EXT:-}"
-        fi
+    # Resolve lint and format binaries independently (each uses venv ruff if available)
+    local lint_cmd="${CGW_LINT_CMD}"
+    local format_cmd="${CGW_FORMAT_CMD}"
+    if [[ -n "${CGW_LINT_CMD}" ]] || [[ -n "${CGW_FORMAT_CMD}" ]]; then
+      get_python_path 2>/dev/null || true
+    fi
+    if [[ -n "${CGW_LINT_CMD}" && "${CGW_LINT_CMD}" == "ruff" ]]; then
+      if [[ -n "${PYTHON_BIN:-}" ]] && [[ -f "${PYTHON_BIN}/ruff${PYTHON_EXT:-}" ]]; then
+        lint_cmd="${PYTHON_BIN}/ruff${PYTHON_EXT:-}"
       fi
+    fi
+    if [[ -n "${CGW_FORMAT_CMD}" && "${CGW_FORMAT_CMD}" == "ruff" ]]; then
+      if [[ -n "${PYTHON_BIN:-}" ]] && [[ -f "${PYTHON_BIN}/ruff${PYTHON_EXT:-}" ]]; then
+        format_cmd="${PYTHON_BIN}/ruff${PYTHON_EXT:-}"
+      fi
+    fi
 
-      local lint_output format_output
+    local lint_error=0 format_error=0 lint_output format_output
 
+    # -- Code lint (skipped when CGW_LINT_CMD not set) -------------------------
+    if [[ -n "${CGW_LINT_CMD}" ]]; then
+      log_section_start "LINT CHECK" "$logfile"
       # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_CHECK_ARGS/CGW_LINT_EXCLUDES contain multiple flags
-      lint_output=$("${lint_cmd}" ${CGW_LINT_CHECK_ARGS} ${CGW_LINT_EXCLUDES} 2>&1) || python_lint_error=1
+      lint_output=$("${lint_cmd}" ${CGW_LINT_CHECK_ARGS} ${CGW_LINT_EXCLUDES} 2>&1) || lint_error=1
       if [[ -n "$lint_output" ]] && [[ "$lint_output" != *"All checks passed"* ]]; then
         echo "[LINT ERRORS]" | tee -a "$logfile"
         echo "$lint_output" | tee -a "$logfile"
       fi
+      log_section_end "LINT CHECK" "$logfile" "$lint_error"
+    else
+      echo "  (lint check skipped — CGW_LINT_CMD not set)"
+    fi
 
-      if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-        # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_CHECK_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
-        format_output=$("${CGW_FORMAT_CMD}" ${CGW_FORMAT_CHECK_ARGS} ${CGW_FORMAT_EXCLUDES} 2>&1) || python_lint_error=1
-        if [[ -n "$format_output" ]] && [[ "$format_output" == *"would reformat"* ]]; then
-          echo "[FORMAT ERRORS]" | tee -a "$logfile"
-          echo "$format_output" | tee -a "$logfile"
-        fi
+    # -- Format check (skipped when CGW_FORMAT_CMD not set) --------------------
+    if [[ -n "${CGW_FORMAT_CMD}" ]]; then
+      log_section_start "FORMAT CHECK" "$logfile"
+      # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_CHECK_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
+      format_output=$("${format_cmd}" ${CGW_FORMAT_CHECK_ARGS} ${CGW_FORMAT_EXCLUDES} 2>&1) || format_error=1
+      if [[ -n "$format_output" ]] && [[ "$format_output" == *"would reformat"* ]]; then
+        echo "[FORMAT ERRORS]" | tee -a "$logfile"
+        echo "$format_output" | tee -a "$logfile"
       fi
+      log_section_end "FORMAT CHECK" "$logfile" "$format_error"
+    fi
 
-      log_section_end "LINT CHECK" "$logfile" "$python_lint_error"
+    # -- Combined error handling -----------------------------------------------
+    local python_lint_error=$(( lint_error | format_error ))
 
-      if [[ ${python_lint_error} -eq 1 ]]; then
-        echo "[!] Lint errors detected"
-        if [[ ${non_interactive} -eq 1 ]]; then
-          echo "[Non-interactive] Auto-fixing lint issues..."
+    if [[ ${python_lint_error} -eq 1 ]]; then
+      echo "[!] Code quality errors detected"
+      if [[ ${non_interactive} -eq 1 ]]; then
+        echo "[Non-interactive] Auto-fixing code quality issues..."
+        if [[ -n "${CGW_LINT_CMD}" ]]; then
           # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_FIX_ARGS/CGW_LINT_EXCLUDES contain multiple flags
           "${lint_cmd}" ${CGW_LINT_FIX_ARGS} ${CGW_LINT_EXCLUDES} 2>&1 | tee -a "$logfile"
-          if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-            # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_FIX_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
-            "${CGW_FORMAT_CMD}" ${CGW_FORMAT_FIX_ARGS} ${CGW_FORMAT_EXCLUDES} 2>&1 | tee -a "$logfile"
-          fi
+        fi
+        if [[ -n "${CGW_FORMAT_CMD}" ]]; then
+          # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_FIX_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
+          "${format_cmd}" ${CGW_FORMAT_FIX_ARGS} ${CGW_FORMAT_EXCLUDES} 2>&1 | tee -a "$logfile"
+        fi
 
-          if [[ ${staged_only} -eq 0 ]]; then
-            git add .
-            unstage_local_only_files
-          fi
+        if [[ ${staged_only} -eq 0 ]]; then
+          git add .
+          unstage_local_only_files
+        fi
 
-          # Re-check
-          python_lint_error=0
+        # Re-check
+        python_lint_error=0
+        if [[ -n "${CGW_LINT_CMD}" ]]; then
           # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_CHECK_ARGS/CGW_LINT_EXCLUDES contain multiple flags
           "${lint_cmd}" ${CGW_LINT_CHECK_ARGS} ${CGW_LINT_EXCLUDES} 2>&1 | tee -a "$logfile" || python_lint_error=1
+        fi
+        if [[ -n "${CGW_FORMAT_CMD}" ]]; then
+          # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_CHECK_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
+          "${format_cmd}" ${CGW_FORMAT_CHECK_ARGS} ${CGW_FORMAT_EXCLUDES} 2>&1 | tee -a "$logfile" || python_lint_error=1
+        fi
 
-          if [[ ${python_lint_error} -eq 1 ]]; then
-            err "Lint errors remain after auto-fix"
-            exit 1
-          fi
-        else
-          read -rp "Auto-fix lint issues? (yes/no/skip): " fix_lint
-          case "$fix_lint" in
-            yes|y)
-              # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_FIX_ARGS/CGW_LINT_EXCLUDES contain multiple flags
-              "${lint_cmd}" ${CGW_LINT_FIX_ARGS} ${CGW_LINT_EXCLUDES}
-              if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-                # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_FIX_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
-                "${CGW_FORMAT_CMD}" ${CGW_FORMAT_FIX_ARGS} ${CGW_FORMAT_EXCLUDES}
-              fi
-              git add .
-              unstage_local_only_files
-              ;;
-            skip|s)
-              echo "[!] Proceeding with lint warnings (CI may flag these)" ;;
-            *)
-              echo "Commit cancelled — fix lint errors first"
-              exit 1 ;;
-          esac
+        if [[ ${python_lint_error} -eq 1 ]]; then
+          err "Code quality errors remain after auto-fix"
+          exit 1
         fi
       else
-        echo "[OK] Code quality checks passed"
+        read -rp "Auto-fix code quality issues? (yes/no/skip): " fix_lint
+        case "$fix_lint" in
+          yes|y)
+            if [[ -n "${CGW_LINT_CMD}" ]]; then
+              # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_FIX_ARGS/CGW_LINT_EXCLUDES contain multiple flags
+              "${lint_cmd}" ${CGW_LINT_FIX_ARGS} ${CGW_LINT_EXCLUDES}
+            fi
+            if [[ -n "${CGW_FORMAT_CMD}" ]]; then
+              # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_FIX_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
+              "${format_cmd}" ${CGW_FORMAT_FIX_ARGS} ${CGW_FORMAT_EXCLUDES}
+            fi
+            git add .
+            unstage_local_only_files
+            ;;
+          skip|s)
+            echo "[!] Proceeding with code quality warnings (CI may flag these)" ;;
+          *)
+            echo "Commit cancelled — fix code quality errors first"
+            exit 1 ;;
+        esac
       fi
+    else
+      echo "[OK] Code quality checks passed"
     fi
 
     # Markdown lint step (skipped if --skip-md-lint or CGW_MARKDOWNLINT_CMD not set)
