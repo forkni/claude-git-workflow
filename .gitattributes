@@ -1,5 +1,7 @@
 # Force LF line endings for shell scripts (required for Linux/macOS compatibility)
 *.sh text eol=lf
+*.bats text eol=lf
+*.bash text eol=lf
 hooks/pre-commit text eol=lf
 
 # Text files — normalize to LF
