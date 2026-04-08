@@ -17,10 +17,11 @@ teardown() {
 }
 
 _run_merge() {
+  # PATH is already correct from setup_mock_bin; PROJECT_ROOT pins scripts to TEST_REPO_DIR.
   bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
-    export PATH='${MOCK_BIN_DIR}:\${PATH}'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_LINT_CMD=''
     export CGW_FORMAT_CMD=''
     export CGW_NON_INTERACTIVE=1
@@ -47,7 +48,7 @@ _run_merge() {
 # ── Backup tag creation ───────────────────────────────────────────────────────
 
 @test "clean merge creates pre-merge-backup tag on target" {
-  git -C "${TEST_REPO_DIR}" checkout main
+  git -C "${TEST_REPO_DIR}" checkout development
   _run_merge "--non-interactive" || true
   # Check for any backup tag
   tags=$(git -C "${TEST_REPO_DIR}" tag -l "pre-merge-backup-*")
@@ -57,7 +58,7 @@ _run_merge() {
 # ── Clean merge ───────────────────────────────────────────────────────────────
 
 @test "clean merge exits 0" {
-  git -C "${TEST_REPO_DIR}" checkout main
+  git -C "${TEST_REPO_DIR}" checkout development
   run _run_merge "--non-interactive"
   [ "${status}" -eq 0 ]
 }
@@ -65,7 +66,7 @@ _run_merge() {
 @test "clean merge advances target branch" {
   local before
   before=$(git -C "${TEST_REPO_DIR}" rev-parse main)
-  git -C "${TEST_REPO_DIR}" checkout main
+  git -C "${TEST_REPO_DIR}" checkout development
   _run_merge "--non-interactive" || true
   local after
   after=$(git -C "${TEST_REPO_DIR}" rev-parse main)
@@ -86,6 +87,7 @@ _run_merge() {
   run bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_LINT_CMD=''
     export CGW_FORMAT_CMD=''
     export CGW_NON_INTERACTIVE=1
@@ -111,6 +113,7 @@ _run_merge() {
   bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_LINT_CMD=''
     export CGW_FORMAT_CMD=''
     export CGW_NON_INTERACTIVE=1

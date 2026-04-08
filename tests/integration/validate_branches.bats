@@ -16,10 +16,11 @@ teardown() {
 }
 
 _run_validate() {
+  # PATH is already correct from setup_mock_bin; PROJECT_ROOT pins scripts to TEST_REPO_DIR.
   bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
-    export PATH='${MOCK_BIN_DIR}:\${PATH}'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_NON_INTERACTIVE=1
     bash '${CGW_PROJECT_ROOT}/scripts/git/validate_branches.sh' $*
   "
@@ -76,6 +77,7 @@ _run_validate() {
   run bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_SOURCE_BRANCH=nonexistent-branch
     export CGW_NON_INTERACTIVE=1
     bash '${CGW_PROJECT_ROOT}/scripts/git/validate_branches.sh'

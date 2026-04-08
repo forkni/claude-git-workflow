@@ -19,10 +19,11 @@ teardown() {
 
 # Helper: run commit_enhanced.sh with shared env vars
 _run_commit() {
+  # PATH is already correct from setup_mock_bin; PROJECT_ROOT pins scripts to TEST_REPO_DIR.
   bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
-    export PATH='${MOCK_BIN_DIR}:\${PATH}'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_LINT_CMD=ruff
     export CGW_FORMAT_CMD=''
     export CGW_NON_INTERACTIVE=1

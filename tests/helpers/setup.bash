@@ -106,6 +106,7 @@ run_script() {
   (
     cd "${work_dir}" || exit 1
     export SCRIPT_DIR="${CGW_PROJECT_ROOT}/scripts/git"
+    export PROJECT_ROOT="${work_dir}"
     bash "${script_file}" "$@"
   )
 }

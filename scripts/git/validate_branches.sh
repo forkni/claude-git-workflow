@@ -68,6 +68,12 @@ main() {
 
   echo "Current branch: $current_branch" | tee -a "$logfile"
 
+  # Verify source branch exists in this repository
+  if ! git rev-parse --verify "${CGW_SOURCE_BRANCH}" > /dev/null 2>&1; then
+    echo "  ERROR: Source branch '${CGW_SOURCE_BRANCH}' does not exist" | tee -a "$logfile"
+    validation_failed=1
+  fi
+
   if [[ $branch_check_exit -ne 0 ]]; then
     echo "  Failed to get current branch" | tee -a "$logfile"
     validation_failed=1

@@ -131,6 +131,7 @@ main() {
       --interactive) non_interactive=0; shift ;;
       --staged-only) staged_only=1; shift ;;
       --no-venv) SKIP_VENV=1; CGW_NO_VENV=1; shift ;;
+      --*) echo "[ERROR] Unknown flag: $1" >&2; exit 1 ;;
       *) commit_msg_param="$1"; shift ;;
     esac
   done

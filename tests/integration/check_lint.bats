@@ -33,6 +33,7 @@ teardown() {
   run bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_LINT_CMD=''
     export CGW_FORMAT_CMD=''
     bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
@@ -46,6 +47,7 @@ teardown() {
   run bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_SKIP_LINT=1
     bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
   "
@@ -59,7 +61,7 @@ teardown() {
   run bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
-    export PATH='${MOCK_BIN_DIR}:\${PATH}'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_LINT_CMD=ruff
     export CGW_FORMAT_CMD=''
     bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
@@ -72,7 +74,7 @@ teardown() {
   run bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
-    export PATH='${MOCK_BIN_DIR}:\${PATH}'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_LINT_CMD=ruff
     export CGW_FORMAT_CMD=''
     bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
@@ -87,7 +89,7 @@ teardown() {
   run bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
-    export PATH='${MOCK_BIN_DIR}:\${PATH}'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_LINT_CMD=ruff
     export CGW_FORMAT_CMD=''
     bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
@@ -100,7 +102,7 @@ teardown() {
   run bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
-    export PATH='${MOCK_BIN_DIR}:\${PATH}'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_LINT_CMD=ruff
     export CGW_FORMAT_CMD=''
     bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
@@ -116,7 +118,7 @@ teardown() {
   run bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
-    export PATH='${MOCK_BIN_DIR}:\${PATH}'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_LINT_CMD=ruff
     export CGW_FORMAT_CMD=''
     export CGW_MARKDOWNLINT_CMD=markdownlint-cli2
@@ -134,7 +136,7 @@ teardown() {
   run bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
-    export PATH='${MOCK_BIN_DIR}:\${PATH}'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_LINT_CMD=ruff
     export CGW_FORMAT_CMD=''
     bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --modified-only

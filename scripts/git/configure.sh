@@ -36,10 +36,12 @@ _find_project_root() {
   return 1
 }
 
-PROJECT_ROOT="$(_find_project_root)" || {
-  echo "[ERROR] Cannot find git repository root. Are you inside a git repo?" >&2
-  exit 1
-}
+if [[ -z "${PROJECT_ROOT:-}" ]]; then
+  PROJECT_ROOT="$(_find_project_root)" || {
+    echo "[ERROR] Cannot find git repository root. Are you inside a git repo?" >&2
+    exit 1
+  }
+fi
 
 # ============================================================================
 # AUTO-DETECTION FUNCTIONS
