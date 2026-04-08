@@ -17,26 +17,26 @@
 # Works regardless of where scripts/ lives in the project tree.
 
 _detect_project_root() {
-  local dir
-  dir="$(cd "${SCRIPT_DIR}" && pwd)"
-  while [[ "${dir}" != "/" ]] && [[ -n "${dir}" ]]; do
-    if [[ -d "${dir}/.git" ]]; then
-      echo "${dir}"
-      return 0
-    fi
-    dir="$(dirname "${dir}")"
-  done
-  # Fallback: ask git directly
-  if git rev-parse --show-toplevel 2>/dev/null; then
-    return 0
-  fi
-  echo "[ERROR] Cannot find git repository root from ${SCRIPT_DIR}" >&2
-  return 1
+	local dir
+	dir="$(cd "${SCRIPT_DIR}" && pwd)"
+	while [[ "${dir}" != "/" ]] && [[ -n "${dir}" ]]; do
+		if [[ -d "${dir}/.git" ]]; then
+			echo "${dir}"
+			return 0
+		fi
+		dir="$(dirname "${dir}")"
+	done
+	# Fallback: ask git directly
+	if git rev-parse --show-toplevel 2>/dev/null; then
+		return 0
+	fi
+	echo "[ERROR] Cannot find git repository root from ${SCRIPT_DIR}" >&2
+	return 1
 }
 
 # Allow tests (and CI overrides) to pin PROJECT_ROOT via env var, skipping auto-detection.
 if [[ -z "${PROJECT_ROOT:-}" ]]; then
-  PROJECT_ROOT="$(_detect_project_root)" || exit 1
+	PROJECT_ROOT="$(_detect_project_root)" || exit 1
 fi
 
 # ============================================================================
@@ -50,26 +50,26 @@ fi
 _CGW_CONF="${PROJECT_ROOT}/.cgw.conf"
 
 if [[ -f "${_CGW_CONF}" ]]; then
-  # Read .cgw.conf line-by-line, only applying variables not already set in the environment.
-  # This ensures env vars take priority AND derived values (e.g. CGW_PROTECTED_BRANCHES
-  # referencing CGW_TARGET_BRANCH) stay consistent with the values actually used.
-  while IFS= read -r _line; do
-    [[ "${_line}" =~ ^[[:space:]]*# ]] && continue  # skip comments
-    [[ "${_line}" =~ ^[[:space:]]*$ ]] && continue  # skip blank lines
-    # Only accept CGW_* assignment lines (optionally prefixed with export).
-    # Reject anything else to prevent eval of arbitrary shell statements.
-    if [[ "${_line}" =~ ^[[:space:]]*(export[[:space:]]+)?(CGW_[A-Z0-9_]+)= ]]; then
-      _cgw_var="${BASH_REMATCH[2]}"
-      # Only set if not already in environment (preserves env var priority)
-      if [[ -z "${!_cgw_var+x}" ]]; then
-        # shellcheck disable=SC2163  # eval required: _line contains "KEY=VALUE" or "export KEY=VALUE"
-        eval "${_line}"
-      fi
-    else
-      printf '%s\n' "[WARN] Ignoring unsupported line in .cgw.conf: ${_line}" >&2
-    fi
-  done < "${_CGW_CONF}"
-  unset _line _cgw_var
+	# Read .cgw.conf line-by-line, only applying variables not already set in the environment.
+	# This ensures env vars take priority AND derived values (e.g. CGW_PROTECTED_BRANCHES
+	# referencing CGW_TARGET_BRANCH) stay consistent with the values actually used.
+	while IFS= read -r _line; do
+		[[ "${_line}" =~ ^[[:space:]]*# ]] && continue # skip comments
+		[[ "${_line}" =~ ^[[:space:]]*$ ]] && continue # skip blank lines
+		# Only accept CGW_* assignment lines (optionally prefixed with export).
+		# Reject anything else to prevent eval of arbitrary shell statements.
+		if [[ "${_line}" =~ ^[[:space:]]*(export[[:space:]]+)?(CGW_[A-Z0-9_]+)= ]]; then
+			_cgw_var="${BASH_REMATCH[2]}"
+			# Only set if not already in environment (preserves env var priority)
+			if [[ -z "${!_cgw_var+x}" ]]; then
+				# shellcheck disable=SC2163  # eval required: _line contains "KEY=VALUE" or "export KEY=VALUE"
+				eval "${_line}"
+			fi
+		else
+			printf '%s\n' "[WARN] Ignoring unsupported line in .cgw.conf: ${_line}" >&2
+		fi
+	done <"${_CGW_CONF}"
+	unset _line _cgw_var
 fi
 
 # ============================================================================
@@ -90,17 +90,17 @@ _CGW_BASE_PREFIXES="feat|fix|docs|chore|test|refactor|style|perf"
 # Project-specific extras (pipe-separated, e.g. "cuda|tensorrt"):
 CGW_EXTRA_PREFIXES="${CGW_EXTRA_PREFIXES:-}"
 if [[ -n "${CGW_EXTRA_PREFIXES}" ]]; then
-  CGW_ALL_PREFIXES="${_CGW_BASE_PREFIXES}|${CGW_EXTRA_PREFIXES}"
+	CGW_ALL_PREFIXES="${_CGW_BASE_PREFIXES}|${CGW_EXTRA_PREFIXES}"
 else
-  CGW_ALL_PREFIXES="${_CGW_BASE_PREFIXES}"
+	CGW_ALL_PREFIXES="${_CGW_BASE_PREFIXES}"
 fi
-export CGW_ALL_PREFIXES  # consumed by commit_enhanced.sh (cross-file, not detectable by shellcheck)
+export CGW_ALL_PREFIXES # consumed by commit_enhanced.sh (cross-file, not detectable by shellcheck)
 
 # --- Lint configuration ---
 # Set CGW_LINT_CMD="" to disable lint checks entirely (e.g. non-Python projects
 # that haven't configured a linter yet).
 # Use +x (not :-) to distinguish "unset" from "explicitly set to empty string".
-[[ -z "${CGW_LINT_CMD+x}" ]]   && CGW_LINT_CMD="ruff"
+[[ -z "${CGW_LINT_CMD+x}" ]] && CGW_LINT_CMD="ruff"
 CGW_LINT_CHECK_ARGS="${CGW_LINT_CHECK_ARGS:-check .}"
 CGW_LINT_FIX_ARGS="${CGW_LINT_FIX_ARGS:-check --fix .}"
 CGW_LINT_EXCLUDES="${CGW_LINT_EXCLUDES:---extend-exclude logs --extend-exclude .venv}"
@@ -145,8 +145,8 @@ CGW_MERGE_MODE="${CGW_MERGE_MODE:-direct}"
 # Legacy CLAUDE_GIT_* env vars are mapped to CGW_* equivalents.
 
 [[ "${CLAUDE_GIT_NON_INTERACTIVE:-0}" == "1" ]] && CGW_NON_INTERACTIVE=1
-[[ "${CLAUDE_GIT_NO_VENV:-0}" == "1" ]]         && CGW_NO_VENV=1
-[[ "${CLAUDE_GIT_STAGED_ONLY:-0}" == "1" ]]      && CGW_STAGED_ONLY=1
+[[ "${CLAUDE_GIT_NO_VENV:-0}" == "1" ]] && CGW_NO_VENV=1
+[[ "${CLAUDE_GIT_STAGED_ONLY:-0}" == "1" ]] && CGW_STAGED_ONLY=1
 
 CGW_NON_INTERACTIVE="${CGW_NON_INTERACTIVE:-0}"
 CGW_NO_VENV="${CGW_NO_VENV:-0}"
