@@ -30,6 +30,11 @@ main() {
   local non_interactive=0
   local dry_run=0
 
+  # Auto-detect non-interactive mode when no TTY
+  if [[ ! -t 0 ]]; then
+    non_interactive=1
+  fi
+
   [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
 
   while [[ $# -gt 0 ]]; do
@@ -60,7 +65,14 @@ main() {
         echo "  gh CLI installed and authenticated (gh auth login)"
         exit 0
         ;;
-      --title) pr_title="${2:-}"; shift 2 ;;
+      --title)
+        if [[ $# -lt 2 ]] || [[ -z "${2:-}" ]]; then
+          err "--title requires a non-empty value"
+          exit 1
+        fi
+        pr_title="${2}"
+        shift 2
+        ;;
       --draft) draft=1; shift ;;
       --non-interactive) non_interactive=1; shift ;;
       --dry-run) dry_run=1; shift ;;

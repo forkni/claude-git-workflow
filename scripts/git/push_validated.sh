@@ -21,6 +21,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/git/_common.sh
 source "${SCRIPT_DIR}/_common.sh"
 
 init_logging "push_validated"
@@ -73,6 +74,7 @@ main() {
   done
 
   [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
+  [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]]   && skip_md_lint=1
 
   {
     echo "========================================="
@@ -175,7 +177,7 @@ main() {
   echo "" | tee -a "$logfile"
 
   # [3/5] Optional pre-push lint check
-  if [[ ${skip_lint} -eq 0 ]] && [[ -n "${CGW_LINT_CMD}" ]]; then
+  if [[ ${skip_lint} -eq 0 ]] && [[ -n "${CGW_LINT_CMD}${CGW_MARKDOWNLINT_CMD}" ]]; then
     log_section_start "PRE-PUSH LINT CHECK" "$logfile"
     echo "Running pre-push lint check..." | tee -a "$logfile"
     local lint_args=()

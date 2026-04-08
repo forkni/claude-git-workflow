@@ -330,13 +330,19 @@ main() {
     if [[ ${skip_md_lint} -eq 0 ]] && [[ -n "${CGW_MARKDOWNLINT_CMD}" ]]; then
       log_section_start "MARKDOWN LINT" "$logfile"
       local md_lint_error=0
-      # shellcheck disable=SC2086
+      # shellcheck disable=SC2086  # Word splitting intentional: CGW_MARKDOWNLINT_ARGS contains multiple flags/patterns
       if ! "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS} 2>&1 | tee -a "$logfile"; then
         md_lint_error=1
       fi
       log_section_end "MARKDOWN LINT" "$logfile" "$md_lint_error"
       if [[ ${md_lint_error} -eq 1 ]]; then
-        echo "[!] Markdown lint errors detected (use --skip-md-lint to bypass)"
+        echo "[!] Markdown lint errors detected"
+        if [[ ${non_interactive} -eq 1 ]]; then
+          err "Markdown lint failed — fix errors or use --skip-md-lint to bypass"
+          exit 1
+        fi
+        read -rp "Proceed despite markdown lint errors? (yes/no): " md_choice
+        [[ "${md_choice}" == "yes" ]] || exit 1
       fi
     elif [[ ${skip_md_lint} -eq 1 ]]; then
       echo "  (markdown lint skipped — --skip-md-lint)"
