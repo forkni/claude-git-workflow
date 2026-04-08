@@ -25,7 +25,7 @@ Receives merges from the source branch. Typically contains production-ready code
 
 Where active development occurs. All changes are committed here first, then merged to target.
 
-### Standard Workflow
+### Standard Workflow (CGW_MERGE_MODE="direct", default)
 
 1. Work and commit on source branch
 2. Test and validate on source branch
@@ -36,6 +36,17 @@ Where active development occurs. All changes are committed here first, then merg
    ./scripts/git/push_validated.sh                                           # push target
    git checkout "${CGW_SOURCE_BRANCH}" && ./scripts/git/push_validated.sh    # push source
    ```
+
+### PR Workflow (CGW_MERGE_MODE="pr")
+
+Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use GitHub PRs instead of direct local merges.
+
+1. Work and commit on source branch
+2. Push to remote: `./scripts/git/push_validated.sh`
+3. Create PR: `./scripts/git/create_pr.sh`
+4. Review PR on GitHub (Charlie CI auto-reviews on open)
+5. Merge via GitHub UI after CI passes
+6. Sync local branches: `./scripts/git/sync_branches.sh --all`
 
 ---
 

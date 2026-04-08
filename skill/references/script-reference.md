@@ -121,6 +121,18 @@ Validates commit is on source branch before picking. Creates backup tag.
 ```
 Merges only `docs/` changes. Warns if non-docs changes exist. In non-interactive mode, skips confirmations.
 
+**`create_pr.sh`** — Create a GitHub PR from source to target branch
+```bash
+./scripts/git/create_pr.sh [--non-interactive] [--dry-run]
+```
+
+| Flag | Purpose |
+|------|---------|
+| `--non-interactive` | Skip prompts |
+| `--dry-run` | Show what would be created without opening a PR |
+
+Requires `gh` CLI authenticated (`gh auth login`). Checks ahead/behind status, then opens a PR. Charlie CI auto-reviews on PR open.
+
 ---
 
 ## Push & Sync
@@ -165,8 +177,18 @@ Runs `git fetch origin` then `git pull --rebase` on each target.
 | `CGW_STAGED_ONLY=1` | Use pre-staged files only (`commit_enhanced.sh`) |
 | `CGW_SOURCE_BRANCH=<name>` | Override source branch |
 | `CGW_TARGET_BRANCH=<name>` | Override target branch |
-| `CGW_LINT_CMD=<tool>` | Override lint tool |
-| `CGW_DOCS_PATTERN=<regex>` | Override allowed docs pattern |
+| `CGW_LINT_CMD=<tool>` | Override lint tool (default: `ruff`; `""` = disable lint) |
+| `CGW_FORMAT_CMD=<tool>` | Override format tool (default: `ruff`; `""` = disable format) |
+| `CGW_EXTRA_PREFIXES=<list>` | Pipe-separated extra commit prefixes (e.g. `"cuda\|tensorrt"`) |
+| `CGW_LOCAL_FILES=<paths>` | Space-separated files never committed (default: `CLAUDE.md MEMORY.md .claude/ logs/`) |
+| `CGW_PROTECTED_BRANCHES=<list>` | Space-separated branches requiring `--force` confirmation for force-push |
+| `CGW_MERGE_MODE=<mode>` | `"direct"` (default, use `merge_with_validation.sh`) or `"pr"` (use `create_pr.sh`) |
+| `CGW_DOCS_PATTERN=<regex>` | Extended regex for allowed doc filenames in `merge_with_validation.sh` |
+| `CGW_CLEANUP_TESTS=1` | Remove `tests/` from target branch if gitignored on target (default: `0`) |
+| `CGW_DEV_ONLY_FILES=<paths>` | Space-separated dev-only paths; cherry-pick warns if these are included |
+| `CGW_SKIP_LINT=1` | Skip pre-push lint check (`push_validated.sh`) |
+| `CGW_SKIP_MD_LINT=1` | Skip markdown lint step only (`push_validated.sh`) |
+| `CGW_MARKDOWNLINT_CMD=<tool>` | Enable markdown lint step (default: `""` = disabled; e.g. `"markdownlint-cli2"`) |
 
 ### CLAUDE_GIT_* (legacy, still supported)
 

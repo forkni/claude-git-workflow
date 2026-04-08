@@ -113,7 +113,7 @@ Did lint checks fail?
 After commit: verify with git log --oneline -1
 ```
 
-**Merging to target branch:**
+**Merging to target branch** (direct merge, `CGW_MERGE_MODE="direct"`):
 ```bash
 # Preview first (no changes):
 ./scripts/git/merge_with_validation.sh --dry-run
@@ -123,12 +123,22 @@ After commit: verify with git log --oneline -1
 ```
 Handles: pre-merge validation, backup tag, modify/delete/both-deleted conflict auto-resolution, content conflict detection (stops for manual review).
 
+Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Creating a PR below).
+
 **Pushing to remote:**
 ```bash
 ./scripts/git/push_validated.sh               # with lint check
 ./scripts/git/push_validated.sh --dry-run     # preview
 ./scripts/git/push_validated.sh --skip-lint   # skip lint check
 ```
+
+**Creating a PR** (when `CGW_MERGE_MODE="pr"`):
+```bash
+./scripts/git/create_pr.sh                    # interactive
+./scripts/git/create_pr.sh --non-interactive  # skip prompts
+./scripts/git/create_pr.sh --dry-run          # preview only
+```
+Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login`. Charlie CI auto-reviews on PR open.
 
 **Syncing with remote:**
 ```bash
