@@ -4,11 +4,30 @@ Drop-in git automation for any project. Enhanced commits, safe merges, validated
 
 ## Quick Start (30 seconds)
 
-```bash
-# 1. Copy scripts into your project
-cp -r claude-git-workflow/scripts/git/ your-project/scripts/git/
+### Windows (recommended)
 
-# 2. Auto-configure (scans project, generates config, installs hooks)
+```cmd
+:: 1. Clone the repo (one-time)
+git clone https://github.com/forkni/claude-git-workflow.git
+
+:: 2. Run the installer — prompts for your project path
+claude-git-workflow\install.cmd
+
+:: 3. Done — use it (from your project, in Git Bash)
+./scripts/git/commit_enhanced.sh "feat: your feature"
+```
+
+`install.cmd` runs pre-install checks, copies scripts, runs `configure.sh` interactively, and cleans up temporary files.
+
+### Unix / manual
+
+```bash
+# 1. Copy scripts + hook template into your project
+cp -r claude-git-workflow/scripts/git/ your-project/scripts/git/
+mkdir -p your-project/hooks
+cp claude-git-workflow/hooks/pre-commit your-project/hooks/
+
+# 2. Auto-configure (scans project, generates config, installs hooks + skill)
 cd your-project && ./scripts/git/configure.sh
 
 # 3. Done — use it
@@ -68,7 +87,7 @@ Priority 3: Built-in defaults                ← works without any config
 Copy `cgw.conf.example` to `.cgw.conf` in your project root:
 
 ```bash
-cp scripts/git/../../../cgw.conf.example .cgw.conf
+cp cgw.conf.example .cgw.conf
 # Edit .cgw.conf as needed
 ```
 
@@ -234,22 +253,16 @@ CGW_FORMAT_CMD=""
 
 ## Claude Code Integration
 
-### Install skill (reference during AI sessions)
+`install.cmd` and `configure.sh` automatically install the Claude Code skill and slash command. This ensures Claude Code follows the workflow when performing git operations.
 
-`configure.sh` optionally copies the skill to `.claude/skills/auto-git-workflow/`. This ensures Claude Code follows the workflow when performing git operations.
+After installation, use `/auto-git-workflow` in Claude Code to run the full commit→push→merge→push workflow.
 
-Manual install:
+### Manual install (if configure.sh was run with `--skip-skill`)
+
 ```bash
 cp -r skill/ .claude/skills/auto-git-workflow/
-```
-
-### Install slash command
-
-```bash
 cp command/auto-git-workflow.md .claude/commands/
 ```
-
-Then use `/auto-git-workflow` in Claude Code to run the full commit→push→merge→push workflow.
 
 ---
 
@@ -279,6 +292,8 @@ Legacy `CLAUDE_GIT_*` variables are still supported:
 - For PR creation (`create_pr.sh`): [gh CLI](https://cli.github.com/) + `gh auth login`
 
 Compatible with: Linux, macOS, Windows (Git Bash / WSL)
+
+**Windows installer** (`install.cmd`) requires only [Git for Windows](https://git-scm.com/download/win) — it validates bash availability as part of its pre-install checks.
 
 ---
 
