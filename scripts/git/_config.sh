@@ -47,8 +47,16 @@ PROJECT_ROOT="$(_detect_project_root)" || exit 1
 _CGW_CONF="${PROJECT_ROOT}/.cgw.conf"
 
 if [[ -f "${_CGW_CONF}" ]]; then
+  # Save CGW_* env vars so they take priority over .cgw.conf
+  _cgw_saved_env=$(env | grep "^CGW_" || true)
   # shellcheck source=/dev/null
   source "${_CGW_CONF}"
+  # Restore: env vars take priority over .cgw.conf values
+  while IFS= read -r _line; do
+    # shellcheck disable=SC2163  # export VAR=VALUE form: _line contains "KEY=VALUE" literal string
+    [[ -n "${_line}" ]] && export "${_line?}"
+  done <<< "${_cgw_saved_env}"
+  unset _cgw_saved_env _line
 fi
 
 # ============================================================================
