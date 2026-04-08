@@ -99,13 +99,15 @@ export CGW_ALL_PREFIXES  # consumed by commit_enhanced.sh (cross-file, not detec
 # --- Lint configuration ---
 # Set CGW_LINT_CMD="" to disable lint checks entirely (e.g. non-Python projects
 # that haven't configured a linter yet).
-CGW_LINT_CMD="${CGW_LINT_CMD:-ruff}"
+# Use +x (not :-) to distinguish "unset" from "explicitly set to empty string".
+[[ -z "${CGW_LINT_CMD+x}" ]]   && CGW_LINT_CMD="ruff"
 CGW_LINT_CHECK_ARGS="${CGW_LINT_CHECK_ARGS:-check .}"
 CGW_LINT_FIX_ARGS="${CGW_LINT_FIX_ARGS:-check --fix .}"
 CGW_LINT_EXCLUDES="${CGW_LINT_EXCLUDES:---extend-exclude logs --extend-exclude .venv}"
 
 # Set CGW_FORMAT_CMD="" to disable formatting checks.
-CGW_FORMAT_CMD="${CGW_FORMAT_CMD:-ruff}"
+# Use +x (not :-) to distinguish "unset" from "explicitly set to empty string".
+[[ -z "${CGW_FORMAT_CMD+x}" ]] && CGW_FORMAT_CMD="ruff"
 CGW_FORMAT_CHECK_ARGS="${CGW_FORMAT_CHECK_ARGS:-format --check .}"
 CGW_FORMAT_FIX_ARGS="${CGW_FORMAT_FIX_ARGS:-format .}"
 CGW_FORMAT_EXCLUDES="${CGW_FORMAT_EXCLUDES:---exclude logs --exclude .venv}"
