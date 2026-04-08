@@ -73,6 +73,7 @@ if [[ -n "${CGW_EXTRA_PREFIXES}" ]]; then
 else
   CGW_ALL_PREFIXES="${_CGW_BASE_PREFIXES}"
 fi
+export CGW_ALL_PREFIXES  # consumed by commit_enhanced.sh (cross-file, not detectable by shellcheck)
 
 # --- Lint configuration ---
 # Set CGW_LINT_CMD="" to disable lint checks entirely (e.g. non-Python projects
@@ -87,6 +88,11 @@ CGW_FORMAT_CMD="${CGW_FORMAT_CMD:-ruff}"
 CGW_FORMAT_CHECK_ARGS="${CGW_FORMAT_CHECK_ARGS:-format --check .}"
 CGW_FORMAT_FIX_ARGS="${CGW_FORMAT_FIX_ARGS:-format .}"
 CGW_FORMAT_EXCLUDES="${CGW_FORMAT_EXCLUDES:---exclude logs --exclude .venv}"
+
+# Set CGW_MARKDOWNLINT_CMD to enable a dedicated markdown lint step.
+# Empty (default) = markdown lint step skipped. Example: "markdownlint-cli2"
+CGW_MARKDOWNLINT_CMD="${CGW_MARKDOWNLINT_CMD:-}"
+CGW_MARKDOWNLINT_ARGS="${CGW_MARKDOWNLINT_ARGS:-**/*.md !CLAUDE.md !MEMORY.md}"
 
 # --- Docs CI validation (merge_with_validation.sh) ---
 # Extended regex for allowed doc filenames. Empty = skip validation entirely.
@@ -104,6 +110,11 @@ CGW_CLEANUP_TESTS="${CGW_CLEANUP_TESTS:-0}"
 # --- Force-push protected branches (space-separated) ---
 # Branches requiring explicit --force flag + confirmation for force-push.
 CGW_PROTECTED_BRANCHES="${CGW_PROTECTED_BRANCHES:-${CGW_TARGET_BRANCH}}"
+
+# --- Merge mode ---
+# "direct": merge locally via merge_with_validation.sh (default, no PR required)
+# "pr":     create a GitHub PR via create_pr.sh (triggers Charlie CI + GitHub Actions)
+CGW_MERGE_MODE="${CGW_MERGE_MODE:-direct}"
 
 # ============================================================================
 # BACKWARD COMPATIBILITY

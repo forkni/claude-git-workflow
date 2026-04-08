@@ -146,7 +146,7 @@ main() {
   # [4/7] Check for non-documentation changes
   echo "[4/7] Checking for code changes..."
   local non_docs_count
-  non_docs_count=$(git diff --name-only "${CGW_TARGET_BRANCH}" "${CGW_SOURCE_BRANCH}" | grep -v "^docs/" | wc -l)
+  non_docs_count=$(git diff --name-only "${CGW_TARGET_BRANCH}" "${CGW_SOURCE_BRANCH}" | grep -vc "^docs/")
 
   if [[ "${non_docs_count}" -gt 0 ]]; then
     echo "⚠ WARNING: Non-documentation changes detected"

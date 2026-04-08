@@ -138,6 +138,7 @@ log_section_end() {
   local section_name="$1"
   local log_path="$2"
   local exit_code="$3"
+  # shellcheck disable=SC2034  # Reserved parameter for future error-count display; not yet used in output
   local error_count="${4:-0}"
 
   local time_str duration status

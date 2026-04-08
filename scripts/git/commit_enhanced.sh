@@ -76,7 +76,8 @@ unstage_local_only_files() {
 
 main() {
   local non_interactive=0
-  local skip_md_lint=1  # markdown lint always skipped (no-op flag kept for compat)
+  local skip_lint=0
+  local skip_md_lint=0
   local staged_only=0
   local commit_msg_param=""
 
@@ -89,6 +90,8 @@ main() {
   [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
   [[ "${CGW_STAGED_ONLY:-0}" == "1" ]]     && staged_only=1
   [[ "${CGW_NO_VENV:-0}" == "1" ]]         && SKIP_VENV=1
+  [[ "${CGW_SKIP_LINT:-0}" == "1" ]]       && skip_lint=1 && skip_md_lint=1
+  [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]]    && skip_md_lint=1
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -102,7 +105,8 @@ main() {
         echo "  --interactive       Force interactive mode even without TTY"
         echo "  --staged-only       Use pre-staged files only, skip auto-staging"
         echo "  --no-venv           Use system ruff instead of .venv ruff"
-        echo "  --skip-md-lint      (no-op, markdown lint always skipped)"
+        echo "  --skip-lint         Skip all lint checks (code + markdown)"
+        echo "  --skip-md-lint      Skip markdown lint only (CGW_MARKDOWNLINT_CMD step)"
         echo "  -h, --help          Show this help"
         echo ""
         echo "Commit message format: <type>: <message>"
@@ -113,6 +117,8 @@ main() {
         echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
         echo "  CGW_STAGED_ONLY=1       Same as --staged-only"
         echo "  CGW_NO_VENV=1           Same as --no-venv"
+        echo "  CGW_SKIP_LINT=1         Same as --skip-lint"
+        echo "  CGW_SKIP_MD_LINT=1      Same as --skip-md-lint"
         echo "  (Also: CLAUDE_GIT_NON_INTERACTIVE, CLAUDE_GIT_STAGED_ONLY, CLAUDE_GIT_NO_VENV)"
         echo ""
         echo "Protected files (never committed): configured via CGW_LOCAL_FILES in .cgw.conf"
@@ -120,6 +126,7 @@ main() {
         exit 0
         ;;
       --non-interactive) non_interactive=1; shift ;;
+      --skip-lint) skip_lint=1; skip_md_lint=1; shift ;;
       --skip-md-lint) skip_md_lint=1; shift ;;
       --interactive) non_interactive=0; shift ;;
       --staged-only) staged_only=1; shift ;;
@@ -228,91 +235,111 @@ main() {
   # [3] Code quality check
   echo "[3/6] Checking code quality..."
 
-  get_lint_exclusions
-
-  local python_lint_error=0
-
-  if [[ -z "${CGW_LINT_CMD}" ]]; then
-    echo "  (lint check skipped — CGW_LINT_CMD not set)"
+  if [[ ${skip_lint} -eq 1 ]]; then
+    echo "  (all lint checks skipped — --skip-lint)"
   else
-    log_section_start "LINT CHECK" "$logfile"
+    get_lint_exclusions
 
-    # Determine lint binary (venv or PATH)
-    local lint_cmd="${CGW_LINT_CMD}"
-    if [[ "${CGW_LINT_CMD}" == "ruff" ]]; then
-      get_python_path 2>/dev/null || true
-      if [[ -n "${PYTHON_BIN:-}" ]] && [[ -f "${PYTHON_BIN}/ruff${PYTHON_EXT:-}" ]]; then
-        lint_cmd="${PYTHON_BIN}/ruff${PYTHON_EXT:-}"
+    local python_lint_error=0
+
+    if [[ -z "${CGW_LINT_CMD}" ]]; then
+      echo "  (lint check skipped — CGW_LINT_CMD not set)"
+    else
+      log_section_start "LINT CHECK" "$logfile"
+
+      # Determine lint binary (venv or PATH)
+      local lint_cmd="${CGW_LINT_CMD}"
+      if [[ "${CGW_LINT_CMD}" == "ruff" ]]; then
+        get_python_path 2>/dev/null || true
+        if [[ -n "${PYTHON_BIN:-}" ]] && [[ -f "${PYTHON_BIN}/ruff${PYTHON_EXT:-}" ]]; then
+          lint_cmd="${PYTHON_BIN}/ruff${PYTHON_EXT:-}"
+        fi
       fi
-    fi
 
-    local lint_output format_output
+      local lint_output format_output
 
-    # shellcheck disable=SC2086
-    lint_output=$("${lint_cmd}" ${CGW_LINT_CHECK_ARGS} ${CGW_LINT_EXCLUDES} 2>&1) || python_lint_error=1
-    if [[ -n "$lint_output" ]] && [[ "$lint_output" != *"All checks passed"* ]]; then
-      echo "[LINT ERRORS]" | tee -a "$logfile"
-      echo "$lint_output" | tee -a "$logfile"
-    fi
-
-    if [[ -n "${CGW_FORMAT_CMD}" ]]; then
       # shellcheck disable=SC2086
-      format_output=$("${CGW_FORMAT_CMD}" ${CGW_FORMAT_CHECK_ARGS} ${CGW_FORMAT_EXCLUDES} 2>&1) || python_lint_error=1
-      if [[ -n "$format_output" ]] && [[ "$format_output" == *"would reformat"* ]]; then
-        echo "[FORMAT ERRORS]" | tee -a "$logfile"
-        echo "$format_output" | tee -a "$logfile"
+      lint_output=$("${lint_cmd}" ${CGW_LINT_CHECK_ARGS} ${CGW_LINT_EXCLUDES} 2>&1) || python_lint_error=1
+      if [[ -n "$lint_output" ]] && [[ "$lint_output" != *"All checks passed"* ]]; then
+        echo "[LINT ERRORS]" | tee -a "$logfile"
+        echo "$lint_output" | tee -a "$logfile"
       fi
-    fi
 
-    log_section_end "LINT CHECK" "$logfile" "$python_lint_error"
-
-    if [[ ${python_lint_error} -eq 1 ]]; then
-      echo "[!] Lint errors detected"
-      if [[ ${non_interactive} -eq 1 ]]; then
-        echo "[Non-interactive] Auto-fixing lint issues..."
+      if [[ -n "${CGW_FORMAT_CMD}" ]]; then
         # shellcheck disable=SC2086
-        "${lint_cmd}" ${CGW_LINT_FIX_ARGS} ${CGW_LINT_EXCLUDES} 2>&1 | tee -a "$logfile"
-        if [[ -n "${CGW_FORMAT_CMD}" ]]; then
+        format_output=$("${CGW_FORMAT_CMD}" ${CGW_FORMAT_CHECK_ARGS} ${CGW_FORMAT_EXCLUDES} 2>&1) || python_lint_error=1
+        if [[ -n "$format_output" ]] && [[ "$format_output" == *"would reformat"* ]]; then
+          echo "[FORMAT ERRORS]" | tee -a "$logfile"
+          echo "$format_output" | tee -a "$logfile"
+        fi
+      fi
+
+      log_section_end "LINT CHECK" "$logfile" "$python_lint_error"
+
+      if [[ ${python_lint_error} -eq 1 ]]; then
+        echo "[!] Lint errors detected"
+        if [[ ${non_interactive} -eq 1 ]]; then
+          echo "[Non-interactive] Auto-fixing lint issues..."
           # shellcheck disable=SC2086
-          "${CGW_FORMAT_CMD}" ${CGW_FORMAT_FIX_ARGS} ${CGW_FORMAT_EXCLUDES} 2>&1 | tee -a "$logfile"
-        fi
-
-        if [[ ${staged_only} -eq 0 ]]; then
-          git add .
-          unstage_local_only_files
-        fi
-
-        # Re-check
-        python_lint_error=0
-        # shellcheck disable=SC2086
-        "${lint_cmd}" ${CGW_LINT_CHECK_ARGS} ${CGW_LINT_EXCLUDES} 2>&1 | tee -a "$logfile" || python_lint_error=1
-
-        if [[ ${python_lint_error} -eq 1 ]]; then
-          err "Lint errors remain after auto-fix"
-          exit 1
-        fi
-      else
-        read -rp "Auto-fix lint issues? (yes/no/skip): " fix_lint
-        case "$fix_lint" in
-          yes|y)
+          "${lint_cmd}" ${CGW_LINT_FIX_ARGS} ${CGW_LINT_EXCLUDES} 2>&1 | tee -a "$logfile"
+          if [[ -n "${CGW_FORMAT_CMD}" ]]; then
             # shellcheck disable=SC2086
-            "${lint_cmd}" ${CGW_LINT_FIX_ARGS} ${CGW_LINT_EXCLUDES}
-            if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-              # shellcheck disable=SC2086
-              "${CGW_FORMAT_CMD}" ${CGW_FORMAT_FIX_ARGS} ${CGW_FORMAT_EXCLUDES}
-            fi
+            "${CGW_FORMAT_CMD}" ${CGW_FORMAT_FIX_ARGS} ${CGW_FORMAT_EXCLUDES} 2>&1 | tee -a "$logfile"
+          fi
+
+          if [[ ${staged_only} -eq 0 ]]; then
             git add .
             unstage_local_only_files
-            ;;
-          skip|s)
-            echo "[!] Proceeding with lint warnings (CI may flag these)" ;;
-          *)
-            echo "Commit cancelled — fix lint errors first"
-            exit 1 ;;
-        esac
+          fi
+
+          # Re-check
+          python_lint_error=0
+          # shellcheck disable=SC2086
+          "${lint_cmd}" ${CGW_LINT_CHECK_ARGS} ${CGW_LINT_EXCLUDES} 2>&1 | tee -a "$logfile" || python_lint_error=1
+
+          if [[ ${python_lint_error} -eq 1 ]]; then
+            err "Lint errors remain after auto-fix"
+            exit 1
+          fi
+        else
+          read -rp "Auto-fix lint issues? (yes/no/skip): " fix_lint
+          case "$fix_lint" in
+            yes|y)
+              # shellcheck disable=SC2086
+              "${lint_cmd}" ${CGW_LINT_FIX_ARGS} ${CGW_LINT_EXCLUDES}
+              if [[ -n "${CGW_FORMAT_CMD}" ]]; then
+                # shellcheck disable=SC2086
+                "${CGW_FORMAT_CMD}" ${CGW_FORMAT_FIX_ARGS} ${CGW_FORMAT_EXCLUDES}
+              fi
+              git add .
+              unstage_local_only_files
+              ;;
+            skip|s)
+              echo "[!] Proceeding with lint warnings (CI may flag these)" ;;
+            *)
+              echo "Commit cancelled — fix lint errors first"
+              exit 1 ;;
+          esac
+        fi
+      else
+        echo "[OK] Code quality checks passed"
       fi
-    else
-      echo "[OK] Code quality checks passed"
+    fi
+
+    # Markdown lint step (skipped if --skip-md-lint or CGW_MARKDOWNLINT_CMD not set)
+    if [[ ${skip_md_lint} -eq 0 ]] && [[ -n "${CGW_MARKDOWNLINT_CMD}" ]]; then
+      log_section_start "MARKDOWN LINT" "$logfile"
+      local md_lint_error=0
+      # shellcheck disable=SC2086
+      if ! "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS} 2>&1 | tee -a "$logfile"; then
+        md_lint_error=1
+      fi
+      log_section_end "MARKDOWN LINT" "$logfile" "$md_lint_error"
+      if [[ ${md_lint_error} -eq 1 ]]; then
+        echo "[!] Markdown lint errors detected (use --skip-md-lint to bypass)"
+      fi
+    elif [[ ${skip_md_lint} -eq 1 ]]; then
+      echo "  (markdown lint skipped — --skip-md-lint)"
     fi
   fi
   echo ""

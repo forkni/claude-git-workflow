@@ -18,6 +18,11 @@ source "${SCRIPT_DIR}/_common.sh"
 
 main() {
   local modified_only=0
+  local skip_lint=0
+  local skip_md_lint=0
+
+  [[ "${CGW_SKIP_LINT:-0}" == "1" ]]    && skip_lint=1 && skip_md_lint=1
+  [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]] && skip_md_lint=1
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -29,19 +34,30 @@ main() {
         echo "Options:"
         echo "  --modified-only   Only check files modified vs HEAD"
         echo "  --no-venv         Use system lint tool instead of .venv"
+        echo "  --skip-lint       Skip all lint checks"
+        echo "  --skip-md-lint    Skip markdown lint only (CGW_MARKDOWNLINT_CMD step)"
         echo "  -h, --help        Show this help"
         echo ""
         echo "Environment:"
         echo "  CGW_NO_VENV=1          Same as --no-venv"
+        echo "  CGW_SKIP_LINT=1        Same as --skip-lint"
+        echo "  CGW_SKIP_MD_LINT=1     Same as --skip-md-lint"
         echo "  CGW_LINT_CMD=<tool>    Override lint tool (default: ruff)"
         echo "  (Also: CLAUDE_GIT_NO_VENV)"
         exit 0
         ;;
       --no-venv) CGW_NO_VENV=1; SKIP_VENV=1; shift ;;
       --modified-only) modified_only=1; shift ;;
+      --skip-lint) skip_lint=1; skip_md_lint=1; shift ;;
+      --skip-md-lint) skip_md_lint=1; shift ;;
       *) echo "[ERROR] Unknown flag: $1" >&2; exit 1 ;;
     esac
   done
+
+  if [[ ${skip_lint} -eq 1 ]]; then
+    echo "[OK] All lint checks skipped (--skip-lint)"
+    exit 0
+  fi
 
   if [[ -z "${CGW_LINT_CMD}" ]]; then
     echo "[OK] Lint check skipped (CGW_LINT_CMD not set — configure in .cgw.conf)"
@@ -143,7 +159,30 @@ main() {
   script_end=$(date +%s)
   total_duration=$((script_end - script_start))
 
-  if [[ $lint_status -eq 0 ]] && [[ $format_status -eq 0 ]]; then
+  # MARKDOWN LINT
+  local md_lint_status=0
+  if [[ ${skip_md_lint} -eq 0 ]] && [[ -n "${CGW_MARKDOWNLINT_CMD}" ]]; then
+    local md_start md_end md_duration
+    md_start=$(date +%s)
+    # shellcheck disable=SC2086
+    if ! run_tool_with_logging "MARKDOWN LINT" "$logfile" \
+        "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS}; then
+      md_lint_status=1
+    fi
+    md_end=$(date +%s)
+    md_duration=$((md_end - md_start))
+    results+=("Markdown:$([ $md_lint_status -eq 0 ] && echo PASSED || echo FAILED):${TOOL_ERROR_COUNT}:${md_duration}")
+  elif [[ ${skip_md_lint} -eq 1 ]]; then
+    echo "  (markdown lint skipped — --skip-md-lint)" | tee -a "$logfile"
+  fi
+
+  log_summary_table "$logfile" "${results[@]}"
+
+  local script_end total_duration overall_status
+  script_end=$(date +%s)
+  total_duration=$((script_end - script_start))
+
+  if [[ $lint_status -eq 0 ]] && [[ $format_status -eq 0 ]] && [[ $md_lint_status -eq 0 ]]; then
     overall_status="PASSED"
   else
     overall_status="FAILED"

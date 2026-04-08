@@ -128,9 +128,23 @@ git log -1 --format="%h %s"
 
 ---
 
-### Phase 4: Merge to Target Branch
+### Phase 4: Merge or PR
 
-**Step 4.1: Run merge with validation**
+Check `CGW_MERGE_MODE` (or ask user preference):
+
+```bash
+echo "${CGW_MERGE_MODE:-direct}"
+```
+
+**If `CGW_MERGE_MODE=direct` (default):** → Follow Phase 4A (direct merge)
+
+**If `CGW_MERGE_MODE=pr`:** → Follow Phase 4B (create PR, stop — CI takes over)
+
+---
+
+#### Phase 4A: Direct Merge to Target Branch
+
+**Step 4A.1: Run merge with validation**
 
 ```bash
 ./scripts/git/merge_with_validation.sh --non-interactive
@@ -147,7 +161,34 @@ git log -1 --format="%h %s"
 
 ---
 
-### Phase 5: Push Target Branch
+#### Phase 4B: Create PR (triggers Charlie CI + GitHub Actions)
+
+**Step 4B.1: Create pull request**
+
+```bash
+./scripts/git/create_pr.sh --non-interactive
+```
+
+- If exit code 0: PR created — workflow ends here (CI + Charlie review the PR)
+- If exit code ≠ 0: Run without `--non-interactive` to see error
+
+**Step 4B.2: Return to source branch**
+
+```bash
+git checkout "${CGW_SOURCE_BRANCH:-development}" >/dev/null 2>&1
+```
+
+**Final Report (PR mode):**
+```
+Workflow complete (PR mode)
+
+Source branch: [hash] "[message]" pushed
+PR: [url] — awaiting Charlie CI review
+```
+
+---
+
+### Phase 5: Push Target Branch (direct mode only)
 
 **Step 5.1: Push target branch (suppress output)**
 
@@ -166,7 +207,7 @@ git checkout "${CGW_SOURCE_BRANCH:-development}" >/dev/null 2>&1
 
 ---
 
-### Final Report
+### Final Report (direct mode)
 
 ```bash
 git log "${CGW_SOURCE_BRANCH:-development}" -1 --format="%h %s"

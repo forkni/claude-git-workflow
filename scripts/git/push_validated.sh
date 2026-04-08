@@ -29,6 +29,7 @@ main() {
   local non_interactive=0
   local dry_run=0
   local skip_lint=0
+  local skip_md_lint=0
   local force_push=0
   local target_branch=""
 
@@ -42,7 +43,8 @@ main() {
         echo "Options:"
         echo "  --non-interactive   Skip all prompts"
         echo "  --dry-run           Show what would be pushed without pushing"
-        echo "  --skip-lint         Skip pre-push lint check"
+        echo "  --skip-lint         Skip pre-push lint check (all lint)"
+        echo "  --skip-md-lint      Skip markdown lint only in pre-push check"
         echo "  --force             Allow force-push (uses --force-with-lease)"
         echo "  --branch <name>     Override push target branch (default: current branch)"
         echo "  -h, --help          Show this help"
@@ -62,6 +64,7 @@ main() {
       --non-interactive) non_interactive=1 ;;
       --dry-run) dry_run=1 ;;
       --skip-lint) skip_lint=1 ;;
+      --skip-md-lint) skip_md_lint=1 ;;
       --force) force_push=1 ;;
       --branch) target_branch="${2:-}"; shift ;;
       *) echo "[ERROR] Unknown flag: $1" >&2; exit 1 ;;
@@ -175,7 +178,9 @@ main() {
   if [[ ${skip_lint} -eq 0 ]] && [[ -n "${CGW_LINT_CMD}" ]]; then
     log_section_start "PRE-PUSH LINT CHECK" "$logfile"
     echo "Running pre-push lint check..." | tee -a "$logfile"
-    if "${SCRIPT_DIR}/check_lint.sh" >> "$logfile" 2>&1; then
+    local lint_args=()
+    [[ ${skip_md_lint} -eq 1 ]] && lint_args+=("--skip-md-lint")
+    if "${SCRIPT_DIR}/check_lint.sh" "${lint_args[@]}" >> "$logfile" 2>&1; then
       echo "✓ Lint check passed" | tee -a "$logfile"
       log_section_end "PRE-PUSH LINT CHECK" "$logfile" "0"
     else
