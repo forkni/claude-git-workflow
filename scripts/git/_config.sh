@@ -34,7 +34,10 @@ _detect_project_root() {
   return 1
 }
 
-PROJECT_ROOT="$(_detect_project_root)" || exit 1
+# Allow tests (and CI overrides) to pin PROJECT_ROOT via env var, skipping auto-detection.
+if [[ -z "${PROJECT_ROOT:-}" ]]; then
+  PROJECT_ROOT="$(_detect_project_root)" || exit 1
+fi
 
 # ============================================================================
 # CONFIG FILE LOADING
@@ -47,16 +50,23 @@ PROJECT_ROOT="$(_detect_project_root)" || exit 1
 _CGW_CONF="${PROJECT_ROOT}/.cgw.conf"
 
 if [[ -f "${_CGW_CONF}" ]]; then
-  # Save CGW_* env vars so they take priority over .cgw.conf
-  _cgw_saved_env=$(env | grep "^CGW_" || true)
-  # shellcheck source=/dev/null
-  source "${_CGW_CONF}"
-  # Restore: env vars take priority over .cgw.conf values
+  # Read .cgw.conf line-by-line, only applying variables not already set in the environment.
+  # This ensures env vars take priority AND derived values (e.g. CGW_PROTECTED_BRANCHES
+  # referencing CGW_TARGET_BRANCH) stay consistent with the values actually used.
   while IFS= read -r _line; do
-    # shellcheck disable=SC2163  # export VAR=VALUE form: _line contains "KEY=VALUE" literal string
-    [[ -n "${_line}" ]] && export "${_line?}"
-  done <<< "${_cgw_saved_env}"
-  unset _cgw_saved_env _line
+    [[ "${_line}" =~ ^[[:space:]]*#  ]] && continue  # skip comments
+    [[ "${_line}" =~ ^[[:space:]]*$  ]] && continue  # skip blank lines
+    # Strip leading 'export ' if present, isolate the variable name
+    _cgw_var="${_line#export }"
+    _cgw_var="${_cgw_var%%=*}"
+    _cgw_var="${_cgw_var## }"
+    # Only set if not already in environment (preserves env var priority)
+    if [[ -z "${!_cgw_var+x}" ]]; then
+      # shellcheck disable=SC2163  # eval required: _line contains "KEY=VALUE" or "export KEY=VALUE"
+      eval "${_line}"
+    fi
+  done < "${_CGW_CONF}"
+  unset _line _cgw_var
 fi
 
 # ============================================================================

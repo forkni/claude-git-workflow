@@ -18,28 +18,31 @@ teardown() {
 }
 
 _run_create_pr() {
-  bash -c "
-    cd '${TEST_REPO_DIR}'
-    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
-    export PATH='${MOCK_BIN_DIR}:\${PATH}'
+  # PATH is already set correctly by setup_mock_bin (MOCK_BIN_DIR prepended and exported).
+  # Merge stderr into stdout (2>&1) so that err() messages appear in $output for assertions.
+  # PROJECT_ROOT must be pinned to TEST_REPO_DIR so scripts don't auto-detect the real CGW repo.
+  (
+    cd "${TEST_REPO_DIR}" || exit 1
+    export SCRIPT_DIR="${CGW_PROJECT_ROOT}/scripts/git"
+    export PROJECT_ROOT="${TEST_REPO_DIR}"
     export CGW_SOURCE_BRANCH=development
     export CGW_TARGET_BRANCH=main
     export CGW_NON_INTERACTIVE=1
-    bash '${CGW_PROJECT_ROOT}/scripts/git/create_pr.sh' $*
-  "
+    bash "${CGW_PROJECT_ROOT}/scripts/git/create_pr.sh" "$@"
+  ) 2>&1
 }
 
 # ── No gh in PATH ─────────────────────────────────────────────────────────────
 
 @test "no gh CLI in PATH exits 1" {
   hide_gh
-  run _run_create_pr ""
+  run _run_create_pr
   [ "${status}" -eq 1 ]
 }
 
 @test "no gh CLI output mentions install" {
   hide_gh
-  run _run_create_pr ""
+  run _run_create_pr
   [[ "${output}" == *"gh"* ]] || [[ "${output}" == *"CLI"* ]] || [[ "${output}" == *"install"* ]]
 }
 
@@ -47,13 +50,13 @@ _run_create_pr() {
 
 @test "gh not authenticated exits 1" {
   install_mock_gh_no_auth
-  run _run_create_pr ""
+  run _run_create_pr
   [ "${status}" -eq 1 ]
 }
 
 @test "gh not authenticated output mentions auth" {
   install_mock_gh_no_auth
-  run _run_create_pr ""
+  run _run_create_pr
   [[ "${output}" == *"auth"* ]] || [[ "${output}" == *"login"* ]]
 }
 
@@ -64,7 +67,7 @@ _run_create_pr() {
   run bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
-    export PATH='${MOCK_BIN_DIR}:\${PATH}'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_SOURCE_BRANCH=main
     export CGW_TARGET_BRANCH=main
     export CGW_NON_INTERACTIVE=1
@@ -85,7 +88,7 @@ _run_create_pr() {
   run bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
-    export PATH='${MOCK_BIN_DIR}:\${PATH}'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_SOURCE_BRANCH=local-only-branch
     export CGW_TARGET_BRANCH=main
     export CGW_NON_INTERACTIVE=1
@@ -98,14 +101,16 @@ _run_create_pr() {
 
 @test "no commits ahead of target exits 1" {
   install_mock_gh
-  # Sync development with main so no commits ahead
+  # Reset development to match main so 0 commits ahead (distinct branches, no divergence)
+  git -C "${TEST_REPO_DIR}" checkout development
+  git -C "${TEST_REPO_DIR}" reset --hard main
+  git -C "${TEST_REPO_DIR}" push --quiet --force origin development
   git -C "${TEST_REPO_DIR}" checkout main
-  git -C "${TEST_REPO_DIR}" push --quiet origin main
   run bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
-    export PATH='${MOCK_BIN_DIR}:\${PATH}'
-    export CGW_SOURCE_BRANCH=main
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_SOURCE_BRANCH=development
     export CGW_TARGET_BRANCH=main
     export CGW_NON_INTERACTIVE=1
     bash '${CGW_PROJECT_ROOT}/scripts/git/create_pr.sh'
@@ -170,12 +175,12 @@ _run_create_pr() {
 
 @test "successful PR creation exits 0" {
   install_mock_gh
-  run _run_create_pr ""
+  run _run_create_pr
   [ "${status}" -eq 0 ]
 }
 
 @test "successful PR output contains PR URL" {
   install_mock_gh
-  run _run_create_pr ""
+  run _run_create_pr
   [[ "${output}" == *"github.com"* ]] || [[ "${output}" == *"pull/"* ]]
 }

@@ -92,9 +92,13 @@ EOF
 # ── gh CLI absence helper ──────────────────────────────────────────────────────
 
 # hide_gh
-# Removes `gh` from PATH by creating a directory-of-blocked-cmds
-# that the shell searches before real PATH entries. `gh` is absent → command -v fails.
+# Installs a shim in MOCK_BIN_DIR that exits 127 (command not found), shadowing
+# any real `gh` installation on PATH. setup_mock_bin must be called first.
 hide_gh() {
-  # setup_mock_bin already prepended MOCK_BIN_DIR; just ensure no gh there
-  rm -f "${MOCK_BIN_DIR}/gh"
+  cat > "${MOCK_BIN_DIR}/gh" << 'EOF'
+#!/usr/bin/env bash
+echo "gh: command not found" >&2
+exit 127
+EOF
+  chmod +x "${MOCK_BIN_DIR}/gh"
 }

@@ -144,9 +144,30 @@ main() {
     exit 1
   fi
 
+  # Verify target branch exists on remote
+  if ! git ls-remote --exit-code origin "refs/heads/${CGW_TARGET_BRANCH}" > /dev/null 2>&1; then
+    err "Target branch '${CGW_TARGET_BRANCH}' does not exist on origin"
+    echo "  Create it with: git push origin HEAD:${CGW_TARGET_BRANCH}" >&2
+    log_section_end "BRANCH VALIDATION" "$logfile" "1"
+    exit 1
+  fi
+
+  # Warn if local source branch has commits not yet pushed to remote
+  local local_sha remote_sha
+  local_sha=$(git rev-parse "${CGW_SOURCE_BRANCH}" 2>/dev/null || true)
+  remote_sha=$(git rev-parse "origin/${CGW_SOURCE_BRANCH}" 2>/dev/null || true)
+  if [[ -n "${local_sha}" ]] && [[ "${local_sha}" != "${remote_sha}" ]]; then
+    echo "⚠ WARNING: Local ${CGW_SOURCE_BRANCH} differs from origin/${CGW_SOURCE_BRANCH}" | tee -a "$logfile"
+    echo "  Local commits may not appear in the PR. Push first with: ./scripts/git/push_validated.sh" | tee -a "$logfile"
+  fi
+
   # Check for commits ahead of target
   local commits_ahead
-  commits_ahead=$(git rev-list --count "origin/${CGW_TARGET_BRANCH}..origin/${CGW_SOURCE_BRANCH}" 2>/dev/null || echo "0")
+  if ! commits_ahead=$(git rev-list --count "origin/${CGW_TARGET_BRANCH}..origin/${CGW_SOURCE_BRANCH}" 2>/dev/null); then
+    err "Cannot determine commit distance between origin/${CGW_TARGET_BRANCH} and origin/${CGW_SOURCE_BRANCH}"
+    log_section_end "BRANCH VALIDATION" "$logfile" "1"
+    exit 1
+  fi
 
   if [[ "${commits_ahead}" == "0" ]]; then
     echo "[!] No commits ahead of ${CGW_TARGET_BRANCH} — nothing to PR" | tee -a "$logfile"

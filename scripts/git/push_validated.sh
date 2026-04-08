@@ -177,7 +177,7 @@ main() {
   echo "" | tee -a "$logfile"
 
   # [3/5] Optional pre-push lint check
-  if [[ ${skip_lint} -eq 0 ]] && [[ -n "${CGW_LINT_CMD}${CGW_MARKDOWNLINT_CMD}" ]]; then
+  if [[ ${skip_lint} -eq 0 ]] && [[ -n "${CGW_LINT_CMD}${CGW_FORMAT_CMD}${CGW_MARKDOWNLINT_CMD}" ]]; then
     log_section_start "PRE-PUSH LINT CHECK" "$logfile"
     echo "Running pre-push lint check..." | tee -a "$logfile"
     local lint_args=()

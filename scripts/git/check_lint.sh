@@ -60,8 +60,8 @@ main() {
     exit 0
   fi
 
-  if [[ -z "${CGW_LINT_CMD}" ]] && [[ -z "${CGW_MARKDOWNLINT_CMD}" ]]; then
-    echo "[OK] All lint checks skipped (CGW_LINT_CMD and CGW_MARKDOWNLINT_CMD not set)"
+  if [[ -z "${CGW_LINT_CMD}" ]] && [[ -z "${CGW_FORMAT_CMD}" ]] && [[ -z "${CGW_MARKDOWNLINT_CMD}" ]]; then
+    echo "[OK] All lint checks skipped (CGW_LINT_CMD, CGW_FORMAT_CMD, and CGW_MARKDOWNLINT_CMD not set)"
     exit 0
   fi
 
@@ -146,24 +146,24 @@ main() {
     lint_status_str="PASSED"
     [[ ${lint_status} -ne 0 ]] && lint_status_str="FAILED"
     results+=("Lint:${lint_status_str}:${TOOL_ERROR_COUNT}:${lint_duration}")
-
-    # FORMAT CHECK
-    if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-      local format_start format_end format_duration format_status_str
-      format_start=$(date +%s)
-      # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_CHECK_ARGS contains multiple flags
-      if ! run_tool_with_logging "FORMAT CHECK" "$logfile" \
-          "${CGW_FORMAT_CMD}" ${CGW_FORMAT_CHECK_ARGS} ${CGW_FORMAT_EXCLUDES}; then
-        format_status=1
-      fi
-      format_end=$(date +%s)
-      format_duration=$((format_end - format_start))
-      format_status_str="PASSED"
-      [[ ${format_status} -ne 0 ]] && format_status_str="FAILED"
-      results+=("Format:${format_status_str}:${TOOL_ERROR_COUNT}:${format_duration}")
-    fi
   else
     echo "  (code lint skipped — CGW_LINT_CMD not set)" | tee -a "$logfile"
+  fi
+
+  # FORMAT CHECK (independent of lint check — runs even when CGW_LINT_CMD is unset)
+  if [[ -n "${CGW_FORMAT_CMD}" ]]; then
+    local format_start format_end format_duration format_status_str
+    format_start=$(date +%s)
+    # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_CHECK_ARGS contains multiple flags
+    if ! run_tool_with_logging "FORMAT CHECK" "$logfile" \
+        "${CGW_FORMAT_CMD}" ${CGW_FORMAT_CHECK_ARGS} ${CGW_FORMAT_EXCLUDES}; then
+      format_status=1
+    fi
+    format_end=$(date +%s)
+    format_duration=$((format_end - format_start))
+    format_status_str="PASSED"
+    [[ ${format_status} -ne 0 ]] && format_status_str="FAILED"
+    results+=("Format:${format_status_str}:${TOOL_ERROR_COUNT}:${format_duration}")
   fi
 
   # MARKDOWN LINT

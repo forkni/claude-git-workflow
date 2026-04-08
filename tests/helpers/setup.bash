@@ -10,7 +10,8 @@ CGW_PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # create_temp_dir — set BATS_TEST_TMPDIR to an isolated temp dir
 create_temp_dir() {
-  TEST_TMPDIR="$(mktemp -d)"
+  # GNU mktemp needs no template; BSD mktemp requires -t. Try GNU first.
+  TEST_TMPDIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'cgw.XXXXXX')"
   export TEST_TMPDIR
 }
 
