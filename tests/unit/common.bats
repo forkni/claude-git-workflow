@@ -26,10 +26,10 @@ teardown() {
   run bash -c "
     SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
-    err 'something went wrong'
+    err 'something went wrong' 2>/dev/null
   "
   [ "${status}" -eq 0 ]
-  # Nothing on stdout
+  # Nothing on stdout (err() writes to stderr only)
   [ -z "${output}" ]
 }
 

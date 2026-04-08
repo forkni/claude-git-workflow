@@ -167,7 +167,7 @@ run_tool_with_logging() {
   TOOL_OUTPUT=$("$@" 2>&1)
   local exit_code=$?
 
-  TOOL_ERROR_COUNT=$(echo "$TOOL_OUTPUT" | grep -cE "^[^:]+:[0-9]+:[0-9]+:" || echo "0")
+  TOOL_ERROR_COUNT=$(echo "$TOOL_OUTPUT" | grep -cE "^[^:]+:[0-9]+:[0-9]+:" || true)
 
   if [[ -n "$TOOL_OUTPUT" ]]; then
     echo "$TOOL_OUTPUT" | tee -a "$log_path"

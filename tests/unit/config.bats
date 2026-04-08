@@ -8,12 +8,15 @@ load '../helpers/setup'
 FIXTURES_DIR="${BATS_TEST_DIRNAME}/../fixtures"
 
 # Helper: source _config.sh in a subshell within a real git repo
-# Usage: source_config [var=val ...]
+# Usage: _source_config [shell_statement ...]
 # Returns: stdout is "key=value" pairs for the variables we want to inspect
+# Note: SCRIPT_DIR is set inside the test repo so _detect_project_root() finds
+# the test repo's .git/ (not the real project root) when loading .cgw.conf.
 _source_config() {
+  mkdir -p "${TEST_REPO_DIR}/scripts/git"
   bash -c "
     cd '${TEST_REPO_DIR}'
-    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
     $*
     source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
     echo \"CGW_SOURCE_BRANCH=\${CGW_SOURCE_BRANCH}\"
@@ -82,7 +85,7 @@ teardown() {
 }
 
 @test "CGW_ALL_PREFIXES with CGW_EXTRA_PREFIXES appends extras" {
-  result=$(_source_config "export CGW_EXTRA_PREFIXES=cuda|tensorrt")
+  result=$(_source_config "export CGW_EXTRA_PREFIXES='cuda|tensorrt'")
   prefix_line=$(echo "${result}" | grep "^CGW_ALL_PREFIXES=")
   [[ "${prefix_line}" == *"cuda"* ]]
   [[ "${prefix_line}" == *"tensorrt"* ]]
