@@ -152,6 +152,9 @@ main() {
     exit 1
   fi
 
+  # Fetch latest remote refs so comparisons below use current state
+  git fetch origin "${CGW_SOURCE_BRANCH}" "${CGW_TARGET_BRANCH}" 2>/dev/null || true
+
   # Warn if local source branch has commits not yet pushed to remote
   local local_sha remote_sha
   local_sha=$(git rev-parse "${CGW_SOURCE_BRANCH}" 2>/dev/null || true)

@@ -1,0 +1,5 @@
+# shellcheck configuration — matches CI invocation in branch-protection.yml
+# Enables source-following (-x) and sets source path so local runs
+# produce the same results as: shellcheck -x --source-path=scripts/git
+external-sources=true
+source-path=scripts/git

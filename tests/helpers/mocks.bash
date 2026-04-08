@@ -92,13 +92,14 @@ EOF
 # ── gh CLI absence helper ──────────────────────────────────────────────────────
 
 # hide_gh
-# Installs a shim in MOCK_BIN_DIR that exits 127 (command not found), shadowing
-# any real `gh` installation on PATH. setup_mock_bin must be called first.
+# Removes every PATH entry that contains an executable 'gh' so that
+# `command -v gh` fails, properly simulating absence of the gh CLI.
 hide_gh() {
-  cat > "${MOCK_BIN_DIR}/gh" << 'EOF'
-#!/usr/bin/env bash
-echo "gh: command not found" >&2
-exit 127
-EOF
-  chmod +x "${MOCK_BIN_DIR}/gh"
+  local new_path="" dir
+  local IFS=":"
+  for dir in $PATH; do
+    [[ -x "${dir}/gh" ]] && continue
+    new_path="${new_path:+${new_path}:}${dir}"
+  done
+  export PATH="${new_path}"
 }

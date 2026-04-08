@@ -116,6 +116,8 @@ git checkout -b development
 git push -u origin development
 ```
 
+> **Note:** `git push -u origin development` above is a one-time bootstrap exception — CGW isn't configured yet at this point so the wrapper scripts aren't available. All subsequent pushes should use `./scripts/git/push_validated.sh`.
+
 Keep `main` as the GitHub default branch. Charlie reads its config from the default branch.
 
 ---

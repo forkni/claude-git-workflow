@@ -241,8 +241,9 @@ _install_hook() {
   done
 
   # Create .githooks/ and write patched hook
-  # Escape backslashes first (e.g. \. from dot-escaping), then | (sed delimiter)
+  # Escape backslashes first, then & (sed replacement special char), then | (sed delimiter)
   local sed_files_pattern="${files_pattern//\\/\\\\}"
+  sed_files_pattern="${sed_files_pattern//&/\\&}"
   sed_files_pattern="${sed_files_pattern//|/\\|}"
   mkdir -p "${PROJECT_ROOT}/.githooks"
   sed "s|__CGW_LOCAL_FILES_PATTERN__|${sed_files_pattern}|g" \
