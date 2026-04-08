@@ -1,0 +1,77 @@
+name: Branch Protection
+
+on:
+  push:
+    branches: [development, main]
+  pull_request:
+    branches: [development, main]
+
+jobs:
+  validate:
+    name: Validate Branch State
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for local-only files
+        run: |
+          echo "Checking for accidentally committed local files..."
+          FOUND_ISSUES=0
+
+          for file in CLAUDE.md MEMORY.md; do
+            if git ls-files | grep -q "^${file}$"; then
+              echo "ERROR: ${file} is tracked in git (should be local-only)"
+              FOUND_ISSUES=1
+            fi
+          done
+
+          for dir in .claude logs; do
+            if git ls-files | grep -q "^${dir}/"; then
+              echo "ERROR: ${dir}/ is tracked in git (should be local-only)"
+              FOUND_ISSUES=1
+            fi
+          done
+
+          if [ "${FOUND_ISSUES}" -eq 0 ]; then
+            echo "No local-only files detected"
+          else
+            echo ""
+            echo "Fix: git rm --cached <file>"
+            exit 1
+          fi
+
+      - name: Verify .gitattributes exists
+        run: |
+          if [ ! -f .gitattributes ]; then
+            echo "ERROR: .gitattributes not found — required for LF line ending enforcement"
+            exit 1
+          fi
+          echo ".gitattributes found"
+
+  lint:
+    name: Shell Script Quality
+    runs-on: ubuntu-latest
+    needs: validate
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck
+        run: shellcheck -x --source-path=scripts/git scripts/git/*.sh
+
+      - name: Install shfmt
+        run: |
+          curl -sSL "https://github.com/mvdan/sh/releases/download/v3.10.0/shfmt_v3.10.0_linux_amd64" -o /usr/local/bin/shfmt
+          chmod +x /usr/local/bin/shfmt
+
+      - name: Check shell formatting (shfmt)
+        run: shfmt -d -i 2 -ci scripts/
+        continue-on-error: true

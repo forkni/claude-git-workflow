@@ -1,0 +1,7 @@
+checkCommands:
+  fix: shfmt -w -i 2 -ci scripts/
+  lint: shellcheck -x --source-path=scripts/git scripts/git/*.sh
+beta:
+  canApprovePullRequests: false
+  # proactive:
+  #   - playbook: ".charlie/playbooks/shellcheck-audit.md"
