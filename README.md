@@ -34,6 +34,7 @@ No manual config editing required for common setups. `configure.sh` auto-detects
 | `validate_branches.sh` | Check branch state before operations |
 | `check_lint.sh` | Read-only lint validation |
 | `fix_lint.sh` | Auto-fix lint issues |
+| `create_pr.sh` | Create GitHub PR from source → target (triggers Charlie CI + GitHub Actions) |
 | `install_hooks.sh` | Install git pre-commit hooks |
 
 ---
@@ -106,6 +107,21 @@ Add project-specific prefixes via `CGW_EXTRA_PREFIXES="cuda|tensorrt"` in `.cgw.
 
 ---
 
+## Branch Setup (one-time)
+
+CGW uses a two-branch model. Create `development` before starting work:
+
+```bash
+git checkout -b development
+git push -u origin development
+```
+
+> **Note:** `git push -u origin development` above is a one-time bootstrap exception — CGW isn't configured yet at this point so the wrapper scripts aren't available. All subsequent pushes should use `./scripts/git/push_validated.sh`.
+
+Keep `main` as the GitHub default branch. Charlie reads its config from the default branch.
+
+---
+
 ## Common Operations
 
 ### Commit with lint validation
@@ -121,12 +137,24 @@ Add project-specific prefixes via `CGW_EXTRA_PREFIXES="cuda|tensorrt"` in `.cgw.
 ./scripts/git/commit_enhanced.sh --non-interactive "feat: add feature"
 ```
 
-### Merge to target branch
+### Merge to target branch (direct)
 
 ```bash
-./scripts/git/merge_with_validation.sh --dry-run        # preview
+./scripts/git/merge_with_validation.sh --dry-run          # preview
 ./scripts/git/merge_with_validation.sh --non-interactive  # execute
 ```
+
+### Create PR (triggers Charlie CI + GitHub Actions)
+
+```bash
+./scripts/git/create_pr.sh --dry-run        # preview title + commits
+./scripts/git/create_pr.sh                  # interactive — confirm title
+./scripts/git/create_pr.sh --non-interactive  # accept auto-generated title
+./scripts/git/create_pr.sh --draft          # open as draft (skip auto-review)
+```
+
+Requires: `gh` CLI installed and authenticated (`gh auth login`).
+Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use PRs by default.
 
 ### Push
 
@@ -248,8 +276,47 @@ Legacy `CLAUDE_GIT_*` variables are still supported:
 - git 2.0+
 - For lint: ruff / eslint / golangci-lint (or none — set `CGW_LINT_CMD=""`)
 - For Claude Code integration: Claude Code CLI
+- For PR creation (`create_pr.sh`): [gh CLI](https://cli.github.com/) + `gh auth login`
 
 Compatible with: Linux, macOS, Windows (Git Bash / WSL)
+
+---
+
+## CI & Code Quality
+
+### GitHub Actions
+
+| Workflow | Trigger | Checks |
+|----------|---------|--------|
+| Branch Protection | Push/PR to `development`, `main` | Local-only file detection, `.gitattributes` presence, ShellCheck, shfmt format |
+| Docs Validation | Changes to `*.md` files | Markdown linting, broken links, spelling |
+
+### Charlie CI Agent
+
+This project uses [Charlie](https://charlielabs.ai) for AI-assisted code review on pull requests.
+
+```yaml
+# .charlie/config.yml
+checkCommands:
+  fix: shfmt -w -i 2 -ci scripts/   # auto-format after edits
+  lint: shellcheck scripts/git/*.sh  # static analysis
+```
+
+**Setup** (repository admin): Install the `charliecreates` GitHub App and invite `@CharlieHelps` as a repository collaborator (Triage role minimum).
+
+### Local Tool Installation
+
+```bash
+# macOS
+brew install shellcheck shfmt
+
+# Ubuntu/Debian
+sudo apt-get install shellcheck
+# shfmt: https://github.com/mvdan/sh/releases
+
+# Windows (scoop)
+scoop install shellcheck shfmt
+```
 
 ---
 

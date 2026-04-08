@@ -123,3 +123,20 @@ CGW_CLEANUP_TESTS="0"
 # for force-push. Defaults to CGW_TARGET_BRANCH if not set.
 
 # CGW_PROTECTED_BRANCHES="main staging"
+
+# ============================================================================
+# MERGE MODE
+# ============================================================================
+# Controls how changes are promoted from source to target branch.
+#
+# "direct" (default): merge locally via merge_with_validation.sh.
+#                     Fast, no PR required.
+#
+# "pr":               create a GitHub PR via create_pr.sh.
+#                     Triggers Charlie CI auto-review + GitHub Actions.
+#                     Requires: gh CLI installed + authenticated.
+#
+# Use "pr" to enable CI agent review before merging to main.
+#
+CGW_MERGE_MODE="direct"
+# CGW_MERGE_MODE="pr"
