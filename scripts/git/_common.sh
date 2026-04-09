@@ -51,7 +51,7 @@ init_logging() {
 	# Use PROJECT_ROOT for an absolute path so logs land in the right place
 	# even when the script is invoked from a subdirectory. PROJECT_ROOT is set
 	# by _config.sh before any script calls init_logging.
-	local log_dir="${PROJECT_ROOT}/logs"
+	local log_dir="${PROJECT_ROOT:+${PROJECT_ROOT}/}logs"
 
 	if [[ ! -d "${log_dir}" ]]; then
 		mkdir -p "${log_dir}"

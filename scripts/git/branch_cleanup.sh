@@ -25,6 +25,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/git/_common.sh
 source "${SCRIPT_DIR}/_common.sh"
 
 main() {
@@ -105,9 +106,6 @@ main() {
 
 	local -a merged_branches=()
 	while IFS= read -r branch; do
-		branch="${branch#  }"  # strip leading spaces from git branch output
-		branch="${branch#* }"  # strip leading asterisk+space for current branch
-
 		# Skip empty
 		[[ -z "${branch}" ]] && continue
 
@@ -122,7 +120,7 @@ main() {
 		[[ "${branch}" == "${current_branch}" ]] && continue
 
 		merged_branches+=("${branch}")
-	done < <(git branch --merged "${CGW_TARGET_BRANCH}" 2>/dev/null)
+	done < <(git for-each-ref --format='%(refname:short)' refs/heads --merged="${CGW_TARGET_BRANCH}" 2>/dev/null)
 
 	if [[ ${#merged_branches[@]} -eq 0 ]]; then
 		echo "  ✓ No merged local branches to clean up"
@@ -188,7 +186,7 @@ main() {
 		while IFS= read -r tag; do
 			local tag_epoch
 			tag_epoch=$(git log -1 --format="%ct" "${tag}" 2>/dev/null || echo "0")
-			if [[ ${tag_epoch} -lt ${cutoff_epoch} ]]; then
+			if [[ ${tag_epoch} -le ${cutoff_epoch} ]]; then
 				old_tags+=("${tag}")
 			fi
 		done < <(git tag -l "pre-merge-backup-*" "pre-cherry-pick-*" 2>/dev/null | sort)

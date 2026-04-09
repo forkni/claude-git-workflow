@@ -21,6 +21,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/git/_common.sh
 source "${SCRIPT_DIR}/_common.sh"
 
 init_logging "cherry_pick_commits"
@@ -262,6 +263,7 @@ main() {
 	log_section_start "GIT CHERRY-PICK" "$logfile"
 
 	if run_git_with_logging "GIT CHERRY-PICK COMMIT" "$logfile" cherry-pick "${commit_hash}"; then
+		trap - EXIT INT TERM
 		log_section_end "GIT CHERRY-PICK" "$logfile" "0"
 		echo "" | tee -a "$logfile"
 		{

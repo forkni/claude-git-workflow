@@ -68,22 +68,22 @@ teardown() {
 
 @test "init_logging() creates logs/ directory" {
   cd "${TEST_REPO_DIR}"
-  init_logging "test_script"
-  [ -d "logs" ]
+  PROJECT_ROOT="${TEST_REPO_DIR}" init_logging "test_script"
+  [ -d "${TEST_REPO_DIR}/logs" ]
 }
 
 @test "init_logging() sets \$logfile path" {
   cd "${TEST_REPO_DIR}"
-  init_logging "test_script"
+  PROJECT_ROOT="${TEST_REPO_DIR}" init_logging "test_script"
   [ -n "${logfile}" ]
-  [[ "${logfile}" == logs/test_script_*.log ]]
+  [[ "${logfile}" == "${TEST_REPO_DIR}/logs/test_script_"*.log ]]
 }
 
 @test "init_logging() sets \$reportfile path" {
   cd "${TEST_REPO_DIR}"
-  init_logging "test_script"
+  PROJECT_ROOT="${TEST_REPO_DIR}" init_logging "test_script"
   [ -n "${reportfile}" ]
-  [[ "${reportfile}" == logs/test_script_analysis_*.log ]]
+  [[ "${reportfile}" == "${TEST_REPO_DIR}/logs/test_script_analysis_"*.log ]]
 }
 
 @test "init_logging() logfile path includes timestamp" {

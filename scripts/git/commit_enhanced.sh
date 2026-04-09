@@ -220,7 +220,7 @@ main() {
 			unstage_local_only_files
 			echo "[OK] Changes staged"
 		else
-			read -rp "Stage all changes? (yes/no): " stage_all
+			read -rp "Stage all tracked changes? (yes/no): " stage_all
 			if [[ "$stage_all" == "yes" ]]; then
 				git add -u
 				unstage_local_only_files

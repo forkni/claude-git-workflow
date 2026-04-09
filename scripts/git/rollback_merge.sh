@@ -19,11 +19,15 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/git/_common.sh
 source "${SCRIPT_DIR}/_common.sh"
 
 init_logging "rollback_merge"
 
+_rollback_done=0
+
 _cleanup_rollback() {
+	[[ ${_rollback_done} -eq 1 ]] && return 0
 	echo "" >&2
 	echo "⚠ Rollback interrupted. Verify repository state before proceeding:" >&2
 	echo "  git log --oneline -5" >&2
@@ -231,6 +235,7 @@ main() {
 		4)
 			echo "" | tee -a "$logfile"
 			echo "Rollback cancelled" | tee -a "$logfile"
+			_rollback_done=1
 			exit 0
 			;;
 		*)
@@ -251,6 +256,7 @@ main() {
 	if [[ ${dry_run} -eq 1 ]]; then
 		echo "=== DRY RUN — no changes made ===" | tee -a "$logfile"
 		echo "Would reset ${CGW_TARGET_BRANCH} to: ${rollback_target}" | tee -a "$logfile"
+		_rollback_done=1
 		exit 0
 	fi
 
@@ -264,6 +270,7 @@ main() {
 	if [[ "${confirm}" != "ROLLBACK" ]]; then
 		echo "" | tee -a "$logfile"
 		echo "Rollback cancelled" | tee -a "$logfile"
+		_rollback_done=1
 		exit 0
 	fi
 
@@ -301,6 +308,7 @@ main() {
 				echo "End Time: $(date)"
 			} | tee -a "$logfile"
 			echo "" | tee -a "$logfile"
+			_rollback_done=1
 			echo "Full log: $logfile"
 		else
 			log_section_end "GIT REVERT" "$logfile" "1"
@@ -336,6 +344,7 @@ main() {
 				echo "End Time: $(date)"
 			} | tee -a "$logfile"
 			echo "" | tee -a "$logfile"
+			_rollback_done=1
 			echo "Full log: $logfile"
 		else
 			log_section_end "GIT RESET" "$logfile" "1"

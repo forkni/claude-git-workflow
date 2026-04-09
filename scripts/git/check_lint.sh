@@ -106,8 +106,9 @@ main() {
 		fi
 		local modified_files
 		# CGW_LINT_EXTENSIONS controls which files are considered (default: *.py)
-		# shellcheck disable=SC2086
-		modified_files=$(git diff --name-only --diff-filter=ACMR HEAD -- ${CGW_LINT_EXTENSIONS:-*.py})
+		local -a lint_exts
+		read -r -a lint_exts <<< "${CGW_LINT_EXTENSIONS:-*.py}"
+		modified_files=$(git diff --name-only --diff-filter=ACMR HEAD -- "${lint_exts[@]}")
 		if [[ -z "$modified_files" ]]; then
 			echo "[OK] No modified files to check"
 			exit 0

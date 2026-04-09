@@ -335,7 +335,9 @@ _install_hook() {
     else
       _all_prefixes="${_base_prefixes}"
     fi
-    local all_prefixes_escaped="${_all_prefixes//|/\\|}"
+    local all_prefixes_escaped="${_all_prefixes//\\/\\\\}"
+    all_prefixes_escaped="${all_prefixes_escaped//&/\\&}"
+    all_prefixes_escaped="${all_prefixes_escaped//|/\\|}"
     sed -e "s|__CGW_LOCAL_FILES_PATTERN__|${sed_files_pattern}|g" \
         -e "s|__CGW_ALL_PREFIXES__|${all_prefixes_escaped}|g" \
         "${pre_push_template}" >"${PROJECT_ROOT}/.githooks/pre-push"

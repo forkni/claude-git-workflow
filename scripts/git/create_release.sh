@@ -22,6 +22,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/git/_common.sh
 source "${SCRIPT_DIR}/_common.sh"
 
 # validate_semver - Check that version matches vX.Y.Z or vX.Y.Z-suffix format.
@@ -149,7 +150,9 @@ main() {
 	echo "  Branch:   ${current_branch}"
 	echo "  Commit:   $(git log -1 --format='%h %s')"
 	echo "  Message:  ${tag_message}"
-	echo "  Push:     $([ ${push_tag} -eq 1 ] && echo 'yes (after creation)' || echo 'no (manual push required)')"
+	local push_label="no (manual push required)"
+	[[ ${push_tag} -eq 1 ]] && push_label="yes (after creation)"
+	echo "  Push:     ${push_label}"
 	echo ""
 
 	if [[ ${dry_run} -eq 1 ]]; then

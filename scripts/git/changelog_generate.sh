@@ -24,6 +24,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/git/_common.sh
 source "${SCRIPT_DIR}/_common.sh"
 
 main() {
@@ -170,28 +171,74 @@ main() {
 		esac
 	done <<< "${commits}"
 
-	# Build output
+	# Build output directly from the already-categorized arrays
+	declare -A cats
+	cats[feat]="" cats[fix]="" cats[docs]="" cats[perf]=""
+	cats[refactor]="" cats[style]="" cats[test]="" cats[chore]="" cats[other]=""
+
+	for item in "${cat_feat[@]+"${cat_feat[@]}"}";     do cats[feat]+="  - ${item}"$'\n'; done
+	for item in "${cat_fix[@]+"${cat_fix[@]}"}";       do cats[fix]+="  - ${item}"$'\n'; done
+	for item in "${cat_docs[@]+"${cat_docs[@]}"}";     do cats[docs]+="  - ${item}"$'\n'; done
+	for item in "${cat_perf[@]+"${cat_perf[@]}"}";     do cats[perf]+="  - ${item}"$'\n'; done
+	for item in "${cat_refactor[@]+"${cat_refactor[@]}"}"; do cats[refactor]+="  - ${item}"$'\n'; done
+	for item in "${cat_style[@]+"${cat_style[@]}"}";   do cats[style]+="  - ${item}"$'\n'; done
+	for item in "${cat_test[@]+"${cat_test[@]}"}";     do cats[test]+="  - ${item}"$'\n'; done
+	for item in "${cat_chore[@]+"${cat_chore[@]}"}";   do cats[chore]+="  - ${item}"$'\n'; done
+	for item in "${cat_other[@]+"${cat_other[@]}"}";   do cats[other]+="  - ${item}"$'\n'; done
+
+	local section_map_md=(
+		"feat:New Features"
+		"fix:Bug Fixes"
+		"perf:Performance Improvements"
+		"docs:Documentation"
+		"refactor:Refactoring"
+		"test:Tests"
+		"style:Code Style"
+		"chore:Maintenance"
+		"other:Other Changes"
+	)
+	local section_map_text=(
+		"feat:New Features"
+		"fix:Bug Fixes"
+		"perf:Performance"
+		"docs:Documentation"
+		"refactor:Refactoring"
+		"test:Tests"
+		"style:Style"
+		"chore:Maintenance"
+		"other:Other"
+	)
+
 	local output=""
-	output=$(_build_changelog \
-		"${output_format}" "${to_desc}" "${to_date}" "${from_ref}" \
-		"${cat_feat[@]+"${cat_feat[@]}"}" \
-		"BREAK_FEAT" \
-		"${cat_fix[@]+"${cat_fix[@]}"}" \
-		"BREAK_FIX" \
-		"${cat_docs[@]+"${cat_docs[@]}"}" \
-		"BREAK_DOCS" \
-		"${cat_perf[@]+"${cat_perf[@]}"}" \
-		"BREAK_PERF" \
-		"${cat_refactor[@]+"${cat_refactor[@]}"}" \
-		"BREAK_REFACTOR" \
-		"${cat_style[@]+"${cat_style[@]}"}" \
-		"BREAK_STYLE" \
-		"${cat_test[@]+"${cat_test[@]}"}" \
-		"BREAK_TEST" \
-		"${cat_chore[@]+"${cat_chore[@]}"}" \
-		"BREAK_CHORE" \
-		"${cat_other[@]+"${cat_other[@]}"}" \
-		2>/dev/null || true)
+	if [[ "${output_format}" == "md" ]]; then
+		output="## ${to_desc} (${to_date})"$'\n\n'
+		[[ -n "${from_ref}" ]] && output+="> Changes since \`${from_ref}\`"$'\n\n'
+
+		local has_any=0
+		for sec in "${section_map_md[@]}"; do
+			local key="${sec%%:*}"
+			local title="${sec#*:}"
+			if [[ -n "${cats[${key}]}" ]]; then
+				output+="### ${title}"$'\n\n'
+				output+="${cats[${key}]}"$'\n'
+				has_any=1
+			fi
+		done
+		[[ ${has_any} -eq 0 ]] && output+="_No categorized commits found in this range._"$'\n'
+	else
+		output="${to_desc} (${to_date})"$'\n'
+		output+="$(printf '=%.0s' {1..40})"$'\n'
+		[[ -n "${from_ref}" ]] && output+="Changes since ${from_ref}"$'\n\n'
+
+		for sec in "${section_map_text[@]}"; do
+			local key="${sec%%:*}"
+			local title="${sec#*:}"
+			if [[ -n "${cats[${key}]}" ]]; then
+				output+="${title}:"$'\n'
+				output+="${cats[${key}]}"$'\n'
+			fi
+		done
+	fi
 
 	# Write output
 	if [[ -n "${output_file}" ]]; then
@@ -199,111 +246,6 @@ main() {
 		echo "✓ Changelog written to: ${output_file}" >&2
 	else
 		echo "${output}"
-	fi
-}
-
-_build_changelog() {
-	local fmt="$1" version="$2" date_str="$3" from_ref="$4"
-	shift 4
-
-	# Parse the positional args back into categories using BREAK_ sentinel tokens
-	local current_cat="feat"
-	declare -A cats
-	cats[feat]="" cats[fix]="" cats[docs]="" cats[perf]=""
-	cats[refactor]="" cats[style]="" cats[test]="" cats[chore]="" cats[other]=""
-
-	# Re-collect — simpler: re-run git log with format per category
-	# (The sentinel approach doesn't work cleanly with arrays passed through positional args)
-	# Instead, recollect directly here.
-	local merge_flag="--no-merges"
-
-	local log_range
-	if [[ -n "${from_ref}" ]]; then
-		log_range="${from_ref}..HEAD"
-	else
-		log_range="HEAD"
-	fi
-
-	# Read commits again (simpler than passing arrays through function args)
-	while IFS='|' read -r hash subject; do
-		[[ -z "${hash}" ]] && continue
-		local prefix rest short_hash
-		prefix=$(echo "${subject}" | grep -oE "^[a-zA-Z]+" || echo "other")
-		rest=$(echo "${subject}" | sed 's/^[^:]*: *//')
-		short_hash=$(git log -1 --format="%h" "${hash}" 2>/dev/null || echo "${hash:0:7}")
-		local entry="  - ${rest} (${short_hash})"
-		case "${prefix}" in
-		feat) cats[feat]+="${entry}"$'\n' ;;
-		fix) cats[fix]+="${entry}"$'\n' ;;
-		docs) cats[docs]+="${entry}"$'\n' ;;
-		perf) cats[perf]+="${entry}"$'\n' ;;
-		refactor) cats[refactor]+="${entry}"$'\n' ;;
-		style) cats[style]+="${entry}"$'\n' ;;
-		test) cats[test]+="${entry}"$'\n' ;;
-		chore) cats[chore]+="${entry}"$'\n' ;;
-		*) cats[other]+="${entry}"$'\n' ;;
-		esac
-	done < <(git log --no-merges --format="%H|%s" "${log_range}" 2>/dev/null || true)
-
-	local from_label
-	from_label="${from_ref:-root}"
-
-	if [[ "${fmt}" == "md" ]]; then
-		echo "## ${version} (${date_str})"
-		echo ""
-		[[ -n "${from_ref}" ]] && echo "> Changes since \`${from_ref}\`" && echo ""
-
-		local section_map=(
-			"feat:New Features"
-			"fix:Bug Fixes"
-			"perf:Performance Improvements"
-			"docs:Documentation"
-			"refactor:Refactoring"
-			"test:Tests"
-			"style:Code Style"
-			"chore:Maintenance"
-			"other:Other Changes"
-		)
-
-		local has_any=0
-		for entry in "${section_map[@]}"; do
-			local key="${entry%%:*}"
-			local title="${entry#*:}"
-			if [[ -n "${cats[${key}]}" ]]; then
-				echo "### ${title}"
-				echo ""
-				echo "${cats[${key}]}"
-				has_any=1
-			fi
-		done
-
-		[[ ${has_any} -eq 0 ]] && echo "_No categorized commits found in this range._"
-	else
-		# Plain text
-		echo "${version} (${date_str})"
-		echo "$(printf '=%.0s' {1..40})"
-		[[ -n "${from_ref}" ]] && echo "Changes since ${from_ref}" && echo ""
-
-		local section_map=(
-			"feat:New Features"
-			"fix:Bug Fixes"
-			"perf:Performance"
-			"docs:Documentation"
-			"refactor:Refactoring"
-			"test:Tests"
-			"style:Style"
-			"chore:Maintenance"
-			"other:Other"
-		)
-
-		for entry in "${section_map[@]}"; do
-			local key="${entry%%:*}"
-			local title="${entry#*:}"
-			if [[ -n "${cats[${key}]}" ]]; then
-				echo "${title}:"
-				echo "${cats[${key}]}"
-			fi
-		done
 	fi
 }
 
