@@ -9,7 +9,7 @@
 #   logfile             - Set by init_logging
 #   CGW_TARGET_BRANCH   - Branch to roll back (default: main)
 # Arguments:
-#   --non-interactive   Skip prompts; requires --target
+#   --non-interactive   Skip prompts; auto-selects latest backup tag if --target omitted
 #   --target <ref>      Commit hash, tag name, or HEAD~1 to roll back to
 #   --dry-run           Show rollback target without resetting
 #   -h, --help          Show help
@@ -45,7 +45,7 @@ main() {
 			echo "Must be run from the target branch (default: ${CGW_TARGET_BRANCH})."
 			echo ""
 			echo "Options:"
-			echo "  --non-interactive   Skip prompts; requires --target"
+			echo "  --non-interactive   Skip prompts; auto-selects latest backup tag if --target omitted"
 			echo "  --target <ref>      Commit hash, tag name, or HEAD~1 to roll back to"
 			echo "  --dry-run           Show rollback target without resetting"
 			echo "  -h, --help          Show this help"

@@ -123,3 +123,4 @@ All scripts write to `logs/` directory (excluded from commits):
 | `push_validated.sh` | `logs/push_validated_YYYYMMDD_HHMMSS.log` |
 | `sync_branches.sh` | `logs/sync_branches_YYYYMMDD_HHMMSS.log` |
 | `create_pr.sh` | `logs/create_pr_YYYYMMDD_HHMMSS.log` |
+| `install_hooks.sh` | `logs/install_hooks_YYYYMMDD_HHMMSS.log` |
