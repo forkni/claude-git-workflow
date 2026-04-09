@@ -447,6 +447,8 @@ main() {
   local local_files="${detected_local_files:-CLAUDE.md MEMORY.md .claude/ logs/}"
 
   if [[ ${non_interactive} -eq 0 ]] && { [[ ! -f ".cgw.conf" ]] || [[ ${reconfigure} -eq 1 ]]; }; then
+    echo "Press Enter to accept [default], or type a different value."
+    echo ""
     read -r -p "Target branch [${detected_target}]: " answer
     [[ -n "${answer}" && ! "${answer}" =~ ^[Yy]([Ee][Ss])?$ ]] && target_branch="${answer}"
 
@@ -455,7 +457,7 @@ main() {
 
     echo ""
     echo "Local-only files (never committed): ${local_files}"
-    read -r -p "Add/change local files? (press Enter to keep): " answer
+    read -r -p "Add/change local files? (press Enter to keep, or type new list): " answer
     [[ -n "${answer}" && ! "${answer}" =~ ^[Yy]([Ee][Ss])?$ ]] && local_files="${answer}"
   fi
 
