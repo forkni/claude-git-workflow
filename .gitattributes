@@ -1,3 +1,7 @@
+# Windows batch files require CRLF line endings
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
 # Force LF line endings for shell scripts (required for Linux/macOS compatibility)
 *.sh text eol=lf
 *.bats text eol=lf
