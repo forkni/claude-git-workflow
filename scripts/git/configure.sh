@@ -249,17 +249,20 @@ _install_hook() {
   local local_files="$1"
   local hooks_template_dir="${SCRIPT_DIR}/../../hooks"
 
-  # Normalize: resolve relative path
+  # Try staging area first (present during install.cmd), then fall back to already-installed hook
   hooks_template_dir="$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)" || {
-    # Try relative to project structure (when scripts are in scripts/git/ inside the repo)
     hooks_template_dir="${PROJECT_ROOT}/.cgw-hooks-template"
   }
 
   local hook_template="${hooks_template_dir}/pre-commit"
 
   if [[ ! -f "${hook_template}" ]]; then
-    echo "  ⚠ Hook template not found at: ${hook_template}"
-    echo "    Skipping hook installation."
+    # If hook is already installed, nothing to do
+    if [[ -f "${PROJECT_ROOT}/.githooks/pre-commit" ]]; then
+      echo "  ✓ Pre-commit hook already installed"
+      return 0
+    fi
+    echo "  ⚠ Hook template not found — re-run install.cmd to copy source files"
     return 1
   fi
 
@@ -292,19 +295,26 @@ _install_hook() {
 }
 
 _install_skill() {
-  local skill_src="${SCRIPT_DIR}/../../skill"
-  skill_src="$(cd "${SCRIPT_DIR}" && cd "../../skill" 2>/dev/null && pwd)" || {
-    echo "  ⚠ Skill template not found — skipping"
-    return 1
-  }
-
+  local skill_src
+  local cmd_src
   local skill_dst="${PROJECT_ROOT}/.claude/skills/auto-git-workflow"
+
+  # Try staging area first (present during install.cmd), then CGW source repo
+  if skill_src="$(cd "${SCRIPT_DIR}" && cd "../../skill" 2>/dev/null && pwd)"; then
+    cmd_src="${skill_src}/../command/auto-git-workflow.md"
+  elif [[ -f "${skill_dst}/SKILL.md" ]]; then
+    echo "  ✓ Claude Code skill already installed"
+    return 0
+  else
+    echo "  ⚠ Skill template not found — re-run install.cmd to copy source files"
+    return 1
+  fi
+
   mkdir -p "${skill_dst}/references"
 
   cp "${skill_src}/SKILL.md" "${skill_dst}/SKILL.md" 2>/dev/null || true
   cp "${skill_src}/references/"*.md "${skill_dst}/references/" 2>/dev/null || true
 
-  local cmd_src="${SCRIPT_DIR}/../../command/auto-git-workflow.md"
   if [[ -f "${cmd_src}" ]]; then
     mkdir -p "${PROJECT_ROOT}/.claude/commands"
     cp "${cmd_src}" "${PROJECT_ROOT}/.claude/commands/auto-git-workflow.md" 2>/dev/null || true
