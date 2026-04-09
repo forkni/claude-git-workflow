@@ -360,7 +360,7 @@ _install_skill() {
 
 _update_gitignore() {
   local gitignore="${PROJECT_ROOT}/.gitignore"
-  local entries=("logs/" ".cgw.conf")
+  local entries=("logs/" ".cgw.conf" "cgw.conf.example")
   local added=()
 
   for entry in "${entries[@]}"; do
