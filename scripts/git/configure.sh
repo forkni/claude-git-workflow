@@ -400,7 +400,7 @@ main() {
     echo "✓ .cgw.conf already exists."
     if [[ ${non_interactive} -eq 0 ]]; then
       read -r -p "  Reconfigure? (yes/no) [no]: " answer
-      if [[ "${answer}" == "yes" ]]; then
+      if [[ "${answer,,}" =~ ^y(es)?$ ]]; then
         reconfigure=1
       else
         echo ""
