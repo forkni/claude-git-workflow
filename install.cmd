@@ -20,15 +20,15 @@ echo ===================================================
 echo   Source: %CGW_DIR%
 echo.
 
-:: ─── Get target path ────────────────────────────────
+rem --- Get target path ---
 :ask_target
 set "TARGET_DIR="
 set /p "TARGET_DIR=Enter path to your project folder: "
 
-:: Strip surrounding quotes if present
+rem Strip surrounding quotes if present
 set "TARGET_DIR=%TARGET_DIR:"=%"
 
-:: Strip trailing backslash
+rem Strip trailing backslash
 if "%TARGET_DIR:~-1%"=="\" set "TARGET_DIR=%TARGET_DIR:~0,-1%"
 
 if "%TARGET_DIR%"=="" (
@@ -40,34 +40,34 @@ echo.
 echo   Target: %TARGET_DIR%
 echo.
 
-:: ─── Pre-install checks ─────────────────────────────
+rem --- Pre-install checks ---
 echo --- Pre-Install Checks ---
 echo.
 
-set CHECKS_PASSED=1
+set "CHECKS_PASSED=1"
 
-:: All checks use goto to avoid CMD if/else fall-through with special chars in echo
+rem All checks use goto to avoid CMD if/else fall-through with special chars in echo
 
-:: PI-01: Target path exists
+rem PI-01: Target path exists
 if exist "%TARGET_DIR%\" goto :pi01_pass
 echo   [FAIL] PI-01  Target path does not exist: %TARGET_DIR%
-set CHECKS_PASSED=0
+set "CHECKS_PASSED=0"
 goto :pi01_done
 :pi01_pass
 echo   [PASS] PI-01  Target path exists
 :pi01_done
 
-:: PI-02: Target is a git repo
+rem PI-02: Target is a git repo
 if exist "%TARGET_DIR%\.git\" goto :pi02_pass
 if exist "%TARGET_DIR%\.git"  goto :pi02_pass
 echo   [FAIL] PI-02  No .git directory found -- not a git repository
-set CHECKS_PASSED=0
+set "CHECKS_PASSED=0"
 goto :pi02_done
 :pi02_pass
 echo   [PASS] PI-02  Target is a git repository
 :pi02_done
 
-:: PI-03: bash available
+rem PI-03: bash available
 where bash >nul 2>&1
 if not %ERRORLEVEL%==0 goto :pi03_fail
 echo   [PASS] PI-03  bash available
@@ -75,15 +75,15 @@ goto :pi03_done
 :pi03_fail
 echo   [FAIL] PI-03  bash not found on PATH
 echo          Install Git for Windows: https://git-scm.com/download/win
-set CHECKS_PASSED=0
+set "CHECKS_PASSED=0"
 :pi03_done
 
-:: PI-04: CGW source files complete
-set SOURCE_OK=1
-if not exist "%CGW_DIR%\scripts\git\configure.sh"    set SOURCE_OK=0
-if not exist "%CGW_DIR%\hooks\pre-commit"             set SOURCE_OK=0
-if not exist "%CGW_DIR%\skill\SKILL.md"               set SOURCE_OK=0
-if not exist "%CGW_DIR%\command\auto-git-workflow.md"  set SOURCE_OK=0
+rem PI-04: CGW source files complete
+set "SOURCE_OK=1"
+if not exist "%CGW_DIR%\scripts\git\configure.sh"    set "SOURCE_OK=0"
+if not exist "%CGW_DIR%\hooks\pre-commit"             set "SOURCE_OK=0"
+if not exist "%CGW_DIR%\skill\SKILL.md"               set "SOURCE_OK=0"
+if not exist "%CGW_DIR%\command\auto-git-workflow.md"  set "SOURCE_OK=0"
 if not "%SOURCE_OK%"=="1" goto :pi04_fail
 echo   [PASS] PI-04  CGW source files complete
 goto :pi04_done
@@ -91,10 +91,10 @@ goto :pi04_done
 echo   [FAIL] PI-04  CGW source missing required files
 echo          Expected: scripts\git\configure.sh, hooks\pre-commit,
 echo                    skill\SKILL.md, command\auto-git-workflow.md
-set CHECKS_PASSED=0
+set "CHECKS_PASSED=0"
 :pi04_done
 
-:: PI-05: Existing CGW install detection
+rem PI-05: Existing CGW install detection
 if not exist "%TARGET_DIR%\scripts\git\configure.sh" goto :pi05_clean
 echo   [WARN] PI-05  CGW scripts already present in target
 set /p "OVERWRITE=          Overwrite existing installation? [y/N]: "
@@ -105,7 +105,7 @@ goto :end
 echo   [PASS] PI-05  No existing CGW installation
 :pi05_done
 
-:: PI-06: Existing .githooks/pre-commit
+rem PI-06: Existing .githooks/pre-commit
 if not exist "%TARGET_DIR%\.githooks\pre-commit" goto :pi06_clean
 echo   [WARN] PI-06  Existing .githooks\pre-commit found
 echo          It will be backed up to .githooks\pre-commit.bak
@@ -125,7 +125,7 @@ echo.
 goto :end
 :checks_ok
 
-:: ─── Confirm ────────────────────────────────────────
+rem --- Confirm ---
 echo --- Installation Summary ---
 echo.
 echo   Will copy into: %TARGET_DIR%
@@ -149,17 +149,17 @@ goto :end
 
 echo.
 
-:: ─── Backup existing .githooks/pre-commit ───────────
+rem --- Backup existing .githooks/pre-commit ---
 if not exist "%TARGET_DIR%\.githooks\pre-commit" goto :backup_done
 copy /y "%TARGET_DIR%\.githooks\pre-commit" "%TARGET_DIR%\.githooks\pre-commit.bak" >nul
 echo   Backed up .githooks\pre-commit -^> .githooks\pre-commit.bak
 :backup_done
 
-:: ─── Copy files ─────────────────────────────────────
+rem --- Copy files ---
 echo --- Copying Files ---
 echo.
 
-:: scripts/git/
+rem scripts/git/
 if not exist "%TARGET_DIR%\scripts\git\" mkdir "%TARGET_DIR%\scripts\git\"
 xcopy /y /q "%CGW_DIR%\scripts\git\*.sh" "%TARGET_DIR%\scripts\git\" >nul
 if errorlevel 1 goto :cp_scripts_fail
@@ -170,7 +170,7 @@ echo   [ERR] Failed to copy scripts\git\
 goto :end
 :cp_scripts_done
 
-:: hooks/
+rem hooks/
 if not exist "%TARGET_DIR%\hooks\" mkdir "%TARGET_DIR%\hooks\"
 copy /y "%CGW_DIR%\hooks\pre-commit" "%TARGET_DIR%\hooks\pre-commit" >nul
 if errorlevel 1 goto :cp_hooks_fail
@@ -181,7 +181,7 @@ echo   [ERR] Failed to copy hooks\pre-commit
 goto :end
 :cp_hooks_done
 
-:: skill/
+rem skill/
 if not exist "%TARGET_DIR%\skill\" mkdir "%TARGET_DIR%\skill\"
 xcopy /y /q /e "%CGW_DIR%\skill\" "%TARGET_DIR%\skill\" >nul
 if errorlevel 1 goto :cp_skill_fail
@@ -192,7 +192,7 @@ echo   [ERR] Failed to copy skill\
 goto :end
 :cp_skill_done
 
-:: command/
+rem command/
 if not exist "%TARGET_DIR%\command\" mkdir "%TARGET_DIR%\command\"
 xcopy /y /q /e "%CGW_DIR%\command\" "%TARGET_DIR%\command\" >nul
 if errorlevel 1 goto :cp_cmd_fail
@@ -203,29 +203,29 @@ echo   [ERR] Failed to copy command\
 goto :end
 :cp_cmd_done
 
-:: cgw.conf.example (optional)
+rem cgw.conf.example (optional)
 if not exist "%CGW_DIR%\cgw.conf.example" goto :cp_example_done
 copy /y "%CGW_DIR%\cgw.conf.example" "%TARGET_DIR%\cgw.conf.example" >nul
 echo   [OK] Copied cgw.conf.example
 :cp_example_done
 
-:: ─── Convert path for bash ──────────────────────────
-:: Git Bash (MSYS2) handles Windows paths with forward slashes natively
+rem --- Convert path for bash ---
+rem Git Bash (MSYS2) handles Windows paths with forward slashes natively
 set "TARGET_FWD=%TARGET_DIR:\=/%"
 
-:: Ensure .sh files are executable (needed by Git Bash on Windows)
+rem Ensure .sh files are executable (needed by Git Bash on Windows)
 bash -c "chmod +x '%TARGET_FWD%/scripts/git/'*.sh 2>/dev/null" >nul 2>&1
 
 echo.
 
-:: ─── Run configure.sh ────────────────────────────────
+rem --- Run configure.sh ---
 echo --- Running configure.sh ---
 echo.
 echo   configure.sh will auto-detect your branches, lint tool, and
 echo   local-only files. You can confirm or override each setting.
 echo.
 bash -c "cd '%TARGET_FWD%' && bash scripts/git/configure.sh"
-set CONFIGURE_EXIT=%ERRORLEVEL%
+set "CONFIGURE_EXIT=!ERRORLEVEL!"
 
 echo.
 if "%CONFIGURE_EXIT%"=="0" goto :cfg_ok
@@ -236,7 +236,7 @@ goto :cfg_done
 echo   configure.sh completed successfully.
 :cfg_done
 
-:: ─── Cleanup temp files ──────────────────────────────
+rem --- Cleanup temp files ---
 echo.
 echo --- Post-Install Cleanup ---
 echo.
@@ -258,7 +258,7 @@ goto :cleanup_done
 echo   Temp files kept.
 :cleanup_done
 
-:: ─── Summary ─────────────────────────────────────────
+rem --- Summary ---
 echo.
 echo ===================================================
 echo   Installation Complete
@@ -282,3 +282,4 @@ echo.
 echo.
 pause
 endlocal
+exit /b 0
