@@ -226,7 +226,9 @@ main() {
 	fi
 
 	echo "=== Done ==="
-	[[ ${execute} -eq 0 ]] && echo "Run with --execute to apply changes."
+	if [[ ${execute} -eq 0 ]]; then
+		echo "Run with --execute to apply changes."
+	fi
 }
 
 _delete_local_branches() {

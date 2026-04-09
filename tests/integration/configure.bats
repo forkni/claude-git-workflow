@@ -86,6 +86,27 @@ _run_configure() {
   fi
 }
 
+# ── Hook installation ─────────────────────────────────────────────────────────
+
+@test "--non-interactive installs pre-commit hook" {
+  _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.githooks/pre-commit" ]
+}
+
+@test "--non-interactive installs pre-push hook" {
+  # Regression test: configure.sh used CGW_ALL_PREFIXES (unbound var) when
+  # building the pre-push hook template substitution. Verify the hook is
+  # written and contains the expected prefixes pattern.
+  _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.githooks/pre-push" ]
+  grep -q "feat" "${TEST_REPO_DIR}/.githooks/pre-push"
+}
+
+@test "--skip-hooks does not install hooks" {
+  _run_configure "--non-interactive --skip-hooks"
+  [ ! -f "${TEST_REPO_DIR}/.githooks/pre-commit" ]
+}
+
 # ── Exit code ────────────────────────────────────────────────────────────────
 
 @test "configure.sh exits 0 in non-interactive mode" {
