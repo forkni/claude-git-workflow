@@ -209,12 +209,9 @@ copy /y "%CGW_DIR%\cgw.conf.example" "%TARGET_DIR%\cgw.conf.example" >nul
 echo   [OK] Copied cgw.conf.example
 :cp_example_done
 
-rem --- Convert path for bash ---
-rem Git Bash (MSYS2) handles Windows paths with forward slashes natively
-set "TARGET_FWD=%TARGET_DIR:\=/%"
-
 rem Ensure .sh files are executable (needed by Git Bash on Windows)
-bash -c "chmod +x '%TARGET_FWD%/scripts/git/'*.sh 2>/dev/null" >nul 2>&1
+pushd "%TARGET_DIR%"
+bash -c "chmod +x scripts/git/*.sh 2>/dev/null" >nul 2>&1
 
 echo.
 
@@ -224,8 +221,9 @@ echo.
 echo   configure.sh will auto-detect your branches, lint tool, and
 echo   local-only files. You can confirm or override each setting.
 echo.
-bash -c "cd '%TARGET_FWD%' && bash scripts/git/configure.sh"
+bash scripts/git/configure.sh
 set "CONFIGURE_EXIT=!ERRORLEVEL!"
+popd
 
 echo.
 if "%CONFIGURE_EXIT%"=="0" goto :cfg_ok
