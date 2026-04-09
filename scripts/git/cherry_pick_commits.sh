@@ -21,6 +21,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/git/_common.sh
 source "${SCRIPT_DIR}/_common.sh"
 
 init_logging "cherry_pick_commits"
@@ -34,7 +35,7 @@ _cleanup_cherry_pick() {
 	if [[ ${_cp_did_checkout_target} -eq 1 ]] && [[ -n "${_cp_original_branch}" ]] &&
 		[[ "${current}" != "${_cp_original_branch}" ]]; then
 		echo "" >&2
-		echo "⚠ Interrupted — you are on branch: ${current}" >&2
+		echo "[!] Interrupted -- you are on branch: ${current}" >&2
 		echo "  Returning to: ${_cp_original_branch}" >&2
 		if git rev-parse -q --verify CHERRY_PICK_HEAD >/dev/null 2>&1; then
 			git cherry-pick --abort 2>/dev/null || true
@@ -42,7 +43,7 @@ _cleanup_cherry_pick() {
 		git checkout "${_cp_original_branch}" 2>/dev/null || true
 	fi
 }
-trap _cleanup_cherry_pick INT TERM
+trap _cleanup_cherry_pick EXIT INT TERM
 
 main() {
 	local non_interactive=0
@@ -95,7 +96,7 @@ main() {
 		echo "Working Directory: ${PROJECT_ROOT}"
 	} >"$logfile"
 
-	echo "=== Cherry-Pick Commits: ${CGW_SOURCE_BRANCH} → ${CGW_TARGET_BRANCH} ===" | tee -a "$logfile"
+	echo "=== Cherry-Pick Commits: ${CGW_SOURCE_BRANCH} -> ${CGW_TARGET_BRANCH} ===" | tee -a "$logfile"
 	echo "" | tee -a "$logfile"
 
 	cd "${PROJECT_ROOT}" || {
@@ -108,14 +109,14 @@ main() {
 
 	if [[ -f "${SCRIPT_DIR}/validate_branches.sh" ]]; then
 		if ! bash "${SCRIPT_DIR}/validate_branches.sh" >>"$logfile" 2>&1; then
-			echo "✗ Validation failed - aborting cherry-pick" | tee -a "$logfile"
+			echo "[FAIL] Validation failed - aborting cherry-pick" | tee -a "$logfile"
 			log_section_end "PRE-CHERRY-PICK VALIDATION" "$logfile" "1"
 			echo "Please fix validation errors before retrying"
 			exit 1
 		fi
 	fi
 
-	echo "✓ Pre-cherry-pick validation passed" | tee -a "$logfile"
+	echo "[OK] Pre-cherry-pick validation passed" | tee -a "$logfile"
 	log_section_end "PRE-CHERRY-PICK VALIDATION" "$logfile" "0"
 	echo "" | tee -a "$logfile"
 
@@ -127,7 +128,7 @@ main() {
 	_cp_original_branch="${original_branch}"
 
 	if [[ -z "${original_branch}" ]]; then
-		echo "✗ Failed to determine current branch" | tee -a "$logfile"
+		echo "[FAIL] Failed to determine current branch" | tee -a "$logfile"
 		log_section_end "GIT CHECKOUT TARGET" "$logfile" "1"
 		exit 1
 	fi
@@ -135,7 +136,7 @@ main() {
 	echo "Current branch: ${original_branch}" | tee -a "$logfile"
 
 	if ! run_git_with_logging "GIT CHECKOUT" "$logfile" checkout "${CGW_TARGET_BRANCH}"; then
-		echo "✗ Failed to checkout ${CGW_TARGET_BRANCH} branch" | tee -a "$logfile"
+		echo "[FAIL] Failed to checkout ${CGW_TARGET_BRANCH} branch" | tee -a "$logfile"
 		exit 1
 	fi
 	_cp_did_checkout_target=1
@@ -158,13 +159,13 @@ main() {
 		commit_hash="${commit_hash_flag}"
 		echo "[4/6] Using --commit: ${commit_hash}" | tee -a "$logfile"
 	elif [[ ${non_interactive} -eq 1 ]]; then
-		echo "✗ [Non-interactive] --commit <hash> is required" >&2
+		echo "[FAIL] [Non-interactive] --commit <hash> is required" >&2
 		git checkout "${original_branch}"
 		exit 1
 	else
 		echo "[4/6] Select commit to cherry-pick..."
 		echo ""
-		read -r -p "Enter commit hash (or 'cancel' to abort): " commit_hash
+		read -e -r -p "Enter commit hash (or 'cancel' to abort): " commit_hash
 
 		if [[ "${commit_hash}" == "cancel" ]]; then
 			echo ""
@@ -175,16 +176,16 @@ main() {
 	fi
 
 	if ! git rev-parse "${commit_hash}" >/dev/null 2>&1; then
-		log_message "✗ ERROR: Invalid commit hash: ${commit_hash}" "${logfile}"
+		log_message "[FAIL] ERROR: Invalid commit hash: ${commit_hash}" "${logfile}"
 		git checkout "${original_branch}"
 		exit 1
 	fi
 
 	# Validate commit is on source branch
 	if ! git merge-base --is-ancestor "${commit_hash}" "${CGW_SOURCE_BRANCH}" 2>/dev/null; then
-		echo "⚠ WARNING: ${commit_hash} is not an ancestor of ${CGW_SOURCE_BRANCH}" | tee -a "$logfile"
+		echo "[!] WARNING: ${commit_hash} is not an ancestor of ${CGW_SOURCE_BRANCH}" | tee -a "$logfile"
 		if [[ ${non_interactive} -eq 1 ]]; then
-			echo "✗ [Non-interactive] Aborting — commit not on ${CGW_SOURCE_BRANCH} branch" | tee -a "$logfile"
+			echo "[FAIL] [Non-interactive] Aborting -- commit not on ${CGW_SOURCE_BRANCH} branch" | tee -a "$logfile"
 			git checkout "${original_branch}"
 			exit 1
 		fi
@@ -205,7 +206,7 @@ main() {
 	echo ""
 
 	if [[ ${dry_run} -eq 1 ]]; then
-		echo "=== DRY RUN — no changes made ===" | tee -a "$logfile"
+		echo "=== DRY RUN -- no changes made ===" | tee -a "$logfile"
 		echo "Would cherry-pick: ${commit_hash}" | tee -a "$logfile"
 		git checkout "${original_branch}"
 		exit 0
@@ -222,14 +223,14 @@ main() {
 		done
 
 		if [[ ${has_excluded_files} -eq 1 ]]; then
-			echo "⚠ WARNING: This commit modifies configured dev-only files"
+			echo "[!] WARNING: This commit modifies configured dev-only files"
 			echo "Dev-only files (CGW_DEV_ONLY_FILES):"
 			for dev_file in ${CGW_DEV_ONLY_FILES}; do
 				git show "${commit_hash}" --name-only --format="" | grep "^${dev_file}" || true
 			done
 			echo ""
 			if [[ ${non_interactive} -eq 1 ]]; then
-				echo "✗ [Non-interactive] Aborting — commit touches dev-only files" | tee -a "$logfile"
+				echo "[FAIL] [Non-interactive] Aborting -- commit touches dev-only files" | tee -a "$logfile"
 				git checkout "${original_branch}"
 				exit 1
 			fi
@@ -250,10 +251,10 @@ main() {
 	local backup_tag="pre-cherry-pick-${timestamp}-$$"
 
 	if git tag "${backup_tag}" >>"$logfile" 2>&1; then
-		echo "✓ Created backup tag: ${backup_tag}" | tee -a "$logfile"
+		echo "[OK] Created backup tag: ${backup_tag}" | tee -a "$logfile"
 		log_section_end "CREATE BACKUP TAG" "$logfile" "0"
 	else
-		echo "⚠ Warning: Could not create backup tag" | tee -a "$logfile"
+		echo "[!] Warning: Could not create backup tag" | tee -a "$logfile"
 		log_section_end "CREATE BACKUP TAG" "$logfile" "1"
 	fi
 	echo "" | tee -a "$logfile"
@@ -262,6 +263,7 @@ main() {
 	log_section_start "GIT CHERRY-PICK" "$logfile"
 
 	if run_git_with_logging "GIT CHERRY-PICK COMMIT" "$logfile" cherry-pick "${commit_hash}"; then
+		trap - EXIT INT TERM
 		log_section_end "GIT CHERRY-PICK" "$logfile" "0"
 		echo "" | tee -a "$logfile"
 		{
@@ -269,7 +271,7 @@ main() {
 			echo "[CHERRY-PICK SUMMARY]"
 			echo "========================================"
 		} | tee -a "$logfile"
-		echo "✓ CHERRY-PICK SUCCESSFUL" | tee -a "$logfile"
+		echo "[OK] CHERRY-PICK SUCCESSFUL" | tee -a "$logfile"
 		echo "" | tee -a "$logfile"
 		git log -1 --oneline | while read -r line; do echo "  Cherry-picked: $line" | tee -a "$logfile"; done
 		echo "  Original commit: ${commit_hash}" | tee -a "$logfile"
@@ -288,7 +290,7 @@ main() {
 	else
 		log_section_end "GIT CHERRY-PICK" "$logfile" "1"
 		echo "" | tee -a "$logfile"
-		echo "⚠ Cherry-pick conflicts detected" | tee -a "$logfile"
+		echo "[!] Cherry-pick conflicts detected" | tee -a "$logfile"
 		echo "" | tee -a "$logfile"
 		git status | tee -a "$logfile"
 		echo ""

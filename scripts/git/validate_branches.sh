@@ -107,7 +107,7 @@ main() {
 		echo "  Untracked files detected (may be missing from commit):" | tee -a "$logfile"
 		echo "${untracked_files}" | tee -a "$logfile"
 		echo "  Use 'git add <file>' to stage, or add to .gitignore" | tee -a "$logfile"
-		# Warning only — untracked files don't affect merge safety
+		# Warning only -- untracked files don't affect merge safety
 	fi
 
 	log_section_end "UNCOMMITTED CHANGES CHECK" "$logfile" "$uncommitted_check"
@@ -128,7 +128,7 @@ main() {
 	fi
 
 	if [[ "$target_ahead" != "unknown" ]] && ((target_ahead > 0)) && [[ "${current_branch}" == "${CGW_SOURCE_BRANCH}" ]]; then
-		echo "  Warning: ${CGW_TARGET_BRANCH} is ahead — consider merging ${CGW_TARGET_BRANCH} into ${CGW_SOURCE_BRANCH}" | tee -a "$logfile"
+		echo "  Warning: ${CGW_TARGET_BRANCH} is ahead -- consider merging ${CGW_TARGET_BRANCH} into ${CGW_SOURCE_BRANCH}" | tee -a "$logfile"
 	fi
 
 	log_section_end "BRANCH RELATIONSHIP CHECK" "$logfile" "0"

@@ -130,7 +130,7 @@ main() {
 	done
 
 	if [[ ${is_protected} -eq 1 ]] && [[ ${force_push} -eq 1 ]]; then
-		echo "⚠ WARNING: Force-push to protected branch '${target_branch}' requested!" | tee -a "$logfile"
+		echo "[!] WARNING: Force-push to protected branch '${target_branch}' requested!" | tee -a "$logfile"
 		echo "  This rewrites remote history and affects all collaborators." | tee -a "$logfile"
 		if [[ ${non_interactive} -eq 0 ]]; then
 			read -r -p "  Type 'FORCE' to confirm force-push to ${target_branch}: " force_confirm
@@ -140,12 +140,12 @@ main() {
 				exit 1
 			fi
 		else
-			echo "  [Non-interactive] Aborting — force-push to protected branch requires manual confirmation" | tee -a "$logfile"
+			echo "  [Non-interactive] Aborting -- force-push to protected branch requires manual confirmation" | tee -a "$logfile"
 			log_section_end "BRANCH CHECK" "$logfile" "1"
 			exit 1
 		fi
 	elif [[ ${is_protected} -eq 1 ]] && [[ ${force_push} -eq 0 ]]; then
-		echo "✓ Pushing to ${target_branch} (normal push)" | tee -a "$logfile"
+		echo "[OK] Pushing to ${target_branch} (normal push)" | tee -a "$logfile"
 	fi
 
 	log_section_end "BRANCH CHECK" "$logfile" "0"
@@ -160,14 +160,14 @@ main() {
 		log_section_end "REMOTE CHECK" "$logfile" "1"
 		exit 1
 	fi
-	echo "✓ Remote 'origin' is reachable" | tee -a "$logfile"
+	echo "[OK] Remote 'origin' is reachable" | tee -a "$logfile"
 
 	# Check if local is behind remote
 	git fetch origin "${target_branch}" >>"$logfile" 2>&1 || true
 	local behind
 	behind=$(git rev-list --count "HEAD..origin/${target_branch}" 2>/dev/null || echo "0")
 	if [[ "${behind}" -gt 0 ]]; then
-		echo "⚠ WARNING: Local branch is ${behind} commit(s) behind origin/${target_branch}" | tee -a "$logfile"
+		echo "[!] WARNING: Local branch is ${behind} commit(s) behind origin/${target_branch}" | tee -a "$logfile"
 		echo "  A normal push may fail or overwrite remote changes." | tee -a "$logfile"
 		echo "  Consider: ./scripts/git/sync_branches.sh" | tee -a "$logfile"
 		if [[ ${non_interactive} -eq 0 ]] && [[ ${force_push} -eq 0 ]]; then
@@ -190,10 +190,10 @@ main() {
 		local lint_args=()
 		[[ ${skip_md_lint} -eq 1 ]] && lint_args+=("--skip-md-lint")
 		if "${SCRIPT_DIR}/check_lint.sh" "${lint_args[@]}" >>"$logfile" 2>&1; then
-			echo "✓ Lint check passed" | tee -a "$logfile"
+			echo "[OK] Lint check passed" | tee -a "$logfile"
 			log_section_end "PRE-PUSH LINT CHECK" "$logfile" "0"
 		else
-			echo "⚠ Lint check failed" | tee -a "$logfile"
+			echo "[!] Lint check failed" | tee -a "$logfile"
 			log_section_end "PRE-PUSH LINT CHECK" "$logfile" "1"
 			echo "  Run ./scripts/git/fix_lint.sh to fix issues, or use --skip-lint to bypass" | tee -a "$logfile"
 			if [[ ${non_interactive} -eq 0 ]]; then
@@ -220,8 +220,8 @@ main() {
 	echo "" | tee -a "$logfile"
 
 	if [[ ${dry_run} -eq 1 ]]; then
-		echo "=== DRY RUN — no push performed ===" | tee -a "$logfile"
-		echo "Would push: ${target_branch} → origin/${target_branch}" | tee -a "$logfile"
+		echo "=== DRY RUN -- no push performed ===" | tee -a "$logfile"
+		echo "Would push: ${target_branch} -> origin/${target_branch}" | tee -a "$logfile"
 		if [[ ${force_push} -eq 1 ]]; then
 			echo "Would use: --force-with-lease" | tee -a "$logfile"
 		fi
@@ -246,9 +246,9 @@ main() {
 			echo "[PUSH SUMMARY]"
 			echo "========================================"
 		} | tee -a "$logfile"
-		echo "✓ PUSH SUCCESSFUL" | tee -a "$logfile"
+		echo "[OK] PUSH SUCCESSFUL" | tee -a "$logfile"
 		echo "" | tee -a "$logfile"
-		echo "  Branch: ${target_branch} → origin/${target_branch}" | tee -a "$logfile"
+		echo "  Branch: ${target_branch} -> origin/${target_branch}" | tee -a "$logfile"
 		echo "  Commits pushed: ${ahead}" | tee -a "$logfile"
 		echo "" | tee -a "$logfile"
 		{
@@ -259,7 +259,7 @@ main() {
 	else
 		log_section_end "GIT PUSH" "$logfile" "1"
 		echo "" | tee -a "$logfile"
-		echo "✗ Push failed" | tee -a "$logfile"
+		echo "[FAIL] Push failed" | tee -a "$logfile"
 		echo "" | tee -a "$logfile"
 		echo "Common causes:" | tee -a "$logfile"
 		echo "  - Remote has new commits: ./scripts/git/sync_branches.sh" | tee -a "$logfile"

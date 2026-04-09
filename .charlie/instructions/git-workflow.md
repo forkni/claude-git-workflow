@@ -24,7 +24,7 @@ All git operations: commits, merges, pushes, cherry-picks, rollbacks.
 - [R7] Wrap every logical operation in `log_section_start` / `log_section_end` for timing and audit trail
 - [R8] Auto-detect non-interactive mode: set `CGW_NON_INTERACTIVE=1` when `[[ ! -t 0 ]]` (no TTY)
 - [R9] Prefer `--force-with-lease` over `--force` for force-push operations
-- [R10] Never bypass the pre-commit hook with `--no-verify`
+- [R10] Never bypass git hooks (pre-commit, pre-push) with `--no-verify`
 
 ## Examples
 

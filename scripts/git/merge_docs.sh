@@ -28,7 +28,7 @@ did_mutate_worktree=0
 cleanup() {
 	if [[ ${did_mutate_worktree} -eq 1 ]]; then
 		echo "" | tee -a "$logfile"
-		echo "⚠ Interrupted - restoring original state..." | tee -a "$logfile"
+		echo "[!] Interrupted - restoring original state..." | tee -a "$logfile"
 		git restore --staged --worktree -- . 2>/dev/null || git reset --hard HEAD 2>/dev/null || true
 	fi
 	local current_branch
@@ -48,7 +48,7 @@ main() {
 			echo "Usage: ./scripts/git/merge_docs.sh [OPTIONS]"
 			echo ""
 			echo "Merge only docs/ directory from source branch into target branch."
-			echo "Code changes are NOT included — only files under docs/."
+			echo "Code changes are NOT included -- only files under docs/."
 			echo ""
 			echo "Options:"
 			echo "  --non-interactive   Skip prompts"
@@ -84,7 +84,7 @@ main() {
 		echo "Working Directory: ${PROJECT_ROOT}"
 	} >"$logfile"
 
-	echo "=== Documentation Merge: ${CGW_SOURCE_BRANCH} → ${CGW_TARGET_BRANCH} ===" | tee -a "$logfile"
+	echo "=== Documentation Merge: ${CGW_SOURCE_BRANCH} -> ${CGW_TARGET_BRANCH} ===" | tee -a "$logfile"
 	echo "" | tee -a "$logfile"
 
 	cd "${PROJECT_ROOT}" || {
@@ -97,14 +97,14 @@ main() {
 
 	if [[ -f "${SCRIPT_DIR}/validate_branches.sh" ]]; then
 		if ! bash "${SCRIPT_DIR}/validate_branches.sh" >>"$logfile" 2>&1; then
-			echo "✗ Validation failed - aborting documentation merge" | tee -a "$logfile"
+			echo "[FAIL] Validation failed - aborting documentation merge" | tee -a "$logfile"
 			log_section_end "PRE-MERGE VALIDATION" "$logfile" "1"
 			echo "Please fix validation errors before retrying"
 			exit 1
 		fi
 	fi
 
-	echo "✓ Pre-merge validation passed" | tee -a "$logfile"
+	echo "[OK] Pre-merge validation passed" | tee -a "$logfile"
 	log_section_end "PRE-MERGE VALIDATION" "$logfile" "0"
 	echo "" | tee -a "$logfile"
 
@@ -115,7 +115,7 @@ main() {
 	echo "Current branch: ${original_branch}" | tee -a "$logfile"
 
 	if ! run_git_with_logging "GIT CHECKOUT" "$logfile" checkout "${CGW_TARGET_BRANCH}"; then
-		echo "✗ Failed to checkout ${CGW_TARGET_BRANCH} branch" | tee -a "$logfile"
+		echo "[FAIL] Failed to checkout ${CGW_TARGET_BRANCH} branch" | tee -a "$logfile"
 		exit 1
 	fi
 
@@ -126,7 +126,7 @@ main() {
 	echo "[3/7] Checking for documentation changes..."
 
 	if [[ -z "$(git diff --name-only "${CGW_TARGET_BRANCH}" "${CGW_SOURCE_BRANCH}" -- docs/)" ]]; then
-		log_message "⚠ No documentation changes found between ${CGW_TARGET_BRANCH} and ${CGW_SOURCE_BRANCH}" "${logfile}"
+		log_message "[!] No documentation changes found between ${CGW_TARGET_BRANCH} and ${CGW_SOURCE_BRANCH}" "${logfile}"
 		if [[ ${non_interactive} -eq 1 ]]; then
 			log_message "Documentation merge cancelled (nothing to do)" "${logfile}"
 			git checkout "${original_branch}"
@@ -152,7 +152,7 @@ main() {
 	non_docs_count=$(git diff --name-only "${CGW_TARGET_BRANCH}" "${CGW_SOURCE_BRANCH}" | grep -vc "^docs/")
 
 	if [[ "${non_docs_count}" -gt 0 ]]; then
-		echo "⚠ WARNING: Non-documentation changes detected"
+		echo "[!] WARNING: Non-documentation changes detected"
 		echo ""
 		echo "This merge will ONLY include docs/ changes."
 		echo "Other changes will remain on ${CGW_SOURCE_BRANCH} branch."
@@ -171,7 +171,7 @@ main() {
 			fi
 		fi
 	else
-		log_message "✓ No code changes detected (docs-only merge)" "${logfile}"
+		log_message "[OK] No code changes detected (docs-only merge)" "${logfile}"
 	fi
 	echo ""
 
@@ -182,10 +182,10 @@ main() {
 	local backup_tag="pre-docs-merge-${timestamp}"
 
 	if git tag "${backup_tag}" >>"$logfile" 2>&1; then
-		echo "✓ Created backup tag: ${backup_tag}" | tee -a "$logfile"
+		echo "[OK] Created backup tag: ${backup_tag}" | tee -a "$logfile"
 		log_section_end "CREATE BACKUP TAG" "$logfile" "0"
 	else
-		echo "⚠ Warning: Could not create backup tag" | tee -a "$logfile"
+		echo "[!] Warning: Could not create backup tag" | tee -a "$logfile"
 		log_section_end "CREATE BACKUP TAG" "$logfile" "1"
 	fi
 	echo "" | tee -a "$logfile"
@@ -196,20 +196,20 @@ main() {
 	did_mutate_worktree=1
 
 	if ! run_git_with_logging "GIT CHECKOUT DOCS" "$logfile" checkout "${CGW_SOURCE_BRANCH}" -- docs/; then
-		echo "✗ Failed to checkout documentation from ${CGW_SOURCE_BRANCH}" | tee -a "$logfile"
+		echo "[FAIL] Failed to checkout documentation from ${CGW_SOURCE_BRANCH}" | tee -a "$logfile"
 		git checkout "${original_branch}" >>"$logfile" 2>&1
 		exit 1
 	fi
 
 	if git diff --cached --quiet; then
 		echo "" | tee -a "$logfile"
-		echo "⚠ No documentation changes to merge (docs already in sync)" | tee -a "$logfile"
+		echo "[!] No documentation changes to merge (docs already in sync)" | tee -a "$logfile"
 		log_section_end "MERGE DOCUMENTATION" "$logfile" "0"
 		git checkout "${original_branch}" >>"$logfile" 2>&1
 		exit 0
 	fi
 
-	echo "✓ Documentation changes staged" | tee -a "$logfile"
+	echo "[OK] Documentation changes staged" | tee -a "$logfile"
 	echo "Staged files:" | tee -a "$logfile"
 	git diff --cached --name-only | tee -a "$logfile"
 	log_section_end "MERGE DOCUMENTATION" "$logfile" "0"
@@ -230,7 +230,7 @@ main() {
 			echo "[DOCS MERGE SUMMARY]"
 			echo "========================================"
 		} | tee -a "$logfile"
-		echo "✓ DOCUMENTATION MERGE SUCCESSFUL" | tee -a "$logfile"
+		echo "[OK] DOCUMENTATION MERGE SUCCESSFUL" | tee -a "$logfile"
 		echo "" | tee -a "$logfile"
 		git log -1 --oneline | while read -r line; do echo "  Latest commit: $line" | tee -a "$logfile"; done
 		echo "  Backup tag: ${backup_tag}" | tee -a "$logfile"
@@ -251,7 +251,7 @@ main() {
 	else
 		log_section_end "GIT COMMIT" "$logfile" "1"
 		echo "" | tee -a "$logfile"
-		echo "✗ Failed to commit documentation merge" | tee -a "$logfile"
+		echo "[FAIL] Failed to commit documentation merge" | tee -a "$logfile"
 		echo ""
 		echo "To abort: git reset --hard HEAD"
 		exit 1

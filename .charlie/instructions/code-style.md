@@ -5,7 +5,7 @@ Charlie also reads CLAUDE.md for project context.
 
 ## Scope
 
-`scripts/git/*.sh`, `hooks/pre-commit`
+`scripts/git/*.sh`, `hooks/*`, `.githooks/*`
 
 ## Context
 

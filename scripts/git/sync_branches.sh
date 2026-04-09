@@ -30,11 +30,12 @@ _cleanup_sync() {
 	current=$(git branch --show-current 2>/dev/null || true)
 	if [[ -n "${_sync_original_branch}" ]] && [[ "${current}" != "${_sync_original_branch}" ]]; then
 		echo "" >&2
-		echo "⚠ Interrupted — returning to: ${_sync_original_branch}" >&2
+		echo "[!] Interrupted -- returning to: ${_sync_original_branch}" >&2
+		git rebase --abort 2>/dev/null || true
 		git checkout "${_sync_original_branch}" 2>/dev/null || true
 	fi
 }
-trap _cleanup_sync INT TERM
+trap _cleanup_sync EXIT INT TERM
 
 # sync_one_branch - Fetch and rebase a single branch against origin.
 # Arguments:
@@ -49,18 +50,18 @@ sync_one_branch() {
 	echo "--- Syncing ${branch} ---" | tee -a "$logfile"
 
 	if ! git show-ref --verify --quiet "refs/heads/${branch}"; then
-		echo "  ⚠ Branch '${branch}' does not exist locally — skipping" | tee -a "$logfile"
+		echo "  [!] Branch '${branch}' does not exist locally -- skipping" | tee -a "$logfile"
 		return 0
 	fi
 
 	if ! git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
-		echo "  ⚠ No remote tracking branch 'origin/${branch}' — skipping" | tee -a "$logfile"
+		echo "  [!] No remote tracking branch 'origin/${branch}' -- skipping" | tee -a "$logfile"
 		return 0
 	fi
 
 	if [[ "${current_branch}" != "${branch}" ]]; then
 		if ! git checkout "${branch}" >>"$logfile" 2>&1; then
-			echo "  ✗ Failed to checkout ${branch}" | tee -a "$logfile"
+			echo "  [FAIL] Failed to checkout ${branch}" | tee -a "$logfile"
 			return 1
 		fi
 		echo "  Switched to ${branch}" | tee -a "$logfile"
@@ -73,19 +74,21 @@ sync_one_branch() {
 	echo "  Local: ${ahead} ahead, ${behind} behind origin/${branch}" | tee -a "$logfile"
 
 	if [[ "${behind}" -eq 0 ]]; then
-		echo "  ✓ Already up-to-date with origin/${branch}" | tee -a "$logfile"
+		echo "  [OK] Already up-to-date with origin/${branch}" | tee -a "$logfile"
 		return 0
 	fi
 
 	if [[ "${ahead}" -gt 0 ]]; then
-		echo "  ⚠ Diverged: ${ahead} local commits will be rebased on top of ${behind} remote commits" | tee -a "$logfile"
+		echo "  [!] Diverged: ${ahead} local commits will be rebased on top of ${behind} remote commits" | tee -a "$logfile"
 	fi
 
-	if run_git_with_logging "GIT REBASE ${branch}" "$logfile" pull --rebase origin "${branch}"; then
-		echo "  ✓ ${branch} synced successfully" | tee -a "$logfile"
+	local rebase_args=(pull --rebase origin "${branch}")
+	[[ "${_SYNC_AUTOSTASH:-0}" == "1" ]] && rebase_args=(pull --rebase --autostash origin "${branch}")
+	if run_git_with_logging "GIT REBASE ${branch}" "$logfile" "${rebase_args[@]}"; then
+		echo "  [OK] ${branch} synced successfully" | tee -a "$logfile"
 		return 0
 	else
-		echo "  ✗ Rebase failed for ${branch}" | tee -a "$logfile"
+		echo "  [FAIL] Rebase failed for ${branch}" | tee -a "$logfile"
 		echo "  Aborting rebase..." | tee -a "$logfile"
 		git rebase --abort 2>/dev/null || true
 		echo "  Manual action needed: git pull --rebase origin ${branch}" | tee -a "$logfile"
@@ -156,28 +159,32 @@ main() {
 	_sync_original_branch=$(git branch --show-current)
 
 	if ! git diff-index --quiet HEAD -- 2>/dev/null; then
-		echo "⚠ WARNING: Uncommitted changes detected" | tee -a "$logfile"
+		echo "[!] Uncommitted changes detected -- will auto-stash during rebase" | tee -a "$logfile"
 		git status --short | tee -a "$logfile"
 		echo "" | tee -a "$logfile"
 		if [[ ${non_interactive} -eq 1 ]]; then
-			err "Aborting — commit or stash changes before syncing"
-			exit 1
+			echo "[Non-interactive] Auto-stash enabled (--autostash)" | tee -a "$logfile"
+		else
+			read -r -p "Auto-stash changes and sync? (yes/no): " uncommitted_choice
+			if [[ "${uncommitted_choice}" != "yes" ]]; then
+				echo "Aborted -- commit or stash manually before syncing" | tee -a "$logfile"
+				exit 0
+			fi
 		fi
-		read -r -p "Changes may be lost during rebase. Continue? (yes/no): " uncommitted_choice
-		if [[ "${uncommitted_choice}" != "yes" ]]; then
-			echo "Aborted" | tee -a "$logfile"
-			exit 0
-		fi
+		# Pass --autostash to pull --rebase to handle dirty working tree cleanly
+		export _SYNC_AUTOSTASH=1
+	else
+		export _SYNC_AUTOSTASH=0
 	fi
 
 	# [1] Fetch all remotes
 	log_section_start "GIT FETCH" "$logfile"
 	echo "Fetching from origin..." | tee -a "$logfile"
 	if git fetch origin >>"$logfile" 2>&1; then
-		echo "✓ Fetch complete" | tee -a "$logfile"
+		echo "[OK] Fetch complete" | tee -a "$logfile"
 		log_section_end "GIT FETCH" "$logfile" "0"
 	else
-		echo "✗ Fetch failed — check network/auth" | tee -a "$logfile"
+		echo "[FAIL] Fetch failed -- check network/auth" | tee -a "$logfile"
 		log_section_end "GIT FETCH" "$logfile" "1"
 		exit 1
 	fi
@@ -214,9 +221,9 @@ main() {
 	} | tee -a "$logfile"
 
 	if [[ ${sync_failed} -eq 0 ]]; then
-		echo "✓ SYNC SUCCESSFUL" | tee -a "$logfile"
+		echo "[OK] SYNC SUCCESSFUL" | tee -a "$logfile"
 	else
-		echo "⚠ SYNC COMPLETED WITH ERRORS" | tee -a "$logfile"
+		echo "[!] SYNC COMPLETED WITH ERRORS" | tee -a "$logfile"
 		echo "  Check log for details: ${logfile}" | tee -a "$logfile"
 	fi
 

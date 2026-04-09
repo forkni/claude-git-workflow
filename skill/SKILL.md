@@ -152,7 +152,8 @@ Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login
 
 **Rollback a merge:**
 ```bash
-./scripts/git/rollback_merge.sh                          # interactive
+./scripts/git/rollback_merge.sh                          # interactive (hard reset)
+./scripts/git/rollback_merge.sh --revert                 # safe revert (preserves history, no force-push)
 ./scripts/git/rollback_merge.sh --dry-run
 ./scripts/git/rollback_merge.sh --non-interactive --target pre-merge-backup-20260101_120000
 ```
@@ -168,4 +169,87 @@ Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login
 ```bash
 ./scripts/git/merge_docs.sh
 ./scripts/git/merge_docs.sh --non-interactive
+```
+
+**Undoing something:**
+```bash
+# Undo last commit (keep changes staged, creates backup tag):
+./scripts/git/undo_last.sh commit
+
+# Remove a file from staging:
+./scripts/git/undo_last.sh unstage <file>
+
+# Fix last commit message (local only — before push):
+./scripts/git/undo_last.sh amend-message "fix: correct message"
+
+# Discard working-tree changes (irreversible — interactive only):
+./scripts/git/undo_last.sh discard <file>
+```
+
+**Branch cleanup:**
+```bash
+# Dry-run preview (safe default — shows what would be deleted):
+./scripts/git/branch_cleanup.sh
+
+# Execute: delete merged branches + prune stale remote-tracking refs:
+./scripts/git/branch_cleanup.sh --execute
+
+# Also clean up old backup tags:
+./scripts/git/branch_cleanup.sh --tags --execute
+```
+
+**Safe rebase:**
+```bash
+# Rebase current branch onto target:
+./scripts/git/rebase_safe.sh --onto main
+
+# Squash last N commits (opens editor):
+./scripts/git/rebase_safe.sh --squash-last 3
+
+# Abort in-progress rebase:
+./scripts/git/rebase_safe.sh --abort
+
+# Continue after resolving conflicts:
+./scripts/git/rebase_safe.sh --continue
+```
+
+**Bisecting a bug:**
+```bash
+# Automated: provide a test command
+./scripts/git/bisect_helper.sh --good v1.0.0 --run "bash tests/smoke_test.sh"
+
+# Manual: mark commits good/bad interactively
+./scripts/git/bisect_helper.sh --good v1.0.0
+
+# Abort stuck session:
+./scripts/git/bisect_helper.sh --abort
+```
+
+**Generating a changelog:**
+```bash
+./scripts/git/changelog_generate.sh --from v1.0.0           # since tag → stdout
+./scripts/git/changelog_generate.sh --from v1.0.0 --output CHANGELOG.md
+```
+
+**Stashing work in progress:**
+```bash
+./scripts/git/stash_work.sh push "wip: description"
+./scripts/git/stash_work.sh pop
+./scripts/git/stash_work.sh list
+```
+
+**Creating a release:**
+```bash
+./scripts/git/create_release.sh v1.2.3 --push   # tag + push (triggers GitHub Release)
+./scripts/git/create_release.sh v1.2.3 --dry-run
+```
+
+**Project setup & hygiene:**
+```bash
+./scripts/git/setup_attributes.sh --dry-run   # preview .gitattributes changes
+./scripts/git/setup_attributes.sh             # write .gitattributes
+./scripts/git/clean_build.sh                  # dry-run artifact cleanup
+./scripts/git/clean_build.sh --execute        # actually delete artifacts
+./scripts/git/repo_health.sh                  # integrity check + size report
+./scripts/git/repo_health.sh --gc             # also run garbage collection
 ```

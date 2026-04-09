@@ -293,10 +293,10 @@ _install_hook() {
   if [[ ! -f "${hook_template}" ]]; then
     # If hook is already installed, nothing to do
     if [[ -f "${PROJECT_ROOT}/.githooks/pre-commit" ]]; then
-      echo "  ✓ Pre-commit hook already installed"
+      echo "  [OK] Pre-commit hook already installed"
       return 0
     fi
-    echo "  ⚠ Hook template not found — copy hooks/ from the CGW source repo and re-run"
+    echo "  [!] Hook template not found -- copy hooks/ from the CGW source repo and re-run"
     return 1
   fi
 
@@ -309,7 +309,7 @@ _install_hook() {
     files_pattern="${files_pattern}${escaped}"
   done
 
-  # Create .githooks/ and write patched hook
+  # Create .githooks/ and write patched pre-commit hook
   # Escape backslashes first, then & (sed replacement special char), then | (sed delimiter)
   local sed_files_pattern="${files_pattern//\\/\\\\}"
   sed_files_pattern="${sed_files_pattern//&/\\&}"
@@ -319,11 +319,36 @@ _install_hook() {
     "${hook_template}" >"${PROJECT_ROOT}/.githooks/pre-commit"
   chmod +x "${PROJECT_ROOT}/.githooks/pre-commit"
 
+  # Also install pre-push hook if template exists alongside pre-commit
+  local pre_push_template="${hooks_template_dir}/pre-push"
+  if [[ -f "${pre_push_template}" ]]; then
+    # Build CGW_ALL_PREFIXES for substitution into pre-push template.
+    # Can't source _config.sh here (see top-of-file comment), so compute locally
+    # by reading CGW_EXTRA_PREFIXES from the just-written .cgw.conf.
+    local _base_prefixes="feat|fix|docs|chore|test|refactor|style|perf"
+    local _extra_prefixes
+    _extra_prefixes=$(grep -m1 '^CGW_EXTRA_PREFIXES=' "${PROJECT_ROOT}/.cgw.conf" \
+      | sed 's/CGW_EXTRA_PREFIXES=//;s/"//g' || true)
+    local _all_prefixes
+    if [[ -n "${_extra_prefixes}" ]]; then
+      _all_prefixes="${_base_prefixes}|${_extra_prefixes}"
+    else
+      _all_prefixes="${_base_prefixes}"
+    fi
+    local all_prefixes_escaped="${_all_prefixes//\\/\\\\}"
+    all_prefixes_escaped="${all_prefixes_escaped//&/\\&}"
+    all_prefixes_escaped="${all_prefixes_escaped//|/\\|}"
+    sed -e "s|__CGW_LOCAL_FILES_PATTERN__|${sed_files_pattern}|g" \
+        -e "s|__CGW_ALL_PREFIXES__|${all_prefixes_escaped}|g" \
+        "${pre_push_template}" >"${PROJECT_ROOT}/.githooks/pre-push"
+    chmod +x "${PROJECT_ROOT}/.githooks/pre-push"
+  fi
+
   # Run install_hooks.sh to copy to .git/hooks/
   if bash "${SCRIPT_DIR}/install_hooks.sh" >/dev/null 2>&1; then
-    echo "  ✓ Pre-commit hook installed"
+    echo "  [OK] Git hooks installed (pre-commit + pre-push)"
   else
-    echo "  ⚠ Hook installed to .githooks/ but failed to copy to .git/hooks/"
+    echo "  [!] Hooks written to .githooks/ but failed to copy to .git/hooks/"
     echo "    Run: ./scripts/git/install_hooks.sh"
   fi
 }
@@ -337,10 +362,10 @@ _install_skill() {
   if skill_src="$(cd "${SCRIPT_DIR}" && cd "../../skill" 2>/dev/null && pwd)"; then
     cmd_src="${skill_src}/../command/auto-git-workflow.md"
   elif [[ -f "${skill_dst}/SKILL.md" ]]; then
-    echo "  ✓ Claude Code skill already installed"
+    echo "  [OK] Claude Code skill already installed"
     return 0
   else
-    echo "  ⚠ Skill template not found — copy skill/ and command/ from the CGW source repo and re-run"
+    echo "  [!] Skill template not found -- copy skill/ and command/ from the CGW source repo and re-run"
     return 1
   fi
 
@@ -352,9 +377,9 @@ _install_skill() {
   if [[ -f "${cmd_src}" ]]; then
     mkdir -p "${PROJECT_ROOT}/.claude/commands"
     cp "${cmd_src}" "${PROJECT_ROOT}/.claude/commands/auto-git-workflow.md" 2>/dev/null || true
-    echo "  ✓ Claude Code skill + slash command installed"
+    echo "  [OK] Claude Code skill + slash command installed"
   else
-    echo "  ✓ Claude Code skill installed (command template not found)"
+    echo "  [OK] Claude Code skill installed (command template not found)"
   fi
 }
 
@@ -371,9 +396,9 @@ _update_gitignore() {
   done
 
   if [[ ${#added[@]} -gt 0 ]]; then
-    echo "  ✓ Added to .gitignore: ${added[*]}"
+    echo "  [OK] Added to .gitignore: ${added[*]}"
   else
-    echo "  ✓ .gitignore already up to date"
+    echo "  [OK] .gitignore already up to date"
   fi
 }
 
@@ -431,7 +456,7 @@ main() {
 
   # Check if .cgw.conf already exists
   if [[ -f ".cgw.conf" ]] && [[ ${reconfigure} -eq 0 ]]; then
-    echo "✓ .cgw.conf already exists."
+    echo "[OK] .cgw.conf already exists."
     if [[ ${non_interactive} -eq 0 ]]; then
       read -r -p "  Reconfigure? (yes/no) [no]: " answer
       if [[ "${answer,,}" =~ ^y(es)?$ ]]; then
@@ -447,7 +472,7 @@ main() {
     fi
   fi
 
-  # ── Detection phase ──────────────────────────────────────────────────────
+  # -- Detection phase ------------------------------------------------------
 
   echo "Scanning project..."
   echo ""
@@ -474,34 +499,44 @@ main() {
   echo "  Local-only files:        ${detected_local_files:-none found}"
   echo ""
 
-  # ── Interactive confirmation (only when generating/updating config) ──────────
+  # -- Interactive confirmation (only when generating/updating config) ----------
 
+  # When reconfiguring, preserve existing branch settings from .cgw.conf
+  # rather than overwriting with fresh auto-detection.
   local target_branch="${detected_target}"
   local source_branch="${detected_source}"
+  if [[ -f ".cgw.conf" ]] && [[ ${reconfigure} -eq 1 ]]; then
+    local existing_target existing_source
+    existing_target=$(grep -m1 '^CGW_TARGET_BRANCH=' .cgw.conf | sed 's/CGW_TARGET_BRANCH=//;s/"//g' || true)
+    existing_source=$(grep -m1 '^CGW_SOURCE_BRANCH=' .cgw.conf | sed 's/CGW_SOURCE_BRANCH=//;s/"//g' || true)
+    [[ -n "${existing_target}" ]] && target_branch="${existing_target}"
+    [[ -n "${existing_source}" ]] && source_branch="${existing_source}"
+  fi
+
   local local_files="${detected_local_files:-CLAUDE.md MEMORY.md .claude/ logs/}"
 
   if [[ ${non_interactive} -eq 0 ]] && { [[ ! -f ".cgw.conf" ]] || [[ ${reconfigure} -eq 1 ]]; }; then
     echo "Press Enter to accept [default], or type a different value."
     echo ""
-    read -r -p "Target branch [${detected_target}]: " answer
+    read -e -r -p "Target branch [${target_branch}]: " answer
     [[ -n "${answer}" && ! "${answer}" =~ ^[Yy]([Ee][Ss])?$ ]] && target_branch="${answer}"
 
-    read -r -p "Source branch [${detected_source}]: " answer
+    read -e -r -p "Source branch [${source_branch}]: " answer
     [[ -n "${answer}" && ! "${answer}" =~ ^[Yy]([Ee][Ss])?$ ]] && source_branch="${answer}"
 
     echo ""
     echo "Local-only files (never committed): ${local_files}"
-    read -r -p "Add/change local files? (press Enter to keep, or type new list): " answer
+    read -e -r -p "Add/change local files? (press Enter to keep, or type new list): " answer
     [[ -n "${answer}" && ! "${answer}" =~ ^[Yy]([Ee][Ss])?$ ]] && local_files="${answer}"
   fi
 
-  # ── Generate .cgw.conf ────────────────────────────────────────────────────
+  # -- Generate .cgw.conf ----------------------------------------------------
 
   if [[ ! -f ".cgw.conf" ]] || [[ ${reconfigure} -eq 1 ]]; then
     echo "Generating .cgw.conf..."
 
     {
-      echo "# .cgw.conf — Auto-generated by configure.sh on $(date)"
+      echo "# .cgw.conf -- Auto-generated by configure.sh on $(date)"
       echo "# Edit as needed. See cgw.conf.example for all options."
       echo "# This file is git-ignored (.cgw.conf in .gitignore)."
       echo ""
@@ -530,10 +565,10 @@ main() {
       echo "CGW_CLEANUP_TESTS=\"0\""
     } >".cgw.conf"
 
-    echo "  ✓ .cgw.conf generated"
+    echo "  [OK] .cgw.conf generated"
   fi
 
-  # ── Install pre-commit hook ───────────────────────────────────────────────
+  # -- Install pre-commit hook -----------------------------------------------
 
   if [[ ${skip_hooks} -eq 0 ]]; then
     local install_hook="yes"
@@ -551,12 +586,27 @@ main() {
     fi
   fi
 
-  # ── Update .gitignore ─────────────────────────────────────────────────────
+  # -- Enable git rerere -----------------------------------------------------
+  # rerere (reuse recorded resolution) auto-replays known conflict resolutions.
+  # Recommended for two-branch models where the same conflicts recur across merges.
 
-  echo "Updating .gitignore..."
-  _update_gitignore
+  local enable_rerere="yes"
+  if [[ ${non_interactive} -eq 0 ]]; then
+    read -r -p "Enable git rerere (auto-replay conflict resolutions)? (yes/no) [yes]: " answer
+    case "${answer,,}" in
+      n | no) enable_rerere="no" ;;
+    esac
+  fi
 
-  # ── Install Claude Code skill ─────────────────────────────────────────────
+  if [[ "${enable_rerere}" == "yes" ]]; then
+    if git config rerere.enabled true 2>/dev/null; then
+      echo "  [OK] rerere.enabled = true (conflict resolutions will be remembered)"
+    else
+      echo "    Note: Could not enable rerere -- run: git config rerere.enabled true"
+    fi
+  fi
+
+  # -- Install Claude Code skill ---------------------------------------------
 
   if [[ ${skip_skill} -eq 0 ]]; then
     local install_skill="no"
@@ -579,7 +629,7 @@ main() {
     fi
   fi
 
-  # ── Summary ──────────────────────────────────────────────────────────────
+  # -- Summary --------------------------------------------------------------
 
   echo ""
   echo "=== Configuration Complete ==="

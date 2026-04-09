@@ -21,6 +21,16 @@ CGW_SCRIPTS=(
   check_lint.sh
   push_validated.sh
   create_pr.sh
+  create_release.sh
+  stash_work.sh
+  clean_build.sh
+  setup_attributes.sh
+  repo_health.sh
+  branch_cleanup.sh
+  undo_last.sh
+  changelog_generate.sh
+  bisect_helper.sh
+  rebase_safe.sh
 )
 
 setup() {
@@ -198,4 +208,108 @@ teardown() {
 @test "create_pr.sh unknown flag prints ERROR" {
   run run_script create_pr.sh --foobar
   [[ "${output}" == *"ERROR"* ]] || [[ "${output}" == *"Unknown"* ]] || [[ "${output}" == *"unknown"* ]]
+}
+
+# ── Newer scripts: --help exits 0 ─────────────────────────────────────────────
+
+@test "create_release.sh --help exits 0" {
+  run run_script create_release.sh --help
+  [ "${status}" -eq 0 ]
+}
+
+@test "stash_work.sh --help exits 0" {
+  run run_script stash_work.sh --help
+  [ "${status}" -eq 0 ]
+}
+
+@test "clean_build.sh --help exits 0" {
+  run run_script clean_build.sh --help
+  [ "${status}" -eq 0 ]
+}
+
+@test "setup_attributes.sh --help exits 0" {
+  run run_script setup_attributes.sh --help
+  [ "${status}" -eq 0 ]
+}
+
+@test "repo_health.sh --help exits 0" {
+  run run_script repo_health.sh --help
+  [ "${status}" -eq 0 ]
+}
+
+@test "branch_cleanup.sh --help exits 0" {
+  run run_script branch_cleanup.sh --help
+  [ "${status}" -eq 0 ]
+}
+
+@test "undo_last.sh --help exits 0" {
+  run run_script undo_last.sh --help
+  [ "${status}" -eq 0 ]
+}
+
+@test "changelog_generate.sh --help exits 0" {
+  run run_script changelog_generate.sh --help
+  [ "${status}" -eq 0 ]
+}
+
+@test "bisect_helper.sh --help exits 0" {
+  run run_script bisect_helper.sh --help
+  [ "${status}" -eq 0 ]
+}
+
+@test "rebase_safe.sh --help exits 0" {
+  run run_script rebase_safe.sh --help
+  [ "${status}" -eq 0 ]
+}
+
+# ── Newer scripts: unknown flag exits 1 ───────────────────────────────────────
+
+@test "create_release.sh unknown flag exits 1" {
+  run run_script create_release.sh --foobar
+  [ "${status}" -eq 1 ]
+}
+
+@test "stash_work.sh unknown flag exits 1" {
+  run run_script stash_work.sh --foobar
+  [ "${status}" -eq 1 ]
+}
+
+@test "clean_build.sh unknown flag exits 1" {
+  run run_script clean_build.sh --foobar
+  [ "${status}" -eq 1 ]
+}
+
+@test "setup_attributes.sh unknown flag exits 1" {
+  run run_script setup_attributes.sh --foobar
+  [ "${status}" -eq 1 ]
+}
+
+@test "repo_health.sh unknown flag exits 1" {
+  run run_script repo_health.sh --foobar
+  [ "${status}" -eq 1 ]
+}
+
+@test "branch_cleanup.sh unknown flag exits 1" {
+  run run_script branch_cleanup.sh --foobar
+  [ "${status}" -eq 1 ]
+}
+
+@test "undo_last.sh unknown flag exits 1" {
+  run run_script undo_last.sh --foobar
+  [ "${status}" -eq 1 ]
+}
+
+@test "changelog_generate.sh unknown flag exits 1" {
+  run run_script changelog_generate.sh --foobar
+  [ "${status}" -eq 1 ]
+}
+
+@test "bisect_helper.sh unknown flag exits 1" {
+  run run_script bisect_helper.sh --foobar
+  [ "${status}" -eq 1 ]
+}
+
+@test "rebase_safe.sh unknown flag exits 1" {
+  run run_script rebase_safe.sh --foobar
+  [ "${status}" -eq 1 ]
 }

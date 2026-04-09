@@ -105,6 +105,37 @@ CGW_FORMAT_EXCLUDES="--exclude logs --exclude .venv"
 # CGW_FORMAT_CMD=""
 
 # ============================================================================
+# MODIFIED-ONLY LINT FILE EXTENSIONS (check_lint.sh, fix_lint.sh)
+# ============================================================================
+# Space-separated glob patterns controlling which files are matched in
+# --modified-only mode. Override for non-Python projects.
+#
+# Default (Python):
+CGW_LINT_EXTENSIONS="*.py"
+#
+# JavaScript / TypeScript:
+# CGW_LINT_EXTENSIONS="*.js *.ts *.jsx *.tsx"
+#
+# Go:
+# CGW_LINT_EXTENSIONS="*.go"
+#
+# C / C++:
+# CGW_LINT_EXTENSIONS="*.c *.cpp *.h *.hpp"
+
+# ============================================================================
+# MERGE STRATEGY OPTIONS (merge_with_validation.sh)
+# ============================================================================
+# CGW_MERGE_CONFLICT_STYLE: Set to "diff3" to show the base version in conflict
+# markers (recommended — makes manual resolution easier).
+# Empty = git default two-way markers.
+CGW_MERGE_CONFLICT_STYLE=""
+# CGW_MERGE_CONFLICT_STYLE="diff3"
+
+# CGW_MERGE_IGNORE_WHITESPACE: Set to "1" to add -Xignore-space-change to merge.
+# Prevents false conflicts from whitespace-only differences (tabs/spaces, line endings).
+CGW_MERGE_IGNORE_WHITESPACE="0"
+
+# ============================================================================
 # MARKDOWN LINT (commit_enhanced.sh, check_lint.sh, push_validated.sh)
 # ============================================================================
 # Optional markdown linting step run in addition to CGW_LINT_CMD.

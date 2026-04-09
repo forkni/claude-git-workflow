@@ -86,6 +86,48 @@ _run_configure() {
   fi
 }
 
+# ── Hook installation ─────────────────────────────────────────────────────────
+
+@test "--non-interactive installs pre-commit hook" {
+  _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.githooks/pre-commit" ]
+}
+
+@test "--non-interactive installs pre-push hook" {
+  # Regression test: configure.sh used CGW_ALL_PREFIXES (unbound var) when
+  # building the pre-push hook template substitution. Verify the hook is
+  # written and contains the expected prefixes pattern.
+  _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.githooks/pre-push" ]
+  grep -q "feat" "${TEST_REPO_DIR}/.githooks/pre-push"
+}
+
+@test "--skip-hooks does not install hooks" {
+  _run_configure "--non-interactive --skip-hooks"
+  [ ! -f "${TEST_REPO_DIR}/.githooks/pre-commit" ]
+}
+
+# ── Branch preservation on reconfigure ───────────────────────────────────────
+
+@test "--reconfigure preserves existing branch settings from .cgw.conf" {
+  # Write a config with custom branch names
+  cat > "${TEST_REPO_DIR}/.cgw.conf" <<'EOF'
+CGW_SOURCE_BRANCH="my-dev"
+CGW_TARGET_BRANCH="my-stable"
+CGW_LOCAL_FILES=".claude/ logs/"
+EOF
+  _run_configure "--non-interactive --reconfigure"
+  grep -q 'CGW_SOURCE_BRANCH="my-dev"' "${TEST_REPO_DIR}/.cgw.conf"
+  grep -q 'CGW_TARGET_BRANCH="my-stable"' "${TEST_REPO_DIR}/.cgw.conf"
+}
+
+@test "--reconfigure does not modify .gitignore" {
+  echo "# existing" > "${TEST_REPO_DIR}/.gitignore"
+  _run_configure "--non-interactive --reconfigure" || true
+  # .gitignore should be unchanged (still only the one line we wrote)
+  [ "$(wc -l < "${TEST_REPO_DIR}/.gitignore")" -eq 1 ]
+}
+
 # ── Exit code ────────────────────────────────────────────────────────────────
 
 @test "configure.sh exits 0 in non-interactive mode" {

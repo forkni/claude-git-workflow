@@ -61,6 +61,15 @@ Interactive mode prompts for rollback target:
 
 Requires typing `ROLLBACK` to confirm (interactive mode). Force-push warning shown afterward.
 
+**Safe revert (preserves history — preferred for shared/already-pushed branches):**
+```bash
+# Creates a new revert commit instead of resetting — no force-push needed:
+./scripts/git/rollback_merge.sh --revert
+
+# Revert a specific merge commit (requires merge commit hash):
+./scripts/git/rollback_merge.sh --revert --target <merge-commit-hash>
+```
+
 **Manual rollback** (if script unavailable):
 ```bash
 git checkout main
@@ -85,6 +94,60 @@ git status              # check current state
 # Resolve conflicts manually, then:
 git rebase --continue
 ```
+
+---
+
+## Rebase Issues (rebase_safe.sh)
+
+If `rebase_safe.sh` hits conflicts mid-rebase:
+```bash
+# Resolve conflicting files, then:
+git add <resolved-files>
+./scripts/git/rebase_safe.sh --continue
+
+# To abandon the rebase entirely:
+./scripts/git/rebase_safe.sh --abort
+
+# To skip the conflicting commit:
+./scripts/git/rebase_safe.sh --skip
+```
+
+Restore from backup tag if needed:
+```bash
+git checkout pre-rebase-YYYYMMDD_HHMMSS
+```
+
+---
+
+## Bisect Stuck Session
+
+If a `bisect_helper.sh` session gets interrupted or abandoned:
+```bash
+./scripts/git/bisect_helper.sh --abort   # resets bisect and returns to original branch
+```
+
+Restore from backup tag if needed:
+```bash
+git checkout pre-bisect-YYYYMMDD_HHMMSS
+```
+
+---
+
+## Undo Operations
+
+Use `undo_last.sh` to recover from common commit mistakes:
+```bash
+# Undo most recent commit (changes remain staged):
+./scripts/git/undo_last.sh commit
+
+# Remove a file from the staging area:
+./scripts/git/undo_last.sh unstage src/file.py
+
+# Fix a commit message (local only — don't use after pushing):
+./scripts/git/undo_last.sh amend-message "fix: correct description"
+```
+
+Each operation creates a backup tag (`pre-undo-commit-*`) before acting.
 
 ---
 
@@ -124,3 +187,6 @@ All scripts write to `logs/` directory (excluded from commits):
 | `sync_branches.sh` | `logs/sync_branches_YYYYMMDD_HHMMSS.log` |
 | `create_pr.sh` | `logs/create_pr_YYYYMMDD_HHMMSS.log` |
 | `install_hooks.sh` | `logs/install_hooks_YYYYMMDD_HHMMSS.log` |
+| `bisect_helper.sh` | `logs/bisect_helper_YYYYMMDD_HHMMSS.log` |
+| `rebase_safe.sh` | `logs/rebase_safe_YYYYMMDD_HHMMSS.log` |
+| `undo_last.sh` | `logs/undo_last_YYYYMMDD_HHMMSS.log` |

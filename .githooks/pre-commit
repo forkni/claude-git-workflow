@@ -12,7 +12,7 @@ set -uo pipefail
 
 echo "Checking for local-only files..."
 
-PROBLEMATIC_FILES=$(git diff --cached --name-status | grep -E "^[AM][[:space:]]+(__CGW_LOCAL_FILES_PATTERN__)" || true)
+PROBLEMATIC_FILES=$(git diff --cached --name-status | grep -E "^[AM][[:space:]]+(CLAUDE\.md|SESSION_LOG\.md|\.claude|logs)" || true)
 
 if [[ -n "${PROBLEMATIC_FILES}" ]]; then
   echo "ERROR: Attempting to add or modify local-only files!"
@@ -28,7 +28,7 @@ if [[ -n "${PROBLEMATIC_FILES}" ]]; then
   exit 1
 fi
 
-DELETED_FILES=$(git diff --cached --name-status | grep -E "^D[[:space:]]+(__CGW_LOCAL_FILES_PATTERN__)" || true)
+DELETED_FILES=$(git diff --cached --name-status | grep -E "^D[[:space:]]+(CLAUDE\.md|SESSION_LOG\.md|\.claude|logs)" || true)
 if [[ -n "${DELETED_FILES}" ]]; then
   echo "  Local-only files being removed from git tracking (allowed)"
 fi

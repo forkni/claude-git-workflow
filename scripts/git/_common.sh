@@ -33,12 +33,12 @@ source "${SCRIPT_DIR}/_config.sh"
 # UTILITY FUNCTIONS
 # ============================================================================
 
-# Error output helper — always goes to STDERR per style guide
+# Error output helper -- always goes to STDERR per style guide
 err() {
 	echo "[ERROR] $*" >&2
 }
 
-# Section timer storage — associative array avoids global clobbering when
+# Section timer storage -- associative array avoids global clobbering when
 # sections are nested (e.g. run_tool_with_logging called inside another section)
 declare -A _SECTION_START_TIMES=() 2>/dev/null || true
 
@@ -48,17 +48,21 @@ get_timestamp() {
 
 init_logging() {
 	local script_name="$1"
+	# Use PROJECT_ROOT for an absolute path so logs land in the right place
+	# even when the script is invoked from a subdirectory. PROJECT_ROOT is set
+	# by _config.sh before any script calls init_logging.
+	local log_dir="${PROJECT_ROOT:+${PROJECT_ROOT}/}logs"
 
-	if [[ ! -d "logs" ]]; then
-		mkdir -p "logs"
+	if [[ ! -d "${log_dir}" ]]; then
+		mkdir -p "${log_dir}"
 	fi
 
 	get_timestamp
 
 	# shellcheck disable=SC2034
-	logfile="logs/${script_name}_${timestamp}.log"
+	logfile="${log_dir}/${script_name}_${timestamp}.log"
 	# shellcheck disable=SC2034
-	reportfile="logs/${script_name}_analysis_${timestamp}.log"
+	reportfile="${log_dir}/${script_name}_analysis_${timestamp}.log"
 }
 
 get_lint_exclusions() {

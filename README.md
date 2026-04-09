@@ -24,8 +24,7 @@ claude-git-workflow\install.cmd
 ```bash
 # 1. Copy scripts + hook template into your project
 cp -r claude-git-workflow/scripts/git/ your-project/scripts/git/
-mkdir -p your-project/hooks
-cp claude-git-workflow/hooks/pre-commit your-project/hooks/
+cp -r claude-git-workflow/hooks/ your-project/hooks/
 
 # 2. Auto-configure (scans project, generates config, installs hooks + skill)
 cd your-project && ./scripts/git/configure.sh
@@ -45,7 +44,7 @@ No manual config editing required for common setups. `configure.sh` auto-detects
 | `configure.sh` | One-time setup — scans project, generates `.cgw.conf`, installs hooks |
 | `commit_enhanced.sh` | Lint validation + local-only file protection + commit message format check |
 | `merge_with_validation.sh` | Safe merge source→target: backup tag, auto-resolve DU/DD conflicts, stop on UU |
-| `rollback_merge.sh` | Emergency rollback to pre-merge backup tag |
+| `rollback_merge.sh` | Emergency rollback to pre-merge backup tag; `--revert` for safe history-preserving mode |
 | `cherry_pick_commits.sh` | Cherry-pick with source branch validation and backup tag |
 | `merge_docs.sh` | Documentation-only merge from source to target |
 | `push_validated.sh` | Push with remote reachability check + force-push protection |
@@ -54,7 +53,17 @@ No manual config editing required for common setups. `configure.sh` auto-detects
 | `check_lint.sh` | Read-only lint validation |
 | `fix_lint.sh` | Auto-fix lint issues |
 | `create_pr.sh` | Create GitHub PR from source → target (triggers Charlie CI + GitHub Actions) |
-| `install_hooks.sh` | Install git pre-commit hooks |
+| `install_hooks.sh` | Install git hooks (pre-commit + pre-push) |
+| `setup_attributes.sh` | Generate `.gitattributes` for binary and text files (Python, TouchDesigner, GLSL, assets) |
+| `clean_build.sh` | Safe cleanup of build artifacts with dry-run default (Python, TouchDesigner, GLSL) |
+| `create_release.sh` | Create annotated version tags to trigger the GitHub Release workflow |
+| `stash_work.sh` | Safe stash wrapper with untracked file support, named stashes, and logging |
+| `repo_health.sh` | Repository health: integrity check, size report, large file detection, gc |
+| `bisect_helper.sh` | Guided git bisect with backup tag, auto-detect good ref, automated test support |
+| `rebase_safe.sh` | Safe rebase: backup tag, pushed-commit guard, abort/continue/skip, autostash |
+| `branch_cleanup.sh` | Prune merged branches, stale remote-tracking refs, and old backup tags |
+| `changelog_generate.sh` | Generate categorized markdown/text changelog from conventional commits |
+| `undo_last.sh` | Undo last commit (keep staged), unstage files, discard changes, amend message |
 
 Internal modules (not user-facing): `_common.sh` (shared utilities, sourced by every script), `_config.sh` (three-tier config resolution, sourced by `_common.sh`).
 
@@ -107,6 +116,9 @@ cp cgw.conf.example .cgw.conf
 | `CGW_DEV_ONLY_FILES` | `` | Files to warn about in cherry-pick (space-separated) |
 | `CGW_MERGE_MODE` | `direct` | Promotion mode: `direct` (merge locally) or `pr` (create GitHub PR) |
 | `CGW_PROTECTED_BRANCHES` | `main` | Branches requiring `--force` for force-push |
+| `CGW_LINT_EXTENSIONS` | `*.py` | File globs for `--modified-only` lint mode (e.g. `*.js *.ts`) |
+| `CGW_MERGE_CONFLICT_STYLE` | `` | Set to `diff3` to show base version in conflict markers |
+| `CGW_MERGE_IGNORE_WHITESPACE` | `0` | Set to `1` to ignore whitespace differences during merge |
 
 ---
 
@@ -199,7 +211,8 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use PRs by default.
 ### Rollback a merge
 
 ```bash
-./scripts/git/rollback_merge.sh                          # interactive
+./scripts/git/rollback_merge.sh                          # interactive (hard reset)
+./scripts/git/rollback_merge.sh --revert                 # safe revert (preserves history, no force-push)
 ./scripts/git/rollback_merge.sh --non-interactive        # auto-select latest backup
 ./scripts/git/rollback_merge.sh --target pre-merge-backup-20260101_120000
 ```
@@ -209,6 +222,100 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use PRs by default.
 ```bash
 ./scripts/git/cherry_pick_commits.sh                     # interactive
 ./scripts/git/cherry_pick_commits.sh --commit abc1234    # non-interactive
+```
+
+### Stash work in progress
+
+```bash
+./scripts/git/stash_work.sh push "wip: half-done refactor"
+./scripts/git/stash_work.sh list
+./scripts/git/stash_work.sh pop
+./scripts/git/stash_work.sh apply stash@{1}   # apply without removing
+```
+
+### Create a release
+
+```bash
+./scripts/git/create_release.sh v1.2.3              # tag only
+./scripts/git/create_release.sh v1.2.3 --push       # tag + push (triggers release.yml)
+./scripts/git/create_release.sh v1.2.3 --dry-run    # preview
+```
+
+### Configure .gitattributes (Python, TouchDesigner, GLSL)
+
+```bash
+./scripts/git/setup_attributes.sh --dry-run   # preview
+./scripts/git/setup_attributes.sh             # write .gitattributes
+```
+
+### Clean build artifacts
+
+```bash
+./scripts/git/clean_build.sh                  # dry-run (safe preview)
+./scripts/git/clean_build.sh --execute        # actually delete
+./scripts/git/clean_build.sh --td --execute   # TouchDesigner artifacts only
+```
+
+### Repository health check
+
+```bash
+./scripts/git/repo_health.sh                  # integrity, size, large files
+./scripts/git/repo_health.sh --gc             # also run garbage collection
+./scripts/git/repo_health.sh --large 5        # report files >5MB
+```
+
+### Undo last commit / unstage / amend
+
+```bash
+./scripts/git/undo_last.sh commit                           # undo last commit, keep changes staged
+./scripts/git/undo_last.sh unstage src/file.py              # remove file from staging area
+./scripts/git/undo_last.sh discard src/file.py              # discard working-tree changes (irreversible)
+./scripts/git/undo_last.sh amend-message "fix: correct msg" # rewrite last commit message
+```
+
+Creates a backup tag before any destructive operation.
+
+### Branch cleanup
+
+```bash
+./scripts/git/branch_cleanup.sh                  # dry-run preview (safe default)
+./scripts/git/branch_cleanup.sh --execute        # delete merged branches + prune remote refs
+./scripts/git/branch_cleanup.sh --tags --execute # also remove old backup tags
+./scripts/git/branch_cleanup.sh --older-than 30 --execute  # only branches older than 30 days
+```
+
+### Safe rebase
+
+```bash
+./scripts/git/rebase_safe.sh --onto main             # rebase current branch onto main
+./scripts/git/rebase_safe.sh --squash-last 3         # interactive squash of last 3 commits
+./scripts/git/rebase_safe.sh --squash-last 3 --autosquash  # auto-apply fixup!/squash! prefixes
+./scripts/git/rebase_safe.sh --abort                 # abort in-progress rebase
+./scripts/git/rebase_safe.sh --continue              # continue after resolving conflicts
+```
+
+Creates a backup tag (`pre-rebase-TIMESTAMP`) before rebasing. Warns if commits already pushed.
+
+### Bisect a bug
+
+```bash
+# Automated: find first-bad commit using a test script
+./scripts/git/bisect_helper.sh --good v1.0.0 --run "bash tests/smoke_test.sh"
+
+# Manual: guided interactive bisect
+./scripts/git/bisect_helper.sh --good v1.0.0
+# → git bisect good / git bisect bad after each checkout
+
+./scripts/git/bisect_helper.sh --abort   # stop in-progress bisect session
+```
+
+### Generate changelog
+
+```bash
+./scripts/git/changelog_generate.sh                        # since latest semver tag → stdout
+./scripts/git/changelog_generate.sh --from v1.0.0          # since specific tag
+./scripts/git/changelog_generate.sh --from v1.0.0 --output CHANGELOG.md
+./scripts/git/changelog_generate.sh --from v1.0.0 --format text  # plain text
 ```
 
 ---

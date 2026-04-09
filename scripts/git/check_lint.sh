@@ -105,7 +105,10 @@ main() {
 			exit 0
 		fi
 		local modified_files
-		modified_files=$(git diff --name-only --diff-filter=ACMR HEAD -- '*.py')
+		# CGW_LINT_EXTENSIONS controls which files are considered (default: *.py)
+		local -a lint_exts
+		read -r -a lint_exts <<< "${CGW_LINT_EXTENSIONS:-*.py}"
+		modified_files=$(git diff --name-only --diff-filter=ACMR HEAD -- "${lint_exts[@]}")
 		if [[ -z "$modified_files" ]]; then
 			echo "[OK] No modified files to check"
 			exit 0
@@ -118,14 +121,18 @@ main() {
 		local EXIT_CODE=0
 
 		echo "[LINT CHECK]"
+		# Build check args: strip trailing path token (.) and append specific files
+		local lint_check_cmd_args="${CGW_LINT_CHECK_ARGS% *}"
 		# shellcheck disable=SC2086
-		"${lint_cmd}" check $modified_files || EXIT_CODE=1
+		"${lint_cmd}" ${lint_check_cmd_args} $modified_files || EXIT_CODE=1
 
 		if [[ -n "${CGW_FORMAT_CMD}" ]]; then
 			echo ""
 			echo "[FORMAT CHECK]"
+			# Build format check args: strip trailing path token (.) and append specific files
+			local fmt_check_cmd_args="${CGW_FORMAT_CHECK_ARGS% *}"
 			# shellcheck disable=SC2086
-			"${CGW_FORMAT_CMD}" format --check $modified_files || EXIT_CODE=1
+			"${CGW_FORMAT_CMD}" ${fmt_check_cmd_args} $modified_files || EXIT_CODE=1
 		fi
 
 		exit $EXIT_CODE
@@ -164,10 +171,10 @@ main() {
 		[[ ${lint_status} -ne 0 ]] && lint_status_str="FAILED"
 		results+=("Lint:${lint_status_str}:${TOOL_ERROR_COUNT}:${lint_duration}")
 	else
-		echo "  (code lint skipped — CGW_LINT_CMD not set)" | tee -a "$logfile"
+		echo "  (code lint skipped -- CGW_LINT_CMD not set)" | tee -a "$logfile"
 	fi
 
-	# FORMAT CHECK (independent of lint check — runs even when CGW_LINT_CMD is unset)
+	# FORMAT CHECK (independent of lint check -- runs even when CGW_LINT_CMD is unset)
 	if [[ -n "${CGW_FORMAT_CMD}" ]]; then
 		local format_start format_end format_duration format_status_str
 		format_start=$(date +%s)
@@ -198,7 +205,7 @@ main() {
 		[[ ${md_lint_status} -ne 0 ]] && md_status_str="FAILED"
 		results+=("Markdown:${md_status_str}:${TOOL_ERROR_COUNT}:${md_duration}")
 	elif [[ ${skip_md_lint} -eq 1 ]]; then
-		echo "  (markdown lint skipped — --skip-md-lint)" | tee -a "$logfile"
+		echo "  (markdown lint skipped -- --skip-md-lint)" | tee -a "$logfile"
 	fi
 
 	log_summary_table "$logfile" "${results[@]}"

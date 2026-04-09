@@ -82,6 +82,7 @@ rem PI-04: CGW source files complete
 set "SOURCE_OK=1"
 if not exist "%CGW_DIR%\scripts\git\configure.sh"    set "SOURCE_OK=0"
 if not exist "%CGW_DIR%\hooks\pre-commit"             set "SOURCE_OK=0"
+if not exist "%CGW_DIR%\hooks\pre-push"               set "SOURCE_OK=0"
 if not exist "%CGW_DIR%\skill\SKILL.md"               set "SOURCE_OK=0"
 if not exist "%CGW_DIR%\command\auto-git-workflow.md"  set "SOURCE_OK=0"
 if not "%SOURCE_OK%"=="1" goto :pi04_fail
@@ -89,7 +90,7 @@ echo   [PASS] PI-04  CGW source files complete
 goto :pi04_done
 :pi04_fail
 echo   [FAIL] PI-04  CGW source missing required files
-echo          Expected: scripts\git\configure.sh, hooks\pre-commit,
+echo          Expected: scripts\git\configure.sh, hooks\pre-commit, hooks\pre-push,
 echo                    skill\SKILL.md, command\auto-git-workflow.md
 set "CHECKS_PASSED=0"
 :pi04_done
@@ -129,8 +130,8 @@ rem --- Confirm ---
 echo --- Installation Summary ---
 echo.
 echo   Will copy into: %TARGET_DIR%
-echo     scripts\git\    (15 shell scripts)
-echo     hooks\          (pre-commit template)
+echo     scripts\git\    (25 shell scripts)
+echo     hooks\          (pre-commit + pre-push templates)
 echo     skill\          (Claude Code skill source)
 echo     command\        (slash command source)
 echo     cgw.conf.example (config reference)
@@ -149,10 +150,14 @@ goto :end
 
 echo.
 
-rem --- Backup existing .githooks/pre-commit ---
-if not exist "%TARGET_DIR%\.githooks\pre-commit" goto :backup_done
+rem --- Backup existing .githooks/ hook templates ---
+if not exist "%TARGET_DIR%\.githooks\pre-commit" goto :backup_pc_done
 copy /y "%TARGET_DIR%\.githooks\pre-commit" "%TARGET_DIR%\.githooks\pre-commit.bak" >nul
 echo   Backed up .githooks\pre-commit -^> .githooks\pre-commit.bak
+:backup_pc_done
+if not exist "%TARGET_DIR%\.githooks\pre-push" goto :backup_done
+copy /y "%TARGET_DIR%\.githooks\pre-push" "%TARGET_DIR%\.githooks\pre-push.bak" >nul
+echo   Backed up .githooks\pre-push -^> .githooks\pre-push.bak
 :backup_done
 
 rem --- Copy files ---
@@ -174,10 +179,12 @@ rem hooks/
 if not exist "%TARGET_DIR%\hooks\" mkdir "%TARGET_DIR%\hooks\"
 copy /y "%CGW_DIR%\hooks\pre-commit" "%TARGET_DIR%\hooks\pre-commit" >nul
 if errorlevel 1 goto :cp_hooks_fail
-echo   [OK] Copied hooks\pre-commit template
+copy /y "%CGW_DIR%\hooks\pre-push" "%TARGET_DIR%\hooks\pre-push" >nul
+if errorlevel 1 goto :cp_hooks_fail
+echo   [OK] Copied hooks\pre-commit + hooks\pre-push templates
 goto :cp_hooks_done
 :cp_hooks_fail
-echo   [ERR] Failed to copy hooks\pre-commit
+echo   [ERR] Failed to copy hook templates from hooks\
 goto :end
 :cp_hooks_done
 
@@ -267,7 +274,7 @@ if not exist "%TARGET_DIR%\scripts\git\commit_enhanced.sh" goto :sum_scripts_don
 for /f %%c in ('dir /b "%TARGET_DIR%\scripts\git\*.sh" 2^>nul ^| find /c ".sh"') do echo   Scripts:      %TARGET_DIR%\scripts\git\ ^(%%c files^)
 :sum_scripts_done
 if exist "%TARGET_DIR%\.cgw.conf"                              echo   Config:       %TARGET_DIR%\.cgw.conf
-if exist "%TARGET_DIR%\.git\hooks\pre-commit"                  echo   Git hook:     %TARGET_DIR%\.git\hooks\pre-commit
+if exist "%TARGET_DIR%\.git\hooks\pre-commit"                  echo   Git hooks:    %TARGET_DIR%\.git\hooks\pre-commit + pre-push
 if exist "%TARGET_DIR%\.claude\skills\auto-git-workflow\SKILL.md" echo   Claude skill: %TARGET_DIR%\.claude\skills\auto-git-workflow\
 if exist "%TARGET_DIR%\.claude\commands\auto-git-workflow.md"  echo   Slash cmd:    %TARGET_DIR%\.claude\commands\auto-git-workflow.md
 

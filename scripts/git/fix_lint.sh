@@ -62,7 +62,7 @@ main() {
 	[[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
 
 	if [[ -z "${CGW_LINT_CMD}" ]]; then
-		echo "[OK] Lint fix skipped (CGW_LINT_CMD not set — configure in .cgw.conf)"
+		echo "[OK] Lint fix skipped (CGW_LINT_CMD not set -- configure in .cgw.conf)"
 		exit 0
 	fi
 
@@ -85,7 +85,10 @@ main() {
 	# Handle --modified-only mode
 	if [[ "${modified_only}" -eq 1 ]]; then
 		local modified_files
-		modified_files=$(git diff --name-only --diff-filter=ACMR HEAD -- '*.py')
+		# CGW_LINT_EXTENSIONS controls which files are considered (default: *.py)
+		local -a lint_exts
+		read -r -a lint_exts <<< "${CGW_LINT_EXTENSIONS:-*.py}"
+		modified_files=$(git diff --name-only --diff-filter=ACMR HEAD -- "${lint_exts[@]}")
 		if [[ -z "$modified_files" ]]; then
 			echo "[OK] No modified files to fix"
 			exit 0
@@ -98,14 +101,18 @@ main() {
 		local EXIT_CODE=0
 
 		echo "[LINT FIX]"
+		# Build fix args: strip trailing path token (.) and append specific files
+		local lint_fix_cmd_args="${CGW_LINT_FIX_ARGS% *}"
 		# shellcheck disable=SC2086
-		"${lint_cmd}" ${CGW_LINT_FIX_ARGS%% *} $modified_files || EXIT_CODE=1
+		"${lint_cmd}" ${lint_fix_cmd_args} $modified_files || EXIT_CODE=1
 
 		if [[ -n "${CGW_FORMAT_CMD}" ]]; then
 			echo ""
 			echo "[FORMAT FIX]"
+			# Build format fix args: strip trailing path token (.) and append specific files
+			local fmt_fix_cmd_args="${CGW_FORMAT_FIX_ARGS% *}"
 			# shellcheck disable=SC2086
-			"${CGW_FORMAT_CMD}" format $modified_files || EXIT_CODE=1
+			"${CGW_FORMAT_CMD}" ${fmt_fix_cmd_args} $modified_files || EXIT_CODE=1
 		fi
 
 		exit $EXIT_CODE
@@ -157,7 +164,7 @@ main() {
 	if ((fix_failed == 0)); then
 		echo "[OK] All lint fixes applied successfully!" | tee -a "$logfile"
 	else
-		echo "[!] Some issues remain — check output above" | tee -a "$logfile"
+		echo "[!] Some issues remain -- check output above" | tee -a "$logfile"
 	fi
 
 	# Run final verification
@@ -167,7 +174,7 @@ main() {
 	if "${SCRIPT_DIR}/check_lint.sh" 2>&1 | tee -a "$logfile"; then
 		echo "[OK] All lint checks pass!" | tee -a "$logfile"
 	else
-		echo "[!] Some issues remain — manual fixes may be required" | tee -a "$logfile"
+		echo "[!] Some issues remain -- manual fixes may be required" | tee -a "$logfile"
 	fi
 
 	local script_end total_duration
