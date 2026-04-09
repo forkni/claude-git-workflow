@@ -107,6 +107,27 @@ _run_configure() {
   [ ! -f "${TEST_REPO_DIR}/.githooks/pre-commit" ]
 }
 
+# ── Branch preservation on reconfigure ───────────────────────────────────────
+
+@test "--reconfigure preserves existing branch settings from .cgw.conf" {
+  # Write a config with custom branch names
+  cat > "${TEST_REPO_DIR}/.cgw.conf" <<'EOF'
+CGW_SOURCE_BRANCH="my-dev"
+CGW_TARGET_BRANCH="my-stable"
+CGW_LOCAL_FILES=".claude/ logs/"
+EOF
+  _run_configure "--non-interactive --reconfigure"
+  grep -q 'CGW_SOURCE_BRANCH="my-dev"' "${TEST_REPO_DIR}/.cgw.conf"
+  grep -q 'CGW_TARGET_BRANCH="my-stable"' "${TEST_REPO_DIR}/.cgw.conf"
+}
+
+@test "--reconfigure does not modify .gitignore" {
+  echo "# existing" > "${TEST_REPO_DIR}/.gitignore"
+  _run_configure "--non-interactive --reconfigure" || true
+  # .gitignore should be unchanged (still only the one line we wrote)
+  [ "$(wc -l < "${TEST_REPO_DIR}/.gitignore")" -eq 1 ]
+}
+
 # ── Exit code ────────────────────────────────────────────────────────────────
 
 @test "configure.sh exits 0 in non-interactive mode" {

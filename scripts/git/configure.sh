@@ -499,17 +499,27 @@ main() {
 
   # ── Interactive confirmation (only when generating/updating config) ──────────
 
+  # When reconfiguring, preserve existing branch settings from .cgw.conf
+  # rather than overwriting with fresh auto-detection.
   local target_branch="${detected_target}"
   local source_branch="${detected_source}"
+  if [[ -f ".cgw.conf" ]] && [[ ${reconfigure} -eq 1 ]]; then
+    local existing_target existing_source
+    existing_target=$(grep -m1 '^CGW_TARGET_BRANCH=' .cgw.conf | sed 's/CGW_TARGET_BRANCH=//;s/"//g' || true)
+    existing_source=$(grep -m1 '^CGW_SOURCE_BRANCH=' .cgw.conf | sed 's/CGW_SOURCE_BRANCH=//;s/"//g' || true)
+    [[ -n "${existing_target}" ]] && target_branch="${existing_target}"
+    [[ -n "${existing_source}" ]] && source_branch="${existing_source}"
+  fi
+
   local local_files="${detected_local_files:-CLAUDE.md MEMORY.md .claude/ logs/}"
 
   if [[ ${non_interactive} -eq 0 ]] && { [[ ! -f ".cgw.conf" ]] || [[ ${reconfigure} -eq 1 ]]; }; then
     echo "Press Enter to accept [default], or type a different value."
     echo ""
-    read -r -p "Target branch [${detected_target}]: " answer
+    read -r -p "Target branch [${target_branch}]: " answer
     [[ -n "${answer}" && ! "${answer}" =~ ^[Yy]([Ee][Ss])?$ ]] && target_branch="${answer}"
 
-    read -r -p "Source branch [${detected_source}]: " answer
+    read -r -p "Source branch [${source_branch}]: " answer
     [[ -n "${answer}" && ! "${answer}" =~ ^[Yy]([Ee][Ss])?$ ]] && source_branch="${answer}"
 
     echo ""
@@ -593,11 +603,6 @@ main() {
       echo "    Note: Could not enable rerere — run: git config rerere.enabled true"
     fi
   fi
-
-  # ── Update .gitignore ─────────────────────────────────────────────────────
-
-  echo "Updating .gitignore..."
-  _update_gitignore
 
   # ── Install Claude Code skill ─────────────────────────────────────────────
 
