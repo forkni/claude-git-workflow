@@ -242,6 +242,27 @@ CGW_FORMAT_CHECK_ARGS="-l ."
 CGW_FORMAT_FIX_ARGS="-w ."
 ```
 
+### C/C++ (clang-tidy + clang-format)
+
+```bash
+CGW_LINT_CMD="clang-tidy"
+CGW_LINT_CHECK_ARGS="-p build"   # dir containing compile_commands.json
+CGW_LINT_FIX_ARGS="-p build --fix"
+CGW_FORMAT_CMD="clang-format"
+CGW_FORMAT_CHECK_ARGS="--dry-run --Werror -r ."
+CGW_FORMAT_FIX_ARGS="-i -r ."
+```
+
+### C/C++ (cppcheck + clang-format)
+
+```bash
+CGW_LINT_CMD="cppcheck"
+CGW_LINT_CHECK_ARGS="--enable=all --error-exitcode=1 ."
+CGW_FORMAT_CMD="clang-format"
+CGW_FORMAT_CHECK_ARGS="--dry-run --Werror -r ."
+CGW_FORMAT_FIX_ARGS="-i -r ."
+```
+
 ### No linter
 
 ```bash
