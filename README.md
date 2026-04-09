@@ -24,8 +24,7 @@ claude-git-workflow\install.cmd
 ```bash
 # 1. Copy scripts + hook template into your project
 cp -r claude-git-workflow/scripts/git/ your-project/scripts/git/
-mkdir -p your-project/hooks
-cp claude-git-workflow/hooks/pre-commit your-project/hooks/
+cp -r claude-git-workflow/hooks/ your-project/hooks/
 
 # 2. Auto-configure (scans project, generates config, installs hooks + skill)
 cd your-project && ./scripts/git/configure.sh
@@ -54,12 +53,17 @@ No manual config editing required for common setups. `configure.sh` auto-detects
 | `check_lint.sh` | Read-only lint validation |
 | `fix_lint.sh` | Auto-fix lint issues |
 | `create_pr.sh` | Create GitHub PR from source → target (triggers Charlie CI + GitHub Actions) |
-| `install_hooks.sh` | Install git pre-commit hooks |
+| `install_hooks.sh` | Install git hooks (pre-commit + pre-push) |
 | `setup_attributes.sh` | Generate `.gitattributes` for binary and text files (Python, TouchDesigner, GLSL, assets) |
 | `clean_build.sh` | Safe cleanup of build artifacts with dry-run default (Python, TouchDesigner, GLSL) |
 | `create_release.sh` | Create annotated version tags to trigger the GitHub Release workflow |
 | `stash_work.sh` | Safe stash wrapper with untracked file support, named stashes, and logging |
 | `repo_health.sh` | Repository health: integrity check, size report, large file detection, gc |
+| `bisect_helper.sh` | Guided git bisect with backup tag, auto-detect good ref, automated test support |
+| `rebase_safe.sh` | Safe rebase: backup tag, pushed-commit guard, abort/continue/skip, autostash |
+| `branch_cleanup.sh` | Prune merged branches, stale remote-tracking refs, and old backup tags |
+| `changelog_generate.sh` | Generate categorized markdown/text changelog from conventional commits |
+| `undo_last.sh` | Undo last commit (keep staged), unstage files, discard changes, amend message |
 
 Internal modules (not user-facing): `_common.sh` (shared utilities, sourced by every script), `_config.sh` (three-tier config resolution, sourced by `_common.sh`).
 
@@ -257,6 +261,60 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use PRs by default.
 ./scripts/git/repo_health.sh                  # integrity, size, large files
 ./scripts/git/repo_health.sh --gc             # also run garbage collection
 ./scripts/git/repo_health.sh --large 5        # report files >5MB
+```
+
+### Undo last commit / unstage / amend
+
+```bash
+./scripts/git/undo_last.sh commit                           # undo last commit, keep changes staged
+./scripts/git/undo_last.sh unstage src/file.py              # remove file from staging area
+./scripts/git/undo_last.sh discard src/file.py              # discard working-tree changes (irreversible)
+./scripts/git/undo_last.sh amend-message "fix: correct msg" # rewrite last commit message
+```
+
+Creates a backup tag before any destructive operation.
+
+### Branch cleanup
+
+```bash
+./scripts/git/branch_cleanup.sh                  # dry-run preview (safe default)
+./scripts/git/branch_cleanup.sh --execute        # delete merged branches + prune remote refs
+./scripts/git/branch_cleanup.sh --tags --execute # also remove old backup tags
+./scripts/git/branch_cleanup.sh --older-than 30 --execute  # only branches older than 30 days
+```
+
+### Safe rebase
+
+```bash
+./scripts/git/rebase_safe.sh --onto main             # rebase current branch onto main
+./scripts/git/rebase_safe.sh --squash-last 3         # interactive squash of last 3 commits
+./scripts/git/rebase_safe.sh --squash-last 3 --autosquash  # auto-apply fixup!/squash! prefixes
+./scripts/git/rebase_safe.sh --abort                 # abort in-progress rebase
+./scripts/git/rebase_safe.sh --continue              # continue after resolving conflicts
+```
+
+Creates a backup tag (`pre-rebase-TIMESTAMP`) before rebasing. Warns if commits already pushed.
+
+### Bisect a bug
+
+```bash
+# Automated: find first-bad commit using a test script
+./scripts/git/bisect_helper.sh --good v1.0.0 --run "bash tests/smoke_test.sh"
+
+# Manual: guided interactive bisect
+./scripts/git/bisect_helper.sh --good v1.0.0
+# → git bisect good / git bisect bad after each checkout
+
+./scripts/git/bisect_helper.sh --abort   # stop in-progress bisect session
+```
+
+### Generate changelog
+
+```bash
+./scripts/git/changelog_generate.sh                        # since latest semver tag → stdout
+./scripts/git/changelog_generate.sh --from v1.0.0          # since specific tag
+./scripts/git/changelog_generate.sh --from v1.0.0 --output CHANGELOG.md
+./scripts/git/changelog_generate.sh --from v1.0.0 --format text  # plain text
 ```
 
 ---
