@@ -105,6 +105,21 @@ CGW_FORMAT_EXCLUDES="--exclude logs --exclude .venv"
 # CGW_FORMAT_CMD=""
 
 # ============================================================================
+# MARKDOWN LINT (commit_enhanced.sh, check_lint.sh, push_validated.sh)
+# ============================================================================
+# Optional markdown linting step run in addition to CGW_LINT_CMD.
+# Set CGW_MARKDOWNLINT_CMD="" to disable (default).
+#
+# Example (markdownlint-cli2):
+# CGW_MARKDOWNLINT_CMD="markdownlint-cli2"
+# CGW_MARKDOWNLINT_ARGS="**/*.md !CLAUDE.md !MEMORY.md"
+#
+# Skip at runtime with --skip-md-lint flag or CGW_SKIP_MD_LINT=1.
+
+CGW_MARKDOWNLINT_CMD=""
+CGW_MARKDOWNLINT_ARGS="**/*.md !CLAUDE.md !MEMORY.md"
+
+# ============================================================================
 # DOCS CI VALIDATION (merge_with_validation.sh)
 # ============================================================================
 # Extended regex (bash ERE) matching allowed doc filenames in docs/.

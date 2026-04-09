@@ -224,9 +224,9 @@ Target branch: [hash] merged & pushed
 
 ---
 
-## Section B: Windows cmd.exe (Alternative)
+## Section B: Windows cmd.exe (Fallback)
 
-Use direct git commands since .bat wrappers may not be available:
+CGW scripts require Git Bash. Use raw git commands only when Git Bash is unavailable:
 
 ```batch
 git checkout development
@@ -239,7 +239,7 @@ git push origin main
 git checkout development
 ```
 
-**Caution**: Raw `git commit` bypasses lint validation and local-only file protection. Use Section A (Git Bash) when possible.
+**Caution**: Raw `git commit` bypasses lint validation and local-only file protection. Use Section A (Git Bash) whenever possible.
 
 ---
 
