@@ -54,22 +54,21 @@ if exist "%TARGET_DIR%\" (
     set CHECKS_PASSED=0
 )
 
-:: PI-02: Target is a git repo
-if exist "%TARGET_DIR%\.git\" (
-    echo   [PASS] PI-02  Target is a git repository
-) else if exist "%TARGET_DIR%\.git" (
-    echo   [PASS] PI-02  Target is a git repository (worktree)
-) else (
-    echo   [FAIL] PI-02  No .git directory found — not a git repository
-    set CHECKS_PASSED=0
-)
+:: PI-02: Target is a git repo (use goto to avoid if/else if fall-through)
+if exist "%TARGET_DIR%\.git\" goto :pi02_pass
+if exist "%TARGET_DIR%\.git"  goto :pi02_pass
+echo   [FAIL] PI-02  No .git directory found -- not a git repository
+set CHECKS_PASSED=0
+goto :pi02_done
+:pi02_pass
+echo   [PASS] PI-02  Target is a git repository
+:pi02_done
 
 :: PI-03: bash available (Git for Windows / Git Bash)
+:: Note: head is a Unix command, not available in CMD -- use where only
 where bash >nul 2>&1
 if %ERRORLEVEL%==0 (
-    for /f "tokens=*" %%v in ('bash --version 2^>nul ^| head -1') do (
-        echo   [PASS] PI-03  bash available: %%v
-    )
+    echo   [PASS] PI-03  bash available (Git for Windows)
 ) else (
     echo   [FAIL] PI-03  bash not found on PATH
     echo          Install Git for Windows: https://git-scm.com/download/win
