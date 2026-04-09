@@ -322,8 +322,20 @@ _install_hook() {
   # Also install pre-push hook if template exists alongside pre-commit
   local pre_push_template="${hooks_template_dir}/pre-push"
   if [[ -f "${pre_push_template}" ]]; then
-    # Build CGW_ALL_PREFIXES for substitution into pre-push template
-    local all_prefixes_escaped="${CGW_ALL_PREFIXES//|/\\|}"
+    # Build CGW_ALL_PREFIXES for substitution into pre-push template.
+    # Can't source _config.sh here (see top-of-file comment), so compute locally
+    # by reading CGW_EXTRA_PREFIXES from the just-written .cgw.conf.
+    local _base_prefixes="feat|fix|docs|chore|test|refactor|style|perf"
+    local _extra_prefixes
+    _extra_prefixes=$(grep -m1 '^CGW_EXTRA_PREFIXES=' "${PROJECT_ROOT}/.cgw.conf" \
+      | sed 's/CGW_EXTRA_PREFIXES=//;s/"//g' || true)
+    local _all_prefixes
+    if [[ -n "${_extra_prefixes}" ]]; then
+      _all_prefixes="${_base_prefixes}|${_extra_prefixes}"
+    else
+      _all_prefixes="${_base_prefixes}"
+    fi
+    local all_prefixes_escaped="${_all_prefixes//|/\\|}"
     sed -e "s|__CGW_LOCAL_FILES_PATTERN__|${sed_files_pattern}|g" \
         -e "s|__CGW_ALL_PREFIXES__|${all_prefixes_escaped}|g" \
         "${pre_push_template}" >"${PROJECT_ROOT}/.githooks/pre-push"
