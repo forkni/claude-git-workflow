@@ -44,7 +44,7 @@ No manual config editing required for common setups. `configure.sh` auto-detects
 | `configure.sh` | One-time setup — scans project, generates `.cgw.conf`, installs hooks |
 | `commit_enhanced.sh` | Lint validation + local-only file protection + commit message format check |
 | `merge_with_validation.sh` | Safe merge source→target: backup tag, auto-resolve DU/DD conflicts, stop on UU |
-| `rollback_merge.sh` | Emergency rollback to pre-merge backup tag |
+| `rollback_merge.sh` | Emergency rollback to pre-merge backup tag; `--revert` for safe history-preserving mode |
 | `cherry_pick_commits.sh` | Cherry-pick with source branch validation and backup tag |
 | `merge_docs.sh` | Documentation-only merge from source to target |
 | `push_validated.sh` | Push with remote reachability check + force-push protection |
@@ -211,7 +211,8 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use PRs by default.
 ### Rollback a merge
 
 ```bash
-./scripts/git/rollback_merge.sh                          # interactive
+./scripts/git/rollback_merge.sh                          # interactive (hard reset)
+./scripts/git/rollback_merge.sh --revert                 # safe revert (preserves history, no force-push)
 ./scripts/git/rollback_merge.sh --non-interactive        # auto-select latest backup
 ./scripts/git/rollback_merge.sh --target pre-merge-backup-20260101_120000
 ```

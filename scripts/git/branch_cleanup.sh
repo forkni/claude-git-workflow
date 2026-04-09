@@ -15,7 +15,7 @@
 #   --dry-run          Preview changes without deleting anything (default)
 #   --execute          Actually delete branches and prune refs
 #   --remote           Also prune stale remote-tracking refs (git remote prune)
-#   --tags             Also clean up old CGW backup tags (pre-merge-backup-*)
+#   --tags             Also clean up old CGW backup tags (pre-merge-backup-*, pre-cherry-pick-*, pre-docs-merge-*, pre-bisect-*, pre-rebase-*, pre-undo-commit-*)
 #   --older-than <N>   Only delete backup tags older than N days (default: 30)
 #   --non-interactive  Skip confirmation prompts
 #   -h, --help         Show help
@@ -48,7 +48,7 @@ main() {
 			echo "Options:"
 			echo "  --execute          Delete merged branches and prune (without this, only previews)"
 			echo "  --remote           Prune stale remote-tracking refs (git remote prune origin)"
-			echo "  --tags             Clean up old CGW backup tags (pre-merge-backup-*, pre-cherry-pick-*)"
+			echo "  --tags             Clean up old CGW backup tags (pre-merge-backup-*, pre-cherry-pick-*, pre-docs-merge-*, pre-bisect-*, pre-rebase-*, pre-undo-commit-*)"
 			echo "  --older-than <N>   Only delete backup tags older than N days (default: 30)"
 			echo "  --non-interactive  Skip confirmation prompts"
 			echo "  -h, --help         Show this help"
@@ -189,14 +189,14 @@ main() {
 			if [[ ${tag_epoch} -le ${cutoff_epoch} ]]; then
 				old_tags+=("${tag}")
 			fi
-		done < <(git tag -l "pre-merge-backup-*" "pre-cherry-pick-*" 2>/dev/null | sort)
+		done < <(git tag -l "pre-merge-backup-*" "pre-cherry-pick-*" "pre-docs-merge-*" "pre-bisect-*" "pre-rebase-*" "pre-undo-commit-*" 2>/dev/null | sort)
 
 		if [[ ${#old_tags[@]} -eq 0 ]]; then
 			echo "  ✓ No backup tags older than ${older_than_days} days"
 		else
 			echo "  Old backup tags:"
 			local total_all
-			total_all=$(git tag -l "pre-merge-backup-*" "pre-cherry-pick-*" 2>/dev/null | wc -l | tr -d ' ')
+			total_all=$(git tag -l "pre-merge-backup-*" "pre-cherry-pick-*" "pre-docs-merge-*" "pre-bisect-*" "pre-rebase-*" "pre-undo-commit-*" 2>/dev/null | wc -l | tr -d ' ')
 			for tag in "${old_tags[@]}"; do
 				local tag_date
 				tag_date=$(git log -1 --format="%ar" "${tag}" 2>/dev/null || echo "unknown")

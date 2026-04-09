@@ -132,7 +132,7 @@ Workflow: validate → backup tag → merge → auto-resolve DU/DD conflicts →
 
 **`rollback_merge.sh`** — Emergency rollback
 ```bash
-./scripts/git/rollback_merge.sh [--non-interactive] [--target <ref>] [--dry-run]
+./scripts/git/rollback_merge.sh [--non-interactive] [--target <ref>] [--dry-run] [--revert]
 ```
 
 | Flag | Purpose |
@@ -140,6 +140,7 @@ Workflow: validate → backup tag → merge → auto-resolve DU/DD conflicts →
 | `--non-interactive` | Skip prompts; auto-selects latest backup tag |
 | `--target <ref>` | Specify rollback target (tag, hash, HEAD~1) |
 | `--dry-run` | Show target without resetting |
+| `--revert` | Safe mode: `git revert -m 1` instead of `git reset --hard` — preserves history, no force-push needed |
 
 Must be on target branch. Requires typing `ROLLBACK` to confirm in interactive mode.
 
@@ -253,7 +254,7 @@ Global flags: `--non-interactive`, `--dry-run`, `--help`
 | *(no flags)* | Dry-run — shows what would be deleted (safe default) |
 | `--execute` | Actually perform deletions |
 | `--remote` | Prune stale remote-tracking refs (`git remote prune`) |
-| `--tags` | Remove old `pre-merge-backup-*`, `pre-rebase-*`, `pre-bisect-*` backup tags |
+| `--tags` | Remove old `pre-merge-backup-*`, `pre-cherry-pick-*`, `pre-docs-merge-*`, `pre-bisect-*`, `pre-rebase-*`, `pre-undo-commit-*` backup tags |
 | `--older-than <N>` | Only target branches/tags older than N days |
 | `--non-interactive` | Skip confirmation prompts |
 

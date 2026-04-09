@@ -61,6 +61,15 @@ Interactive mode prompts for rollback target:
 
 Requires typing `ROLLBACK` to confirm (interactive mode). Force-push warning shown afterward.
 
+**Safe revert (preserves history — preferred for shared/already-pushed branches):**
+```bash
+# Creates a new revert commit instead of resetting — no force-push needed:
+./scripts/git/rollback_merge.sh --revert
+
+# Revert a specific merge commit (requires merge commit hash):
+./scripts/git/rollback_merge.sh --revert --target <merge-commit-hash>
+```
+
 **Manual rollback** (if script unavailable):
 ```bash
 git checkout main

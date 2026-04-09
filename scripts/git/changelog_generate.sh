@@ -16,7 +16,7 @@
 #   --to <ref>       End ref (inclusive) — default: HEAD
 #   --format <fmt>   Output format: md (default) or text
 #   --output <file>  Write to file instead of stdout
-#   --no-merge       Exclude merge commits (default: excluded)
+#   --include-merges Include merge commits (default: excluded)
 #   -h, --help       Show help
 # Returns:
 #   0 on success, 1 on failure
