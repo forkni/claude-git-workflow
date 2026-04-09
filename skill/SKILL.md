@@ -110,6 +110,8 @@ Did lint checks fail?
 ├─ Yes → Run ./scripts/git/fix_lint.sh then retry commit
 └─ No  → Commit proceeds
 
+Optional flags: --skip-lint (skip all lint), --skip-md-lint (skip markdown lint only)
+
 After commit: verify with git log --oneline -1
 ```
 
@@ -134,9 +136,11 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 
 **Creating a PR** (when `CGW_MERGE_MODE="pr"`):
 ```bash
-./scripts/git/create_pr.sh                    # interactive
-./scripts/git/create_pr.sh --non-interactive  # skip prompts
-./scripts/git/create_pr.sh --dry-run          # preview only
+./scripts/git/create_pr.sh                          # interactive
+./scripts/git/create_pr.sh --non-interactive        # skip prompts
+./scripts/git/create_pr.sh --dry-run                # preview only
+./scripts/git/create_pr.sh --title "feat: my PR"   # override title
+./scripts/git/create_pr.sh --draft                  # open as draft
 ```
 Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login`. Charlie CI auto-reviews on PR open.
 

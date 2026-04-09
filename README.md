@@ -56,6 +56,8 @@ No manual config editing required for common setups. `configure.sh` auto-detects
 | `create_pr.sh` | Create GitHub PR from source → target (triggers Charlie CI + GitHub Actions) |
 | `install_hooks.sh` | Install git pre-commit hooks |
 
+Internal modules (not user-facing): `_common.sh` (shared utilities, sourced by every script), `_config.sh` (three-tier config resolution, sourced by `_common.sh`).
+
 ---
 
 ## Configuration
@@ -78,8 +80,8 @@ Priority 3: Built-in defaults                ← works without any config
 
 **What `configure.sh` auto-detects:**
 - Branch names (from `git remote HEAD`, common names: main/master, development/develop/dev)
-- Lint tool (from `pyproject.toml`, `package.json`, `go.mod`, PATH)
-- Virtual environment location (`.venv/`, `venv/`, `env/`)
+- Lint tool (from `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements.txt`, `package.json`, `go.mod`, `Cargo.toml`, `CMakeLists.txt`, `Makefile`, `meson.build`)
+- Virtual environment location (`.venv/`, `venv/`, `env/`, `.env/`)
 - Local-only files (exist on disk but not tracked by git)
 
 ### Manual configuration
@@ -103,6 +105,7 @@ cp cgw.conf.example .cgw.conf
 | `CGW_DOCS_PATTERN` | `` | Regex for allowed docs filenames (`""` to skip) |
 | `CGW_CLEANUP_TESTS` | `0` | Remove `tests/` from target if gitignored |
 | `CGW_DEV_ONLY_FILES` | `` | Files to warn about in cherry-pick (space-separated) |
+| `CGW_MERGE_MODE` | `direct` | Promotion mode: `direct` (merge locally) or `pr` (create GitHub PR) |
 | `CGW_PROTECTED_BRANCHES` | `main` | Branches requiring `--force` for force-push |
 
 ---
@@ -242,6 +245,17 @@ CGW_FORMAT_CHECK_ARGS="-l ."
 CGW_FORMAT_FIX_ARGS="-w ."
 ```
 
+### Rust (cargo)
+
+```bash
+CGW_LINT_CMD="cargo"
+CGW_LINT_CHECK_ARGS="clippy -- -D warnings"
+CGW_LINT_FIX_ARGS="clippy --fix -- -D warnings"
+CGW_FORMAT_CMD="cargo"
+CGW_FORMAT_CHECK_ARGS="fmt -- --check"
+CGW_FORMAT_FIX_ARGS="fmt"
+```
+
 ### C/C++ (clang-tidy + clang-format)
 
 ```bash
@@ -308,7 +322,7 @@ Legacy `CLAUDE_GIT_*` variables are still supported:
 
 - bash 4.0+
 - git 2.0+
-- For lint: ruff / eslint / golangci-lint (or none — set `CGW_LINT_CMD=""`)
+- For lint: ruff / flake8 / eslint / golangci-lint / clang-tidy / cppcheck / cargo (or none — set `CGW_LINT_CMD=""`)
 - For Claude Code integration: Claude Code CLI
 - For PR creation (`create_pr.sh`): [gh CLI](https://cli.github.com/) + `gh auth login`
 
@@ -324,7 +338,7 @@ Compatible with: Linux, macOS, Windows (Git Bash / WSL)
 
 | Workflow | Trigger | Checks |
 |----------|---------|--------|
-| Branch Protection | Push/PR to `development`, `main` | Local-only file detection, `.gitattributes` presence, ShellCheck, shfmt format |
+| Branch Protection | Push/PR to `development`, `main` | Local-only file detection, `.gitattributes` presence, ShellCheck, shfmt format, Bats unit + integration tests |
 | Docs Validation | Changes to `*.md` files | Markdown linting, broken links, spelling |
 
 ### Charlie CI Agent
@@ -335,7 +349,7 @@ This project uses [Charlie](https://charlielabs.ai) for AI-assisted code review 
 # .charlie/config.yml
 checkCommands:
   fix: shfmt -w -i 2 -ci scripts/   # auto-format after edits
-  lint: shellcheck scripts/git/*.sh  # static analysis
+  lint: shellcheck -x --source-path=scripts/git scripts/git/*.sh  # static analysis
 ```
 
 **Setup** (repository admin): Install the `charliecreates` GitHub App and invite `@CharlieHelps` as a repository collaborator (Triage role minimum).

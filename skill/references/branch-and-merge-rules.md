@@ -105,9 +105,9 @@ Never auto-resolve content conflicts — they require human review.
 3. Create backup tag `pre-merge-backup-YYYYMMDD_HHMMSS`
 4. Perform `git merge ${CGW_SOURCE_BRANCH} --no-ff`
 5. Auto-resolve `DU` (modify/delete) conflicts
-6. Auto-resolve `DD` (both deleted) conflicts
-7. Stop on `UU` (content) conflicts — requires manual resolution
-8. Stop on `AU`/`AA` conflicts — requires manual resolution
+6. Stop on `AU`/`AA` conflicts — requires manual resolution
+7. Auto-resolve `DD` (both deleted) conflicts
+8. Stop on `UU` (content) conflicts — requires manual resolution
 9. Validate `docs/` files against CI policy (if `CGW_DOCS_PATTERN` is set)
 10. Clean up `tests/` if `CGW_CLEANUP_TESTS=1` and tests/ is gitignored on target
 11. Complete merge commit
