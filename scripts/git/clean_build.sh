@@ -85,11 +85,11 @@ main() {
 
 	echo "=== Clean Build Artifacts [${mode_label}] ==="
 	echo ""
-	[[ ${execute} -eq 0 ]] && echo "⚠ Dry run — pass --execute to actually delete files." && echo ""
+	[[ ${execute} -eq 0 ]] && echo "[!] Dry run -- pass --execute to actually delete files." && echo ""
 
 	local total_cleaned=0
 
-	# ── Common patterns (always) ──────────────────────────────────────────────
+	# -- Common patterns (always) ----------------------------------------------
 	echo "--- Common ---"
 	local common_patterns=(
 		".DS_Store"
@@ -107,7 +107,7 @@ main() {
 		done < <(find . -name "${pattern}" -not -path "./.git/*" 2>/dev/null)
 	done
 
-	# ── Python ────────────────────────────────────────────────────────────────
+	# -- Python ----------------------------------------------------------------
 	if [[ ${has_python} -eq 1 ]]; then
 		echo ""
 		echo "--- Python ---"
@@ -142,7 +142,7 @@ main() {
 		done < <(find . -maxdepth 3 -type d -name "*.egg-info" -not -path "./.git/*" 2>/dev/null)
 	fi
 
-	# ── TouchDesigner ─────────────────────────────────────────────────────────
+	# -- TouchDesigner ---------------------------------------------------------
 	if [[ ${has_td} -eq 1 ]]; then
 		echo ""
 		echo "--- TouchDesigner ---"
@@ -168,7 +168,7 @@ main() {
 		done < <(find . -maxdepth 2 -name "crash.*" -not -path "./.git/*" 2>/dev/null)
 	fi
 
-	# ── GLSL compiled shaders ─────────────────────────────────────────────────
+	# -- GLSL compiled shaders -------------------------------------------------
 	if [[ ${has_glsl} -eq 1 ]]; then
 		echo ""
 		echo "--- GLSL / Compiled Shaders ---"
@@ -179,14 +179,14 @@ main() {
 		done < <(find . -name "*.spv" -not -path "./.git/*" 2>/dev/null)
 	fi
 
-	# ── Summary ───────────────────────────────────────────────────────────────
+	# -- Summary ---------------------------------------------------------------
 	echo ""
 	if [[ ${total_cleaned} -eq 0 ]]; then
-		echo "✓ Nothing to clean"
+		echo "[OK] Nothing to clean"
 	elif [[ ${execute} -eq 1 ]]; then
-		echo "✓ Cleaned ${total_cleaned} item(s)"
+		echo "[OK] Cleaned ${total_cleaned} item(s)"
 	else
-		echo "Found ${total_cleaned} item(s) — run with --execute to delete"
+		echo "Found ${total_cleaned} item(s) -- run with --execute to delete"
 	fi
 }
 

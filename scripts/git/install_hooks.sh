@@ -70,9 +70,9 @@ main() {
 		echo "Installing pre-commit hook..." | tee -a "$logfile"
 		if cp ".githooks/pre-commit" ".git/hooks/pre-commit" >>"$logfile" 2>&1; then
 			chmod +x ".git/hooks/pre-commit" >>"$logfile" 2>&1
-			echo "  ✓ pre-commit installed" | tee -a "$logfile"
+			echo "  [OK] pre-commit installed" | tee -a "$logfile"
 		else
-			echo "  ✗ Failed to install pre-commit hook" | tee -a "$logfile"
+			echo "  [FAIL] Failed to install pre-commit hook" | tee -a "$logfile"
 			hooks_ok=1
 		fi
 	else
@@ -86,9 +86,9 @@ main() {
 		echo "Installing pre-push hook..." | tee -a "$logfile"
 		if cp ".githooks/pre-push" ".git/hooks/pre-push" >>"$logfile" 2>&1; then
 			chmod +x ".git/hooks/pre-push" >>"$logfile" 2>&1
-			echo "  ✓ pre-push installed" | tee -a "$logfile"
+			echo "  [OK] pre-push installed" | tee -a "$logfile"
 		else
-			echo "  ⚠ Failed to install pre-push hook (non-fatal)" | tee -a "$logfile"
+			echo "  [!] Failed to install pre-push hook (non-fatal)" | tee -a "$logfile"
 		fi
 	fi
 

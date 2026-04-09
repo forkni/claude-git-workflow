@@ -28,7 +28,7 @@ source "${SCRIPT_DIR}/_common.sh"
 usage() {
 	echo "Usage: ./scripts/git/stash_work.sh <command> [OPTIONS]"
 	echo ""
-	echo "Safe stash wrapper — always includes untracked files (-u)."
+	echo "Safe stash wrapper -- always includes untracked files (-u)."
 	echo ""
 	echo "Commands:"
 	echo "  push [message]   Stash current work with optional description"
@@ -83,7 +83,7 @@ main() {
 
 		# Check for changes to stash
 		if git diff --quiet && git diff --cached --quiet && [[ -z "$(git ls-files --others --exclude-standard)" ]]; then
-			echo "[OK] Nothing to stash — working tree is clean"
+			echo "[OK] Nothing to stash -- working tree is clean"
 			exit 0
 		fi
 
@@ -102,7 +102,7 @@ main() {
 
 		if git stash push "${stash_args[@]}"; then
 			echo ""
-			echo "✓ Stash created: $(git stash list | head -1)"
+			echo "[OK] Stash created: $(git stash list | head -1)"
 			echo ""
 			echo "Working tree is now clean."
 			echo "Restore with: ./scripts/git/stash_work.sh pop"
@@ -128,9 +128,9 @@ main() {
 
 		if git stash pop "${target}"; then
 			echo ""
-			echo "✓ Stash applied and removed"
+			echo "[OK] Stash applied and removed"
 		else
-			echo "[ERROR] Stash pop failed — conflicts may need manual resolution" >&2
+			echo "[ERROR] Stash pop failed -- conflicts may need manual resolution" >&2
 			echo "  Resolve conflicts, then: git stash drop ${target}"
 			exit 1
 		fi
@@ -151,7 +151,7 @@ main() {
 
 		if git stash apply "${ref}"; then
 			echo ""
-			echo "✓ Stash applied (stash retained — use 'drop' to remove)"
+			echo "[OK] Stash applied (stash retained -- use 'drop' to remove)"
 		else
 			echo "[ERROR] Stash apply failed" >&2
 			exit 1
@@ -190,7 +190,7 @@ main() {
 		read -r -p "Confirm drop? (yes/no): " answer
 		case "${answer,,}" in
 		y | yes)
-			git stash drop "${ref}" && echo "✓ Stash dropped"
+			git stash drop "${ref}" && echo "[OK] Stash dropped"
 			;;
 		*)
 			echo "Cancelled"
@@ -217,11 +217,11 @@ main() {
 		echo "All stashes:"
 		git stash list
 		echo ""
-		echo "⚠ WARNING: This permanently removes ALL stashes listed above."
+		echo "[!] WARNING: This permanently removes ALL stashes listed above."
 		read -r -p "Type 'CLEAR' to confirm: " confirm
 
 		if [[ "${confirm}" == "CLEAR" ]]; then
-			git stash clear && echo "✓ All stashes cleared"
+			git stash clear && echo "[OK] All stashes cleared"
 		else
 			echo "Cancelled"
 		fi

@@ -90,7 +90,7 @@ main() {
 
 	echo "=== Branch Cleanup [${mode_label}] ==="
 	echo ""
-	[[ ${execute} -eq 0 ]] && echo "  (dry run — pass --execute to actually delete)" && echo ""
+	[[ ${execute} -eq 0 ]] && echo "  (dry run -- pass --execute to actually delete)" && echo ""
 
 	# Build set of protected branches
 	local -a protected=("${CGW_TARGET_BRANCH}" "${CGW_SOURCE_BRANCH}")
@@ -101,7 +101,7 @@ main() {
 	local current_branch
 	current_branch=$(git branch --show-current 2>/dev/null || echo "")
 
-	# ── [1] Merged local branches ─────────────────────────────────────────────
+	# -- [1] Merged local branches ---------------------------------------------
 	echo "--- [1] Merged Local Branches (merged into ${CGW_TARGET_BRANCH}) ---"
 
 	local -a merged_branches=()
@@ -123,13 +123,13 @@ main() {
 	done < <(git for-each-ref --format='%(refname:short)' refs/heads --merged="${CGW_TARGET_BRANCH}" 2>/dev/null)
 
 	if [[ ${#merged_branches[@]} -eq 0 ]]; then
-		echo "  ✓ No merged local branches to clean up"
+		echo "  [OK] No merged local branches to clean up"
 	else
 		echo "  Branches merged into ${CGW_TARGET_BRANCH}:"
 		for branch in "${merged_branches[@]}"; do
 			local last_commit
 			last_commit=$(git log -1 --format="%h %s (%ar)" "${branch}" 2>/dev/null || echo "(unknown)")
-			echo "    ${branch}  — ${last_commit}"
+			echo "    ${branch}  -- ${last_commit}"
 		done
 		echo ""
 
@@ -150,7 +150,7 @@ main() {
 	fi
 	echo ""
 
-	# ── [2] Remote-tracking refs ──────────────────────────────────────────────
+	# -- [2] Remote-tracking refs ----------------------------------------------
 	if [[ ${prune_remote} -eq 1 ]]; then
 		echo "--- [2] Stale Remote-Tracking Refs ---"
 
@@ -159,7 +159,7 @@ main() {
 			if git remote prune origin 2>&1 | grep -E "pruned|\\[pruned\\]" | sed 's/^/  /'; then
 				: # output shown inline
 			else
-				echo "  ✓ No stale remote-tracking refs"
+				echo "  [OK] No stale remote-tracking refs"
 			fi
 		else
 			# Dry-run: show what would be pruned
@@ -168,12 +168,12 @@ main() {
 				echo "  Would prune: ${ref}"
 				((stale_count++)) || true
 			done < <(git remote prune --dry-run origin 2>&1 | grep "\\[would prune\\]" | awk '{print $NF}')
-			[[ ${stale_count} -eq 0 ]] && echo "  ✓ No stale remote-tracking refs"
+			[[ ${stale_count} -eq 0 ]] && echo "  [OK] No stale remote-tracking refs"
 		fi
 		echo ""
 	fi
 
-	# ── [3] Backup tags ───────────────────────────────────────────────────────
+	# -- [3] Backup tags -------------------------------------------------------
 	if [[ ${clean_tags} -eq 1 ]]; then
 		echo "--- [3] Old Backup Tags (older than ${older_than_days} days) ---"
 
@@ -192,7 +192,7 @@ main() {
 		done < <(git tag -l "pre-merge-backup-*" "pre-cherry-pick-*" "pre-docs-merge-*" "pre-bisect-*" "pre-rebase-*" "pre-undo-commit-*" 2>/dev/null | sort)
 
 		if [[ ${#old_tags[@]} -eq 0 ]]; then
-			echo "  ✓ No backup tags older than ${older_than_days} days"
+			echo "  [OK] No backup tags older than ${older_than_days} days"
 		else
 			echo "  Old backup tags:"
 			local total_all
@@ -233,10 +233,10 @@ _delete_local_branches() {
 	local deleted=0 failed=0
 	for branch in "$@"; do
 		if git branch -d "${branch}" 2>/dev/null; then
-			echo "  ✓ Deleted: ${branch}"
+			echo "  [OK] Deleted: ${branch}"
 			((deleted++)) || true
 		else
-			echo "  ✗ Failed: ${branch} (may not be fully merged — use git branch -D to force)"
+			echo "  [FAIL] Failed: ${branch} (may not be fully merged -- use git branch -D to force)"
 			((failed++)) || true
 		fi
 	done
@@ -247,10 +247,10 @@ _delete_tags() {
 	local deleted=0
 	for tag in "$@"; do
 		if git tag -d "${tag}" 2>/dev/null; then
-			echo "  ✓ Deleted: ${tag}"
+			echo "  [OK] Deleted: ${tag}"
 			((deleted++)) || true
 		else
-			echo "  ✗ Failed to delete: ${tag}" >&2
+			echo "  [FAIL] Failed to delete: ${tag}" >&2
 		fi
 	done
 	echo "  Deleted: ${deleted} tag(s)"

@@ -36,7 +36,7 @@ _cleanup_bisect() {
 	if git rev-parse --git-dir >/dev/null 2>&1; then
 		if git bisect log >/dev/null 2>&1; then
 			echo "" >&2
-			echo "⚠ Interrupted — aborting bisect session" >&2
+			echo "[!] Interrupted -- aborting bisect session" >&2
 			git bisect reset 2>/dev/null || true
 		fi
 	fi
@@ -133,28 +133,28 @@ main() {
 		echo "Branch: $(git branch --show-current 2>/dev/null || echo 'detached')"
 	} >"$logfile"
 
-	# ── Handle --abort ─────────────────────────────────────────────────────────
+	# -- Handle --abort ---------------------------------------------------------
 	if [[ ${do_abort} -eq 1 ]]; then
 		_cmd_abort
 		return $?
 	fi
 
-	# ── Handle --continue ──────────────────────────────────────────────────────
+	# -- Handle --continue ------------------------------------------------------
 	if [[ ${do_continue} -eq 1 ]]; then
 		_cmd_status
 		return $?
 	fi
 
-	# ── Validate: --non-interactive requires --run ─────────────────────────────
+	# -- Validate: --non-interactive requires --run -----------------------------
 	if [[ ${non_interactive} -eq 1 ]] && [[ -z "${run_cmd}" ]]; then
 		err "--non-interactive requires --run <cmd> (automated bisect)"
 		err "Without a test command, bisect requires interactive good/bad marking"
 		exit 1
 	fi
 
-	# ── Check for already-active bisect ───────────────────────────────────────
+	# -- Check for already-active bisect ---------------------------------------
 	if git bisect log >/dev/null 2>&1; then
-		echo "⚠ An active bisect session is already in progress." >&2
+		echo "[!] An active bisect session is already in progress." >&2
 		echo "  Run './scripts/git/bisect_helper.sh --abort' to stop it first." >&2
 		if [[ ${non_interactive} -eq 0 ]]; then
 			read -r -p "  Abort existing session and start fresh? (yes/no): " fresh_confirm
@@ -164,12 +164,12 @@ main() {
 			fi
 			git bisect reset 2>/dev/null || true
 		else
-			err "Cannot start bisect — session already active (abort it first)"
+			err "Cannot start bisect -- session already active (abort it first)"
 			exit 1
 		fi
 	fi
 
-	# ── Auto-detect good_ref ───────────────────────────────────────────────────
+	# -- Auto-detect good_ref ---------------------------------------------------
 	if [[ -z "${good_ref}" ]]; then
 		good_ref=$(git tag -l "v[0-9]*" | sort -V | tail -1 2>/dev/null || true)
 		if [[ -z "${good_ref}" ]]; then
@@ -185,7 +185,7 @@ main() {
 		echo "Auto-detected good ref: ${good_ref}" | tee -a "$logfile"
 	fi
 
-	# ── Validate refs ─────────────────────────────────────────────────────────
+	# -- Validate refs ---------------------------------------------------------
 	if ! git rev-parse "${bad_ref}" >/dev/null 2>&1; then
 		err "Invalid --bad ref: ${bad_ref}"
 		exit 1
@@ -196,7 +196,7 @@ main() {
 		exit 1
 	fi
 
-	# ── Compute commit range ──────────────────────────────────────────────────
+	# -- Compute commit range --------------------------------------------------
 	local commit_count_range
 	commit_count_range=$(git rev-list --count "${good_ref}..${bad_ref}" 2>/dev/null || echo "?")
 	local steps_estimate="?"
@@ -205,7 +205,7 @@ main() {
 		steps_estimate=$(awk "BEGIN{printf \"%d\", log(${commit_count_range})/log(2) + 1}")
 	fi
 
-	# ── Show plan ─────────────────────────────────────────────────────────────
+	# -- Show plan -------------------------------------------------------------
 	echo "=== Git Bisect Helper ===" | tee -a "$logfile"
 	echo "" | tee -a "$logfile"
 	echo "  Good ref:   ${good_ref} ($(git log -1 --format='%h %s' "${good_ref}" 2>/dev/null || echo 'unknown'))" | tee -a "$logfile"
@@ -233,7 +233,7 @@ main() {
 	fi
 
 	if [[ ${non_interactive} -eq 0 ]] && [[ -z "${run_cmd}" ]]; then
-		echo "Manual bisect mode — after each checkout, run your test then:"
+		echo "Manual bisect mode -- after each checkout, run your test then:"
 		echo "  git bisect good   (if the bug is NOT present in this commit)"
 		echo "  git bisect bad    (if the bug IS present in this commit)"
 		echo "  git bisect skip   (if you cannot test this commit)"
@@ -245,22 +245,22 @@ main() {
 		fi
 	fi
 
-	# ── Save original branch ──────────────────────────────────────────────────
+	# -- Save original branch --------------------------------------------------
 	_bisect_original_branch=$(git branch --show-current 2>/dev/null || true)
 
-	# ── Create backup tag ─────────────────────────────────────────────────────
+	# -- Create backup tag -----------------------------------------------------
 	get_timestamp
 	local backup_tag="pre-bisect-${timestamp}"
 	if git tag "${backup_tag}" 2>/dev/null; then
-		echo "✓ Backup tag: ${backup_tag}" | tee -a "$logfile"
+		echo "[OK] Backup tag: ${backup_tag}" | tee -a "$logfile"
 	else
-		echo "⚠ Could not create backup tag (continuing)" | tee -a "$logfile"
+		echo "[!] Could not create backup tag (continuing)" | tee -a "$logfile"
 	fi
 	echo "" | tee -a "$logfile"
 
 	log_section_start "GIT BISECT" "$logfile"
 
-	# ── Start bisect ─────────────────────────────────────────────────────────
+	# -- Start bisect ---------------------------------------------------------
 	if ! git bisect start 2>&1 | tee -a "$logfile"; then
 		err "Failed to start bisect session"
 		log_section_end "GIT BISECT" "$logfile" "1"
@@ -281,7 +281,7 @@ main() {
 		exit 1
 	fi
 
-	# ── Automated or manual ───────────────────────────────────────────────────
+	# -- Automated or manual ---------------------------------------------------
 	local bisect_result=0
 
 	if [[ -n "${run_cmd}" ]]; then
@@ -306,27 +306,27 @@ main() {
 
 		echo "" | tee -a "$logfile"
 		if [[ ${bisect_result} -eq 0 ]]; then
-			echo "✓ BISECT COMPLETE" | tee -a "$logfile"
+			echo "[OK] BISECT COMPLETE" | tee -a "$logfile"
 			if [[ -n "${first_bad}" ]]; then
 				echo "  First bad commit: ${first_bad}" | tee -a "$logfile"
 				echo "  $(git log -1 --oneline "${first_bad}" 2>/dev/null || true)" | tee -a "$logfile"
 			fi
 		else
-			echo "✗ Bisect run encountered errors — check log: $logfile" | tee -a "$logfile"
+			echo "[FAIL] Bisect run encountered errors -- check log: $logfile" | tee -a "$logfile"
 		fi
 	else
-		# Manual mode — bisect is active, user marks good/bad interactively
+		# Manual mode -- bisect is active, user marks good/bad interactively
 		log_section_end "GIT BISECT" "$logfile" "0"
 		echo "" | tee -a "$logfile"
-		echo "✓ BISECT STARTED" | tee -a "$logfile"
+		echo "[OK] BISECT STARTED" | tee -a "$logfile"
 		echo "" | tee -a "$logfile"
 		echo "  git has checked out a commit for you to test."
 		echo "  Current commit: $(git log -1 --oneline 2>/dev/null || true)"
 		echo ""
 		echo "  After testing, run:"
-		echo "    git bisect good   — bug not present"
-		echo "    git bisect bad    — bug is present"
-		echo "    git bisect skip   — cannot test this commit"
+		echo "    git bisect good   -- bug not present"
+		echo "    git bisect bad    -- bug is present"
+		echo "    git bisect skip   -- cannot test this commit"
 		echo ""
 		echo "  To abort at any time:"
 		echo "    ./scripts/git/bisect_helper.sh --abort"
@@ -334,7 +334,7 @@ main() {
 		echo "  Restore point (if needed):"
 		echo "    git checkout ${backup_tag}  # or: git bisect reset"
 		echo ""
-		# Don't run cleanup trap — bisect is intentionally left active
+		# Don't run cleanup trap -- bisect is intentionally left active
 		_bisect_original_branch=""
 	fi
 
@@ -365,10 +365,10 @@ _cmd_abort() {
 
 	if git bisect reset 2>&1 | tee -a "$logfile"; then
 		echo ""
-		echo "✓ Bisect aborted — returned to original branch"
+		echo "[OK] Bisect aborted -- returned to original branch"
 		echo "  Current branch: $(git branch --show-current 2>/dev/null || echo 'detached')"
 	else
-		err "bisect reset failed — run 'git bisect reset' manually"
+		err "bisect reset failed -- run 'git bisect reset' manually"
 		exit 1
 	fi
 }
@@ -394,9 +394,9 @@ _cmd_status() {
 	git bisect log 2>/dev/null | sed 's/^/    /'
 	echo ""
 	echo "  To mark current commit:"
-	echo "    git bisect good   — bug not present here"
-	echo "    git bisect bad    — bug is present here"
-	echo "    git bisect skip   — cannot test this commit"
+	echo "    git bisect good   -- bug not present here"
+	echo "    git bisect bad    -- bug is present here"
+	echo "    git bisect skip   -- cannot test this commit"
 	echo ""
 	echo "  To abort:"
 	echo "    ./scripts/git/bisect_helper.sh --abort"

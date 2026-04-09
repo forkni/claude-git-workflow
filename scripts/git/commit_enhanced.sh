@@ -20,7 +20,7 @@
 #   0 on successful commit, 1 on failure
 
 set -uo pipefail
-# Note: set -e intentionally omitted — git diff/diff-index use exit codes for signaling
+# Note: set -e intentionally omitted -- git diff/diff-index use exit codes for signaling
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
@@ -233,7 +233,7 @@ main() {
 	fi
 	echo ""
 
-	# [2] Validate staged files — unstage and verify local-only files
+	# [2] Validate staged files -- unstage and verify local-only files
 	echo "[2/6] Validating staged files..."
 	unstage_local_only_files
 
@@ -246,7 +246,7 @@ main() {
 	for file in ${CGW_LOCAL_FILES}; do
 		local check_file="${file%/}" # strip trailing slash
 		if echo "${staged_files}" | grep -q "^${check_file}"; then
-			echo "[X] ERROR: '${check_file}' is staged (local-only file — should not be committed)" >&2
+			echo "[X] ERROR: '${check_file}' is staged (local-only file -- should not be committed)" >&2
 			found_local_files=1
 		fi
 	done
@@ -259,13 +259,13 @@ main() {
 	echo "[OK] Staged files validated"
 	echo ""
 
-	# [2.5] Whitespace check (non-blocking — warns but does not abort)
+	# [2.5] Whitespace check (non-blocking -- warns but does not abort)
 	if git diff --cached --check >/dev/null 2>&1; then
 		: # no whitespace issues
 	else
 		echo "[WARN] Whitespace issues detected in staged files:" | tee -a "$logfile"
 		git diff --cached --check 2>&1 | head -20 | tee -a "$logfile"
-		echo "  (continuing — fix with: git diff --cached --check)" | tee -a "$logfile"
+		echo "  (continuing -- fix with: git diff --cached --check)" | tee -a "$logfile"
 		echo ""
 	fi
 
@@ -273,7 +273,7 @@ main() {
 	echo "[3/6] Checking code quality..."
 
 	if [[ ${skip_lint} -eq 1 ]]; then
-		echo "  (all lint checks skipped — --skip-lint)"
+		echo "  (all lint checks skipped -- --skip-lint)"
 	else
 		get_lint_exclusions
 
@@ -307,7 +307,7 @@ main() {
 			fi
 			log_section_end "LINT CHECK" "$logfile" "$lint_error"
 		else
-			echo "  (lint check skipped — CGW_LINT_CMD not set)"
+			echo "  (lint check skipped -- CGW_LINT_CMD not set)"
 		fi
 
 		# -- Format check (skipped when CGW_FORMAT_CMD not set) --------------------
@@ -377,7 +377,7 @@ main() {
 					echo "[!] Proceeding with code quality warnings (CI may flag these)"
 					;;
 				*)
-					echo "Commit cancelled — fix code quality errors first"
+					echo "Commit cancelled -- fix code quality errors first"
 					exit 1
 					;;
 				esac
@@ -398,14 +398,14 @@ main() {
 			if [[ ${md_lint_error} -eq 1 ]]; then
 				echo "[!] Markdown lint errors detected"
 				if [[ ${non_interactive} -eq 1 ]]; then
-					err "Markdown lint failed — fix errors or use --skip-md-lint to bypass"
+					err "Markdown lint failed -- fix errors or use --skip-md-lint to bypass"
 					exit 1
 				fi
 				read -rp "Proceed despite markdown lint errors? (yes/no): " md_choice
 				[[ "${md_choice}" == "yes" ]] || exit 1
 			fi
 		elif [[ ${skip_md_lint} -eq 1 ]]; then
-			echo "  (markdown lint skipped — --skip-md-lint)"
+			echo "  (markdown lint skipped -- --skip-md-lint)"
 		fi
 	fi
 	echo ""
@@ -457,7 +457,7 @@ main() {
 	echo "[6/6] Creating commit..."
 
 	if [[ ${non_interactive} -eq 1 ]]; then
-		echo "[Non-interactive] Branch: $current_branch — Proceeding..."
+		echo "[Non-interactive] Branch: $current_branch -- Proceeding..."
 	else
 		echo "[!] Branch verification: you are committing to: $current_branch"
 		read -rp "Is this the correct branch? (yes/no): " correct_branch
@@ -492,7 +492,7 @@ main() {
 
 		generate_analysis_report
 	else
-		err "Commit failed — check output above"
+		err "Commit failed -- check output above"
 		exit 1
 	fi
 

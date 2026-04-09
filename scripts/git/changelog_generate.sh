@@ -12,8 +12,8 @@
 #   CGW_TARGET_BRANCH   - Default "to" ref if --to not specified
 #   CGW_ALL_PREFIXES    - Recognized conventional commit prefixes
 # Arguments:
-#   --from <ref>     Start ref (exclusive) — default: latest semver tag or first commit
-#   --to <ref>       End ref (inclusive) — default: HEAD
+#   --from <ref>     Start ref (exclusive) -- default: latest semver tag or first commit
+#   --to <ref>       End ref (inclusive) -- default: HEAD
 #   --format <fmt>   Output format: md (default) or text
 #   --output <file>  Write to file instead of stdout
 #   --include-merges Include merge commits (default: excluded)
@@ -90,7 +90,7 @@ main() {
 	if [[ -z "${from_ref}" ]]; then
 		from_ref=$(git tag -l "v[0-9]*" | sort -V | tail -1 2>/dev/null || true)
 		if [[ -z "${from_ref}" ]]; then
-			# No semver tags — use root commit (all history)
+			# No semver tags -- use root commit (all history)
 			from_ref=$(git rev-list --max-parents=0 HEAD 2>/dev/null | head -1 || true)
 		fi
 	fi
@@ -243,7 +243,7 @@ main() {
 	# Write output
 	if [[ -n "${output_file}" ]]; then
 		echo "${output}" >"${output_file}"
-		echo "✓ Changelog written to: ${output_file}" >&2
+		echo "[OK] Changelog written to: ${output_file}" >&2
 	else
 		echo "${output}"
 	fi

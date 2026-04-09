@@ -62,7 +62,7 @@ main() {
 	[[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
 
 	if [[ -z "${CGW_LINT_CMD}" ]]; then
-		echo "[OK] Lint fix skipped (CGW_LINT_CMD not set — configure in .cgw.conf)"
+		echo "[OK] Lint fix skipped (CGW_LINT_CMD not set -- configure in .cgw.conf)"
 		exit 0
 	fi
 
@@ -164,7 +164,7 @@ main() {
 	if ((fix_failed == 0)); then
 		echo "[OK] All lint fixes applied successfully!" | tee -a "$logfile"
 	else
-		echo "[!] Some issues remain — check output above" | tee -a "$logfile"
+		echo "[!] Some issues remain -- check output above" | tee -a "$logfile"
 	fi
 
 	# Run final verification
@@ -174,7 +174,7 @@ main() {
 	if "${SCRIPT_DIR}/check_lint.sh" 2>&1 | tee -a "$logfile"; then
 		echo "[OK] All lint checks pass!" | tee -a "$logfile"
 	else
-		echo "[!] Some issues remain — manual fixes may be required" | tee -a "$logfile"
+		echo "[!] Some issues remain -- manual fixes may be required" | tee -a "$logfile"
 	fi
 
 	local script_end total_duration

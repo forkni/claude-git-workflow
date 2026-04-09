@@ -38,7 +38,7 @@ _cleanup_merge() {
 	if [[ ${_merge_did_checkout_target} -eq 1 ]] && [[ -n "${_merge_original_branch}" ]] &&
 		[[ "${current}" != "${_merge_original_branch}" ]]; then
 		echo "" >&2
-		echo "⚠ Interrupted — you are on branch: ${current}" >&2
+		echo "[!] Interrupted -- you are on branch: ${current}" >&2
 		echo "  Returning to: ${_merge_original_branch}" >&2
 		git checkout "${_merge_original_branch}" 2>/dev/null || true
 	fi
@@ -60,7 +60,7 @@ validate_docs_ci_policy() {
 
 	# Skip if no pattern configured
 	if [[ -z "${CGW_DOCS_PATTERN}" ]]; then
-		echo "  (docs CI validation skipped — CGW_DOCS_PATTERN not set in .cgw.conf)" | tee -a "$logfile"
+		echo "  (docs CI validation skipped -- CGW_DOCS_PATTERN not set in .cgw.conf)" | tee -a "$logfile"
 		return 0
 	fi
 
@@ -77,7 +77,7 @@ validate_docs_ci_policy() {
 			doc_name=$(basename "${doc_file}")
 			if ! [[ "${doc_name}" =~ ${CGW_DOCS_PATTERN} ]]; then
 				if git diff --diff-filter=A --name-only HEAD~1 HEAD -- "${doc_file}" | grep -q .; then
-					echo "✗ ERROR: Unauthorized doc file: ${doc_file}" | tee -a "$logfile"
+					echo "[FAIL] ERROR: Unauthorized doc file: ${doc_file}" | tee -a "$logfile"
 					echo "   Not in CGW_DOCS_PATTERN allowlist" | tee -a "$logfile"
 					docs_validation_failed=1
 				fi
@@ -89,7 +89,7 @@ validate_docs_ci_policy() {
 			local doc_name
 			doc_name=$(basename "${doc_file}")
 			if ! [[ "${doc_name}" =~ ${CGW_DOCS_PATTERN} ]]; then
-				echo "✗ ERROR: Unauthorized doc file: ${doc_file}" | tee -a "$logfile"
+				echo "[FAIL] ERROR: Unauthorized doc file: ${doc_file}" | tee -a "$logfile"
 				echo "   Not in CGW_DOCS_PATTERN allowlist" | tee -a "$logfile"
 				docs_validation_failed=1
 			fi
@@ -98,7 +98,7 @@ validate_docs_ci_policy() {
 
 	if [[ ${docs_validation_failed} -eq 1 ]]; then
 		echo "" | tee -a "$logfile"
-		echo "✗ CI POLICY VIOLATION: Unauthorized documentation detected" | tee -a "$logfile"
+		echo "[FAIL] CI POLICY VIOLATION: Unauthorized documentation detected" | tee -a "$logfile"
 		if [[ "${check_mode}" == "committed" ]]; then
 			echo "Rolling back merge..." | tee -a "$logfile"
 			git reset --hard HEAD~1 >>"$logfile" 2>&1
@@ -109,7 +109,7 @@ validate_docs_ci_policy() {
 		git checkout "${original_branch}" >>"$logfile" 2>&1
 		exit 1
 	fi
-	echo "✓ Documentation validation passed" | tee -a "$logfile"
+	echo "[OK] Documentation validation passed" | tee -a "$logfile"
 }
 
 # cleanup_tests_dir - Remove tests/ from target branch if gitignored.
@@ -129,22 +129,22 @@ cleanup_tests_dir() {
 
 	if grep -q "^tests/\$" .gitignore 2>/dev/null; then
 		if [[ -d "tests" ]]; then
-			echo "⚠ Removing tests/ directory from ${CGW_TARGET_BRANCH} branch (per .gitignore policy)" | tee -a "$logfile"
+			echo "[!] Removing tests/ directory from ${CGW_TARGET_BRANCH} branch (per .gitignore policy)" | tee -a "$logfile"
 			if git rm -r tests >>"$logfile" 2>&1; then
-				echo "✓ Removed tests/ directory" | tee -a "$logfile"
+				echo "[OK] Removed tests/ directory" | tee -a "$logfile"
 				if [[ "${commit_mode}" == "amend" ]]; then
 					git commit --amend --no-edit >>"$logfile" 2>&1
 				else
 					git add -u >>"$logfile" 2>&1
 				fi
 			else
-				echo "✗ ERROR: Failed to remove tests/ directory" | tee -a "$logfile"
+				echo "[FAIL] ERROR: Failed to remove tests/ directory" | tee -a "$logfile"
 			fi
 		else
-			echo "✓ No tests/ directory found" | tee -a "$logfile"
+			echo "[OK] No tests/ directory found" | tee -a "$logfile"
 		fi
 	else
-		echo "✓ tests/ is tracked in git — keeping on ${CGW_TARGET_BRANCH}" | tee -a "$logfile"
+		echo "[OK] tests/ is tracked in git -- keeping on ${CGW_TARGET_BRANCH}" | tee -a "$logfile"
 	fi
 }
 
@@ -157,7 +157,7 @@ main() {
 		echo "Working Directory: ${PROJECT_ROOT}"
 	} >"$logfile"
 
-	echo "=== Safe Merge: ${CGW_SOURCE_BRANCH} → ${CGW_TARGET_BRANCH} ===" | tee -a "$logfile"
+	echo "=== Safe Merge: ${CGW_SOURCE_BRANCH} -> ${CGW_TARGET_BRANCH} ===" | tee -a "$logfile"
 	echo "" | tee -a "$logfile"
 	echo "Workflow Log: ${logfile}" | tee -a "$logfile"
 	echo "" | tee -a "$logfile"
@@ -206,8 +206,8 @@ main() {
 	[[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
 
 	if [[ ${dry_run} -eq 1 ]]; then
-		echo "=== DRY RUN MODE — no changes will be made ===" | tee -a "$logfile"
-		echo "Would merge: ${CGW_SOURCE_BRANCH} → ${CGW_TARGET_BRANCH}" | tee -a "$logfile"
+		echo "=== DRY RUN MODE -- no changes will be made ===" | tee -a "$logfile"
+		echo "Would merge: ${CGW_SOURCE_BRANCH} -> ${CGW_TARGET_BRANCH}" | tee -a "$logfile"
 		echo "Commits to merge:" | tee -a "$logfile"
 		git log "${CGW_TARGET_BRANCH}..${CGW_SOURCE_BRANCH}" --oneline | tee -a "$logfile"
 		echo ""
@@ -221,14 +221,14 @@ main() {
 
 	if [[ -f "${SCRIPT_DIR}/validate_branches.sh" ]]; then
 		if ! bash "${SCRIPT_DIR}/validate_branches.sh" >>"$logfile" 2>&1; then
-			echo "✗ Validation failed - aborting merge" | tee -a "$logfile"
+			echo "[FAIL] Validation failed - aborting merge" | tee -a "$logfile"
 			log_section_end "PRE-MERGE VALIDATION" "$logfile" "1"
 			echo "Please fix validation errors before retrying"
 			exit 1
 		fi
 	fi
 
-	echo "✓ Pre-merge validation passed" | tee -a "$logfile"
+	echo "[OK] Pre-merge validation passed" | tee -a "$logfile"
 	log_section_end "PRE-MERGE VALIDATION" "$logfile" "0"
 	echo "" | tee -a "$logfile"
 
@@ -241,11 +241,11 @@ main() {
 	echo "Current branch: ${original_branch}" | tee -a "$logfile"
 
 	if [[ "${original_branch}" == "${CGW_TARGET_BRANCH}" ]]; then
-		echo "✗ ERROR: Already on ${CGW_TARGET_BRANCH} branch" | tee -a "$logfile"
+		echo "[FAIL] ERROR: Already on ${CGW_TARGET_BRANCH} branch" | tee -a "$logfile"
 		echo "  Run this script from ${CGW_SOURCE_BRANCH} branch" | tee -a "$logfile"
 		exit 1
 	elif [[ "${original_branch}" != "${CGW_SOURCE_BRANCH}" ]]; then
-		echo "⚠ WARNING: Not on ${CGW_SOURCE_BRANCH} branch" | tee -a "$logfile"
+		echo "[!] WARNING: Not on ${CGW_SOURCE_BRANCH} branch" | tee -a "$logfile"
 		echo "  Current: ${original_branch}" | tee -a "$logfile"
 
 		if [[ ${non_interactive} -eq 0 ]]; then
@@ -262,7 +262,7 @@ main() {
 	fi
 
 	if ! run_git_with_logging "GIT CHECKOUT" "$logfile" checkout "${CGW_TARGET_BRANCH}"; then
-		echo "✗ Failed to checkout ${CGW_TARGET_BRANCH} branch" | tee -a "$logfile"
+		echo "[FAIL] Failed to checkout ${CGW_TARGET_BRANCH} branch" | tee -a "$logfile"
 		exit 1
 	fi
 	_merge_did_checkout_target=1
@@ -277,10 +277,10 @@ main() {
 	local backup_tag="pre-merge-backup-${timestamp}"
 
 	if git tag "${backup_tag}" >>"$logfile" 2>&1; then
-		echo "✓ Created backup tag: ${backup_tag}" | tee -a "$logfile"
+		echo "[OK] Created backup tag: ${backup_tag}" | tee -a "$logfile"
 		log_section_end "CREATE BACKUP TAG" "$logfile" "0"
 	else
-		echo "⚠ Warning: Could not create backup tag" | tee -a "$logfile"
+		echo "[!] Warning: Could not create backup tag" | tee -a "$logfile"
 		log_section_end "CREATE BACKUP TAG" "$logfile" "1"
 	fi
 	echo "" | tee -a "$logfile"
@@ -299,7 +299,7 @@ main() {
 
 	# shellcheck disable=SC2068  # Intentional: empty array expands to zero words (${arr[@]+...} is Bash 3.x portable)
 	if run_git_with_logging "GIT MERGE SOURCE" "$logfile" merge "${CGW_SOURCE_BRANCH}" --no-ff -m "Merge ${CGW_SOURCE_BRANCH} into ${CGW_TARGET_BRANCH}" ${merge_extra_args[@]+"${merge_extra_args[@]}"}; then
-		echo "✓ Merge completed without conflicts" | tee -a "$logfile"
+		echo "[OK] Merge completed without conflicts" | tee -a "$logfile"
 		log_section_end "GIT MERGE" "$logfile" "0"
 
 		validate_docs_ci_policy "committed" "${original_branch}"
@@ -308,12 +308,12 @@ main() {
 	else
 		local merge_exit_code="${GIT_EXIT_CODE:-1}"
 		echo "" | tee -a "$logfile"
-		echo "⚠ Merge conflicts detected - analyzing..." | tee -a "$logfile"
+		echo "[!] Merge conflicts detected - analyzing..." | tee -a "$logfile"
 		log_section_end "GIT MERGE" "$logfile" "${merge_exit_code}"
 
 		# Auto-resolve DU (modify/delete) conflicts
 		if git status --short | grep -q "^DU "; then
-			echo "  Found modify/delete conflicts — auto-resolving..."
+			echo "  Found modify/delete conflicts -- auto-resolving..."
 			echo ""
 
 			local resolution_failed=0
@@ -321,28 +321,28 @@ main() {
 			while read -r conflict_file; do
 				echo "  Resolving: ${conflict_file}"
 				if git rm "${conflict_file}" >/dev/null 2>&1; then
-					echo "  ✓ Removed: ${conflict_file}"
+					echo "  [OK] Removed: ${conflict_file}"
 				else
-					echo "  ✗ ERROR: Failed to remove ${conflict_file}"
+					echo "  [FAIL] ERROR: Failed to remove ${conflict_file}"
 					resolution_failed=1
 				fi
 			done < <(git status --short | grep "^DU " | cut -c 4-)
 
 			if [[ ${resolution_failed} -eq 1 ]]; then
 				echo "" | tee -a "$logfile"
-				echo "✗ Auto-resolution failed for some files" | tee -a "$logfile"
+				echo "[FAIL] Auto-resolution failed for some files" | tee -a "$logfile"
 				git status --short | tee -a "$logfile"
 				exit 1
 			fi
 
 			echo "" | tee -a "$logfile"
-			echo "✓ Auto-resolved modify/delete conflicts" | tee -a "$logfile"
+			echo "[OK] Auto-resolved modify/delete conflicts" | tee -a "$logfile"
 		fi
 
 		# AU/AA conflicts require manual resolution
 		if git status --short | grep -qE "^(AU|AA) "; then
 			echo "" | tee -a "$logfile"
-			echo "✗ Add/add or add/unmerged conflicts require manual resolution:" | tee -a "$logfile"
+			echo "[FAIL] Add/add or add/unmerged conflicts require manual resolution:" | tee -a "$logfile"
 			git status --short | grep -E "^(AU|AA) " | tee -a "$logfile"
 			echo ""
 			echo "Please resolve manually:"
@@ -356,17 +356,17 @@ main() {
 
 		# DD (both deleted): auto-resolve by accepting deletion
 		if git status --short | grep -q "^DD "; then
-			echo "  Found both-deleted conflicts — auto-resolving..." | tee -a "$logfile"
+			echo "  Found both-deleted conflicts -- auto-resolving..." | tee -a "$logfile"
 			while read -r conflict_file; do
 				git rm "${conflict_file}" >/dev/null 2>&1 || true
-				echo "  ✓ Removed (both deleted): ${conflict_file}" | tee -a "$logfile"
+				echo "  [OK] Removed (both deleted): ${conflict_file}" | tee -a "$logfile"
 			done < <(git status --short | grep "^DD " | cut -c 4-)
 		fi
 
 		# UU (both modified): requires manual resolution
 		if git status --short | grep -q "^UU "; then
 			echo "" | tee -a "$logfile"
-			echo "✗ Content conflicts require manual resolution:" | tee -a "$logfile"
+			echo "[FAIL] Content conflicts require manual resolution:" | tee -a "$logfile"
 			git status --short | grep "^UU "
 			echo ""
 			echo "Please resolve manually:"
@@ -386,9 +386,9 @@ main() {
 		log_section_start "GIT COMMIT" "$logfile"
 		if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
 			if run_git_with_logging "GIT COMMIT MERGE" "$logfile" commit --no-edit; then
-				echo "✓ Merge commit completed" | tee -a "$logfile"
+				echo "[OK] Merge commit completed" | tee -a "$logfile"
 			else
-				echo "✗ Failed to complete merge commit" | tee -a "$logfile"
+				echo "[FAIL] Failed to complete merge commit" | tee -a "$logfile"
 				log_section_end "GIT COMMIT" "$logfile" "1"
 				echo "To abort: git merge --abort"
 				exit 1
@@ -405,7 +405,7 @@ main() {
 		echo "========================================"
 	} | tee -a "$logfile"
 
-	echo "✓ MERGE SUCCESSFUL" | tee -a "$logfile"
+	echo "[OK] MERGE SUCCESSFUL" | tee -a "$logfile"
 	echo "" | tee -a "$logfile"
 	git log -1 --oneline | while read -r line; do echo "  Latest commit: $line" | tee -a "$logfile"; done
 	echo "  Backup tag: ${backup_tag}" | tee -a "$logfile"

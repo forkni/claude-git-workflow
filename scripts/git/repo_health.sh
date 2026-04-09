@@ -48,7 +48,7 @@ main() {
 			echo "Check repository health, find large files, and optionally run maintenance."
 			echo ""
 			echo "Options:"
-			echo "  --gc          Run git gc (garbage collection) — removes unreachable objects"
+			echo "  --gc          Run git gc (garbage collection) -- removes unreachable objects"
 			echo "  --full        Run git fsck --full (slower, more thorough)"
 			echo "  --large <N>   Report files >N MB in git history (default: 10)"
 			echo "  -h, --help    Show this help"
@@ -87,22 +87,22 @@ main() {
 	echo "Date:       $(date)"
 	echo ""
 
-	# ── [1] Integrity check (git fsck) ───────────────────────────────────────
+	# -- [1] Integrity check (git fsck) ---------------------------------------
 	echo "--- [1/5] Integrity Check ---"
 	local fsck_args=("--no-reflogs")
 	[[ ${full_fsck} -eq 1 ]] && fsck_args=("--full")
 
 	local fsck_output
 	if fsck_output=$(git fsck "${fsck_args[@]}" 2>&1); then
-		echo "  ✓ No integrity issues found"
+		echo "  [OK] No integrity issues found"
 	else
-		echo "  ⚠ Integrity issues detected:"
+		echo "  [!] Integrity issues detected:"
 		echo "${fsck_output}" | grep -v "^Checking" | head -20
 		overall_ok=1
 	fi
 	echo ""
 
-	# ── [2] Object store size ─────────────────────────────────────────────────
+	# -- [2] Object store size -------------------------------------------------
 	echo "--- [2/5] Object Store Size ---"
 	local git_dir
 	git_dir="$(git rev-parse --git-dir 2>/dev/null)"
@@ -121,17 +121,17 @@ main() {
 	echo "  Packs:    ${pack_count}"
 
 	if [[ ${pack_count} -gt 3 ]]; then
-		echo "  ⚠ Many pack files (${pack_count}) — consider running: git gc"
+		echo "  [!] Many pack files (${pack_count}) -- consider running: git gc"
 	fi
 
-	# Worktree size — use POSIX du -sk (1024-byte blocks), available everywhere
+	# Worktree size -- use POSIX du -sk (1024-byte blocks), available everywhere
 	local wt_size_kb
 	wt_size_kb=$(du -sk . 2>/dev/null | cut -f1 || echo "0")
 	local wt_size_bytes=$((wt_size_kb * 1024))
 	echo "  Worktree: $(human_size "${wt_size_bytes}") (includes .git)"
 	echo ""
 
-	# ── [3] Large files in history ────────────────────────────────────────────
+	# -- [3] Large files in history --------------------------------------------
 	echo "--- [3/5] Large Files in History (>${large_threshold_mb}MB) ---"
 	local threshold_bytes=$((large_threshold_mb * 1048576))
 	local large_count=0
@@ -148,30 +148,30 @@ main() {
 	done < <(git cat-file --batch-check='%(objectsize) %(objectname)' --batch-all-objects 2>/dev/null | awk '$1 ~ /^[0-9]+$/')
 
 	if [[ ${large_count} -eq 0 ]]; then
-		echo "  ✓ No files exceed ${large_threshold_mb}MB threshold"
+		echo "  [OK] No files exceed ${large_threshold_mb}MB threshold"
 	else
 		echo ""
-		echo "  ⚠ ${large_count} large file(s) found in git history"
+		echo "  [!] ${large_count} large file(s) found in git history"
 		echo "  Consider: git lfs track for future additions"
 		overall_ok=1
 	fi
 	echo ""
 
-	# ── [4] Backup tag count ──────────────────────────────────────────────────
+	# -- [4] Backup tag count --------------------------------------------------
 	echo "--- [4/5] Backup Tags ---"
 	local backup_count
 	backup_count=$(git tag -l "pre-merge-backup-*" "pre-cherry-pick-*" "pre-docs-merge-*" "pre-bisect-*" "pre-rebase-*" "pre-undo-commit-*" 2>/dev/null | wc -l | tr -d ' ')
 	echo "  Backup tags: ${backup_count}"
 
 	if [[ ${backup_count} -gt 20 ]]; then
-		echo "  ⚠ Many backup tags — consider running:"
+		echo "  [!] Many backup tags -- consider running:"
 		echo "    ./scripts/git/branch_cleanup.sh --tags --execute"
 	elif [[ ${backup_count} -gt 0 ]]; then
 		echo "  Most recent: $(git tag -l 'pre-merge-backup-*' 'pre-cherry-pick-*' 'pre-docs-merge-*' 'pre-bisect-*' 'pre-rebase-*' 'pre-undo-commit-*' | sort -r | head -1)"
 	fi
 	echo ""
 
-	# ── [5] Branch summary ────────────────────────────────────────────────────
+	# -- [5] Branch summary ----------------------------------------------------
 	echo "--- [5/5] Branch Status ---"
 	local current_branch
 	current_branch=$(git branch --show-current 2>/dev/null || echo "(detached)")
@@ -191,24 +191,24 @@ main() {
 	done
 	echo ""
 
-	# ── Garbage collection (optional) ────────────────────────────────────────
+	# -- Garbage collection (optional) ----------------------------------------
 	if [[ ${run_gc} -eq 1 ]]; then
 		echo "--- Garbage Collection ---"
 		echo "Running git gc --auto..."
 		if git gc --auto 2>&1 | grep -v "^Auto packing\|^Counting\|^Delta\|^Compressing\|^Writing\|^Total" | head -10; then
-			echo "  ✓ Garbage collection complete"
+			echo "  [OK] Garbage collection complete"
 		else
-			echo "  ✓ Nothing to collect"
+			echo "  [OK] Nothing to collect"
 		fi
 		echo ""
 	fi
 
-	# ── Summary ───────────────────────────────────────────────────────────────
+	# -- Summary ---------------------------------------------------------------
 	echo "=== Summary ==="
 	if [[ ${overall_ok} -eq 0 ]]; then
-		echo "✓ Repository is healthy"
+		echo "[OK] Repository is healthy"
 	else
-		echo "⚠ Issues found — review output above"
+		echo "[!] Issues found -- review output above"
 		echo ""
 		echo "Common fixes:"
 		echo "  Integrity issues:  git fsck --full"

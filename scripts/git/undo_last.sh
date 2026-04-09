@@ -11,7 +11,7 @@
 #   PROJECT_ROOT - Auto-detected git repo root (set by _config.sh)
 #   logfile      - Set by init_logging
 # Subcommands:
-#   commit               Undo last commit — keeps all changes staged (git reset --soft HEAD~1)
+#   commit               Undo last commit -- keeps all changes staged (git reset --soft HEAD~1)
 #   unstage <file>...    Remove file(s) from staging area (git reset HEAD <file>)
 #   discard <file>...    Discard working-tree changes to file(s) (git checkout -- <file>)
 #   amend-message <msg>  Change the message of the last commit (git commit --amend -m)
@@ -35,12 +35,12 @@ _show_help() {
 	echo ""
 	echo "Subcommands:"
 	echo "  commit               Undo the last commit, keeping all changes staged"
-	echo "                       (git reset --soft HEAD~1 — history-rewriting, local only)"
+	echo "                       (git reset --soft HEAD~1 -- history-rewriting, local only)"
 	echo "  unstage <file>...    Remove file(s) from staging area"
 	echo "  discard <file>...    Discard working-tree changes to file(s)"
 	echo "                       WARNING: This cannot be undone!"
 	echo "  amend-message <msg>  Replace the last commit message"
-	echo "                       (local only — do not use after pushing)"
+	echo "                       (local only -- do not use after pushing)"
 	echo ""
 	echo "Options:"
 	echo "  --non-interactive    Skip confirmation prompts"
@@ -139,7 +139,7 @@ _cmd_undo_commit() {
 		local ahead
 		ahead=$(git rev-list --count "origin/${current_branch}..HEAD" 2>/dev/null || echo "0")
 		if [[ "${ahead}" -eq 0 ]]; then
-			echo "⚠ WARNING: The last commit appears to have been pushed to origin."
+			echo "[!] WARNING: The last commit appears to have been pushed to origin."
 			echo "  Undoing it locally will create a diverged state requiring force-push."
 			if [[ "${non_interactive}" -eq 0 ]]; then
 				read -r -p "  Continue anyway? (yes/no): " pushed_confirm
@@ -148,7 +148,7 @@ _cmd_undo_commit() {
 					exit 0
 				fi
 			else
-				err "Aborting — last commit has been pushed; use --revert in rollback_merge.sh instead"
+				err "Aborting -- last commit has been pushed; use --revert in rollback_merge.sh instead"
 				exit 1
 			fi
 		fi
@@ -178,14 +178,14 @@ _cmd_undo_commit() {
 	get_timestamp
 	local backup_tag="pre-undo-commit-${timestamp}"
 	if git tag "${backup_tag}" 2>/dev/null; then
-		echo "✓ Backup tag: ${backup_tag}"
+		echo "[OK] Backup tag: ${backup_tag}"
 	else
-		echo "⚠ Could not create backup tag (continuing)"
+		echo "[!] Could not create backup tag (continuing)"
 	fi
 
 	if git reset --soft HEAD~1; then
 		echo ""
-		echo "✓ COMMIT UNDONE"
+		echo "[OK] COMMIT UNDONE"
 		echo "  All changes are now staged."
 		echo "  Backup: git reset --hard ${backup_tag}  (to restore)"
 		echo "  Next:   review staged files, edit if needed, then re-commit"
@@ -227,7 +227,7 @@ _cmd_unstage() {
 		if git diff --cached --name-only | grep -qF "${f}"; then
 			to_unstage+=("${f}")
 		else
-			echo "  ⚠ Not staged: ${f} (skipping)"
+			echo "  [!] Not staged: ${f} (skipping)"
 		fi
 	done
 
@@ -256,9 +256,9 @@ _cmd_unstage() {
 
 	for f in "${to_unstage[@]}"; do
 		if git reset HEAD "${f}" 2>/dev/null; then
-			echo "  ✓ Unstaged: ${f}"
+			echo "  [OK] Unstaged: ${f}"
 		else
-			echo "  ✗ Failed: ${f}" >&2
+			echo "  [FAIL] Failed: ${f}" >&2
 		fi
 	done
 }
@@ -273,7 +273,7 @@ _cmd_discard() {
 
 	echo "=== Discard Working-Tree Changes ==="
 	echo ""
-	echo "  ⚠ WARNING: This permanently discards uncommitted changes."
+	echo "  [!] WARNING: This permanently discards uncommitted changes."
 	echo "  Changes cannot be recovered after this operation."
 	echo ""
 
@@ -286,13 +286,13 @@ _cmd_discard() {
 	local -a to_discard=()
 	for f in "${files[@]}"; do
 		if [[ ! -f "${f}" ]] && [[ ! -d "${f}" ]]; then
-			echo "  ⚠ Not found: ${f} (skipping)"
+			echo "  [!] Not found: ${f} (skipping)"
 			continue
 		fi
 		if git diff --name-only -- "${f}" | grep -qF "${f}"; then
 			to_discard+=("${f}")
 		else
-			echo "  ⚠ No unstaged changes: ${f} (skipping)"
+			echo "  [!] No unstaged changes: ${f} (skipping)"
 		fi
 	done
 
@@ -327,9 +327,9 @@ _cmd_discard() {
 
 	for f in "${to_discard[@]}"; do
 		if git checkout -- "${f}" 2>/dev/null; then
-			echo "  ✓ Discarded: ${f}"
+			echo "  [OK] Discarded: ${f}"
 		else
-			echo "  ✗ Failed: ${f}" >&2
+			echo "  [FAIL] Failed: ${f}" >&2
 		fi
 	done
 }
@@ -357,7 +357,7 @@ _cmd_amend_message() {
 
 	# Validate conventional format
 	if ! echo "${new_msg}" | grep -qE "^(${CGW_ALL_PREFIXES}):"; then
-		echo "  ⚠ Message does not follow conventional format: ${new_msg}"
+		echo "  [!] Message does not follow conventional format: ${new_msg}"
 		echo "  Expected: <type>: <description> (types: ${CGW_ALL_PREFIXES/|/, })"
 		if [[ "${non_interactive}" -eq 0 ]]; then
 			read -r -p "  Continue anyway? (yes/no): " format_confirm
@@ -376,7 +376,7 @@ _cmd_amend_message() {
 		local ahead
 		ahead=$(git rev-list --count "origin/${current_branch}..HEAD" 2>/dev/null || echo "0")
 		if [[ "${ahead}" -eq 0 ]]; then
-			echo "  ⚠ WARNING: This commit appears to have been pushed. Amending will require force-push."
+			echo "  [!] WARNING: This commit appears to have been pushed. Amending will require force-push."
 			if [[ "${non_interactive}" -eq 1 ]]; then
 				err "Refusing to amend pushed commit in non-interactive mode"
 				exit 1
@@ -406,7 +406,7 @@ _cmd_amend_message() {
 
 	if git commit --amend --no-edit -m "${new_msg}"; then
 		echo ""
-		echo "✓ Message updated: $(git log -1 --oneline)"
+		echo "[OK] Message updated: $(git log -1 --oneline)"
 	else
 		err "Amend failed"
 		exit 1

@@ -33,12 +33,12 @@ source "${SCRIPT_DIR}/_config.sh"
 # UTILITY FUNCTIONS
 # ============================================================================
 
-# Error output helper — always goes to STDERR per style guide
+# Error output helper -- always goes to STDERR per style guide
 err() {
 	echo "[ERROR] $*" >&2
 }
 
-# Section timer storage — associative array avoids global clobbering when
+# Section timer storage -- associative array avoids global clobbering when
 # sections are nested (e.g. run_tool_with_logging called inside another section)
 declare -A _SECTION_START_TIMES=() 2>/dev/null || true
 

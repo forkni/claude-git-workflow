@@ -41,9 +41,9 @@ _cleanup_rebase() {
 	# Only restore stash if rebase was aborted mid-way and we created one
 	if [[ ${_rebase_stash_created} -eq 1 ]]; then
 		if git rebase --show-current-patch >/dev/null 2>&1 || [[ -d "${PROJECT_ROOT}/.git/rebase-merge" ]] || [[ -d "${PROJECT_ROOT}/.git/rebase-apply" ]]; then
-			# Rebase still in progress — don't auto-pop stash, user needs to resolve
+			# Rebase still in progress -- don't auto-pop stash, user needs to resolve
 			echo "" >&2
-			echo "⚠ Rebase was interrupted with uncommitted changes stashed." >&2
+			echo "[!] Rebase was interrupted with uncommitted changes stashed." >&2
 			echo "  Resolve conflicts, then: git rebase --continue" >&2
 			echo "  To restore your stash: git stash pop" >&2
 		fi
@@ -90,7 +90,7 @@ _show_help() {
 	echo "  # Continue after resolving conflicts"
 	echo "  ./scripts/git/rebase_safe.sh --continue"
 	echo ""
-	echo "⚠ WARNING: Rebasing rewrites history. Never rebase commits already pushed"
+	echo "[!] WARNING: Rebasing rewrites history. Never rebase commits already pushed"
 	echo "   to a shared branch. This script will warn you if that is the case."
 }
 
@@ -146,7 +146,7 @@ main() {
 		echo "Branch: $(git branch --show-current 2>/dev/null || echo 'detached')"
 	} >"$logfile"
 
-	# ── Handle in-progress rebase operations ──────────────────────────────────
+	# -- Handle in-progress rebase operations ----------------------------------
 	if [[ ${do_abort} -eq 1 ]]; then
 		_cmd_abort
 		return $?
@@ -160,7 +160,7 @@ main() {
 		return $?
 	fi
 
-	# ── Validate: mutually exclusive main operations ───────────────────────────
+	# -- Validate: mutually exclusive main operations ---------------------------
 	local has_onto=0
 	local has_squash=0
 	[[ -n "${onto_ref}" ]] && has_onto=1
@@ -176,16 +176,16 @@ main() {
 		exit 1
 	fi
 
-	# ── Check for already-active rebase ───────────────────────────────────────
+	# -- Check for already-active rebase ---------------------------------------
 	if [[ -d "${PROJECT_ROOT}/.git/rebase-merge" ]] || [[ -d "${PROJECT_ROOT}/.git/rebase-apply" ]]; then
-		echo "⚠ A rebase is already in progress." >&2
+		echo "[!] A rebase is already in progress." >&2
 		echo "  Resolve conflicts then:" >&2
 		echo "    ./scripts/git/rebase_safe.sh --continue" >&2
 		echo "    ./scripts/git/rebase_safe.sh --abort" >&2
 		exit 1
 	fi
 
-	# ── Set default onto_ref ───────────────────────────────────────────────────
+	# -- Set default onto_ref ---------------------------------------------------
 	if [[ ${has_onto} -eq 1 ]] && [[ -z "${onto_ref}" ]]; then
 		onto_ref="${CGW_TARGET_BRANCH}"
 		echo "Using default onto ref: ${onto_ref}" | tee -a "$logfile"
@@ -205,10 +205,10 @@ _create_backup_tag() {
 	get_timestamp
 	local backup_tag="pre-rebase-${timestamp}"
 	if git tag "${backup_tag}" 2>/dev/null; then
-		echo "✓ Backup tag: ${backup_tag}" | tee -a "$logfile"
+		echo "[OK] Backup tag: ${backup_tag}" | tee -a "$logfile"
 		echo "  To restore: git checkout ${backup_tag}" | tee -a "$logfile"
 	else
-		echo "⚠ Could not create backup tag (continuing)" | tee -a "$logfile"
+		echo "[!] Could not create backup tag (continuing)" | tee -a "$logfile"
 	fi
 	echo "" | tee -a "$logfile"
 	echo "${backup_tag}"
@@ -222,8 +222,8 @@ _check_pushed_commits() {
 	local non_interactive="${2}"
 
 	if [[ "${upstream_count}" -gt 0 ]]; then
-		echo "⚠ WARNING: ${upstream_count} commit(s) on this branch have already been pushed." | tee -a "$logfile"
-		echo "  Rebasing will rewrite history — you will need to force-push after rebase." | tee -a "$logfile"
+		echo "[!] WARNING: ${upstream_count} commit(s) on this branch have already been pushed." | tee -a "$logfile"
+		echo "  Rebasing will rewrite history -- you will need to force-push after rebase." | tee -a "$logfile"
 		echo "  This is SAFE only on personal/feature branches, NEVER on shared branches." | tee -a "$logfile"
 		echo "" | tee -a "$logfile"
 		if [[ "${non_interactive}" -eq 1 ]]; then
@@ -250,9 +250,9 @@ _handle_dirty_tree() {
 			echo "  Stashing uncommitted changes..." | tee -a "$logfile"
 			if git stash push -m "rebase_safe auto-stash $(date +%Y%m%d_%H%M%S)" 2>&1 | tee -a "$logfile"; then
 				_rebase_stash_created=1
-				echo "  ✓ Changes stashed" | tee -a "$logfile"
+				echo "  [OK] Changes stashed" | tee -a "$logfile"
 			else
-				err "Failed to stash changes — resolve conflicts first"
+				err "Failed to stash changes -- resolve conflicts first"
 				exit 1
 			fi
 		else
@@ -272,9 +272,9 @@ _restore_stash_if_needed() {
 		echo "  Restoring stashed changes..." | tee -a "$logfile"
 		if git stash pop 2>&1 | tee -a "$logfile"; then
 			_rebase_stash_created=0
-			echo "  ✓ Stash restored" | tee -a "$logfile"
+			echo "  [OK] Stash restored" | tee -a "$logfile"
 		else
-			echo "  ⚠ Stash pop had conflicts — resolve manually with: git stash show / git stash pop" | tee -a "$logfile"
+			echo "  [!] Stash pop had conflicts -- resolve manually with: git stash show / git stash pop" | tee -a "$logfile"
 		fi
 	fi
 }
@@ -325,7 +325,7 @@ _cmd_rebase_onto() {
 	echo "" | tee -a "$logfile"
 
 	if [[ "${rebase_commit_count}" == "0" ]]; then
-		echo "  Already up to date with ${onto_ref} — nothing to rebase."
+		echo "  Already up to date with ${onto_ref} -- nothing to rebase."
 		exit 0
 	fi
 
@@ -334,7 +334,7 @@ _cmd_rebase_onto() {
 		echo "Would run:"
 		echo "  git rebase ${onto_ref}"
 		if [[ "${pushed_count}" -gt 0 ]]; then
-			echo "  (then: git push --force-with-lease — ${pushed_count} commits already pushed)"
+			echo "  (then: git push --force-with-lease -- ${pushed_count} commits already pushed)"
 		fi
 		exit 0
 	fi
@@ -369,7 +369,7 @@ _cmd_rebase_onto() {
 
 	if [[ ${rebase_exit} -ne 0 ]]; then
 		echo "" | tee -a "$logfile"
-		echo "✗ REBASE HIT CONFLICTS" | tee -a "$logfile"
+		echo "[FAIL] REBASE HIT CONFLICTS" | tee -a "$logfile"
 		echo "" | tee -a "$logfile"
 		echo "  Conflicting files:"
 		git diff --name-only --diff-filter=U 2>/dev/null | sed 's/^/    /' || true
@@ -382,7 +382,7 @@ _cmd_rebase_onto() {
 		echo "    ./scripts/git/rebase_safe.sh --abort"
 		echo ""
 		echo "Full log: $logfile"
-		# Don't restore stash — user needs to resolve rebase first
+		# Don't restore stash -- user needs to resolve rebase first
 		_rebase_stash_created=0
 		exit 1
 	fi
@@ -390,12 +390,12 @@ _cmd_rebase_onto() {
 	_restore_stash_if_needed
 
 	echo "" | tee -a "$logfile"
-	echo "✓ REBASE COMPLETE" | tee -a "$logfile"
+	echo "[OK] REBASE COMPLETE" | tee -a "$logfile"
 	echo "  $(git log -1 --oneline)" | tee -a "$logfile"
 	echo "" | tee -a "$logfile"
 
 	if [[ "${pushed_count}" -gt 0 ]]; then
-		echo "  ⚠ Your branch was previously pushed — force-push required:"
+		echo "  [!] Your branch was previously pushed -- force-push required:"
 		echo "    ./scripts/git/push_validated.sh --force-with-lease"
 		echo ""
 	fi
@@ -429,7 +429,7 @@ _cmd_squash_last() {
 	local commit_count
 	commit_count=$(git rev-list --count HEAD 2>/dev/null || echo "0")
 	if [[ "${commit_count}" -lt "${squash_n}" ]]; then
-		err "Cannot squash ${squash_n} commits — branch only has ${commit_count} commit(s)"
+		err "Cannot squash ${squash_n} commits -- branch only has ${commit_count} commit(s)"
 		exit 1
 	fi
 
@@ -456,7 +456,7 @@ _cmd_squash_last() {
 		echo "Would run:"
 		echo "  git rebase -i${squash_flag} HEAD~${squash_n}"
 		if [[ "${pushed_count}" -gt 0 ]]; then
-			echo "  (then: git push --force-with-lease — ${pushed_count} commits already pushed)"
+			echo "  (then: git push --force-with-lease -- ${pushed_count} commits already pushed)"
 		fi
 		exit 0
 	fi
@@ -478,7 +478,7 @@ _cmd_squash_last() {
 			exit 0
 		fi
 	elif [[ "${non_interactive}" -eq 1 ]] && [[ "${autosquash}" -eq 0 ]]; then
-		err "Interactive squash requires an editor — use --autosquash for non-interactive squash"
+		err "Interactive squash requires an editor -- use --autosquash for non-interactive squash"
 		err "(commits must be prefixed with 'squash!' or 'fixup!' for --autosquash to work)"
 		exit 1
 	fi
@@ -501,7 +501,7 @@ _cmd_squash_last() {
 
 	if [[ ${rebase_exit} -ne 0 ]]; then
 		echo "" | tee -a "$logfile"
-		echo "✗ INTERACTIVE REBASE HIT CONFLICTS" | tee -a "$logfile"
+		echo "[FAIL] INTERACTIVE REBASE HIT CONFLICTS" | tee -a "$logfile"
 		echo "" | tee -a "$logfile"
 		echo "  Resolve conflicts, then:"
 		echo "    git add <resolved-files>"
@@ -518,12 +518,12 @@ _cmd_squash_last() {
 	_restore_stash_if_needed
 
 	echo "" | tee -a "$logfile"
-	echo "✓ SQUASH COMPLETE" | tee -a "$logfile"
+	echo "[OK] SQUASH COMPLETE" | tee -a "$logfile"
 	echo "  $(git log -1 --oneline)" | tee -a "$logfile"
 	echo "" | tee -a "$logfile"
 
 	if [[ "${pushed_count}" -gt 0 ]]; then
-		echo "  ⚠ Your branch was previously pushed — force-push required:"
+		echo "  [!] Your branch was previously pushed -- force-push required:"
 		echo "    ./scripts/git/push_validated.sh --force-with-lease"
 		echo ""
 	fi
@@ -546,14 +546,14 @@ _cmd_abort() {
 	echo "  Aborting rebase..." | tee -a "$logfile"
 	if git rebase --abort 2>&1 | tee -a "$logfile"; then
 		echo ""
-		echo "✓ Rebase aborted — returned to: $(git branch --show-current 2>/dev/null || echo 'previous state')"
+		echo "[OK] Rebase aborted -- returned to: $(git branch --show-current 2>/dev/null || echo 'previous state')"
 		if [[ ${_rebase_stash_created} -eq 1 ]]; then
 			echo ""
 			echo "  Your auto-stash is still saved. To restore:"
 			echo "    git stash pop"
 		fi
 	else
-		err "rebase --abort failed — run 'git rebase --abort' manually"
+		err "rebase --abort failed -- run 'git rebase --abort' manually"
 		exit 1
 	fi
 }
@@ -574,7 +574,7 @@ _cmd_continue() {
 	local unresolved
 	unresolved=$(git diff --name-only --diff-filter=U 2>/dev/null || true)
 	if [[ -n "${unresolved}" ]]; then
-		err "Unresolved conflicts still present — resolve and 'git add' them first:"
+		err "Unresolved conflicts still present -- resolve and 'git add' them first:"
 		echo "${unresolved}" | sed 's/^/  /'
 		exit 1
 	fi
@@ -582,16 +582,16 @@ _cmd_continue() {
 	echo "  Continuing rebase..." | tee -a "$logfile"
 	if GIT_EDITOR=true git rebase --continue 2>&1 | tee -a "$logfile"; then
 		echo ""
-		echo "✓ Rebase continued"
+		echo "[OK] Rebase continued"
 		# Check if rebase is now complete
 		if [[ ! -d "${PROJECT_ROOT}/.git/rebase-merge" ]] && [[ ! -d "${PROJECT_ROOT}/.git/rebase-apply" ]]; then
 			echo "  Rebase complete!"
 			_restore_stash_if_needed
 		else
-			echo "  More conflicts to resolve — fix them, then run --continue again."
+			echo "  More conflicts to resolve -- fix them, then run --continue again."
 		fi
 	else
-		err "rebase --continue failed — check for remaining conflicts"
+		err "rebase --continue failed -- check for remaining conflicts"
 		echo ""
 		echo "  Conflicting files:"
 		git diff --name-only --diff-filter=U 2>/dev/null | sed 's/^/    /' || true
@@ -613,14 +613,14 @@ _cmd_skip() {
 		exit 0
 	fi
 
-	echo "  ⚠ Skipping current commit — its changes will be dropped."
+	echo "  [!] Skipping current commit -- its changes will be dropped."
 	echo "  Current patch:"
 	git log ORIG_HEAD -1 --oneline 2>/dev/null | sed 's/^/    /' || true
 	echo ""
 
 	if git rebase --skip 2>&1 | tee -a "$logfile"; then
 		echo ""
-		echo "✓ Commit skipped"
+		echo "[OK] Commit skipped"
 		if [[ ! -d "${PROJECT_ROOT}/.git/rebase-merge" ]] && [[ ! -d "${PROJECT_ROOT}/.git/rebase-apply" ]]; then
 			echo "  Rebase complete!"
 			_restore_stash_if_needed

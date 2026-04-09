@@ -99,7 +99,7 @@ main() {
 		echo "Create PR Log"
 		echo "========================================="
 		echo "Start Time: $(date)"
-		echo "Source: ${CGW_SOURCE_BRANCH} → Target: ${CGW_TARGET_BRANCH}"
+		echo "Source: ${CGW_SOURCE_BRANCH} -> Target: ${CGW_TARGET_BRANCH}"
 		echo ""
 	} >"$logfile"
 
@@ -126,7 +126,7 @@ main() {
 		exit 1
 	fi
 
-	echo "✓ gh CLI installed and authenticated" | tee -a "$logfile"
+	echo "[OK] gh CLI installed and authenticated" | tee -a "$logfile"
 	log_section_end "PREREQUISITES" "$logfile" "0"
 	echo "" | tee -a "$logfile"
 
@@ -136,7 +136,7 @@ main() {
 	local current_branch
 	current_branch=$(git branch --show-current)
 	echo "Current branch: ${current_branch}" | tee -a "$logfile"
-	echo "PR: ${CGW_SOURCE_BRANCH} → ${CGW_TARGET_BRANCH}" | tee -a "$logfile"
+	echo "PR: ${CGW_SOURCE_BRANCH} -> ${CGW_TARGET_BRANCH}" | tee -a "$logfile"
 
 	if [[ "${CGW_SOURCE_BRANCH}" == "${CGW_TARGET_BRANCH}" ]]; then
 		err "Source and target branch are the same: ${CGW_SOURCE_BRANCH}"
@@ -169,7 +169,7 @@ main() {
 
 	# Fetch latest remote refs so comparisons below use current state
 	if ! git fetch origin "${CGW_SOURCE_BRANCH}" "${CGW_TARGET_BRANCH}" 2>/dev/null; then
-		echo "⚠ WARNING: git fetch failed — comparisons may use stale refs" | tee -a "$logfile"
+		echo "[!] WARNING: git fetch failed -- comparisons may use stale refs" | tee -a "$logfile"
 	fi
 
 	# Warn if local source branch has commits not yet pushed to remote
@@ -177,7 +177,7 @@ main() {
 	local_sha=$(git rev-parse "${CGW_SOURCE_BRANCH}" 2>/dev/null || true)
 	remote_sha=$(git rev-parse "origin/${CGW_SOURCE_BRANCH}" 2>/dev/null || true)
 	if [[ -n "${local_sha}" ]] && [[ "${local_sha}" != "${remote_sha}" ]]; then
-		echo "⚠ WARNING: Local ${CGW_SOURCE_BRANCH} differs from origin/${CGW_SOURCE_BRANCH}" | tee -a "$logfile"
+		echo "[!] WARNING: Local ${CGW_SOURCE_BRANCH} differs from origin/${CGW_SOURCE_BRANCH}" | tee -a "$logfile"
 		echo "  Local commits may not appear in the PR. Push first with: ./scripts/git/push_validated.sh" | tee -a "$logfile"
 	fi
 
@@ -190,12 +190,12 @@ main() {
 	fi
 
 	if [[ "${commits_ahead}" == "0" ]]; then
-		echo "[!] No commits ahead of ${CGW_TARGET_BRANCH} — nothing to PR" | tee -a "$logfile"
+		echo "[!] No commits ahead of ${CGW_TARGET_BRANCH} -- nothing to PR" | tee -a "$logfile"
 		log_section_end "BRANCH VALIDATION" "$logfile" "1"
 		exit 1
 	fi
 
-	echo "✓ ${commits_ahead} commit(s) ahead of ${CGW_TARGET_BRANCH}" | tee -a "$logfile"
+	echo "[OK] ${commits_ahead} commit(s) ahead of ${CGW_TARGET_BRANCH}" | tee -a "$logfile"
 	log_section_end "BRANCH VALIDATION" "$logfile" "0"
 	echo "" | tee -a "$logfile"
 
@@ -212,7 +212,7 @@ main() {
 			pr_title=$(git log -1 --format="%s" "origin/${CGW_SOURCE_BRANCH}" 2>/dev/null)
 		else
 			# Multiple commits: generic merge title
-			pr_title="merge: ${CGW_SOURCE_BRANCH} → ${CGW_TARGET_BRANCH}"
+			pr_title="merge: ${CGW_SOURCE_BRANCH} -> ${CGW_TARGET_BRANCH}"
 		fi
 	fi
 
@@ -228,7 +228,7 @@ ${formatted_log}
 
 ## Branch
 
-\`${CGW_SOURCE_BRANCH}\` → \`${CGW_TARGET_BRANCH}\`"
+\`${CGW_SOURCE_BRANCH}\` -> \`${CGW_TARGET_BRANCH}\`"
 
 	echo "Title: ${pr_title}" | tee -a "$logfile"
 	echo "" | tee -a "$logfile"
@@ -249,7 +249,7 @@ ${formatted_log}
 
 	# [4/4] Create PR
 	if [[ ${dry_run} -eq 1 ]]; then
-		echo "=== DRY RUN — PR not created ===" | tee -a "$logfile"
+		echo "=== DRY RUN -- PR not created ===" | tee -a "$logfile"
 		echo "" | tee -a "$logfile"
 		echo "Would create:" | tee -a "$logfile"
 		echo "  Title:  ${pr_title}" | tee -a "$logfile"
@@ -275,7 +275,7 @@ ${formatted_log}
 		pr_url=$(echo "${gh_output}" | grep -oE 'https://github\.com/[^ ]+' | head -1)
 		log_section_end "CREATE PR" "$logfile" "0"
 		echo "" | tee -a "$logfile"
-		echo "✓ PR created: ${pr_url:-${gh_output}}" | tee -a "$logfile"
+		echo "[OK] PR created: ${pr_url:-${gh_output}}" | tee -a "$logfile"
 		echo "" | tee -a "$logfile"
 		if [[ ${draft} -eq 0 ]]; then
 			echo "Charlie CI will auto-review this PR." | tee -a "$logfile"
@@ -285,7 +285,7 @@ ${formatted_log}
 		echo "Full log: $logfile"
 	else
 		log_section_end "CREATE PR" "$logfile" "1"
-		err "PR creation failed — check log: ${logfile}"
+		err "PR creation failed -- check log: ${logfile}"
 		exit 1
 	fi
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # create_release.sh - Create annotated version tags to trigger GitHub Releases
 # Purpose: Create a properly annotated semver tag on the target branch.
-#          Annotated tags store author, date, and message — required for the
+#          Annotated tags store author, date, and message -- required for the
 #          release.yml GitHub Actions workflow and distinguishable from backup tags.
 # Usage: ./scripts/git/create_release.sh [OPTIONS] <version>
 #
@@ -114,7 +114,7 @@ main() {
 	local current_branch
 	current_branch=$(git branch --show-current 2>/dev/null || true)
 	if [[ -z "${current_branch}" ]]; then
-		echo "[ERROR] Detached HEAD state — checkout ${CGW_TARGET_BRANCH} first" >&2
+		echo "[ERROR] Detached HEAD state -- checkout ${CGW_TARGET_BRANCH} first" >&2
 		exit 1
 	fi
 
@@ -126,7 +126,7 @@ main() {
 
 	# Check for uncommitted changes
 	if ! git diff-index --quiet HEAD -- 2>/dev/null; then
-		echo "[ERROR] Uncommitted changes present — commit before releasing" >&2
+		echo "[ERROR] Uncommitted changes present -- commit before releasing" >&2
 		git status --short >&2
 		exit 1
 	fi
@@ -176,7 +176,7 @@ main() {
 
 	# Create annotated tag
 	if git tag -a "${version}" -m "${tag_message}"; then
-		echo "✓ Created annotated tag: ${version}"
+		echo "[OK] Created annotated tag: ${version}"
 	else
 		echo "[ERROR] Failed to create tag" >&2
 		exit 1
@@ -186,7 +186,7 @@ main() {
 	if [[ ${push_tag} -eq 1 ]]; then
 		echo "Pushing tag to origin..."
 		if git push origin "${version}"; then
-			echo "✓ Tag pushed: ${version}"
+			echo "[OK] Tag pushed: ${version}"
 			echo ""
 			echo "GitHub Release workflow triggered."
 			echo "Check: https://github.com/$(git remote get-url origin | sed 's|.*github.com[:/]||;s|\.git$||')/actions"
@@ -197,7 +197,7 @@ main() {
 		fi
 	else
 		echo ""
-		echo "Next step — push to trigger GitHub Release:"
+		echo "Next step -- push to trigger GitHub Release:"
 		echo "  git push origin ${version}"
 	fi
 }

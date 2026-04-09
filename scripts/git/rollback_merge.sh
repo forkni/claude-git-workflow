@@ -29,7 +29,7 @@ _rollback_done=0
 _cleanup_rollback() {
 	[[ ${_rollback_done} -eq 1 ]] && return 0
 	echo "" >&2
-	echo "⚠ Rollback interrupted. Verify repository state before proceeding:" >&2
+	echo "[!] Rollback interrupted. Verify repository state before proceeding:" >&2
 	echo "  git log --oneline -5" >&2
 	echo "  git status" >&2
 }
@@ -54,14 +54,14 @@ main() {
 			echo "  --target <ref>      Commit hash, tag name, or HEAD~1 to roll back to"
 			echo "  --dry-run           Show rollback target without resetting"
 			echo "  --revert            Safe mode: use 'git revert -m 1' instead of 'git reset --hard'"
-			echo "                      Preserves history — safe for shared repos where commits are pushed"
+			echo "                      Preserves history -- safe for shared repos where commits are pushed"
 			echo "  -h, --help          Show this help"
 			echo ""
 			echo "Environment:"
 			echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
 			echo ""
 			echo "CAUTION: Without --revert, this rewrites branch history. Force-push required after."
-			echo "         With --revert, history is preserved — no force-push needed."
+			echo "         With --revert, history is preserved -- no force-push needed."
 			exit 0
 			;;
 		--non-interactive) non_interactive=1 ;;
@@ -106,7 +106,7 @@ main() {
 
 	if [[ "${current_branch}" != "${CGW_TARGET_BRANCH}" ]]; then
 		echo "" | tee -a "$logfile"
-		echo "✗ ERROR: Not on target branch (${CGW_TARGET_BRANCH})" | tee -a "$logfile"
+		echo "[FAIL] ERROR: Not on target branch (${CGW_TARGET_BRANCH})" | tee -a "$logfile"
 		echo "This script should only be run from the target branch" | tee -a "$logfile"
 		echo "" | tee -a "$logfile"
 		echo "Current branch: ${current_branch}" | tee -a "$logfile"
@@ -116,7 +116,7 @@ main() {
 		log_section_end "BRANCH VERIFICATION" "$logfile" "1"
 		exit 1
 	fi
-	echo "✓ On target branch (${CGW_TARGET_BRANCH})" | tee -a "$logfile"
+	echo "[OK] On target branch (${CGW_TARGET_BRANCH})" | tee -a "$logfile"
 	log_section_end "BRANCH VERIFICATION" "$logfile" "0"
 	echo "" | tee -a "$logfile"
 
@@ -124,14 +124,14 @@ main() {
 	log_section_start "UNCOMMITTED CHANGES CHECK" "$logfile"
 
 	if ! git diff-index --quiet HEAD --; then
-		echo "⚠ WARNING: Uncommitted changes detected" | tee -a "$logfile"
+		echo "[!] WARNING: Uncommitted changes detected" | tee -a "$logfile"
 		echo "" | tee -a "$logfile"
 		git status --short | tee -a "$logfile"
 		echo "" | tee -a "$logfile"
 		echo "These changes will be LOST during rollback!" | tee -a "$logfile"
 		echo "" | tee -a "$logfile"
 		if [[ ${non_interactive} -eq 1 ]]; then
-			echo "[Non-interactive] Aborting — commit or stash changes first" | tee -a "$logfile"
+			echo "[Non-interactive] Aborting -- commit or stash changes first" | tee -a "$logfile"
 			log_section_end "UNCOMMITTED CHANGES CHECK" "$logfile" "1"
 			exit 1
 		fi
@@ -144,7 +144,7 @@ main() {
 			exit 1
 		fi
 	else
-		echo "✓ No uncommitted changes" | tee -a "$logfile"
+		echo "[OK] No uncommitted changes" | tee -a "$logfile"
 	fi
 	log_section_end "UNCOMMITTED CHANGES CHECK" "$logfile" "0"
 	echo "" | tee -a "$logfile"
@@ -194,7 +194,7 @@ main() {
 			echo "[Non-interactive] Using latest backup tag: ${rollback_target}" | tee -a "$logfile"
 		else
 			rollback_target="HEAD~1"
-			echo "[Non-interactive] No backup tag found — using HEAD~1" | tee -a "$logfile"
+			echo "[Non-interactive] No backup tag found -- using HEAD~1" | tee -a "$logfile"
 		fi
 	else
 		echo "[4/5] Choose rollback method:"
@@ -247,14 +247,14 @@ main() {
 
 	# [5/5] Execute rollback
 	echo "" | tee -a "$logfile"
-	echo "⚠ WARNING: This will permanently reset ${CGW_TARGET_BRANCH} branch to:" | tee -a "$logfile"
+	echo "[!] WARNING: This will permanently reset ${CGW_TARGET_BRANCH} branch to:" | tee -a "$logfile"
 	git log "${rollback_target}" --oneline -1 | tee -a "$logfile"
 	echo "" | tee -a "$logfile"
 	echo "All commits after this point will be lost!" | tee -a "$logfile"
 	echo "" | tee -a "$logfile"
 
 	if [[ ${dry_run} -eq 1 ]]; then
-		echo "=== DRY RUN — no changes made ===" | tee -a "$logfile"
+		echo "=== DRY RUN -- no changes made ===" | tee -a "$logfile"
 		echo "Would reset ${CGW_TARGET_BRANCH} to: ${rollback_target}" | tee -a "$logfile"
 		_rollback_done=1
 		exit 0
@@ -276,7 +276,7 @@ main() {
 
 	if [[ ${use_revert} -eq 1 ]]; then
 		# Safe revert mode: creates a new commit that undoes the merge.
-		# Preserves history — no force-push needed (Pro Git p.288-289).
+		# Preserves history -- no force-push needed (Pro Git p.288-289).
 		# git revert -m 1 requires a merge commit (2+ parents); validate before attempting.
 		local parent_count
 		parent_count=$(git cat-file -p "${rollback_target}" 2>/dev/null | grep -c "^parent " || echo "0")
@@ -291,10 +291,10 @@ main() {
 			echo "" | tee -a "$logfile"
 			{
 				echo "========================================"
-				echo "[ROLLBACK SUMMARY — REVERT MODE]"
+				echo "[ROLLBACK SUMMARY -- REVERT MODE]"
 				echo "========================================"
 			} | tee -a "$logfile"
-			echo "✓ REVERT SUCCESSFUL" | tee -a "$logfile"
+			echo "[OK] REVERT SUCCESSFUL" | tee -a "$logfile"
 			echo "" | tee -a "$logfile"
 			echo "Summary:" | tee -a "$logfile"
 			git log --oneline -1 | while read -r line; do echo "  Current HEAD: $line" | tee -a "$logfile"; done
@@ -302,7 +302,7 @@ main() {
 			echo "Next steps:" | tee -a "$logfile"
 			echo "  1. Verify revert: git log --oneline -5" | tee -a "$logfile"
 			echo "  2. Push normally: git push origin ${CGW_TARGET_BRANCH}" | tee -a "$logfile"
-			echo "     (no force-push needed — history is preserved)" | tee -a "$logfile"
+			echo "     (no force-push needed -- history is preserved)" | tee -a "$logfile"
 			{
 				echo ""
 				echo "End Time: $(date)"
@@ -313,7 +313,7 @@ main() {
 		else
 			log_section_end "GIT REVERT" "$logfile" "1"
 			echo "" | tee -a "$logfile"
-			echo "✗ Revert failed" | tee -a "$logfile"
+			echo "[FAIL] Revert failed" | tee -a "$logfile"
 			echo "Please manually revert: git revert -m 1 ${rollback_target}"
 			exit 1
 		fi
@@ -328,7 +328,7 @@ main() {
 				echo "[ROLLBACK SUMMARY]"
 				echo "========================================"
 			} | tee -a "$logfile"
-			echo "✓ ROLLBACK SUCCESSFUL" | tee -a "$logfile"
+			echo "[OK] ROLLBACK SUCCESSFUL" | tee -a "$logfile"
 			echo "" | tee -a "$logfile"
 			echo "Summary:" | tee -a "$logfile"
 			git log --oneline -1 | while read -r line; do echo "  Current HEAD: $line" | tee -a "$logfile"; done
@@ -338,7 +338,7 @@ main() {
 			echo "  2. If correct, force push: git push origin ${CGW_TARGET_BRANCH} --force-with-lease" | tee -a "$logfile"
 			echo "  3. If issues, contact maintainer" | tee -a "$logfile"
 			echo "" | tee -a "$logfile"
-			echo "  ⚠ WARNING: Force push will rewrite remote history!" | tee -a "$logfile"
+			echo "  [!] WARNING: Force push will rewrite remote history!" | tee -a "$logfile"
 			{
 				echo ""
 				echo "End Time: $(date)"
@@ -349,7 +349,7 @@ main() {
 		else
 			log_section_end "GIT RESET" "$logfile" "1"
 			echo "" | tee -a "$logfile"
-			echo "✗ Rollback failed" | tee -a "$logfile"
+			echo "[FAIL] Rollback failed" | tee -a "$logfile"
 			echo "Please manually reset: git reset --hard ${rollback_target}"
 			exit 1
 		fi
