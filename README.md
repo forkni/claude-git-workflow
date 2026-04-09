@@ -157,6 +157,9 @@ Keep `main` as the GitHub default branch. Charlie reads its config from the defa
 
 # Non-interactive (CI/CD, Claude Code)
 ./scripts/git/commit_enhanced.sh --non-interactive "feat: add feature"
+
+# Skip lint checks
+./scripts/git/commit_enhanced.sh --skip-lint "feat: add feature"
 ```
 
 ### Merge to target branch (direct)
@@ -338,8 +341,9 @@ Compatible with: Linux, macOS, Windows (Git Bash / WSL)
 
 | Workflow | Trigger | Checks |
 |----------|---------|--------|
-| Branch Protection | Push/PR to `development`, `main` | Local-only file detection, `.gitattributes` presence, ShellCheck, shfmt format, Bats unit + integration tests |
-| Docs Validation | Changes to `*.md` files | Markdown linting, broken links, spelling |
+| Branch Protection | Push/PR to `development`, `main` | Local-only file detection, `.gitattributes` presence, ShellCheck, shfmt format (advisory), Bats unit + integration tests |
+| Docs Validation | Changes to `*.md` files | Markdown linting, broken links, spelling (all advisory) |
+| Release | Tag push matching `v*` | Creates GitHub Release with auto-generated notes and source archives |
 
 ### Charlie CI Agent
 
