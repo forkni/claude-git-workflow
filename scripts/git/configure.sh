@@ -516,15 +516,15 @@ main() {
   if [[ ${non_interactive} -eq 0 ]] && { [[ ! -f ".cgw.conf" ]] || [[ ${reconfigure} -eq 1 ]]; }; then
     echo "Press Enter to accept [default], or type a different value."
     echo ""
-    read -r -p "Target branch [${target_branch}]: " answer
+    read -e -r -p "Target branch [${target_branch}]: " answer
     [[ -n "${answer}" && ! "${answer}" =~ ^[Yy]([Ee][Ss])?$ ]] && target_branch="${answer}"
 
-    read -r -p "Source branch [${source_branch}]: " answer
+    read -e -r -p "Source branch [${source_branch}]: " answer
     [[ -n "${answer}" && ! "${answer}" =~ ^[Yy]([Ee][Ss])?$ ]] && source_branch="${answer}"
 
     echo ""
     echo "Local-only files (never committed): ${local_files}"
-    read -r -p "Add/change local files? (press Enter to keep, or type new list): " answer
+    read -e -r -p "Add/change local files? (press Enter to keep, or type new list): " answer
     [[ -n "${answer}" && ! "${answer}" =~ ^[Yy]([Ee][Ss])?$ ]] && local_files="${answer}"
   fi
 

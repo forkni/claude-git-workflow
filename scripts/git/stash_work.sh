@@ -181,7 +181,7 @@ main() {
 			echo "Stashes:"
 			git stash list
 			echo ""
-			read -r -p "Which stash to drop? (e.g. stash@{0}): " ref
+			read -e -r -p "Which stash to drop? (e.g. stash@{0}): " ref
 			[[ -z "${ref}" ]] && echo "Cancelled" && exit 0
 		fi
 

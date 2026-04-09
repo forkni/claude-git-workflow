@@ -164,7 +164,7 @@ main() {
 	else
 		echo "[4/6] Select commit to cherry-pick..."
 		echo ""
-		read -r -p "Enter commit hash (or 'cancel' to abort): " commit_hash
+		read -e -r -p "Enter commit hash (or 'cancel' to abort): " commit_hash
 
 		if [[ "${commit_hash}" == "cancel" ]]; then
 			echo ""
