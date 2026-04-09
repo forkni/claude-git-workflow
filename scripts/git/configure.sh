@@ -124,6 +124,17 @@ _detect_lint_tool() {
       return 0
     fi
   fi
+  # C/C++ project detection
+  if [[ -f "CMakeLists.txt" ]] || [[ -f "Makefile" ]] || [[ -f "meson.build" ]]; then
+    if command -v clang-tidy &>/dev/null; then
+      echo "clang-tidy"
+      return 0
+    fi
+    if command -v cppcheck &>/dev/null; then
+      echo "cppcheck"
+      return 0
+    fi
+  fi
   echo "" # no lint tool detected
 }
 
@@ -133,6 +144,9 @@ _detect_format_tool() {
     ruff) echo "ruff" ;;
     eslint)
       if command -v prettier &>/dev/null; then echo "prettier"; else echo ""; fi
+      ;;
+    clang-tidy | cppcheck)
+      if command -v clang-format &>/dev/null; then echo "clang-format"; else echo ""; fi
       ;;
     *) echo "" ;;
   esac
@@ -220,6 +234,26 @@ _build_lint_config() {
       echo "CGW_FORMAT_CMD=\"gofmt\""
       echo "CGW_FORMAT_CHECK_ARGS=\"-l .\""
       echo "CGW_FORMAT_FIX_ARGS=\"-w .\""
+      echo "CGW_FORMAT_EXCLUDES=\"\""
+      ;;
+    clang-tidy)
+      echo "CGW_LINT_CMD=\"clang-tidy\""
+      echo "CGW_LINT_CHECK_ARGS=\"-p build\"  # adjust: path to compile_commands.json dir"
+      echo "CGW_LINT_FIX_ARGS=\"-p build --fix\""
+      echo "CGW_LINT_EXCLUDES=\"\""
+      echo "CGW_FORMAT_CMD=\"clang-format\""
+      echo "CGW_FORMAT_CHECK_ARGS=\"--dry-run --Werror -r .\""
+      echo "CGW_FORMAT_FIX_ARGS=\"-i -r .\""
+      echo "CGW_FORMAT_EXCLUDES=\"\""
+      ;;
+    cppcheck)
+      echo "CGW_LINT_CMD=\"cppcheck\""
+      echo "CGW_LINT_CHECK_ARGS=\"--enable=all --error-exitcode=1 .\""
+      echo "CGW_LINT_FIX_ARGS=\"--enable=all --error-exitcode=1 .\"  # cppcheck has no auto-fix"
+      echo "CGW_LINT_EXCLUDES=\"\""
+      echo "CGW_FORMAT_CMD=\"clang-format\""
+      echo "CGW_FORMAT_CHECK_ARGS=\"--dry-run --Werror -r .\""
+      echo "CGW_FORMAT_FIX_ARGS=\"-i -r .\""
       echo "CGW_FORMAT_EXCLUDES=\"\""
       ;;
     "")
