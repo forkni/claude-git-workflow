@@ -309,7 +309,7 @@ _install_hook() {
     files_pattern="${files_pattern}${escaped}"
   done
 
-  # Create .githooks/ and write patched hook
+  # Create .githooks/ and write patched pre-commit hook
   # Escape backslashes first, then & (sed replacement special char), then | (sed delimiter)
   local sed_files_pattern="${files_pattern//\\/\\\\}"
   sed_files_pattern="${sed_files_pattern//&/\\&}"
@@ -319,11 +319,22 @@ _install_hook() {
     "${hook_template}" >"${PROJECT_ROOT}/.githooks/pre-commit"
   chmod +x "${PROJECT_ROOT}/.githooks/pre-commit"
 
+  # Also install pre-push hook if template exists alongside pre-commit
+  local pre_push_template="${hooks_template_dir}/pre-push"
+  if [[ -f "${pre_push_template}" ]]; then
+    # Build CGW_ALL_PREFIXES for substitution into pre-push template
+    local all_prefixes_escaped="${CGW_ALL_PREFIXES//|/\\|}"
+    sed -e "s|__CGW_LOCAL_FILES_PATTERN__|${sed_files_pattern}|g" \
+        -e "s|__CGW_ALL_PREFIXES__|${all_prefixes_escaped}|g" \
+        "${pre_push_template}" >"${PROJECT_ROOT}/.githooks/pre-push"
+    chmod +x "${PROJECT_ROOT}/.githooks/pre-push"
+  fi
+
   # Run install_hooks.sh to copy to .git/hooks/
   if bash "${SCRIPT_DIR}/install_hooks.sh" >/dev/null 2>&1; then
-    echo "  ✓ Pre-commit hook installed"
+    echo "  ✓ Git hooks installed (pre-commit + pre-push)"
   else
-    echo "  ⚠ Hook installed to .githooks/ but failed to copy to .git/hooks/"
+    echo "  ⚠ Hooks written to .githooks/ but failed to copy to .git/hooks/"
     echo "    Run: ./scripts/git/install_hooks.sh"
   fi
 }
@@ -548,6 +559,26 @@ main() {
     if [[ "${install_hook}" == "yes" ]]; then
       echo "Installing pre-commit hook..."
       _install_hook "${local_files}"
+    fi
+  fi
+
+  # ── Enable git rerere ─────────────────────────────────────────────────────
+  # rerere (reuse recorded resolution) auto-replays known conflict resolutions.
+  # Recommended for two-branch models where the same conflicts recur across merges.
+
+  local enable_rerere="yes"
+  if [[ ${non_interactive} -eq 0 ]]; then
+    read -r -p "Enable git rerere (auto-replay conflict resolutions)? (yes/no) [yes]: " answer
+    case "${answer,,}" in
+      n | no) enable_rerere="no" ;;
+    esac
+  fi
+
+  if [[ "${enable_rerere}" == "yes" ]]; then
+    if git config rerere.enabled true 2>/dev/null; then
+      echo "  ✓ rerere.enabled = true (conflict resolutions will be remembered)"
+    else
+      echo "    Note: Could not enable rerere — run: git config rerere.enabled true"
     fi
   fi
 

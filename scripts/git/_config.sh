@@ -117,6 +117,21 @@ CGW_FORMAT_EXCLUDES="${CGW_FORMAT_EXCLUDES:---exclude logs --exclude .venv}"
 CGW_MARKDOWNLINT_CMD="${CGW_MARKDOWNLINT_CMD:-}"
 CGW_MARKDOWNLINT_ARGS="${CGW_MARKDOWNLINT_ARGS:-**/*.md !CLAUDE.md !MEMORY.md}"
 
+# --- Modified-only lint file extensions ---
+# Space-separated glob patterns used by check_lint.sh / fix_lint.sh --modified-only.
+# Default matches Python files. Override for other languages (e.g. "*.js *.ts" or "*.go").
+CGW_LINT_EXTENSIONS="${CGW_LINT_EXTENSIONS:-*.py}"
+
+# --- Merge conflict style (merge_with_validation.sh) ---
+# Set to "diff3" to show the base version in conflict markers (Pro Git recommended).
+# Empty = git default (two-way markers).
+CGW_MERGE_CONFLICT_STYLE="${CGW_MERGE_CONFLICT_STYLE:-}"
+
+# --- Merge whitespace handling (merge_with_validation.sh) ---
+# Set to "1" to add -Xignore-space-change to the merge command.
+# Prevents false conflicts caused by whitespace-only differences.
+CGW_MERGE_IGNORE_WHITESPACE="${CGW_MERGE_IGNORE_WHITESPACE:-0}"
+
 # --- Docs CI validation (merge_with_validation.sh) ---
 # Extended regex for allowed doc filenames. Empty = skip validation entirely.
 # Example: "^(README\.md|.*_GUIDE\.md|.*_REFERENCE\.md)$"

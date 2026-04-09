@@ -105,7 +105,9 @@ main() {
 			exit 0
 		fi
 		local modified_files
-		modified_files=$(git diff --name-only --diff-filter=ACMR HEAD -- '*.py')
+		# CGW_LINT_EXTENSIONS controls which files are considered (default: *.py)
+		# shellcheck disable=SC2086
+		modified_files=$(git diff --name-only --diff-filter=ACMR HEAD -- ${CGW_LINT_EXTENSIONS:-*.py})
 		if [[ -z "$modified_files" ]]; then
 			echo "[OK] No modified files to check"
 			exit 0
@@ -118,14 +120,18 @@ main() {
 		local EXIT_CODE=0
 
 		echo "[LINT CHECK]"
+		# Build check args: strip trailing path token (.) and append specific files
+		local lint_check_cmd_args="${CGW_LINT_CHECK_ARGS% *}"
 		# shellcheck disable=SC2086
-		"${lint_cmd}" check $modified_files || EXIT_CODE=1
+		"${lint_cmd}" ${lint_check_cmd_args} $modified_files || EXIT_CODE=1
 
 		if [[ -n "${CGW_FORMAT_CMD}" ]]; then
 			echo ""
 			echo "[FORMAT CHECK]"
+			# Build format check args: strip trailing path token (.) and append specific files
+			local fmt_check_cmd_args="${CGW_FORMAT_CHECK_ARGS% *}"
 			# shellcheck disable=SC2086
-			"${CGW_FORMAT_CMD}" format --check $modified_files || EXIT_CODE=1
+			"${CGW_FORMAT_CMD}" ${fmt_check_cmd_args} $modified_files || EXIT_CODE=1
 		fi
 
 		exit $EXIT_CODE

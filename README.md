@@ -55,6 +55,11 @@ No manual config editing required for common setups. `configure.sh` auto-detects
 | `fix_lint.sh` | Auto-fix lint issues |
 | `create_pr.sh` | Create GitHub PR from source → target (triggers Charlie CI + GitHub Actions) |
 | `install_hooks.sh` | Install git pre-commit hooks |
+| `setup_attributes.sh` | Generate `.gitattributes` for binary and text files (Python, TouchDesigner, GLSL, assets) |
+| `clean_build.sh` | Safe cleanup of build artifacts with dry-run default (Python, TouchDesigner, GLSL) |
+| `create_release.sh` | Create annotated version tags to trigger the GitHub Release workflow |
+| `stash_work.sh` | Safe stash wrapper with untracked file support, named stashes, and logging |
+| `repo_health.sh` | Repository health: integrity check, size report, large file detection, gc |
 
 Internal modules (not user-facing): `_common.sh` (shared utilities, sourced by every script), `_config.sh` (three-tier config resolution, sourced by `_common.sh`).
 
@@ -107,6 +112,9 @@ cp cgw.conf.example .cgw.conf
 | `CGW_DEV_ONLY_FILES` | `` | Files to warn about in cherry-pick (space-separated) |
 | `CGW_MERGE_MODE` | `direct` | Promotion mode: `direct` (merge locally) or `pr` (create GitHub PR) |
 | `CGW_PROTECTED_BRANCHES` | `main` | Branches requiring `--force` for force-push |
+| `CGW_LINT_EXTENSIONS` | `*.py` | File globs for `--modified-only` lint mode (e.g. `*.js *.ts`) |
+| `CGW_MERGE_CONFLICT_STYLE` | `` | Set to `diff3` to show base version in conflict markers |
+| `CGW_MERGE_IGNORE_WHITESPACE` | `0` | Set to `1` to ignore whitespace differences during merge |
 
 ---
 
@@ -209,6 +217,46 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use PRs by default.
 ```bash
 ./scripts/git/cherry_pick_commits.sh                     # interactive
 ./scripts/git/cherry_pick_commits.sh --commit abc1234    # non-interactive
+```
+
+### Stash work in progress
+
+```bash
+./scripts/git/stash_work.sh push "wip: half-done refactor"
+./scripts/git/stash_work.sh list
+./scripts/git/stash_work.sh pop
+./scripts/git/stash_work.sh apply stash@{1}   # apply without removing
+```
+
+### Create a release
+
+```bash
+./scripts/git/create_release.sh v1.2.3              # tag only
+./scripts/git/create_release.sh v1.2.3 --push       # tag + push (triggers release.yml)
+./scripts/git/create_release.sh v1.2.3 --dry-run    # preview
+```
+
+### Configure .gitattributes (Python, TouchDesigner, GLSL)
+
+```bash
+./scripts/git/setup_attributes.sh --dry-run   # preview
+./scripts/git/setup_attributes.sh             # write .gitattributes
+```
+
+### Clean build artifacts
+
+```bash
+./scripts/git/clean_build.sh                  # dry-run (safe preview)
+./scripts/git/clean_build.sh --execute        # actually delete
+./scripts/git/clean_build.sh --td --execute   # TouchDesigner artifacts only
+```
+
+### Repository health check
+
+```bash
+./scripts/git/repo_health.sh                  # integrity, size, large files
+./scripts/git/repo_health.sh --gc             # also run garbage collection
+./scripts/git/repo_health.sh --large 5        # report files >5MB
 ```
 
 ---

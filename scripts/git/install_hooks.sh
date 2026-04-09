@@ -64,17 +64,16 @@ main() {
 
 	log_section_start "INSTALL HOOKS" "$logfile"
 
+	local hooks_ok=0
+
 	if [[ -f ".githooks/pre-commit" ]]; then
 		echo "Installing pre-commit hook..." | tee -a "$logfile"
-
 		if cp ".githooks/pre-commit" ".git/hooks/pre-commit" >>"$logfile" 2>&1; then
 			chmod +x ".git/hooks/pre-commit" >>"$logfile" 2>&1
-			echo "  pre-commit hook installed" | tee -a "$logfile"
-			log_section_end "INSTALL HOOKS" "$logfile" "0"
+			echo "  ✓ pre-commit installed" | tee -a "$logfile"
 		else
-			echo "  Failed to install pre-commit hook" | tee -a "$logfile"
-			log_section_end "INSTALL HOOKS" "$logfile" "1"
-			exit 1
+			echo "  ✗ Failed to install pre-commit hook" | tee -a "$logfile"
+			hooks_ok=1
 		fi
 	else
 		err "pre-commit template not found at .githooks/pre-commit"
@@ -82,6 +81,19 @@ main() {
 		log_section_end "INSTALL HOOKS" "$logfile" "1"
 		exit 1
 	fi
+
+	if [[ -f ".githooks/pre-push" ]]; then
+		echo "Installing pre-push hook..." | tee -a "$logfile"
+		if cp ".githooks/pre-push" ".git/hooks/pre-push" >>"$logfile" 2>&1; then
+			chmod +x ".git/hooks/pre-push" >>"$logfile" 2>&1
+			echo "  ✓ pre-push installed" | tee -a "$logfile"
+		else
+			echo "  ⚠ Failed to install pre-push hook (non-fatal)" | tee -a "$logfile"
+		fi
+	fi
+
+	log_section_end "INSTALL HOOKS" "$logfile" "${hooks_ok}"
+	[[ ${hooks_ok} -ne 0 ]] && exit 1
 
 	echo "" | tee -a "$logfile"
 	{
@@ -93,14 +105,14 @@ main() {
 	echo "" | tee -a "$logfile"
 
 	echo "Active hooks:"
-	echo "  - pre-commit: Blocks local-only files"
-	echo "                Optional lint check (non-blocking)"
+	echo "  - pre-commit: Blocks local-only files, optional lint check"
+	echo "  - pre-push:   Validates conventional commit format on unpushed commits"
 	echo ""
 	echo "To bypass temporarily (not recommended):"
-	echo "  git commit --no-verify"
+	echo "  git commit --no-verify / git push --no-verify"
 	echo ""
 	echo "To uninstall:"
-	echo "  rm .git/hooks/pre-commit"
+	echo "  rm .git/hooks/pre-commit .git/hooks/pre-push"
 	echo ""
 
 	{

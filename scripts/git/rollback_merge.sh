@@ -29,12 +29,13 @@ _cleanup_rollback() {
 	echo "  git log --oneline -5" >&2
 	echo "  git status" >&2
 }
-trap _cleanup_rollback INT TERM
+trap _cleanup_rollback EXIT INT TERM
 
 main() {
 	local non_interactive=0
 	local dry_run=0
 	local rollback_target_flag=""
+	local use_revert=0
 
 	while [[ $# -gt 0 ]]; do
 		case "${1}" in
@@ -48,16 +49,20 @@ main() {
 			echo "  --non-interactive   Skip prompts; auto-selects latest backup tag if --target omitted"
 			echo "  --target <ref>      Commit hash, tag name, or HEAD~1 to roll back to"
 			echo "  --dry-run           Show rollback target without resetting"
+			echo "  --revert            Safe mode: use 'git revert -m 1' instead of 'git reset --hard'"
+			echo "                      Preserves history — safe for shared repos where commits are pushed"
 			echo "  -h, --help          Show this help"
 			echo ""
 			echo "Environment:"
 			echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
 			echo ""
-			echo "CAUTION: This operation rewrites branch history. Force-push required after."
+			echo "CAUTION: Without --revert, this rewrites branch history. Force-push required after."
+			echo "         With --revert, history is preserved — no force-push needed."
 			exit 0
 			;;
 		--non-interactive) non_interactive=1 ;;
 		--dry-run) dry_run=1 ;;
+		--revert) use_revert=1 ;;
 		--target)
 			rollback_target_flag="${2:-}"
 			shift
@@ -262,39 +267,83 @@ main() {
 		exit 0
 	fi
 
-	log_section_start "GIT RESET" "$logfile"
-
-	if run_git_with_logging "GIT RESET HARD" "$logfile" reset --hard "${rollback_target}"; then
-		log_section_end "GIT RESET" "$logfile" "0"
-		echo "" | tee -a "$logfile"
-		{
-			echo "========================================"
-			echo "[ROLLBACK SUMMARY]"
-			echo "========================================"
-		} | tee -a "$logfile"
-		echo "✓ ROLLBACK SUCCESSFUL" | tee -a "$logfile"
-		echo "" | tee -a "$logfile"
-		echo "Summary:" | tee -a "$logfile"
-		git log --oneline -1 | while read -r line; do echo "  Current HEAD: $line" | tee -a "$logfile"; done
-		echo "" | tee -a "$logfile"
-		echo "Next steps:" | tee -a "$logfile"
-		echo "  1. Verify rollback: git log --oneline -5" | tee -a "$logfile"
-		echo "  2. If correct, force push: git push origin ${CGW_TARGET_BRANCH} --force-with-lease" | tee -a "$logfile"
-		echo "  3. If issues, contact maintainer" | tee -a "$logfile"
-		echo "" | tee -a "$logfile"
-		echo "  ⚠ WARNING: Force push will rewrite remote history!" | tee -a "$logfile"
-		{
-			echo ""
-			echo "End Time: $(date)"
-		} | tee -a "$logfile"
-		echo "" | tee -a "$logfile"
-		echo "Full log: $logfile"
+	if [[ ${use_revert} -eq 1 ]]; then
+		# Safe revert mode: creates a new commit that undoes the merge.
+		# Preserves history — no force-push needed (Pro Git p.288-289).
+		# git revert -m 1 requires a merge commit (2+ parents); validate before attempting.
+		local parent_count
+		parent_count=$(git cat-file -p "${rollback_target}" 2>/dev/null | grep -c "^parent " || echo "0")
+		if [[ "${parent_count}" -lt 2 ]]; then
+			err "--revert requires a merge commit (2+ parents), but ${rollback_target} has ${parent_count} parent(s)"
+			err "Use plain rollback (omit --revert) or provide a merge commit hash with --target"
+			exit 1
+		fi
+		log_section_start "GIT REVERT" "$logfile"
+		if run_git_with_logging "GIT REVERT MERGE" "$logfile" revert -m 1 --no-edit "${rollback_target}"; then
+			log_section_end "GIT REVERT" "$logfile" "0"
+			echo "" | tee -a "$logfile"
+			{
+				echo "========================================"
+				echo "[ROLLBACK SUMMARY — REVERT MODE]"
+				echo "========================================"
+			} | tee -a "$logfile"
+			echo "✓ REVERT SUCCESSFUL" | tee -a "$logfile"
+			echo "" | tee -a "$logfile"
+			echo "Summary:" | tee -a "$logfile"
+			git log --oneline -1 | while read -r line; do echo "  Current HEAD: $line" | tee -a "$logfile"; done
+			echo "" | tee -a "$logfile"
+			echo "Next steps:" | tee -a "$logfile"
+			echo "  1. Verify revert: git log --oneline -5" | tee -a "$logfile"
+			echo "  2. Push normally: git push origin ${CGW_TARGET_BRANCH}" | tee -a "$logfile"
+			echo "     (no force-push needed — history is preserved)" | tee -a "$logfile"
+			{
+				echo ""
+				echo "End Time: $(date)"
+			} | tee -a "$logfile"
+			echo "" | tee -a "$logfile"
+			echo "Full log: $logfile"
+		else
+			log_section_end "GIT REVERT" "$logfile" "1"
+			echo "" | tee -a "$logfile"
+			echo "✗ Revert failed" | tee -a "$logfile"
+			echo "Please manually revert: git revert -m 1 ${rollback_target}"
+			exit 1
+		fi
 	else
-		log_section_end "GIT RESET" "$logfile" "1"
-		echo "" | tee -a "$logfile"
-		echo "✗ Rollback failed" | tee -a "$logfile"
-		echo "Please manually reset: git reset --hard ${rollback_target}"
-		exit 1
+		log_section_start "GIT RESET" "$logfile"
+
+		if run_git_with_logging "GIT RESET HARD" "$logfile" reset --hard "${rollback_target}"; then
+			log_section_end "GIT RESET" "$logfile" "0"
+			echo "" | tee -a "$logfile"
+			{
+				echo "========================================"
+				echo "[ROLLBACK SUMMARY]"
+				echo "========================================"
+			} | tee -a "$logfile"
+			echo "✓ ROLLBACK SUCCESSFUL" | tee -a "$logfile"
+			echo "" | tee -a "$logfile"
+			echo "Summary:" | tee -a "$logfile"
+			git log --oneline -1 | while read -r line; do echo "  Current HEAD: $line" | tee -a "$logfile"; done
+			echo "" | tee -a "$logfile"
+			echo "Next steps:" | tee -a "$logfile"
+			echo "  1. Verify rollback: git log --oneline -5" | tee -a "$logfile"
+			echo "  2. If correct, force push: git push origin ${CGW_TARGET_BRANCH} --force-with-lease" | tee -a "$logfile"
+			echo "  3. If issues, contact maintainer" | tee -a "$logfile"
+			echo "" | tee -a "$logfile"
+			echo "  ⚠ WARNING: Force push will rewrite remote history!" | tee -a "$logfile"
+			{
+				echo ""
+				echo "End Time: $(date)"
+			} | tee -a "$logfile"
+			echo "" | tee -a "$logfile"
+			echo "Full log: $logfile"
+		else
+			log_section_end "GIT RESET" "$logfile" "1"
+			echo "" | tee -a "$logfile"
+			echo "✗ Rollback failed" | tee -a "$logfile"
+			echo "Please manually reset: git reset --hard ${rollback_target}"
+			exit 1
+		fi
 	fi
 }
 

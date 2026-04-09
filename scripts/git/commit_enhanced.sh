@@ -215,14 +215,14 @@ main() {
 		if [[ ${staged_only} -eq 1 ]]; then
 			echo "[--staged-only] Using pre-staged files only"
 		elif [[ ${non_interactive} -eq 1 ]]; then
-			echo "[Non-interactive] Auto-staging all changes..."
-			git add .
+			echo "[Non-interactive] Auto-staging tracked changes..."
+			git add -u
 			unstage_local_only_files
 			echo "[OK] Changes staged"
 		else
 			read -rp "Stage all changes? (yes/no): " stage_all
 			if [[ "$stage_all" == "yes" ]]; then
-				git add .
+				git add -u
 				unstage_local_only_files
 				echo "[OK] Changes staged"
 			else
@@ -258,6 +258,16 @@ main() {
 
 	echo "[OK] Staged files validated"
 	echo ""
+
+	# [2.5] Whitespace check (non-blocking — warns but does not abort)
+	if git diff --cached --check >/dev/null 2>&1; then
+		: # no whitespace issues
+	else
+		echo "[WARN] Whitespace issues detected in staged files:" | tee -a "$logfile"
+		git diff --cached --check 2>&1 | head -20 | tee -a "$logfile"
+		echo "  (continuing — fix with: git diff --cached --check)" | tee -a "$logfile"
+		echo ""
+	fi
 
 	# [3] Code quality check
 	echo "[3/6] Checking code quality..."
@@ -329,7 +339,7 @@ main() {
 				fi
 
 				if [[ ${staged_only} -eq 0 ]]; then
-					git add .
+					git add -u
 					unstage_local_only_files
 				fi
 
@@ -360,7 +370,7 @@ main() {
 						# shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_FIX_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
 						"${format_cmd}" ${CGW_FORMAT_FIX_ARGS} ${CGW_FORMAT_EXCLUDES}
 					fi
-					git add .
+					git add -u
 					unstage_local_only_files
 					;;
 				skip | s)
@@ -427,7 +437,11 @@ main() {
 	if ! echo "$commit_msg" | grep -qE "^(${CGW_ALL_PREFIXES}):"; then
 		echo "[!] WARNING: Message doesn't follow conventional format"
 		echo "  Configured types: ${CGW_ALL_PREFIXES/|/, }"
-		if [[ ${non_interactive} -eq 0 ]]; then
+		if [[ ${non_interactive} -eq 1 ]]; then
+			err "Commit message must follow conventional format in non-interactive mode"
+			err "Use --skip-lint or set CGW_EXTRA_PREFIXES if you need a custom prefix"
+			exit 1
+		else
 			read -rp "Continue anyway? (yes/no): " continue_commit
 			if [[ "$continue_commit" != "yes" ]]; then
 				echo "Commit cancelled"

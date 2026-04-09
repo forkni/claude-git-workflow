@@ -42,7 +42,7 @@ _cleanup_cherry_pick() {
 		git checkout "${_cp_original_branch}" 2>/dev/null || true
 	fi
 }
-trap _cleanup_cherry_pick INT TERM
+trap _cleanup_cherry_pick EXIT INT TERM
 
 main() {
 	local non_interactive=0

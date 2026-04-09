@@ -85,7 +85,9 @@ main() {
 	# Handle --modified-only mode
 	if [[ "${modified_only}" -eq 1 ]]; then
 		local modified_files
-		modified_files=$(git diff --name-only --diff-filter=ACMR HEAD -- '*.py')
+		# CGW_LINT_EXTENSIONS controls which files are considered (default: *.py)
+		# shellcheck disable=SC2086
+		modified_files=$(git diff --name-only --diff-filter=ACMR HEAD -- ${CGW_LINT_EXTENSIONS:-*.py})
 		if [[ -z "$modified_files" ]]; then
 			echo "[OK] No modified files to fix"
 			exit 0
@@ -98,14 +100,18 @@ main() {
 		local EXIT_CODE=0
 
 		echo "[LINT FIX]"
+		# Build fix args: strip trailing path token (.) and append specific files
+		local lint_fix_cmd_args="${CGW_LINT_FIX_ARGS% *}"
 		# shellcheck disable=SC2086
-		"${lint_cmd}" ${CGW_LINT_FIX_ARGS%% *} $modified_files || EXIT_CODE=1
+		"${lint_cmd}" ${lint_fix_cmd_args} $modified_files || EXIT_CODE=1
 
 		if [[ -n "${CGW_FORMAT_CMD}" ]]; then
 			echo ""
 			echo "[FORMAT FIX]"
+			# Build format fix args: strip trailing path token (.) and append specific files
+			local fmt_fix_cmd_args="${CGW_FORMAT_FIX_ARGS% *}"
 			# shellcheck disable=SC2086
-			"${CGW_FORMAT_CMD}" format $modified_files || EXIT_CODE=1
+			"${CGW_FORMAT_CMD}" ${fmt_fix_cmd_args} $modified_files || EXIT_CODE=1
 		fi
 
 		exit $EXIT_CODE

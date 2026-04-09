@@ -31,10 +31,11 @@ _cleanup_sync() {
 	if [[ -n "${_sync_original_branch}" ]] && [[ "${current}" != "${_sync_original_branch}" ]]; then
 		echo "" >&2
 		echo "⚠ Interrupted — returning to: ${_sync_original_branch}" >&2
+		git rebase --abort 2>/dev/null || true
 		git checkout "${_sync_original_branch}" 2>/dev/null || true
 	fi
 }
-trap _cleanup_sync INT TERM
+trap _cleanup_sync EXIT INT TERM
 
 # sync_one_branch - Fetch and rebase a single branch against origin.
 # Arguments:
@@ -81,7 +82,9 @@ sync_one_branch() {
 		echo "  ⚠ Diverged: ${ahead} local commits will be rebased on top of ${behind} remote commits" | tee -a "$logfile"
 	fi
 
-	if run_git_with_logging "GIT REBASE ${branch}" "$logfile" pull --rebase origin "${branch}"; then
+	local rebase_args=(pull --rebase origin "${branch}")
+	[[ "${_SYNC_AUTOSTASH:-0}" == "1" ]] && rebase_args=(pull --rebase --autostash origin "${branch}")
+	if run_git_with_logging "GIT REBASE ${branch}" "$logfile" "${rebase_args[@]}"; then
 		echo "  ✓ ${branch} synced successfully" | tee -a "$logfile"
 		return 0
 	else
@@ -156,18 +159,22 @@ main() {
 	_sync_original_branch=$(git branch --show-current)
 
 	if ! git diff-index --quiet HEAD -- 2>/dev/null; then
-		echo "⚠ WARNING: Uncommitted changes detected" | tee -a "$logfile"
+		echo "⚠ Uncommitted changes detected — will auto-stash during rebase" | tee -a "$logfile"
 		git status --short | tee -a "$logfile"
 		echo "" | tee -a "$logfile"
 		if [[ ${non_interactive} -eq 1 ]]; then
-			err "Aborting — commit or stash changes before syncing"
-			exit 1
+			echo "[Non-interactive] Auto-stash enabled (--autostash)" | tee -a "$logfile"
+		else
+			read -r -p "Auto-stash changes and sync? (yes/no): " uncommitted_choice
+			if [[ "${uncommitted_choice}" != "yes" ]]; then
+				echo "Aborted — commit or stash manually before syncing" | tee -a "$logfile"
+				exit 0
+			fi
 		fi
-		read -r -p "Changes may be lost during rebase. Continue? (yes/no): " uncommitted_choice
-		if [[ "${uncommitted_choice}" != "yes" ]]; then
-			echo "Aborted" | tee -a "$logfile"
-			exit 0
-		fi
+		# Pass --autostash to pull --rebase to handle dirty working tree cleanly
+		export _SYNC_AUTOSTASH=1
+	else
+		export _SYNC_AUTOSTASH=0
 	fi
 
 	# [1] Fetch all remotes

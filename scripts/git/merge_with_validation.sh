@@ -43,7 +43,7 @@ _cleanup_merge() {
 		git checkout "${_merge_original_branch}" 2>/dev/null || true
 	fi
 }
-trap _cleanup_merge INT TERM
+trap _cleanup_merge EXIT INT TERM
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -288,7 +288,17 @@ main() {
 	# [4/7] Perform merge
 	log_section_start "GIT MERGE" "$logfile"
 
-	if run_git_with_logging "GIT MERGE SOURCE" "$logfile" merge "${CGW_SOURCE_BRANCH}" --no-ff -m "Merge ${CGW_SOURCE_BRANCH} into ${CGW_TARGET_BRANCH}"; then
+	# Build optional merge strategy flags from config
+	local merge_extra_args=()
+	if [[ -n "${CGW_MERGE_CONFLICT_STYLE:-}" ]]; then
+		merge_extra_args+=("--conflict=${CGW_MERGE_CONFLICT_STYLE}")
+	fi
+	if [[ "${CGW_MERGE_IGNORE_WHITESPACE:-0}" == "1" ]]; then
+		merge_extra_args+=("-Xignore-space-change")
+	fi
+
+	# shellcheck disable=SC2068  # Intentional: empty array expands to zero words (${arr[@]+...} is Bash 3.x portable)
+	if run_git_with_logging "GIT MERGE SOURCE" "$logfile" merge "${CGW_SOURCE_BRANCH}" --no-ff -m "Merge ${CGW_SOURCE_BRANCH} into ${CGW_TARGET_BRANCH}" ${merge_extra_args[@]+"${merge_extra_args[@]}"}; then
 		echo "✓ Merge completed without conflicts" | tee -a "$logfile"
 		log_section_end "GIT MERGE" "$logfile" "0"
 
@@ -296,7 +306,7 @@ main() {
 		cleanup_tests_dir "amend"
 
 	else
-		local merge_exit_code=$?
+		local merge_exit_code="${GIT_EXIT_CODE:-1}"
 		echo "" | tee -a "$logfile"
 		echo "⚠ Merge conflicts detected - analyzing..." | tee -a "$logfile"
 		log_section_end "GIT MERGE" "$logfile" "${merge_exit_code}"

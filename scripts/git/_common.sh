@@ -48,17 +48,21 @@ get_timestamp() {
 
 init_logging() {
 	local script_name="$1"
+	# Use PROJECT_ROOT for an absolute path so logs land in the right place
+	# even when the script is invoked from a subdirectory. PROJECT_ROOT is set
+	# by _config.sh before any script calls init_logging.
+	local log_dir="${PROJECT_ROOT}/logs"
 
-	if [[ ! -d "logs" ]]; then
-		mkdir -p "logs"
+	if [[ ! -d "${log_dir}" ]]; then
+		mkdir -p "${log_dir}"
 	fi
 
 	get_timestamp
 
 	# shellcheck disable=SC2034
-	logfile="logs/${script_name}_${timestamp}.log"
+	logfile="${log_dir}/${script_name}_${timestamp}.log"
 	# shellcheck disable=SC2034
-	reportfile="logs/${script_name}_analysis_${timestamp}.log"
+	reportfile="${log_dir}/${script_name}_analysis_${timestamp}.log"
 }
 
 get_lint_exclusions() {
