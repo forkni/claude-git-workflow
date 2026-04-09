@@ -262,7 +262,7 @@ _install_hook() {
       echo "  ✓ Pre-commit hook already installed"
       return 0
     fi
-    echo "  ⚠ Hook template not found — re-run install.cmd to copy source files"
+    echo "  ⚠ Hook template not found — copy hooks/ from the CGW source repo and re-run"
     return 1
   fi
 
@@ -306,7 +306,7 @@ _install_skill() {
     echo "  ✓ Claude Code skill already installed"
     return 0
   else
-    echo "  ⚠ Skill template not found — re-run install.cmd to copy source files"
+    echo "  ⚠ Skill template not found — copy skill/ and command/ from the CGW source repo and re-run"
     return 1
   fi
 
@@ -440,13 +440,13 @@ main() {
   echo "  Local-only files:        ${detected_local_files:-none found}"
   echo ""
 
-  # ── Interactive confirmation ──────────────────────────────────────────────
+  # ── Interactive confirmation (only when generating/updating config) ──────────
 
   local target_branch="${detected_target}"
   local source_branch="${detected_source}"
   local local_files="${detected_local_files:-CLAUDE.md MEMORY.md .claude/ logs/}"
 
-  if [[ ${non_interactive} -eq 0 ]]; then
+  if [[ ${non_interactive} -eq 0 ]] && { [[ ! -f ".cgw.conf" ]] || [[ ${reconfigure} -eq 1 ]]; }; then
     read -r -p "Target branch [${detected_target}]: " answer
     [[ -n "${answer}" && ! "${answer}" =~ ^[Yy]([Ee][Ss])?$ ]] && target_branch="${answer}"
 
@@ -549,8 +549,17 @@ main() {
   echo "=== Configuration Complete ==="
   echo ""
   echo "  Config file:    ${PROJECT_ROOT}/.cgw.conf"
-  echo "  Source branch:  ${source_branch}"
-  echo "  Target branch:  ${target_branch}"
+  # When not reconfiguring, show values from existing .cgw.conf rather than detected values
+  if [[ -f ".cgw.conf" ]] && [[ ${reconfigure} -eq 0 ]]; then
+    local conf_source conf_target
+    conf_source=$(grep -m1 '^CGW_SOURCE_BRANCH=' .cgw.conf | sed 's/CGW_SOURCE_BRANCH=//;s/"//g')
+    conf_target=$(grep -m1 '^CGW_TARGET_BRANCH=' .cgw.conf | sed 's/CGW_TARGET_BRANCH=//;s/"//g')
+    echo "  Source branch:  ${conf_source:-${source_branch}}"
+    echo "  Target branch:  ${conf_target:-${target_branch}}"
+  else
+    echo "  Source branch:  ${source_branch}"
+    echo "  Target branch:  ${target_branch}"
+  fi
   if [[ -n "${detected_lint}" ]]; then
     echo "  Lint tool:      ${detected_lint}"
   fi
