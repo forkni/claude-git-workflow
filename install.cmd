@@ -87,14 +87,13 @@ echo   [PASS] PI-02  Target is a git repository
 :pi02_done
 
 rem PI-03: bash available
-where bash >nul 2>&1
-if not !ERRORLEVEL!==0 (
-    rem Try common Git for Windows install locations
-    if exist "C:\Program Files\Git\bin\bash.exe" (
-        set "PATH=C:\Program Files\Git\bin;!PATH!"
-    ) else if exist "C:\Program Files (x86)\Git\bin\bash.exe" (
-        set "PATH=C:\Program Files (x86)\Git\bin;!PATH!"
-    )
+rem Always prepend known Git for Windows locations to PATH so Git Bash
+rem takes priority over the Windows/System32 WSL bash shim (bash.exe in
+rem System32 fails with "no installed distributions" when WSL has no distro).
+if exist "C:\Program Files\Git\bin\bash.exe" (
+    set "PATH=C:\Program Files\Git\bin;!PATH!"
+) else if exist "C:\Program Files (x86)\Git\bin\bash.exe" (
+    set "PATH=C:\Program Files (x86)\Git\bin;!PATH!"
 )
 where bash >nul 2>&1
 if not !ERRORLEVEL!==0 goto :pi03_fail
@@ -263,6 +262,10 @@ if errorlevel 1 (
     goto :abort
 )
 bash -c "chmod +x scripts/git/*.sh 2>/dev/null" >nul 2>&1
+
+rem Ensure .claude/ exists so configure.sh defaults to installing the
+rem Claude Code skill and slash command (it checks for .claude/ presence).
+if not exist ".claude\" mkdir ".claude"
 
 echo.
 
