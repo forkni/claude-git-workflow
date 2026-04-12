@@ -9,6 +9,7 @@
 hooks/pre-commit text eol=lf
 
 # Text files — normalize to LF
+.shellcheckrc text eol=lf
 *.md text eol=lf
 *.conf text eol=lf
 *.example text eol=lf

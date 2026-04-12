@@ -13,8 +13,8 @@
 # The patterns below are populated by configure.sh from CGW_LOCAL_FILES
 # and CGW_ALL_PREFIXES. To regenerate, run: ./scripts/git/configure.sh --skip-skill
 #
-# CONVENTIONAL PREFIXES: feat\|fix\|docs\|chore\|test\|refactor\|style\|perf
-# LOCAL FILES PATTERN:   CLAUDE\.md|SESSION_LOG\.md|\.claude|logs
+# CONVENTIONAL PREFIXES: feat|fix|docs|chore|test|refactor|style|perf
+# LOCAL FILES PATTERN:   CLAUDE\.md|MEMORY\.md|\.claude|logs
 
 set -uo pipefail
 
@@ -22,8 +22,8 @@ set -uo pipefail
 # Read stdin: remote <name>, url <url>, <local-ref> <local-sha> <remote-ref> <remote-sha>
 # ---------------------------------------------------------------------------
 
-LOCAL_FILES_PATTERN="CLAUDE\.md|SESSION_LOG\.md|\.claude|logs"
-ALL_PREFIXES="feat\|fix\|docs\|chore\|test\|refactor\|style\|perf"
+LOCAL_FILES_PATTERN="CLAUDE\.md|MEMORY\.md|\.claude|logs"
+ALL_PREFIXES="feat|fix|docs|chore|test|refactor|style|perf"
 
 # Collect push info from stdin (git passes it to pre-push)
 while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
