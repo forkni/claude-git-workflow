@@ -76,6 +76,9 @@ _detect_source_branch() {
       return 0
     fi
     if git show-ref --verify --quiet "refs/remotes/origin/${name}" 2>/dev/null; then
+      # Remote-only: create local tracking branch so downstream scripts can
+      # check out by name without relying on git's DWIM --guess behaviour.
+      git branch --track "${name}" "origin/${name}" >/dev/null 2>&1 || true
       echo "${name}"
       return 0
     fi
@@ -331,8 +334,8 @@ _install_hook() {
     # by reading CGW_EXTRA_PREFIXES from the just-written .cgw.conf.
     local _base_prefixes="feat|fix|docs|chore|test|refactor|style|perf"
     local _extra_prefixes
-    _extra_prefixes=$(grep -m1 '^CGW_EXTRA_PREFIXES=' "${PROJECT_ROOT}/.cgw.conf" \
-      | sed 's/CGW_EXTRA_PREFIXES=//;s/"//g' || true)
+    _extra_prefixes=$(grep -m1 '^CGW_EXTRA_PREFIXES=' "${PROJECT_ROOT}/.cgw.conf" |
+      sed 's/CGW_EXTRA_PREFIXES=//;s/"//g' || true)
     local _all_prefixes
     if [[ -n "${_extra_prefixes}" ]]; then
       _all_prefixes="${_base_prefixes}|${_extra_prefixes}"
@@ -343,8 +346,8 @@ _install_hook() {
     all_prefixes_escaped="${all_prefixes_escaped//&/\\&}"
     all_prefixes_escaped="${all_prefixes_escaped//|/\\|}"
     sed -e "s|__CGW_LOCAL_FILES_PATTERN__|${sed_files_pattern}|g" \
-        -e "s|__CGW_ALL_PREFIXES__|${all_prefixes_escaped}|g" \
-        "${pre_push_template}" >"${PROJECT_ROOT}/.githooks/pre-push"
+      -e "s|__CGW_ALL_PREFIXES__|${all_prefixes_escaped}|g" \
+      "${pre_push_template}" >"${PROJECT_ROOT}/.githooks/pre-push"
     chmod +x "${PROJECT_ROOT}/.githooks/pre-push"
   fi
 

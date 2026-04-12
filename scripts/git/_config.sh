@@ -120,7 +120,7 @@ CGW_MARKDOWNLINT_ARGS="${CGW_MARKDOWNLINT_ARGS:-**/*.md !CLAUDE.md !MEMORY.md}"
 # --- Modified-only lint file extensions ---
 # Space-separated glob patterns used by check_lint.sh / fix_lint.sh --modified-only.
 # Default matches Python files. Override for other languages (e.g. "*.js *.ts" or "*.go").
-CGW_LINT_EXTENSIONS="${CGW_LINT_EXTENSIONS:-*.py}"
+[[ -z "${CGW_LINT_EXTENSIONS+x}" ]] && CGW_LINT_EXTENSIONS="*.py"
 
 # --- Merge conflict style (merge_with_validation.sh) ---
 # Set to "diff3" to show the base version in conflict markers (Pro Git recommended).

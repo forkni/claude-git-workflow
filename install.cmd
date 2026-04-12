@@ -8,6 +8,12 @@ setlocal EnableDelayedExpansion
 ::
 :: Usage: Double-click or run from cmd/terminal
 :: Requires: Git for Windows (provides bash)
+::
+:: Note on special characters in paths:
+::   Paths containing ! are corrupted by EnableDelayedExpansion (cmd.exe
+::   limitation). Paths with & | < > work correctly because all echo
+::   lines use the echo( trick which prevents cmd.exe from parsing
+::   meta-characters in the output.
 :: ============================================================
 
 set "CGW_DIR=%~dp0"
@@ -18,7 +24,7 @@ echo.
 echo ===================================================
 echo   CGW (claude-git-workflow) Installer
 echo ===================================================
-echo   Source: !CGW_DIR!
+echo(  Source: !CGW_DIR!
 echo.
 
 rem --- Get target path ---
@@ -38,7 +44,7 @@ if "%TARGET_DIR%"=="" (
 )
 
 echo.
-echo   Target: !TARGET_DIR!
+echo(  Target: !TARGET_DIR!
 echo.
 
 rem --- Pre-install checks ---
@@ -63,7 +69,7 @@ echo   [PASS] PI-00  Target is not the CGW source directory
 
 rem PI-01: Target path exists
 if exist "!TARGET_DIR!\" goto :pi01_pass
-echo   [FAIL] PI-01  Target path does not exist: !TARGET_DIR!
+echo(  [FAIL] PI-01  Target path does not exist: !TARGET_DIR!
 set "CHECKS_PASSED=0"
 goto :pi01_done
 :pi01_pass
@@ -151,7 +157,7 @@ goto :abort
 rem --- Confirm ---
 echo --- Installation Summary ---
 echo.
-echo   Will copy into: !TARGET_DIR!
+echo(  Will copy into: !TARGET_DIR!
 echo     scripts\git\    (25 shell scripts)
 echo     hooks\          (pre-commit + pre-push templates)
 echo     skill\          (Claude Code skill source)
@@ -253,7 +259,7 @@ if errorlevel 1 (
 rem Ensure .sh files are executable (needed by Git Bash on Windows)
 pushd "!TARGET_DIR!"
 if errorlevel 1 (
-    echo   [ERR] Cannot enter target directory: !TARGET_DIR!
+    echo(  [ERR] Cannot enter target directory: !TARGET_DIR!
     goto :abort
 )
 bash -c "chmod +x scripts/git/*.sh 2>/dev/null" >nul 2>&1
@@ -274,6 +280,7 @@ echo.
 if "!CONFIGURE_EXIT!"=="0" goto :cfg_ok
 echo   [WARN] configure.sh exited with code !CONFIGURE_EXIT!
 echo   Installation may be incomplete. Check output above.
+set "EXIT_CODE=1"
 goto :cfg_done
 :cfg_ok
 echo   configure.sh completed successfully.
@@ -285,9 +292,9 @@ echo --- Post-Install Cleanup ---
 echo.
 echo   The following directories were needed only during installation
 echo   and can be safely removed from the target project:
-echo     !TARGET_DIR!\hooks\
-echo     !TARGET_DIR!\skill\
-echo     !TARGET_DIR!\command\
+echo(    !TARGET_DIR!\hooks\
+echo(    !TARGET_DIR!\skill\
+echo(    !TARGET_DIR!\command\
 echo.
 set /p "CLEANUP=Remove temporary install files? [Y/n]: "
 if /i "!CLEANUP!"=="n"  goto :cleanup_skip
@@ -299,7 +306,7 @@ if exist "!TARGET_DIR!\command\" ( rmdir /s /q "!TARGET_DIR!\command\" & if not 
 if "!REMOVED_DIRS!"=="" (
     echo   [WARN] Could not fully remove temp directories (files may be locked)
 ) else (
-    echo   Removed:!REMOVED_DIRS!
+    echo(  Removed:!REMOVED_DIRS!
 )
 goto :cleanup_done
 :cleanup_skip
@@ -314,12 +321,12 @@ echo ===================================================
 echo.
 
 if not exist "!TARGET_DIR!\scripts\git\commit_enhanced.sh" goto :sum_scripts_done
-for /f %%c in ('dir /b "!TARGET_DIR!\scripts\git\*.sh" 2^>nul ^| find /c ".sh"') do echo   Scripts:      !TARGET_DIR!\scripts\git\ ^(%%c files^)
+for /f %%c in ('dir /b "!TARGET_DIR!\scripts\git\*.sh" 2^>nul ^| find /c ".sh"') do echo(  Scripts:      !TARGET_DIR!\scripts\git\ ^(%%c files^)
 :sum_scripts_done
-if exist "!TARGET_DIR!\.cgw.conf"                                  echo   Config:       !TARGET_DIR!\.cgw.conf
-if exist "!TARGET_DIR!\.git\hooks\pre-commit"                      echo   Git hooks:    !TARGET_DIR!\.git\hooks\pre-commit + pre-push
-if exist "!TARGET_DIR!\.claude\skills\auto-git-workflow\SKILL.md"  echo   Claude skill: !TARGET_DIR!\.claude\skills\auto-git-workflow\
-if exist "!TARGET_DIR!\.claude\commands\auto-git-workflow.md"      echo   Slash cmd:    !TARGET_DIR!\.claude\commands\auto-git-workflow.md
+if exist "!TARGET_DIR!\.cgw.conf"                                  echo(  Config:       !TARGET_DIR!\.cgw.conf
+if exist "!TARGET_DIR!\.git\hooks\pre-commit"                      echo(  Git hooks:    !TARGET_DIR!\.git\hooks\pre-commit + pre-push
+if exist "!TARGET_DIR!\.claude\skills\auto-git-workflow\SKILL.md"  echo(  Claude skill: !TARGET_DIR!\.claude\skills\auto-git-workflow\
+if exist "!TARGET_DIR!\.claude\commands\auto-git-workflow.md"      echo(  Slash cmd:    !TARGET_DIR!\.claude\commands\auto-git-workflow.md
 
 echo.
 echo   Quick start (from your project root in Git Bash):
@@ -335,5 +342,4 @@ goto :end
 :end
 echo.
 pause
-endlocal
-exit /b %EXIT_CODE%
+endlocal & exit /b %EXIT_CODE%
