@@ -69,9 +69,13 @@ _detect_target_branch() {
 
 _detect_source_branch() {
   local target="$1"
-  # Check common source branch names
+  # Check common source branch names (local first, then remote tracking)
   for name in development develop dev staging; do
     if git show-ref --verify --quiet "refs/heads/${name}" 2>/dev/null; then
+      echo "${name}"
+      return 0
+    fi
+    if git show-ref --verify --quiet "refs/remotes/origin/${name}" 2>/dev/null; then
       echo "${name}"
       return 0
     fi

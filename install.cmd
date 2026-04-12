@@ -69,7 +69,16 @@ echo   [PASS] PI-02  Target is a git repository
 
 rem PI-03: bash available
 where bash >nul 2>&1
-if not %ERRORLEVEL%==0 goto :pi03_fail
+if not %ERRORLEVEL%==0 (
+    rem Try common Git for Windows install locations
+    if exist "C:\Program Files\Git\bin\bash.exe" (
+        set "PATH=C:\Program Files\Git\bin;!PATH!"
+    ) else if exist "C:\Program Files (x86)\Git\bin\bash.exe" (
+        set "PATH=C:\Program Files (x86)\Git\bin;!PATH!"
+    )
+)
+where bash >nul 2>&1
+if not !ERRORLEVEL!==0 goto :pi03_fail
 echo   [PASS] PI-03  bash available
 goto :pi03_done
 :pi03_fail
