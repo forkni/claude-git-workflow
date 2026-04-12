@@ -11,6 +11,9 @@
 #   CGW_TARGET_BRANCH   - Target branch name (default: main)
 # Arguments:
 #   --all               Sync both source and target branches (default: current only)
+#   --branch <name>     Sync a specific named branch (overrides --all)
+#   --dry-run           Show what would be synced without making changes
+#   --prune             Pass --prune to git fetch (remove stale remote-tracking refs)
 #   --non-interactive   Skip prompts
 #   -h, --help          Show help
 # Returns:
@@ -19,16 +22,25 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/git/_common.sh
 source "${SCRIPT_DIR}/_common.sh"
 
 init_logging "sync_branches"
 
+# ============================================================================
+# CLEANUP TRAP
+# ============================================================================
+
 _sync_original_branch=""
+_sync_did_checkout=0
+_SYNC_AUTOSTASH=0
+_sync_dry_run=0
 
 _cleanup_sync() {
   local current
   current=$(git branch --show-current 2>/dev/null || true)
-  if [[ -n "${_sync_original_branch}" ]] && [[ "${current}" != "${_sync_original_branch}" ]]; then
+  if [[ ${_sync_did_checkout} -eq 1 ]] && [[ -n "${_sync_original_branch}" ]] &&
+    [[ "${current}" != "${_sync_original_branch}" ]]; then
     echo "" >&2
     echo "[!] Interrupted -- returning to: ${_sync_original_branch}" >&2
     git rebase --abort 2>/dev/null || true
@@ -36,6 +48,10 @@ _cleanup_sync() {
   fi
 }
 trap _cleanup_sync EXIT INT TERM
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
 
 # sync_one_branch - Fetch and rebase a single branch against origin.
 # Arguments:
@@ -59,17 +75,40 @@ sync_one_branch() {
     return 0
   fi
 
+  local behind ahead
+  behind=$(git rev-list --count "HEAD..origin/${branch}" 2>/dev/null || echo "0")
+  ahead=$(git rev-list --count "origin/${branch}..HEAD" 2>/dev/null || echo "0")
+
+  # In dry-run mode, report status and skip the actual sync
+  if [[ ${_sync_dry_run} -eq 1 ]]; then
+    if [[ "${current_branch}" != "${branch}" ]]; then
+      # Use remote ref directly for accurate counts when not on this branch
+      local remote_behind remote_ahead
+      remote_behind=$(git rev-list --count "refs/heads/${branch}..origin/${branch}" 2>/dev/null || echo "0")
+      remote_ahead=$(git rev-list --count "origin/${branch}..refs/heads/${branch}" 2>/dev/null || echo "0")
+      behind="${remote_behind}"
+      ahead="${remote_ahead}"
+    fi
+    echo "  Local: ${ahead} ahead, ${behind} behind origin/${branch}" | tee -a "$logfile"
+    if [[ "${behind}" -eq 0 ]]; then
+      echo "  [OK] Already up-to-date with origin/${branch}" | tee -a "$logfile"
+    else
+      echo "  Would pull --rebase to sync ${behind} commit(s)" | tee -a "$logfile"
+    fi
+    return 0
+  fi
+
   if [[ "${current_branch}" != "${branch}" ]]; then
     if ! git checkout "${branch}" >>"$logfile" 2>&1; then
       echo "  [FAIL] Failed to checkout ${branch}" | tee -a "$logfile"
       return 1
     fi
     echo "  Switched to ${branch}" | tee -a "$logfile"
+    _sync_did_checkout=1
+    # Recompute ahead/behind from this branch's perspective
+    behind=$(git rev-list --count "HEAD..origin/${branch}" 2>/dev/null || echo "0")
+    ahead=$(git rev-list --count "origin/${branch}..HEAD" 2>/dev/null || echo "0")
   fi
-
-  local behind ahead
-  behind=$(git rev-list --count "HEAD..origin/${branch}" 2>/dev/null || echo "0")
-  ahead=$(git rev-list --count "origin/${branch}..HEAD" 2>/dev/null || echo "0")
 
   echo "  Local: ${ahead} ahead, ${behind} behind origin/${branch}" | tee -a "$logfile"
 
@@ -83,7 +122,7 @@ sync_one_branch() {
   fi
 
   local rebase_args=(pull --rebase origin "${branch}")
-  [[ "${_SYNC_AUTOSTASH:-0}" == "1" ]] && rebase_args=(pull --rebase --autostash origin "${branch}")
+  [[ "${_SYNC_AUTOSTASH}" == "1" ]] && rebase_args=(pull --rebase --autostash origin "${branch}")
   if run_git_with_logging "GIT REBASE ${branch}" "$logfile" "${rebase_args[@]}"; then
     echo "  [OK] ${branch} synced successfully" | tee -a "$logfile"
     return 0
@@ -96,8 +135,15 @@ sync_one_branch() {
   fi
 }
 
+# ============================================================================
+# MAIN
+# ============================================================================
+
 main() {
   local sync_all=0
+  local sync_branch=""
+  local dry_run=0
+  local prune=0
   local non_interactive=0
 
   while [[ $# -gt 0 ]]; do
@@ -109,6 +155,9 @@ main() {
         echo ""
         echo "Options:"
         echo "  --all               Sync both source and target branches (default: current only)"
+        echo "  --branch <name>     Sync a specific named branch (overrides --all)"
+        echo "  --dry-run           Show what would be synced without making changes"
+        echo "  --prune             Remove stale remote-tracking refs during fetch"
         echo "  --non-interactive   Abort (instead of prompt) if uncommitted changes found"
         echo "  -h, --help          Show this help"
         echo ""
@@ -116,6 +165,7 @@ main() {
         echo "  - Runs git fetch origin first to update remote refs"
         echo "  - Uses git pull --rebase (preserves clean linear history)"
         echo "  - With --all: switches between branches, returns to starting branch"
+        echo "  - With --branch: syncs only the named branch, returns to starting branch"
         echo "  - Warns if local diverges from remote before rebasing"
         echo ""
         echo "Configuration:"
@@ -127,6 +177,12 @@ main() {
         exit 0
         ;;
       --all) sync_all=1 ;;
+      --branch)
+        sync_branch="${2:-}"
+        shift
+        ;;
+      --dry-run) dry_run=1 ;;
+      --prune) prune=1 ;;
       --non-interactive) non_interactive=1 ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2
@@ -137,6 +193,7 @@ main() {
   done
 
   [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
+  _sync_dry_run=${dry_run}
 
   {
     echo "========================================="
@@ -151,6 +208,11 @@ main() {
   echo "Workflow Log: ${logfile}" | tee -a "$logfile"
   echo "" | tee -a "$logfile"
 
+  if [[ ${dry_run} -eq 1 ]]; then
+    echo "=== DRY RUN -- no changes will be made ===" | tee -a "$logfile"
+    echo "" | tee -a "$logfile"
+  fi
+
   cd "${PROJECT_ROOT}" || {
     err "Cannot find project root"
     exit 1
@@ -158,6 +220,8 @@ main() {
 
   _sync_original_branch=$(git branch --show-current)
 
+  # [1/4] Check working tree
+  echo "[1/4] Checking working tree..." | tee -a "$logfile"
   if ! git diff-index --quiet HEAD -- 2>/dev/null; then
     echo "[!] Uncommitted changes detected -- will auto-stash during rebase" | tee -a "$logfile"
     git status --short | tee -a "$logfile"
@@ -171,38 +235,42 @@ main() {
         exit 0
       fi
     fi
-    # Pass --autostash to pull --rebase to handle dirty working tree cleanly
-    export _SYNC_AUTOSTASH=1
+    _SYNC_AUTOSTASH=1
   else
-    export _SYNC_AUTOSTASH=0
+    echo "[OK] Working tree clean" | tee -a "$logfile"
   fi
+  echo "" | tee -a "$logfile"
 
-  # [1] Fetch all remotes
-  log_section_start "GIT FETCH" "$logfile"
-  echo "Fetching from origin..." | tee -a "$logfile"
-  if git fetch origin >>"$logfile" 2>&1; then
+  # [2/4] Fetch from origin
+  log_section_start "[2/4] GIT FETCH" "$logfile"
+  local fetch_args=(fetch origin)
+  [[ ${prune} -eq 1 ]] && fetch_args=(fetch origin --prune)
+  echo "Fetching from origin${prune:+ (--prune)}..." | tee -a "$logfile"
+  if git "${fetch_args[@]}" >>"$logfile" 2>&1; then
     echo "[OK] Fetch complete" | tee -a "$logfile"
-    log_section_end "GIT FETCH" "$logfile" "0"
+    log_section_end "[2/4] GIT FETCH" "$logfile" "0"
   else
     echo "[FAIL] Fetch failed -- check network/auth" | tee -a "$logfile"
-    log_section_end "GIT FETCH" "$logfile" "1"
+    log_section_end "[2/4] GIT FETCH" "$logfile" "1"
     exit 1
   fi
   echo "" | tee -a "$logfile"
 
-  # [2] Sync branches
-  log_section_start "SYNC BRANCHES" "$logfile"
+  # [3/4] Sync branches
+  log_section_start "[3/4] SYNC BRANCHES" "$logfile"
 
   local sync_failed=0
 
-  if [[ ${sync_all} -eq 1 ]]; then
+  if [[ -n "${sync_branch}" ]]; then
+    sync_one_branch "${sync_branch}" || sync_failed=1
+  elif [[ ${sync_all} -eq 1 ]]; then
     sync_one_branch "${CGW_SOURCE_BRANCH}" || sync_failed=1
     sync_one_branch "${CGW_TARGET_BRANCH}" || sync_failed=1
   else
     sync_one_branch "${_sync_original_branch}" || sync_failed=1
   fi
 
-  log_section_end "SYNC BRANCHES" "$logfile" "${sync_failed}"
+  log_section_end "[3/4] SYNC BRANCHES" "$logfile" "${sync_failed}"
   echo "" | tee -a "$logfile"
 
   # Return to original branch if we moved
@@ -214,13 +282,16 @@ main() {
     echo "" | tee -a "$logfile"
   fi
 
+  # [4/4] Summary
   {
     echo "========================================"
-    echo "[SYNC SUMMARY]"
+    echo "[4/4] SYNC SUMMARY"
     echo "========================================"
   } | tee -a "$logfile"
 
-  if [[ ${sync_failed} -eq 0 ]]; then
+  if [[ ${dry_run} -eq 1 ]]; then
+    echo "[OK] DRY RUN COMPLETE -- no changes made" | tee -a "$logfile"
+  elif [[ ${sync_failed} -eq 0 ]]; then
     echo "[OK] SYNC SUCCESSFUL" | tee -a "$logfile"
   else
     echo "[!] SYNC COMPLETED WITH ERRORS" | tee -a "$logfile"
