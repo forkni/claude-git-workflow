@@ -508,17 +508,8 @@ main() {
 
   # -- Interactive confirmation (only when generating/updating config) ----------
 
-  # When reconfiguring, preserve existing branch settings from .cgw.conf
-  # rather than overwriting with fresh auto-detection.
   local target_branch="${detected_target}"
   local source_branch="${detected_source}"
-  if [[ -f ".cgw.conf" ]] && [[ ${reconfigure} -eq 1 ]]; then
-    local existing_target existing_source
-    existing_target=$(grep -m1 '^CGW_TARGET_BRANCH=' .cgw.conf | sed 's/CGW_TARGET_BRANCH=//;s/"//g' || true)
-    existing_source=$(grep -m1 '^CGW_SOURCE_BRANCH=' .cgw.conf | sed 's/CGW_SOURCE_BRANCH=//;s/"//g' || true)
-    [[ -n "${existing_target}" ]] && target_branch="${existing_target}"
-    [[ -n "${existing_source}" ]] && source_branch="${existing_source}"
-  fi
 
   local local_files="${detected_local_files:-CLAUDE.md MEMORY.md .claude/ logs/}"
 
