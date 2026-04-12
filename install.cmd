@@ -12,12 +12,13 @@ setlocal EnableDelayedExpansion
 
 set "CGW_DIR=%~dp0"
 if "%CGW_DIR:~-1%"=="\" set "CGW_DIR=%CGW_DIR:~0,-1%"
+set "EXIT_CODE=0"
 
 echo.
 echo ===================================================
 echo   CGW (claude-git-workflow) Installer
 echo ===================================================
-echo   Source: %CGW_DIR%
+echo   Source: !CGW_DIR!
 echo.
 
 rem --- Get target path ---
@@ -37,7 +38,7 @@ if "%TARGET_DIR%"=="" (
 )
 
 echo.
-echo   Target: %TARGET_DIR%
+echo   Target: !TARGET_DIR!
 echo.
 
 rem --- Pre-install checks ---
@@ -48,9 +49,21 @@ set "CHECKS_PASSED=1"
 
 rem All checks use goto to avoid CMD if/else fall-through with special chars in echo
 
+rem PI-00: Target must not be the CGW source directory (prevent self-install)
+if /i "!TARGET_DIR!"=="!CGW_DIR!" goto :pi00_fail
+rem Also compare with trailing backslash stripped CGW_DIR
+goto :pi00_pass
+:pi00_fail
+echo   [FAIL] PI-00  Target is the CGW source directory -- cannot install into itself
+set "CHECKS_PASSED=0"
+goto :pi00_done
+:pi00_pass
+echo   [PASS] PI-00  Target is not the CGW source directory
+:pi00_done
+
 rem PI-01: Target path exists
-if exist "%TARGET_DIR%\" goto :pi01_pass
-echo   [FAIL] PI-01  Target path does not exist: %TARGET_DIR%
+if exist "!TARGET_DIR!\" goto :pi01_pass
+echo   [FAIL] PI-01  Target path does not exist: !TARGET_DIR!
 set "CHECKS_PASSED=0"
 goto :pi01_done
 :pi01_pass
@@ -58,8 +71,8 @@ echo   [PASS] PI-01  Target path exists
 :pi01_done
 
 rem PI-02: Target is a git repo
-if exist "%TARGET_DIR%\.git\" goto :pi02_pass
-if exist "%TARGET_DIR%\.git"  goto :pi02_pass
+if exist "!TARGET_DIR!\.git\" goto :pi02_pass
+if exist "!TARGET_DIR!\.git"  goto :pi02_pass
 echo   [FAIL] PI-02  No .git directory found -- not a git repository
 set "CHECKS_PASSED=0"
 goto :pi02_done
@@ -69,7 +82,7 @@ echo   [PASS] PI-02  Target is a git repository
 
 rem PI-03: bash available
 where bash >nul 2>&1
-if not %ERRORLEVEL%==0 (
+if not !ERRORLEVEL!==0 (
     rem Try common Git for Windows install locations
     if exist "C:\Program Files\Git\bin\bash.exe" (
         set "PATH=C:\Program Files\Git\bin;!PATH!"
@@ -89,12 +102,12 @@ set "CHECKS_PASSED=0"
 
 rem PI-04: CGW source files complete
 set "SOURCE_OK=1"
-if not exist "%CGW_DIR%\scripts\git\configure.sh"    set "SOURCE_OK=0"
-if not exist "%CGW_DIR%\hooks\pre-commit"             set "SOURCE_OK=0"
-if not exist "%CGW_DIR%\hooks\pre-push"               set "SOURCE_OK=0"
-if not exist "%CGW_DIR%\skill\SKILL.md"               set "SOURCE_OK=0"
-if not exist "%CGW_DIR%\command\auto-git-workflow.md"  set "SOURCE_OK=0"
-if not "%SOURCE_OK%"=="1" goto :pi04_fail
+if not exist "!CGW_DIR!\scripts\git\configure.sh"    set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\hooks\pre-commit"             set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\hooks\pre-push"               set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\skill\SKILL.md"               set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\command\auto-git-workflow.md" set "SOURCE_OK=0"
+if not "!SOURCE_OK!"=="1" goto :pi04_fail
 echo   [PASS] PI-04  CGW source files complete
 goto :pi04_done
 :pi04_fail
@@ -105,18 +118,18 @@ set "CHECKS_PASSED=0"
 :pi04_done
 
 rem PI-05: Existing CGW install detection
-if not exist "%TARGET_DIR%\scripts\git\configure.sh" goto :pi05_clean
+if not exist "!TARGET_DIR!\scripts\git\configure.sh" goto :pi05_clean
 echo   [WARN] PI-05  CGW scripts already present in target
 set /p "OVERWRITE=          Overwrite existing installation? [y/N]: "
 if /i "!OVERWRITE!"=="y" goto :pi05_done
 echo          Aborting. Run with a clean target or choose overwrite.
-goto :end
+goto :abort
 :pi05_clean
 echo   [PASS] PI-05  No existing CGW installation
 :pi05_done
 
 rem PI-06: Existing .githooks/pre-commit
-if not exist "%TARGET_DIR%\.githooks\pre-commit" goto :pi06_clean
+if not exist "!TARGET_DIR!\.githooks\pre-commit" goto :pi06_clean
 echo   [WARN] PI-06  Existing .githooks\pre-commit found
 echo          It will be backed up to .githooks\pre-commit.bak
 goto :pi06_done
@@ -127,18 +140,18 @@ echo   [INFO] PI-06  No existing .githooks\pre-commit
 echo.
 
 :: Abort if hard checks failed
-if not "%CHECKS_PASSED%"=="1" goto :checks_failed
+if not "!CHECKS_PASSED!"=="1" goto :checks_failed
 goto :checks_ok
 :checks_failed
 echo   One or more required checks failed. Installation aborted.
 echo.
-goto :end
+goto :abort
 :checks_ok
 
 rem --- Confirm ---
 echo --- Installation Summary ---
 echo.
-echo   Will copy into: %TARGET_DIR%
+echo   Will copy into: !TARGET_DIR!
 echo     scripts\git\    (25 shell scripts)
 echo     hooks\          (pre-commit + pre-push templates)
 echo     skill\          (Claude Code skill source)
@@ -149,24 +162,32 @@ echo   Then run: configure.sh (interactive)
 echo   Finally:  offer to remove temp files (hooks\, skill\, command\)
 echo.
 set /p "CONFIRM=Proceed with installation? [Y/n]: "
-if /i "%CONFIRM%"=="n"  goto :cancel
-if /i "%CONFIRM%"=="no" goto :cancel
+if /i "!CONFIRM!"=="n"  goto :cancel
+if /i "!CONFIRM!"=="no" goto :cancel
 goto :install_start
 :cancel
 echo   Installation cancelled.
-goto :end
+goto :abort
 :install_start
 
 echo.
 
 rem --- Backup existing .githooks/ hook templates ---
-if not exist "%TARGET_DIR%\.githooks\pre-commit" goto :backup_pc_done
-copy /y "%TARGET_DIR%\.githooks\pre-commit" "%TARGET_DIR%\.githooks\pre-commit.bak" >nul
-echo   Backed up .githooks\pre-commit -^> .githooks\pre-commit.bak
+if not exist "!TARGET_DIR!\.githooks\pre-commit" goto :backup_pc_done
+copy /y "!TARGET_DIR!\.githooks\pre-commit" "!TARGET_DIR!\.githooks\pre-commit.bak" >nul
+if errorlevel 1 (
+    echo   [WARN] Could not back up .githooks\pre-commit -- continuing without backup
+) else (
+    echo   Backed up .githooks\pre-commit -^> .githooks\pre-commit.bak
+)
 :backup_pc_done
-if not exist "%TARGET_DIR%\.githooks\pre-push" goto :backup_done
-copy /y "%TARGET_DIR%\.githooks\pre-push" "%TARGET_DIR%\.githooks\pre-push.bak" >nul
-echo   Backed up .githooks\pre-push -^> .githooks\pre-push.bak
+if not exist "!TARGET_DIR!\.githooks\pre-push" goto :backup_done
+copy /y "!TARGET_DIR!\.githooks\pre-push" "!TARGET_DIR!\.githooks\pre-push.bak" >nul
+if errorlevel 1 (
+    echo   [WARN] Could not back up .githooks\pre-push -- continuing without backup
+) else (
+    echo   Backed up .githooks\pre-push -^> .githooks\pre-push.bak
+)
 :backup_done
 
 rem --- Copy files ---
@@ -174,59 +195,67 @@ echo --- Copying Files ---
 echo.
 
 rem scripts/git/
-if not exist "%TARGET_DIR%\scripts\git\" mkdir "%TARGET_DIR%\scripts\git\"
-xcopy /y /q "%CGW_DIR%\scripts\git\*.sh" "%TARGET_DIR%\scripts\git\" >nul
+if not exist "!TARGET_DIR!\scripts\git\" mkdir "!TARGET_DIR!\scripts\git\"
+xcopy /y /q "!CGW_DIR!\scripts\git\*.sh" "!TARGET_DIR!\scripts\git\" >nul
 if errorlevel 1 goto :cp_scripts_fail
-for /f %%c in ('dir /b "%TARGET_DIR%\scripts\git\*.sh" 2^>nul ^| find /c ".sh"') do echo   [OK] Copied %%c scripts to scripts\git\
+for /f %%c in ('dir /b "!TARGET_DIR!\scripts\git\*.sh" 2^>nul ^| find /c ".sh"') do echo   [OK] Copied %%c scripts to scripts\git\
 goto :cp_scripts_done
 :cp_scripts_fail
 echo   [ERR] Failed to copy scripts\git\
-goto :end
+goto :abort
 :cp_scripts_done
 
 rem hooks/
-if not exist "%TARGET_DIR%\hooks\" mkdir "%TARGET_DIR%\hooks\"
-copy /y "%CGW_DIR%\hooks\pre-commit" "%TARGET_DIR%\hooks\pre-commit" >nul
+if not exist "!TARGET_DIR!\hooks\" mkdir "!TARGET_DIR!\hooks\"
+copy /y "!CGW_DIR!\hooks\pre-commit" "!TARGET_DIR!\hooks\pre-commit" >nul
 if errorlevel 1 goto :cp_hooks_fail
-copy /y "%CGW_DIR%\hooks\pre-push" "%TARGET_DIR%\hooks\pre-push" >nul
+copy /y "!CGW_DIR!\hooks\pre-push" "!TARGET_DIR!\hooks\pre-push" >nul
 if errorlevel 1 goto :cp_hooks_fail
 echo   [OK] Copied hooks\pre-commit + hooks\pre-push templates
 goto :cp_hooks_done
 :cp_hooks_fail
 echo   [ERR] Failed to copy hook templates from hooks\
-goto :end
+goto :abort
 :cp_hooks_done
 
 rem skill/
-if not exist "%TARGET_DIR%\skill\" mkdir "%TARGET_DIR%\skill\"
-xcopy /y /q /e "%CGW_DIR%\skill\" "%TARGET_DIR%\skill\" >nul
+if not exist "!TARGET_DIR!\skill\" mkdir "!TARGET_DIR!\skill\"
+xcopy /y /q /e "!CGW_DIR!\skill\" "!TARGET_DIR!\skill\" >nul
 if errorlevel 1 goto :cp_skill_fail
 echo   [OK] Copied skill\
 goto :cp_skill_done
 :cp_skill_fail
 echo   [ERR] Failed to copy skill\
-goto :end
+goto :abort
 :cp_skill_done
 
 rem command/
-if not exist "%TARGET_DIR%\command\" mkdir "%TARGET_DIR%\command\"
-xcopy /y /q /e "%CGW_DIR%\command\" "%TARGET_DIR%\command\" >nul
+if not exist "!TARGET_DIR!\command\" mkdir "!TARGET_DIR!\command\"
+xcopy /y /q /e "!CGW_DIR!\command\" "!TARGET_DIR!\command\" >nul
 if errorlevel 1 goto :cp_cmd_fail
 echo   [OK] Copied command\
 goto :cp_cmd_done
 :cp_cmd_fail
 echo   [ERR] Failed to copy command\
-goto :end
+goto :abort
 :cp_cmd_done
 
 rem cgw.conf.example (optional)
-if not exist "%CGW_DIR%\cgw.conf.example" goto :cp_example_done
-copy /y "%CGW_DIR%\cgw.conf.example" "%TARGET_DIR%\cgw.conf.example" >nul
-echo   [OK] Copied cgw.conf.example
+if not exist "!CGW_DIR!\cgw.conf.example" goto :cp_example_done
+copy /y "!CGW_DIR!\cgw.conf.example" "!TARGET_DIR!\cgw.conf.example" >nul
+if errorlevel 1 (
+    echo   [WARN] Could not copy cgw.conf.example
+) else (
+    echo   [OK] Copied cgw.conf.example
+)
 :cp_example_done
 
 rem Ensure .sh files are executable (needed by Git Bash on Windows)
-pushd "%TARGET_DIR%"
+pushd "!TARGET_DIR!"
+if errorlevel 1 (
+    echo   [ERR] Cannot enter target directory: !TARGET_DIR!
+    goto :abort
+)
 bash -c "chmod +x scripts/git/*.sh 2>/dev/null" >nul 2>&1
 
 echo.
@@ -242,8 +271,8 @@ set "CONFIGURE_EXIT=!ERRORLEVEL!"
 popd
 
 echo.
-if "%CONFIGURE_EXIT%"=="0" goto :cfg_ok
-echo   [WARN] configure.sh exited with code %CONFIGURE_EXIT%
+if "!CONFIGURE_EXIT!"=="0" goto :cfg_ok
+echo   [WARN] configure.sh exited with code !CONFIGURE_EXIT!
 echo   Installation may be incomplete. Check output above.
 goto :cfg_done
 :cfg_ok
@@ -256,17 +285,22 @@ echo --- Post-Install Cleanup ---
 echo.
 echo   The following directories were needed only during installation
 echo   and can be safely removed from the target project:
-echo     %TARGET_DIR%\hooks\
-echo     %TARGET_DIR%\skill\
-echo     %TARGET_DIR%\command\
+echo     !TARGET_DIR!\hooks\
+echo     !TARGET_DIR!\skill\
+echo     !TARGET_DIR!\command\
 echo.
 set /p "CLEANUP=Remove temporary install files? [Y/n]: "
-if /i "%CLEANUP%"=="n"  goto :cleanup_skip
-if /i "%CLEANUP%"=="no" goto :cleanup_skip
-if exist "%TARGET_DIR%\hooks\"   rmdir /s /q "%TARGET_DIR%\hooks\"
-if exist "%TARGET_DIR%\skill\"   rmdir /s /q "%TARGET_DIR%\skill\"
-if exist "%TARGET_DIR%\command\" rmdir /s /q "%TARGET_DIR%\command\"
-echo   Removed hooks\, skill\, command\
+if /i "!CLEANUP!"=="n"  goto :cleanup_skip
+if /i "!CLEANUP!"=="no" goto :cleanup_skip
+set "REMOVED_DIRS="
+if exist "!TARGET_DIR!\hooks\"   ( rmdir /s /q "!TARGET_DIR!\hooks\"   & if not exist "!TARGET_DIR!\hooks\"   set "REMOVED_DIRS=!REMOVED_DIRS! hooks\" )
+if exist "!TARGET_DIR!\skill\"   ( rmdir /s /q "!TARGET_DIR!\skill\"   & if not exist "!TARGET_DIR!\skill\"   set "REMOVED_DIRS=!REMOVED_DIRS! skill\" )
+if exist "!TARGET_DIR!\command\" ( rmdir /s /q "!TARGET_DIR!\command\" & if not exist "!TARGET_DIR!\command\" set "REMOVED_DIRS=!REMOVED_DIRS! command\" )
+if "!REMOVED_DIRS!"=="" (
+    echo   [WARN] Could not fully remove temp directories (files may be locked)
+) else (
+    echo   Removed:!REMOVED_DIRS!
+)
 goto :cleanup_done
 :cleanup_skip
 echo   Temp files kept.
@@ -279,21 +313,27 @@ echo   Installation Complete
 echo ===================================================
 echo.
 
-if not exist "%TARGET_DIR%\scripts\git\commit_enhanced.sh" goto :sum_scripts_done
-for /f %%c in ('dir /b "%TARGET_DIR%\scripts\git\*.sh" 2^>nul ^| find /c ".sh"') do echo   Scripts:      %TARGET_DIR%\scripts\git\ ^(%%c files^)
+if not exist "!TARGET_DIR!\scripts\git\commit_enhanced.sh" goto :sum_scripts_done
+for /f %%c in ('dir /b "!TARGET_DIR!\scripts\git\*.sh" 2^>nul ^| find /c ".sh"') do echo   Scripts:      !TARGET_DIR!\scripts\git\ ^(%%c files^)
 :sum_scripts_done
-if exist "%TARGET_DIR%\.cgw.conf"                              echo   Config:       %TARGET_DIR%\.cgw.conf
-if exist "%TARGET_DIR%\.git\hooks\pre-commit"                  echo   Git hooks:    %TARGET_DIR%\.git\hooks\pre-commit + pre-push
-if exist "%TARGET_DIR%\.claude\skills\auto-git-workflow\SKILL.md" echo   Claude skill: %TARGET_DIR%\.claude\skills\auto-git-workflow\
-if exist "%TARGET_DIR%\.claude\commands\auto-git-workflow.md"  echo   Slash cmd:    %TARGET_DIR%\.claude\commands\auto-git-workflow.md
+if exist "!TARGET_DIR!\.cgw.conf"                                  echo   Config:       !TARGET_DIR!\.cgw.conf
+if exist "!TARGET_DIR!\.git\hooks\pre-commit"                      echo   Git hooks:    !TARGET_DIR!\.git\hooks\pre-commit + pre-push
+if exist "!TARGET_DIR!\.claude\skills\auto-git-workflow\SKILL.md"  echo   Claude skill: !TARGET_DIR!\.claude\skills\auto-git-workflow\
+if exist "!TARGET_DIR!\.claude\commands\auto-git-workflow.md"      echo   Slash cmd:    !TARGET_DIR!\.claude\commands\auto-git-workflow.md
 
 echo.
 echo   Quick start (from your project root in Git Bash):
 echo     bash scripts/git/commit_enhanced.sh "feat: your feature"
 echo.
 
+goto :end
+
+:abort
+set "EXIT_CODE=1"
+goto :end
+
 :end
 echo.
 pause
 endlocal
-exit /b 0
+exit /b %EXIT_CODE%
