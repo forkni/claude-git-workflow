@@ -107,9 +107,9 @@ _run_configure() {
   [ ! -f "${TEST_REPO_DIR}/.githooks/pre-commit" ]
 }
 
-# ── Branch preservation on reconfigure ───────────────────────────────────────
+# ── Branch detection on reconfigure ──────────────────────────────────────────
 
-@test "--reconfigure preserves existing branch settings from .cgw.conf" {
+@test "--reconfigure overwrites branch settings with fresh auto-detection" {
   # Write a config with custom branch names
   cat > "${TEST_REPO_DIR}/.cgw.conf" <<'EOF'
 CGW_SOURCE_BRANCH="my-dev"
@@ -117,8 +117,10 @@ CGW_TARGET_BRANCH="my-stable"
 CGW_LOCAL_FILES=".claude/ logs/"
 EOF
   _run_configure "--non-interactive --reconfigure"
-  grep -q 'CGW_SOURCE_BRANCH="my-dev"' "${TEST_REPO_DIR}/.cgw.conf"
-  grep -q 'CGW_TARGET_BRANCH="my-stable"' "${TEST_REPO_DIR}/.cgw.conf"
+  # 90091fb: --reconfigure re-detects branches instead of preserving stale values.
+  # Test repo has only 'main', so detection yields main/development.
+  grep -q 'CGW_SOURCE_BRANCH="development"' "${TEST_REPO_DIR}/.cgw.conf"
+  grep -q 'CGW_TARGET_BRANCH="main"' "${TEST_REPO_DIR}/.cgw.conf"
 }
 
 @test "--reconfigure does not modify .gitignore" {

@@ -38,7 +38,8 @@ _find_project_root() {
 
 if [[ -z "${PROJECT_ROOT:-}" ]]; then
   PROJECT_ROOT="$(_find_project_root)" || {
-    echo "[ERROR] Cannot find git repository root. Are you inside a git repo?" >&2
+    echo "[ERROR] Cannot find git repository root." >&2
+    echo "  Are you inside a git repository? Run 'git init' first, or cd into one." >&2
     exit 1
   }
 fi
@@ -303,7 +304,9 @@ _install_hook() {
       echo "  [OK] Pre-commit hook already installed"
       return 0
     fi
-    echo "  [!] Hook template not found -- copy hooks/ from the CGW source repo and re-run"
+    echo "  [!] Hook template not found at: ${hook_template}"
+    echo "      Fix: copy the hooks/ directory from the CGW source repo into your project root,"
+    echo "      then re-run: ./scripts/git/configure.sh"
     return 1
   fi
 
@@ -356,23 +359,37 @@ _install_hook() {
     echo "  [OK] Git hooks installed (pre-commit + pre-push)"
   else
     echo "  [!] Hooks written to .githooks/ but failed to copy to .git/hooks/"
-    echo "    Run: ./scripts/git/install_hooks.sh"
+    echo "      Fix: run manually: ./scripts/git/install_hooks.sh"
+    echo "      If that also fails, check that .git/hooks/ is writable."
   fi
 }
 
 _install_skill() {
+  local install_mode="${1:-local}" # "local" or "global"
   local skill_src
   local cmd_src
-  local skill_dst="${PROJECT_ROOT}/.claude/skills/auto-git-workflow"
+  local skill_dst cmd_dst
+
+  # Determine destination based on install mode
+  if [[ "${install_mode}" == "global" ]]; then
+    skill_dst="${HOME}/.claude/skills/auto-git-workflow"
+    cmd_dst="${HOME}/.claude/commands"
+    echo "  Installing skill globally to ${HOME}/.claude/"
+  else
+    skill_dst="${PROJECT_ROOT}/.claude/skills/auto-git-workflow"
+    cmd_dst="${PROJECT_ROOT}/.claude/commands"
+  fi
 
   # Try staging area first (present during install.cmd), then CGW source repo
   if skill_src="$(cd "${SCRIPT_DIR}" && cd "../../skill" 2>/dev/null && pwd)"; then
     cmd_src="${skill_src}/../command/auto-git-workflow.md"
   elif [[ -f "${skill_dst}/SKILL.md" ]]; then
-    echo "  [OK] Claude Code skill already installed"
+    echo "  [OK] Claude Code skill already installed (${install_mode})"
     return 0
   else
-    echo "  [!] Skill template not found -- copy skill/ and command/ from the CGW source repo and re-run"
+    echo "  [!] Skill template not found."
+    echo "      Fix: copy skill/ and command/ from the CGW source repo into your"
+    echo "      project root, then re-run: ./scripts/git/configure.sh"
     return 1
   fi
 
@@ -382,17 +399,17 @@ _install_skill() {
   cp "${skill_src}/references/"*.md "${skill_dst}/references/" 2>/dev/null || true
 
   if [[ -f "${cmd_src}" ]]; then
-    mkdir -p "${PROJECT_ROOT}/.claude/commands"
-    cp "${cmd_src}" "${PROJECT_ROOT}/.claude/commands/auto-git-workflow.md" 2>/dev/null || true
-    echo "  [OK] Claude Code skill + slash command installed"
+    mkdir -p "${cmd_dst}"
+    cp "${cmd_src}" "${cmd_dst}/auto-git-workflow.md" 2>/dev/null || true
+    echo "  [OK] Claude Code skill + slash command installed (${install_mode})"
   else
-    echo "  [OK] Claude Code skill installed (command template not found)"
+    echo "  [OK] Claude Code skill installed (${install_mode}, command template not found)"
   fi
 }
 
 _update_gitignore() {
   local gitignore="${PROJECT_ROOT}/.gitignore"
-  local entries=("logs/" ".cgw.conf" "cgw.conf.example")
+  local entries=("logs/" ".cgw.conf")
   local added=()
 
   for entry in "${entries[@]}"; do
@@ -418,6 +435,7 @@ main() {
   local reconfigure=0
   local skip_hooks=0
   local skip_skill=0
+  local global_skill=0
 
   while [[ $# -gt 0 ]]; do
     case "${1}" in
@@ -433,6 +451,7 @@ main() {
         echo "  --reconfigure       Overwrite existing .cgw.conf"
         echo "  --skip-hooks        Don't install git pre-commit hook"
         echo "  --skip-skill        Don't install Claude Code skill"
+        echo "  --global            Install Claude Code skill to ~/.claude/ (available in all projects)"
         echo "  -h, --help          Show this help"
         echo ""
         echo "After running, edit .cgw.conf to customize any detected values."
@@ -442,6 +461,7 @@ main() {
       --reconfigure) reconfigure=1 ;;
       --skip-hooks) skip_hooks=1 ;;
       --skip-skill) skip_skill=1 ;;
+      --global) global_skill=1 ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2
         exit 1
@@ -460,6 +480,10 @@ main() {
   echo ""
   echo "Project root: ${PROJECT_ROOT}"
   echo ""
+
+  # Track whether this is a fresh install (no existing .cgw.conf)
+  local fresh_install=0
+  [[ ! -f ".cgw.conf" ]] && fresh_install=1
 
   # Check if .cgw.conf already exists
   if [[ -f ".cgw.conf" ]] && [[ ${reconfigure} -eq 0 ]]; then
@@ -482,6 +506,7 @@ main() {
   # -- Detection phase ------------------------------------------------------
 
   echo "Scanning project..."
+  echo "  Detecting branch names, lint tools, virtual environment, and local-only files..."
   echo ""
 
   local detected_target
@@ -532,6 +557,8 @@ main() {
 
   if [[ ! -f ".cgw.conf" ]] || [[ ${reconfigure} -eq 1 ]]; then
     echo "Generating .cgw.conf..."
+    echo "  This config file controls branch names, lint settings, and local-only"
+    echo "  file protection. It is git-ignored so each developer can have their own."
 
     {
       echo "# .cgw.conf -- Auto-generated by configure.sh on $(date)"
@@ -566,9 +593,20 @@ main() {
     echo "  [OK] .cgw.conf generated"
   fi
 
+  # -- Update .gitignore (first install only) --------------------------------
+  # Only on fresh installs -- not on --reconfigure, so existing .gitignore
+  # entries the user has customised are not modified.
+  if [[ ${fresh_install} -eq 1 ]] && [[ ${reconfigure} -eq 0 ]]; then
+    echo "Updating .gitignore..."
+    _update_gitignore
+  fi
+
   # -- Install pre-commit hook -----------------------------------------------
 
   if [[ ${skip_hooks} -eq 0 ]]; then
+    echo ""
+    echo "Git hooks enforce lint checks and local-file protection on every commit"
+    echo "and push, catching issues before they reach the remote."
     local install_hook="yes"
     if [[ ${non_interactive} -eq 0 ]]; then
       read -r -p "Install pre-commit hook? (yes/no) [yes]: " answer
@@ -588,6 +626,9 @@ main() {
   # rerere (reuse recorded resolution) auto-replays known conflict resolutions.
   # Recommended for two-branch models where the same conflicts recur across merges.
 
+  echo ""
+  echo "git rerere remembers how you resolved conflicts so it can auto-replay"
+  echo "the same resolution next time the same conflict reappears."
   local enable_rerere="yes"
   if [[ ${non_interactive} -eq 0 ]]; then
     read -r -p "Enable git rerere (auto-replay conflict resolutions)? (yes/no) [yes]: " answer
@@ -607,14 +648,23 @@ main() {
   # -- Install Claude Code skill ---------------------------------------------
 
   if [[ ${skip_skill} -eq 0 ]]; then
+    echo ""
+    echo "The Claude Code skill teaches Claude to use CGW scripts instead of raw"
+    echo "git commands, ensuring lint checks and local-file protection are never bypassed."
+    if [[ ${global_skill} -eq 1 ]]; then
+      echo "  (--global: skill will be installed to ~/.claude/ for all projects)"
+    fi
     local install_skill="no"
-    # Default to yes if .claude/ directory already exists
-    if [[ -d ".claude" ]]; then
+    # Default to yes if .claude/ directory already exists (local mode)
+    # or if --global was specified
+    if [[ -d ".claude" ]] || [[ ${global_skill} -eq 1 ]]; then
       install_skill="yes"
     fi
 
     if [[ ${non_interactive} -eq 0 ]]; then
-      read -r -p "Install Claude Code skill? (yes/no) [${install_skill}]: " answer
+      local skill_dest_hint="project .claude/"
+      [[ ${global_skill} -eq 1 ]] && skill_dest_hint="global ~/.claude/"
+      read -r -p "Install Claude Code skill to ${skill_dest_hint}? (yes/no) [${install_skill}]: " answer
       case "${answer,,}" in
         y | yes) install_skill="yes" ;;
         n | no) install_skill="no" ;;
@@ -623,7 +673,11 @@ main() {
 
     if [[ "${install_skill}" == "yes" ]]; then
       echo "Installing Claude Code skill..."
-      _install_skill
+      if [[ ${global_skill} -eq 1 ]]; then
+        _install_skill "global"
+      else
+        _install_skill "local"
+      fi
     fi
   fi
 

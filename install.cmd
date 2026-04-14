@@ -47,6 +47,18 @@ echo.
 echo(  Target: !TARGET_DIR!
 echo.
 
+rem --- Global skill option ---
+rem Ask whether to install the Claude Code skill globally (~/.claude/) or
+rem project-locally (.claude/ in the target project).
+set "GLOBAL_SKILL=0"
+echo   The Claude Code skill can be installed locally (this project only) or
+echo   globally (all projects). Local is the default and easiest to undo.
+echo.
+set /p "GLOBAL_CHOICE=Install Claude Code skill globally to %%USERPROFILE%%\.claude\? [y/N]: "
+if /i "!GLOBAL_CHOICE!"=="y"   set "GLOBAL_SKILL=1"
+if /i "!GLOBAL_CHOICE!"=="yes" set "GLOBAL_SKILL=1"
+echo.
+
 rem --- Pre-install checks ---
 echo --- Pre-Install Checks ---
 echo.
@@ -102,6 +114,7 @@ goto :pi03_done
 :pi03_fail
 echo   [FAIL] PI-03  bash not found on PATH
 echo          Install Git for Windows: https://git-scm.com/download/win
+echo          After installing, restart your terminal and run this installer again.
 set "CHECKS_PASSED=0"
 :pi03_done
 
@@ -148,7 +161,7 @@ echo.
 if not "!CHECKS_PASSED!"=="1" goto :checks_failed
 goto :checks_ok
 :checks_failed
-echo   One or more required checks failed. Installation aborted.
+echo   One or more required checks failed. Fix the issues above and re-run the installer.
 echo.
 goto :abort
 :checks_ok
@@ -162,6 +175,12 @@ echo     hooks\          (pre-commit + pre-push templates)
 echo     skill\          (Claude Code skill source)
 echo     command\        (slash command source)
 echo     cgw.conf.example (config reference)
+echo.
+if "!GLOBAL_SKILL!"=="1" (
+    echo(  Claude Code skill: global install to !USERPROFILE!\.claude\
+) else (
+    echo   Claude Code skill: local install to .claude\ in target project
+)
 echo.
 echo   Then run: configure.sh (interactive)
 echo   Finally:  offer to remove temp files (hooks\, skill\, command\)
@@ -207,6 +226,7 @@ for /f %%c in ('dir /b "!TARGET_DIR!\scripts\git\*.sh" 2^>nul ^| find /c ".sh"')
 goto :cp_scripts_done
 :cp_scripts_fail
 echo   [ERR] Failed to copy scripts\git\
+echo          Check that the target directory is writable and not locked by another process.
 goto :abort
 :cp_scripts_done
 
@@ -220,6 +240,7 @@ echo   [OK] Copied hooks\pre-commit + hooks\pre-push templates
 goto :cp_hooks_done
 :cp_hooks_fail
 echo   [ERR] Failed to copy hook templates from hooks\
+echo          Verify that hooks\pre-commit and hooks\pre-push exist in the CGW source directory.
 goto :abort
 :cp_hooks_done
 
@@ -275,14 +296,22 @@ echo.
 echo   configure.sh will auto-detect your branches, lint tool, and
 echo   local-only files. You can confirm or override each setting.
 echo.
-bash scripts/git/configure.sh
+if "!GLOBAL_SKILL!"=="1" (
+    bash scripts/git/configure.sh --global
+) else (
+    bash scripts/git/configure.sh
+)
 set "CONFIGURE_EXIT=!ERRORLEVEL!"
 popd
 
 echo.
 if "!CONFIGURE_EXIT!"=="0" goto :cfg_ok
 echo   [WARN] configure.sh exited with code !CONFIGURE_EXIT!
-echo   Installation may be incomplete. Check output above.
+echo   Installation may be incomplete. Common causes:
+echo     - Branch detection failed (no remote configured yet -- this is OK, branches can be set in .cgw.conf)
+echo     - Hook or skill template directory not found (re-copy hooks\, skill\, command\ from the CGW source)
+echo   To fix and re-run configure.sh manually (from your project root in Git Bash):
+echo(    cd "!TARGET_DIR!" ^&^& bash scripts/git/configure.sh
 set "EXIT_CODE=1"
 goto :cfg_done
 :cfg_ok
