@@ -58,6 +58,7 @@ main() {
         echo ""
         echo "Environment:"
         echo "  CGW_NON_INTERACTIVE=1         Same as --non-interactive"
+        echo "  CGW_REMOTE                    Remote name (default: origin)"
         echo "  CGW_PROTECTED_BRANCHES=<list> Space-separated protected branch names"
         echo "  (Also: CLAUDE_GIT_NON_INTERACTIVE, CLAUDE_GIT_NO_VENV)"
         exit 0

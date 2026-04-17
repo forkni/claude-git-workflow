@@ -75,7 +75,7 @@ main() {
       --source)
         src_branch="${2:-}"
         if [[ -z "${src_branch}" ]]; then
-          echo "[ERROR] --source requires a branch name" >&2
+          err "--source requires a branch name"
           exit 1
         fi
         shift
@@ -83,13 +83,13 @@ main() {
       --target)
         tgt_branch="${2:-}"
         if [[ -z "${tgt_branch}" ]]; then
-          echo "[ERROR] --target requires a branch name" >&2
+          err "--target requires a branch name"
           exit 1
         fi
         shift
         ;;
       *)
-        echo "[ERROR] Unknown flag: $1" >&2
+        err "Unknown flag: $1"
         exit 1
         ;;
     esac
@@ -98,19 +98,7 @@ main() {
 
   [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
 
-  # Pre-flight branch validation
-  if ! git check-ref-format --branch "${src_branch}" 2>/dev/null; then
-    err "Invalid source branch name: '${src_branch}'"
-    exit 1
-  fi
-  if ! git check-ref-format --branch "${tgt_branch}" 2>/dev/null; then
-    err "Invalid target branch name: '${tgt_branch}'"
-    exit 1
-  fi
-  if [[ "${src_branch}" == "${tgt_branch}" ]]; then
-    err "Source and target branch are the same: '${src_branch}'"
-    exit 1
-  fi
+  validate_branch_pair "${src_branch}" "${tgt_branch}"
 
   {
     echo "========================================="

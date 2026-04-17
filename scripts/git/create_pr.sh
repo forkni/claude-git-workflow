@@ -66,6 +66,7 @@ main() {
         echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
         echo "  CGW_SOURCE_BRANCH       Default source branch"
         echo "  CGW_TARGET_BRANCH       Default target branch"
+        echo "  CGW_REMOTE              Remote name (default: origin)"
         echo ""
         echo "Prerequisites:"
         echo "  gh CLI installed and authenticated (gh auth login)"
@@ -94,7 +95,7 @@ main() {
       --source)
         src_branch="${2:-}"
         if [[ -z "${src_branch}" ]]; then
-          echo "[ERROR] --source requires a branch name" >&2
+          err "--source requires a branch name"
           exit 1
         fi
         shift 2
@@ -102,13 +103,13 @@ main() {
       --target)
         tgt_branch="${2:-}"
         if [[ -z "${tgt_branch}" ]]; then
-          echo "[ERROR] --target requires a branch name" >&2
+          err "--target requires a branch name"
           exit 1
         fi
         shift 2
         ;;
       *)
-        echo "[ERROR] Unknown flag: $1" >&2
+        err "Unknown flag: $1"
         exit 1
         ;;
     esac
