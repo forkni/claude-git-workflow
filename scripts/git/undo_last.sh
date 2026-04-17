@@ -52,6 +52,9 @@ _show_help() {
   echo "  ./scripts/git/undo_last.sh unstage src/file.py"
   echo "  ./scripts/git/undo_last.sh discard src/file.py"
   echo "  ./scripts/git/undo_last.sh amend-message 'fix: correct typo in header'"
+  echo ""
+  echo "Environment:"
+  echo "  CGW_REMOTE   Remote name (default: origin)"
 }
 
 main() {

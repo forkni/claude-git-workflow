@@ -194,7 +194,7 @@ main() {
       --source)
         src_branch="${2:-}"
         if [[ -z "${src_branch}" ]]; then
-          echo "[ERROR] --source requires a branch name" >&2
+          err "--source requires a branch name"
           exit 1
         fi
         shift
@@ -202,13 +202,13 @@ main() {
       --target)
         tgt_branch="${2:-}"
         if [[ -z "${tgt_branch}" ]]; then
-          echo "[ERROR] --target requires a branch name" >&2
+          err "--target requires a branch name"
           exit 1
         fi
         shift
         ;;
       *)
-        echo "[ERROR] Unknown flag: $1" >&2
+        err "Unknown flag: $1"
         exit 1
         ;;
     esac
@@ -217,27 +217,7 @@ main() {
 
   [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
 
-  # Pre-flight: validate branch names and local existence before any git operations
-  if ! git check-ref-format --branch "${src_branch}" 2>/dev/null; then
-    err "Invalid source branch name: '${src_branch}'"
-    exit 1
-  fi
-  if ! git check-ref-format --branch "${tgt_branch}" 2>/dev/null; then
-    err "Invalid target branch name: '${tgt_branch}'"
-    exit 1
-  fi
-  if [[ "${src_branch}" == "${tgt_branch}" ]]; then
-    err "Source and target branch are the same: '${src_branch}'"
-    exit 1
-  fi
-  if ! git rev-parse --verify --quiet "refs/heads/${src_branch}" >/dev/null 2>&1; then
-    err "Source branch '${src_branch}' does not exist locally"
-    exit 1
-  fi
-  if ! git rev-parse --verify --quiet "refs/heads/${tgt_branch}" >/dev/null 2>&1; then
-    err "Target branch '${tgt_branch}' does not exist locally"
-    exit 1
-  fi
+  validate_branch_pair "${src_branch}" "${tgt_branch}"
 
   local branch_label="${src_branch} -> ${tgt_branch}"
   if [[ "${src_branch}" != "${CGW_SOURCE_BRANCH}" ]] || [[ "${tgt_branch}" != "${CGW_TARGET_BRANCH}" ]]; then
@@ -369,8 +349,11 @@ main() {
     echo "[!] Merge conflicts detected - analyzing..." | tee -a "$logfile"
     log_section_end "GIT MERGE" "$logfile" "${merge_exit_code}"
 
+    local conflict_status
+    conflict_status=$(git status --short)
+
     # Auto-resolve DU (modify/delete) conflicts
-    if git status --short | grep -q "^DU "; then
+    if printf '%s\n' "${conflict_status}" | grep -q "^DU "; then
       echo "  Found modify/delete conflicts -- auto-resolving..."
       echo ""
 
@@ -384,12 +367,12 @@ main() {
           echo "  [FAIL] ERROR: Failed to remove ${conflict_file}"
           resolution_failed=1
         fi
-      done < <(git status --short | grep "^DU " | cut -c 4-)
+      done < <(printf '%s\n' "${conflict_status}" | grep "^DU " | cut -c 4-)
 
       if [[ ${resolution_failed} -eq 1 ]]; then
         echo "" | tee -a "$logfile"
         echo "[FAIL] Auto-resolution failed for some files" | tee -a "$logfile"
-        git status --short | tee -a "$logfile"
+        printf '%s\n' "${conflict_status}" | tee -a "$logfile"
         exit 1
       fi
 
@@ -398,10 +381,10 @@ main() {
     fi
 
     # AU/AA conflicts require manual resolution
-    if git status --short | grep -qE "^(AU|AA) "; then
+    if printf '%s\n' "${conflict_status}" | grep -qE "^(AU|AA) "; then
       echo "" | tee -a "$logfile"
       echo "[FAIL] Add/add or add/unmerged conflicts require manual resolution:" | tee -a "$logfile"
-      git status --short | grep -E "^(AU|AA) " | tee -a "$logfile"
+      printf '%s\n' "${conflict_status}" | grep -E "^(AU|AA) " | tee -a "$logfile"
       echo ""
       echo "Please resolve manually:"
       echo "  1. Edit conflicted files"
@@ -413,19 +396,19 @@ main() {
     fi
 
     # DD (both deleted): auto-resolve by accepting deletion
-    if git status --short | grep -q "^DD "; then
+    if printf '%s\n' "${conflict_status}" | grep -q "^DD "; then
       echo "  Found both-deleted conflicts -- auto-resolving..." | tee -a "$logfile"
       while read -r conflict_file; do
         git rm "${conflict_file}" >/dev/null 2>&1 || true
         echo "  [OK] Removed (both deleted): ${conflict_file}" | tee -a "$logfile"
-      done < <(git status --short | grep "^DD " | cut -c 4-)
+      done < <(printf '%s\n' "${conflict_status}" | grep "^DD " | cut -c 4-)
     fi
 
     # UU (both modified): requires manual resolution
-    if git status --short | grep -q "^UU "; then
+    if printf '%s\n' "${conflict_status}" | grep -q "^UU "; then
       echo "" | tee -a "$logfile"
       echo "[FAIL] Content conflicts require manual resolution:" | tee -a "$logfile"
-      git status --short | grep "^UU "
+      printf '%s\n' "${conflict_status}" | grep "^UU "
       echo ""
       echo "Please resolve manually:"
       echo "  1. Edit conflicted files"
@@ -437,10 +420,10 @@ main() {
     fi
 
     # UD (deleted by us, modified by theirs): requires manual resolution
-    if git status --short | grep -q "^UD "; then
+    if printf '%s\n' "${conflict_status}" | grep -q "^UD "; then
       echo "" | tee -a "$logfile"
       echo "[FAIL] Deleted-by-us conflicts require manual resolution:" | tee -a "$logfile"
-      git status --short | grep "^UD " | tee -a "$logfile"
+      printf '%s\n' "${conflict_status}" | grep "^UD " | tee -a "$logfile"
       echo ""
       echo "Please resolve manually (for each file):"
       echo "  Keep deletion: git rm <file>"
@@ -451,10 +434,10 @@ main() {
     fi
 
     # AD/DA (added differently on each side): requires manual resolution
-    if git status --short | grep -qE "^(AD|DA) "; then
+    if printf '%s\n' "${conflict_status}" | grep -qE "^(AD|DA) "; then
       echo "" | tee -a "$logfile"
       echo "[FAIL] Add/delete conflicts require manual resolution:" | tee -a "$logfile"
-      git status --short | grep -E "^(AD|DA) " | tee -a "$logfile"
+      printf '%s\n' "${conflict_status}" | grep -E "^(AD|DA) " | tee -a "$logfile"
       echo ""
       echo "Please resolve manually (for each file):"
       echo "  Keep ours:   git checkout --ours <file> && git add <file>"

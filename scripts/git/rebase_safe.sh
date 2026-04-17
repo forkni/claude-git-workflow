@@ -92,6 +92,9 @@ _show_help() {
   echo ""
   echo "[!] WARNING: Rebasing rewrites history. Never rebase commits already pushed"
   echo "   to a shared branch. This script will warn you if that is the case."
+  echo ""
+  echo "Environment:"
+  echo "  CGW_REMOTE   Remote name (default: origin)"
 }
 
 main() {

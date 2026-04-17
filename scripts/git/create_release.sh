@@ -64,6 +64,9 @@ main() {
         echo "The annotated tag triggers release.yml (GitHub Actions) which creates"
         echo "a GitHub Release with auto-generated notes and source archives."
         echo ""
+        echo "Environment:"
+        echo "  CGW_REMOTE   Remote to push tag to (default: origin)"
+        echo ""
         echo "Examples:"
         echo "  ./scripts/git/create_release.sh v1.0.0"
         echo "  ./scripts/git/create_release.sh v1.0.0 --message 'First stable release'"
@@ -158,7 +161,7 @@ main() {
   if [[ ${dry_run} -eq 1 ]]; then
     echo "--- Dry run: no tag created ---"
     echo "Command would be: git tag -a '${version}' -m '${tag_message}'"
-    [[ ${push_tag} -eq 1 ]] && echo "Followed by:       git push \${CGW_REMOTE} '${version}'"
+    [[ ${push_tag} -eq 1 ]] && echo "Followed by:       git push ${CGW_REMOTE} '${version}'"
     exit 0
   fi
 

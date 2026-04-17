@@ -59,6 +59,7 @@ main() {
         echo ""
         echo "Environment:"
         echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
+        echo "  CGW_REMOTE              Remote name (default: origin)"
         echo ""
         echo "CAUTION: Without --revert, this rewrites branch history. Force-push required after."
         echo "         With --revert, history is preserved -- no force-push needed."

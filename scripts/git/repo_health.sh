@@ -59,6 +59,9 @@ main() {
         echo "  3. Large files in git history"
         echo "  4. Stale backup tags count"
         echo "  5. Branch divergence summary"
+        echo ""
+        echo "Environment:"
+        echo "  CGW_REMOTE   Remote name for divergence check (default: origin)"
         exit 0
         ;;
       --gc) run_gc=1 ;;

@@ -17,6 +17,7 @@
 #   log_section_start/end() - Section headers with timing (safe for nested calls)
 #   run_tool_with_logging() - Run a tool and capture output to log
 #   run_git_with_logging()  - Run git command with section logging
+#   validate_branch_pair()  - Validate src/tgt branch names and local existence; exit 1 on error
 
 # SCRIPT_DIR must be set by the caller before sourcing _common.sh:
 #   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -225,4 +226,28 @@ run_git_with_logging() {
   log_section_end "$section_name" "$log_path" "$GIT_EXIT_CODE"
 
   return $GIT_EXIT_CODE
+}
+
+validate_branch_pair() {
+  local src="${1}" tgt="${2}"
+  if ! git check-ref-format --branch "${src}" 2>/dev/null; then
+    err "Invalid source branch name: '${src}'"
+    exit 1
+  fi
+  if ! git check-ref-format --branch "${tgt}" 2>/dev/null; then
+    err "Invalid target branch name: '${tgt}'"
+    exit 1
+  fi
+  if [[ "${src}" == "${tgt}" ]]; then
+    err "Source and target branch are the same: '${src}'"
+    exit 1
+  fi
+  if ! git rev-parse --verify --quiet "refs/heads/${src}" >/dev/null 2>&1; then
+    err "Source branch '${src}' does not exist locally"
+    exit 1
+  fi
+  if ! git rev-parse --verify --quiet "refs/heads/${tgt}" >/dev/null 2>&1; then
+    err "Target branch '${tgt}' does not exist locally"
+    exit 1
+  fi
 }

@@ -162,7 +162,7 @@ main() {
         echo "  -h, --help          Show this help"
         echo ""
         echo "Behavior:"
-        echo "  - Runs git fetch \${CGW_REMOTE} first to update remote refs"
+        echo "  - Runs git fetch ${CGW_REMOTE} first to update remote refs"
         echo "  - Uses git pull --rebase (preserves clean linear history)"
         echo "  - With --all: switches between branches, returns to starting branch"
         echo "  - With --branch: syncs only the named branch, returns to starting branch"
@@ -174,6 +174,7 @@ main() {
         echo ""
         echo "Environment:"
         echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
+        echo "  CGW_REMOTE              Remote name (default: origin)"
         exit 0
         ;;
       --all) sync_all=1 ;;
