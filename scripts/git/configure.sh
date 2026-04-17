@@ -490,7 +490,7 @@ main() {
     echo "[OK] .cgw.conf already exists."
     if [[ ${non_interactive} -eq 0 ]]; then
       read -r -p "  Reconfigure? (yes/no) [no]: " answer
-      if [[ "${answer,,}" =~ ^y(es)?$ ]]; then
+      if [[ "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" =~ ^y(es)?$ ]]; then
         reconfigure=1
       else
         echo ""
@@ -610,7 +610,7 @@ main() {
     local install_hook="yes"
     if [[ ${non_interactive} -eq 0 ]]; then
       read -r -p "Install pre-commit hook? (yes/no) [yes]: " answer
-      case "${answer,,}" in
+      case "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" in
         y | yes) install_hook="yes" ;;
         n | no) install_hook="no" ;;
       esac
@@ -632,7 +632,7 @@ main() {
   local enable_rerere="yes"
   if [[ ${non_interactive} -eq 0 ]]; then
     read -r -p "Enable git rerere (auto-replay conflict resolutions)? (yes/no) [yes]: " answer
-    case "${answer,,}" in
+    case "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" in
       n | no) enable_rerere="no" ;;
     esac
   fi
@@ -665,7 +665,7 @@ main() {
       local skill_dest_hint="project .claude/"
       [[ ${global_skill} -eq 1 ]] && skill_dest_hint="global ~/.claude/"
       read -r -p "Install Claude Code skill to ${skill_dest_hint}? (yes/no) [${install_skill}]: " answer
-      case "${answer,,}" in
+      case "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" in
         y | yes) install_skill="yes" ;;
         n | no) install_skill="no" ;;
       esac

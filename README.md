@@ -43,7 +43,7 @@ No manual config editing required for common setups. `configure.sh` auto-detects
 |--------|---------|
 | `configure.sh` | One-time setup — scans project, generates `.cgw.conf`, installs hooks |
 | `commit_enhanced.sh` | Lint validation + local-only file protection + commit message format check |
-| `merge_with_validation.sh` | Safe merge source→target: backup tag, auto-resolve DU/DD conflicts, stop on UU |
+| `merge_with_validation.sh` | Safe merge source→target: backup tag, auto-resolve DU/DD conflicts, stop on UU. `--source`/`--target` override the configured branch pair per-invocation. |
 | `rollback_merge.sh` | Emergency rollback to pre-merge backup tag; `--revert` for safe history-preserving mode |
 | `cherry_pick_commits.sh` | Cherry-pick with source branch validation and backup tag |
 | `merge_docs.sh` | Documentation-only merge from source to target |
@@ -77,6 +77,7 @@ Scripts use a three-tier resolution system — environment variables override `.
 |----------|---------|-------------|
 | `CGW_SOURCE_BRANCH` | `development` | Branch where development happens |
 | `CGW_TARGET_BRANCH` | `main` | Stable/production branch |
+| `CGW_REMOTE` | `origin` | Remote name for fetch/push (use `upstream` for forks) |
 | `CGW_LOCAL_FILES` | `CLAUDE.md MEMORY.md .claude/ logs/` | Files never committed |
 | `CGW_LINT_CMD` | `ruff` | Lint tool (`""` to disable) |
 | `CGW_MERGE_MODE` | `direct` | `direct` (local merge) or `pr` (create GitHub PR) |

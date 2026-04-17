@@ -51,7 +51,7 @@ When you need to undo a merge to the target branch:
 ./scripts/git/rollback_merge.sh --dry-run
 
 # Specific target:
-./scripts/git/rollback_merge.sh --non-interactive --target pre-merge-backup-20260101_120000
+./scripts/git/rollback_merge.sh --non-interactive --target pre-merge-backup-20260101_120000-12345
 ```
 
 Interactive mode prompts for rollback target:
@@ -73,7 +73,7 @@ Requires typing `ROLLBACK` to confirm (interactive mode). Force-push warning sho
 **Manual rollback** (if script unavailable):
 ```bash
 git checkout main
-git reset --hard pre-merge-backup-YYYYMMDD_HHMMSS
+git reset --hard pre-merge-backup-<timestamp>-<pid>
 git checkout development
 ```
 
@@ -114,7 +114,7 @@ git add <resolved-files>
 
 Restore from backup tag if needed:
 ```bash
-git checkout pre-rebase-YYYYMMDD_HHMMSS
+git checkout pre-rebase-<timestamp>-<pid>
 ```
 
 ---
@@ -128,7 +128,7 @@ If a `bisect_helper.sh` session gets interrupted or abandoned:
 
 Restore from backup tag if needed:
 ```bash
-git checkout pre-bisect-YYYYMMDD_HHMMSS
+git checkout pre-bisect-<timestamp>-<pid>
 ```
 
 ---

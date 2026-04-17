@@ -14,6 +14,8 @@
 #   --draft                Create PR as draft (not ready for review)
 #   --non-interactive      Accept all defaults, no prompts
 #   --dry-run              Preview PR details without creating
+#   --source <branch>      Override source (head) branch for this invocation
+#   --target <branch>      Override target (base) branch for this invocation
 #   -h, --help             Show help
 # Returns:
 #   0 on successful PR creation, 1 on failure
@@ -29,6 +31,8 @@ main() {
   local draft=0
   local non_interactive=0
   local dry_run=0
+  local src_branch="${CGW_SOURCE_BRANCH}"
+  local tgt_branch="${CGW_TARGET_BRANCH}"
 
   # Auto-detect non-interactive mode when no TTY
   if [[ ! -t 0 ]]; then
@@ -50,16 +54,18 @@ main() {
         echo "  --draft             Create as draft PR (not ready for review)"
         echo "  --non-interactive   Accept all defaults, no prompts"
         echo "  --dry-run           Preview PR details without creating"
+        echo "  --source <branch>   Override source (head) branch for this invocation"
+        echo "  --target <branch>   Override target (base) branch for this invocation"
         echo "  -h, --help          Show this help"
         echo ""
         echo "Branches:"
-        echo "  Head (from): ${CGW_SOURCE_BRANCH}"
-        echo "  Base (into): ${CGW_TARGET_BRANCH}"
+        echo "  Head (from): ${src_branch}"
+        echo "  Base (into): ${tgt_branch}"
         echo ""
         echo "Environment:"
         echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
-        echo "  CGW_SOURCE_BRANCH       Override source branch"
-        echo "  CGW_TARGET_BRANCH       Override target branch"
+        echo "  CGW_SOURCE_BRANCH       Default source branch"
+        echo "  CGW_TARGET_BRANCH       Default target branch"
         echo ""
         echo "Prerequisites:"
         echo "  gh CLI installed and authenticated (gh auth login)"
@@ -85,6 +91,22 @@ main() {
         dry_run=1
         shift
         ;;
+      --source)
+        src_branch="${2:-}"
+        if [[ -z "${src_branch}" ]]; then
+          echo "[ERROR] --source requires a branch name" >&2
+          exit 1
+        fi
+        shift 2
+        ;;
+      --target)
+        tgt_branch="${2:-}"
+        if [[ -z "${tgt_branch}" ]]; then
+          echo "[ERROR] --target requires a branch name" >&2
+          exit 1
+        fi
+        shift 2
+        ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2
         exit 1
@@ -99,7 +121,7 @@ main() {
     echo "Create PR Log"
     echo "========================================="
     echo "Start Time: $(date)"
-    echo "Source: ${CGW_SOURCE_BRANCH} -> Target: ${CGW_TARGET_BRANCH}"
+    echo "Source: ${src_branch} -> Target: ${tgt_branch}"
     echo ""
   } >"$logfile"
 
@@ -136,66 +158,66 @@ main() {
   local current_branch
   current_branch=$(git branch --show-current)
   echo "Current branch: ${current_branch}" | tee -a "$logfile"
-  echo "PR: ${CGW_SOURCE_BRANCH} -> ${CGW_TARGET_BRANCH}" | tee -a "$logfile"
+  echo "PR: ${src_branch} -> ${tgt_branch}" | tee -a "$logfile"
 
-  if [[ "${CGW_SOURCE_BRANCH}" == "${CGW_TARGET_BRANCH}" ]]; then
-    err "Source and target branch are the same: ${CGW_SOURCE_BRANCH}"
+  if [[ "${src_branch}" == "${tgt_branch}" ]]; then
+    err "Source and target branch are the same: ${src_branch}"
     log_section_end "BRANCH VALIDATION" "$logfile" "1"
     exit 1
   fi
 
   # Verify source branch exists locally and remotely
-  if ! git show-ref --verify "refs/heads/${CGW_SOURCE_BRANCH}" >/dev/null 2>&1; then
-    err "Source branch '${CGW_SOURCE_BRANCH}' does not exist locally"
-    echo "  Create it with: git checkout -b ${CGW_SOURCE_BRANCH}" >&2
+  if ! git show-ref --verify "refs/heads/${src_branch}" >/dev/null 2>&1; then
+    err "Source branch '${src_branch}' does not exist locally"
+    echo "  Create it with: git checkout -b ${src_branch}" >&2
     log_section_end "BRANCH VALIDATION" "$logfile" "1"
     exit 1
   fi
 
-  if ! git ls-remote --exit-code origin "refs/heads/${CGW_SOURCE_BRANCH}" >/dev/null 2>&1; then
-    err "Source branch '${CGW_SOURCE_BRANCH}' not pushed to origin"
+  if ! git ls-remote --exit-code "${CGW_REMOTE}" "refs/heads/${src_branch}" >/dev/null 2>&1; then
+    err "Source branch '${src_branch}' not pushed to ${CGW_REMOTE}"
     echo "  Push it with: ./scripts/git/push_validated.sh" >&2
     log_section_end "BRANCH VALIDATION" "$logfile" "1"
     exit 1
   fi
 
   # Verify target branch exists on remote
-  if ! git ls-remote --exit-code origin "refs/heads/${CGW_TARGET_BRANCH}" >/dev/null 2>&1; then
-    err "Target branch '${CGW_TARGET_BRANCH}' does not exist on origin"
-    echo "  Create it with: ./scripts/git/push_validated.sh --branch ${CGW_TARGET_BRANCH}" >&2
+  if ! git ls-remote --exit-code "${CGW_REMOTE}" "refs/heads/${tgt_branch}" >/dev/null 2>&1; then
+    err "Target branch '${tgt_branch}' does not exist on ${CGW_REMOTE}"
+    echo "  Create it with: ./scripts/git/push_validated.sh --branch ${tgt_branch}" >&2
     log_section_end "BRANCH VALIDATION" "$logfile" "1"
     exit 1
   fi
 
   # Fetch latest remote refs so comparisons below use current state
-  if ! git fetch origin "${CGW_SOURCE_BRANCH}" "${CGW_TARGET_BRANCH}" 2>/dev/null; then
+  if ! git fetch "${CGW_REMOTE}" "${src_branch}" "${tgt_branch}" 2>/dev/null; then
     echo "[!] WARNING: git fetch failed -- comparisons may use stale refs" | tee -a "$logfile"
   fi
 
   # Warn if local source branch has commits not yet pushed to remote
   local local_sha remote_sha
-  local_sha=$(git rev-parse "${CGW_SOURCE_BRANCH}" 2>/dev/null || true)
-  remote_sha=$(git rev-parse "origin/${CGW_SOURCE_BRANCH}" 2>/dev/null || true)
+  local_sha=$(git rev-parse "${src_branch}" 2>/dev/null || true)
+  remote_sha=$(git rev-parse "${CGW_REMOTE}/${src_branch}" 2>/dev/null || true)
   if [[ -n "${local_sha}" ]] && [[ "${local_sha}" != "${remote_sha}" ]]; then
-    echo "[!] WARNING: Local ${CGW_SOURCE_BRANCH} differs from origin/${CGW_SOURCE_BRANCH}" | tee -a "$logfile"
+    echo "[!] WARNING: Local ${src_branch} differs from ${CGW_REMOTE}/${src_branch}" | tee -a "$logfile"
     echo "  Local commits may not appear in the PR. Push first with: ./scripts/git/push_validated.sh" | tee -a "$logfile"
   fi
 
   # Check for commits ahead of target
   local commits_ahead
-  if ! commits_ahead=$(git rev-list --count "origin/${CGW_TARGET_BRANCH}..origin/${CGW_SOURCE_BRANCH}" 2>/dev/null); then
-    err "Cannot determine commit distance between origin/${CGW_TARGET_BRANCH} and origin/${CGW_SOURCE_BRANCH}"
+  if ! commits_ahead=$(git rev-list --count "${CGW_REMOTE}/${tgt_branch}..${CGW_REMOTE}/${src_branch}" 2>/dev/null); then
+    err "Cannot determine commit distance between ${CGW_REMOTE}/${tgt_branch} and ${CGW_REMOTE}/${src_branch}"
     log_section_end "BRANCH VALIDATION" "$logfile" "1"
     exit 1
   fi
 
   if [[ "${commits_ahead}" == "0" ]]; then
-    echo "[!] No commits ahead of ${CGW_TARGET_BRANCH} -- nothing to PR" | tee -a "$logfile"
+    echo "[!] No commits ahead of ${tgt_branch} -- nothing to PR" | tee -a "$logfile"
     log_section_end "BRANCH VALIDATION" "$logfile" "1"
     exit 1
   fi
 
-  echo "[OK] ${commits_ahead} commit(s) ahead of ${CGW_TARGET_BRANCH}" | tee -a "$logfile"
+  echo "[OK] ${commits_ahead} commit(s) ahead of ${tgt_branch}" | tee -a "$logfile"
   log_section_end "BRANCH VALIDATION" "$logfile" "0"
   echo "" | tee -a "$logfile"
 
@@ -203,16 +225,16 @@ main() {
   log_section_start "PR CONTENT" "$logfile"
 
   local commit_log
-  commit_log=$(git log --oneline "origin/${CGW_TARGET_BRANCH}..origin/${CGW_SOURCE_BRANCH}" 2>/dev/null)
+  commit_log=$(git log --oneline "${CGW_REMOTE}/${tgt_branch}..${CGW_REMOTE}/${src_branch}" 2>/dev/null)
 
   # Auto-generate title if not provided
   if [[ -z "${pr_title}" ]]; then
     if [[ "${commits_ahead}" == "1" ]]; then
       # Single commit: use its subject line
-      pr_title=$(git log -1 --format="%s" "origin/${CGW_SOURCE_BRANCH}" 2>/dev/null)
+      pr_title=$(git log -1 --format="%s" "${CGW_REMOTE}/${src_branch}" 2>/dev/null)
     else
       # Multiple commits: generic merge title
-      pr_title="merge: ${CGW_SOURCE_BRANCH} -> ${CGW_TARGET_BRANCH}"
+      pr_title="merge: ${src_branch} -> ${tgt_branch}"
     fi
   fi
 
@@ -228,7 +250,7 @@ ${formatted_log}
 
 ## Branch
 
-\`${CGW_SOURCE_BRANCH}\` -> \`${CGW_TARGET_BRANCH}\`"
+\`${src_branch}\` -> \`${tgt_branch}\`"
 
   echo "Title: ${pr_title}" | tee -a "$logfile"
   echo "" | tee -a "$logfile"
@@ -253,8 +275,8 @@ ${formatted_log}
     echo "" | tee -a "$logfile"
     echo "Would create:" | tee -a "$logfile"
     echo "  Title:  ${pr_title}" | tee -a "$logfile"
-    echo "  Head:   ${CGW_SOURCE_BRANCH}" | tee -a "$logfile"
-    echo "  Base:   ${CGW_TARGET_BRANCH}" | tee -a "$logfile"
+    echo "  Head:   ${src_branch}" | tee -a "$logfile"
+    echo "  Base:   ${tgt_branch}" | tee -a "$logfile"
     echo "  Draft:  $([[ ${draft} -eq 1 ]] && echo yes || echo no)" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
     echo "Charlie CI will auto-review when PR is opened (non-draft)" | tee -a "$logfile"
@@ -264,8 +286,8 @@ ${formatted_log}
   log_section_start "CREATE PR" "$logfile"
 
   local gh_flags=()
-  gh_flags+=(--base "${CGW_TARGET_BRANCH}")
-  gh_flags+=(--head "${CGW_SOURCE_BRANCH}")
+  gh_flags+=(--base "${tgt_branch}")
+  gh_flags+=(--head "${src_branch}")
   gh_flags+=(--title "${pr_title}")
   gh_flags+=(--body "${pr_body}")
   [[ ${draft} -eq 1 ]] && gh_flags+=(--draft)

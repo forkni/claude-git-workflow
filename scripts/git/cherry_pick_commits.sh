@@ -14,6 +14,8 @@
 #   --non-interactive    Skip prompts; requires --commit
 #   --commit <hash>      Commit hash to cherry-pick (skips interactive selection)
 #   --dry-run            Show commit details without cherry-picking
+#   --source <branch>    Override source branch for this invocation
+#   --target <branch>    Override target branch for this invocation
 #   -h, --help           Show help
 # Returns:
 #   0 on success, 1 on failure or conflict
@@ -49,6 +51,8 @@ main() {
   local non_interactive=0
   local dry_run=0
   local commit_hash_flag=""
+  local src_branch="${CGW_SOURCE_BRANCH}"
+  local tgt_branch="${CGW_TARGET_BRANCH}"
 
   while [[ $# -gt 0 ]]; do
     case "${1}" in
@@ -61,6 +65,8 @@ main() {
         echo "  --non-interactive    Skip prompts; requires --commit"
         echo "  --commit <hash>      Commit hash to cherry-pick (skips interactive selection)"
         echo "  --dry-run            Show commit details without cherry-picking"
+        echo "  --source <branch>    Override source branch for this invocation"
+        echo "  --target <branch>    Override target branch for this invocation"
         echo "  -h, --help           Show this help"
         echo ""
         echo "Configuration:"
@@ -78,6 +84,22 @@ main() {
         commit_hash_flag="${2:-}"
         shift
         ;;
+      --source)
+        src_branch="${2:-}"
+        if [[ -z "${src_branch}" ]]; then
+          echo "[ERROR] --source requires a branch name" >&2
+          exit 1
+        fi
+        shift
+        ;;
+      --target)
+        tgt_branch="${2:-}"
+        if [[ -z "${tgt_branch}" ]]; then
+          echo "[ERROR] --target requires a branch name" >&2
+          exit 1
+        fi
+        shift
+        ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2
         exit 1
@@ -88,6 +110,20 @@ main() {
 
   [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
 
+  # Pre-flight branch validation
+  if ! git check-ref-format --branch "${src_branch}" 2>/dev/null; then
+    err "Invalid source branch name: '${src_branch}'"
+    exit 1
+  fi
+  if ! git check-ref-format --branch "${tgt_branch}" 2>/dev/null; then
+    err "Invalid target branch name: '${tgt_branch}'"
+    exit 1
+  fi
+  if [[ "${src_branch}" == "${tgt_branch}" ]]; then
+    err "Source and target branch are the same: '${src_branch}'"
+    exit 1
+  fi
+
   {
     echo "========================================="
     echo "Cherry-Pick Commits Log"
@@ -96,7 +132,7 @@ main() {
     echo "Working Directory: ${PROJECT_ROOT}"
   } >"$logfile"
 
-  echo "=== Cherry-Pick Commits: ${CGW_SOURCE_BRANCH} -> ${CGW_TARGET_BRANCH} ===" | tee -a "$logfile"
+  echo "=== Cherry-Pick Commits: ${src_branch} -> ${tgt_branch} ===" | tee -a "$logfile"
   echo "" | tee -a "$logfile"
 
   cd "${PROJECT_ROOT}" || {
@@ -108,7 +144,8 @@ main() {
   log_section_start "PRE-CHERRY-PICK VALIDATION" "$logfile"
 
   if [[ -f "${SCRIPT_DIR}/validate_branches.sh" ]]; then
-    if ! bash "${SCRIPT_DIR}/validate_branches.sh" >>"$logfile" 2>&1; then
+    if ! CGW_SOURCE_BRANCH="${src_branch}" CGW_TARGET_BRANCH="${tgt_branch}" \
+      bash "${SCRIPT_DIR}/validate_branches.sh" >>"$logfile" 2>&1; then
       echo "[FAIL] Validation failed - aborting cherry-pick" | tee -a "$logfile"
       log_section_end "PRE-CHERRY-PICK VALIDATION" "$logfile" "1"
       echo "Please fix validation errors before retrying"
@@ -135,8 +172,8 @@ main() {
 
   echo "Current branch: ${original_branch}" | tee -a "$logfile"
 
-  if ! run_git_with_logging "GIT CHECKOUT" "$logfile" checkout "${CGW_TARGET_BRANCH}"; then
-    echo "[FAIL] Failed to checkout ${CGW_TARGET_BRANCH} branch" | tee -a "$logfile"
+  if ! run_git_with_logging "GIT CHECKOUT" "$logfile" checkout "${tgt_branch}"; then
+    echo "[FAIL] Failed to checkout ${tgt_branch} branch" | tee -a "$logfile"
     exit 1
   fi
   _cp_did_checkout_target=1
@@ -146,9 +183,9 @@ main() {
 
   # [3/6] Show recent source branch commits
   if [[ -z "${commit_hash_flag}" ]]; then
-    echo "[3/6] Recent commits on ${CGW_SOURCE_BRANCH} branch:"
+    echo "[3/6] Recent commits on ${src_branch} branch:"
     echo "===================================="
-    git log "${CGW_SOURCE_BRANCH}" --oneline -20 --no-merges
+    git log "${src_branch}" --oneline -20 --no-merges
     echo "===================================="
     echo ""
   fi
@@ -182,10 +219,10 @@ main() {
   fi
 
   # Validate commit is on source branch
-  if ! git merge-base --is-ancestor "${commit_hash}" "${CGW_SOURCE_BRANCH}" 2>/dev/null; then
-    echo "[!] WARNING: ${commit_hash} is not an ancestor of ${CGW_SOURCE_BRANCH}" | tee -a "$logfile"
+  if ! git merge-base --is-ancestor "${commit_hash}" "${src_branch}" 2>/dev/null; then
+    echo "[!] WARNING: ${commit_hash} is not an ancestor of ${src_branch}" | tee -a "$logfile"
     if [[ ${non_interactive} -eq 1 ]]; then
-      echo "[FAIL] [Non-interactive] Aborting -- commit not on ${CGW_SOURCE_BRANCH} branch" | tee -a "$logfile"
+      echo "[FAIL] [Non-interactive] Aborting -- commit not on ${src_branch} branch" | tee -a "$logfile"
       git checkout "${original_branch}"
       exit 1
     fi

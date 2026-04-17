@@ -70,28 +70,28 @@ sync_one_branch() {
     return 0
   fi
 
-  if ! git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
-    echo "  [!] No remote tracking branch 'origin/${branch}' -- skipping" | tee -a "$logfile"
+  if ! git show-ref --verify --quiet "refs/remotes/${CGW_REMOTE}/${branch}"; then
+    echo "  [!] No remote tracking branch '${CGW_REMOTE}/${branch}' -- skipping" | tee -a "$logfile"
     return 0
   fi
 
   local behind ahead
-  behind=$(git rev-list --count "HEAD..origin/${branch}" 2>/dev/null || echo "0")
-  ahead=$(git rev-list --count "origin/${branch}..HEAD" 2>/dev/null || echo "0")
+  behind=$(git rev-list --count "HEAD..${CGW_REMOTE}/${branch}" 2>/dev/null || echo "0")
+  ahead=$(git rev-list --count "${CGW_REMOTE}/${branch}..HEAD" 2>/dev/null || echo "0")
 
   # In dry-run mode, report status and skip the actual sync
   if [[ ${_sync_dry_run} -eq 1 ]]; then
     if [[ "${current_branch}" != "${branch}" ]]; then
       # Use remote ref directly for accurate counts when not on this branch
       local remote_behind remote_ahead
-      remote_behind=$(git rev-list --count "refs/heads/${branch}..origin/${branch}" 2>/dev/null || echo "0")
-      remote_ahead=$(git rev-list --count "origin/${branch}..refs/heads/${branch}" 2>/dev/null || echo "0")
+      remote_behind=$(git rev-list --count "refs/heads/${branch}..${CGW_REMOTE}/${branch}" 2>/dev/null || echo "0")
+      remote_ahead=$(git rev-list --count "${CGW_REMOTE}/${branch}..refs/heads/${branch}" 2>/dev/null || echo "0")
       behind="${remote_behind}"
       ahead="${remote_ahead}"
     fi
-    echo "  Local: ${ahead} ahead, ${behind} behind origin/${branch}" | tee -a "$logfile"
+    echo "  Local: ${ahead} ahead, ${behind} behind ${CGW_REMOTE}/${branch}" | tee -a "$logfile"
     if [[ "${behind}" -eq 0 ]]; then
-      echo "  [OK] Already up-to-date with origin/${branch}" | tee -a "$logfile"
+      echo "  [OK] Already up-to-date with ${CGW_REMOTE}/${branch}" | tee -a "$logfile"
     else
       echo "  Would pull --rebase to sync ${behind} commit(s)" | tee -a "$logfile"
     fi
@@ -106,14 +106,14 @@ sync_one_branch() {
     echo "  Switched to ${branch}" | tee -a "$logfile"
     _sync_did_checkout=1
     # Recompute ahead/behind from this branch's perspective
-    behind=$(git rev-list --count "HEAD..origin/${branch}" 2>/dev/null || echo "0")
-    ahead=$(git rev-list --count "origin/${branch}..HEAD" 2>/dev/null || echo "0")
+    behind=$(git rev-list --count "HEAD..${CGW_REMOTE}/${branch}" 2>/dev/null || echo "0")
+    ahead=$(git rev-list --count "${CGW_REMOTE}/${branch}..HEAD" 2>/dev/null || echo "0")
   fi
 
-  echo "  Local: ${ahead} ahead, ${behind} behind origin/${branch}" | tee -a "$logfile"
+  echo "  Local: ${ahead} ahead, ${behind} behind ${CGW_REMOTE}/${branch}" | tee -a "$logfile"
 
   if [[ "${behind}" -eq 0 ]]; then
-    echo "  [OK] Already up-to-date with origin/${branch}" | tee -a "$logfile"
+    echo "  [OK] Already up-to-date with ${CGW_REMOTE}/${branch}" | tee -a "$logfile"
     return 0
   fi
 
@@ -121,8 +121,8 @@ sync_one_branch() {
     echo "  [!] Diverged: ${ahead} local commits will be rebased on top of ${behind} remote commits" | tee -a "$logfile"
   fi
 
-  local rebase_args=(pull --rebase origin "${branch}")
-  [[ "${_SYNC_AUTOSTASH}" == "1" ]] && rebase_args=(pull --rebase --autostash origin "${branch}")
+  local rebase_args=(pull --rebase "${CGW_REMOTE}" "${branch}")
+  [[ "${_SYNC_AUTOSTASH}" == "1" ]] && rebase_args=(pull --rebase --autostash "${CGW_REMOTE}" "${branch}")
   if run_git_with_logging "GIT REBASE ${branch}" "$logfile" "${rebase_args[@]}"; then
     echo "  [OK] ${branch} synced successfully" | tee -a "$logfile"
     return 0
@@ -130,7 +130,7 @@ sync_one_branch() {
     echo "  [FAIL] Rebase failed for ${branch}" | tee -a "$logfile"
     echo "  Aborting rebase..." | tee -a "$logfile"
     git rebase --abort 2>/dev/null || true
-    echo "  Manual action needed: git pull --rebase origin ${branch}" | tee -a "$logfile"
+    echo "  Manual action needed: git pull --rebase ${CGW_REMOTE} ${branch}" | tee -a "$logfile"
     return 1
   fi
 }
@@ -151,7 +151,7 @@ main() {
       --help | -h)
         echo "Usage: ./scripts/git/sync_branches.sh [OPTIONS]"
         echo ""
-        echo "Sync local branches with remote origin via fetch + rebase."
+        echo "Sync local branches with remote (CGW_REMOTE) via fetch + rebase."
         echo ""
         echo "Options:"
         echo "  --all               Sync both source and target branches (default: current only)"
@@ -162,7 +162,7 @@ main() {
         echo "  -h, --help          Show this help"
         echo ""
         echo "Behavior:"
-        echo "  - Runs git fetch origin first to update remote refs"
+        echo "  - Runs git fetch \${CGW_REMOTE} first to update remote refs"
         echo "  - Uses git pull --rebase (preserves clean linear history)"
         echo "  - With --all: switches between branches, returns to starting branch"
         echo "  - With --branch: syncs only the named branch, returns to starting branch"
@@ -243,9 +243,9 @@ main() {
 
   # [2/4] Fetch from origin
   log_section_start "[2/4] GIT FETCH" "$logfile"
-  local fetch_args=(fetch origin)
-  [[ ${prune} -eq 1 ]] && fetch_args=(fetch origin --prune)
-  echo "Fetching from origin${prune:+ (--prune)}..." | tee -a "$logfile"
+  local fetch_args=(fetch "${CGW_REMOTE}")
+  [[ ${prune} -eq 1 ]] && fetch_args=(fetch "${CGW_REMOTE}" --prune)
+  echo "Fetching from ${CGW_REMOTE}${prune:+ (--prune)}..." | tee -a "$logfile"
   if git "${fetch_args[@]}" >>"$logfile" 2>&1; then
     echo "[OK] Fetch complete" | tee -a "$logfile"
     log_section_end "[2/4] GIT FETCH" "$logfile" "0"

@@ -262,7 +262,7 @@ main() {
 
   # -- Create backup tag -----------------------------------------------------
   get_timestamp
-  local backup_tag="pre-bisect-${timestamp}"
+  local backup_tag="pre-bisect-${timestamp}-$$"
   if git tag "${backup_tag}" 2>/dev/null; then
     echo "[OK] Backup tag: ${backup_tag}" | tee -a "$logfile"
   else

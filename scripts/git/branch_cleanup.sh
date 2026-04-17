@@ -47,7 +47,7 @@ main() {
         echo ""
         echo "Options:"
         echo "  --execute          Delete merged branches and prune (without this, only previews)"
-        echo "  --remote           Prune stale remote-tracking refs (git remote prune origin)"
+        echo "  --remote           Prune stale remote-tracking refs (git remote prune \${CGW_REMOTE})"
         echo "  --tags             Clean up old CGW backup tags (pre-merge-backup-*, pre-cherry-pick-*, pre-docs-merge-*, pre-bisect-*, pre-rebase-*, pre-undo-commit-*)"
         echo "  --older-than <N>   Only delete backup tags older than N days (default: 30)"
         echo "  --non-interactive  Skip confirmation prompts"
@@ -155,8 +155,8 @@ main() {
     echo "--- [2] Stale Remote-Tracking Refs ---"
 
     if [[ ${execute} -eq 1 ]]; then
-      echo "  Pruning stale refs from origin..."
-      if git remote prune origin 2>&1 | grep -E "pruned|\\[pruned\\]" | sed 's/^/  /'; then
+      echo "  Pruning stale refs from ${CGW_REMOTE}..."
+      if git remote prune "${CGW_REMOTE}" 2>&1 | grep -E "pruned|\\[pruned\\]" | sed 's/^/  /'; then
         : # output shown inline
       else
         echo "  [OK] No stale remote-tracking refs"
@@ -167,7 +167,7 @@ main() {
       while IFS= read -r ref; do
         echo "  Would prune: ${ref}"
         ((stale_count++)) || true
-      done < <(git remote prune --dry-run origin 2>&1 | grep "\\[would prune\\]" | awk '{print $NF}')
+      done < <(git remote prune --dry-run "${CGW_REMOTE}" 2>&1 | grep "\\[would prune\\]" | awk '{print $NF}')
       [[ ${stale_count} -eq 0 ]] && echo "  [OK] No stale remote-tracking refs"
     fi
     echo ""

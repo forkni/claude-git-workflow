@@ -301,7 +301,7 @@ main() {
       echo "" | tee -a "$logfile"
       echo "Next steps:" | tee -a "$logfile"
       echo "  1. Verify revert: git log --oneline -5" | tee -a "$logfile"
-      echo "  2. Push normally: git push origin ${CGW_TARGET_BRANCH}" | tee -a "$logfile"
+      echo "  2. Push normally: git push ${CGW_REMOTE} ${CGW_TARGET_BRANCH}" | tee -a "$logfile"
       echo "     (no force-push needed -- history is preserved)" | tee -a "$logfile"
       {
         echo ""
@@ -335,7 +335,7 @@ main() {
       echo "" | tee -a "$logfile"
       echo "Next steps:" | tee -a "$logfile"
       echo "  1. Verify rollback: git log --oneline -5" | tee -a "$logfile"
-      echo "  2. If correct, force push: git push origin ${CGW_TARGET_BRANCH} --force-with-lease" | tee -a "$logfile"
+      echo "  2. If correct, force push: git push ${CGW_REMOTE} ${CGW_TARGET_BRANCH} --force-with-lease" | tee -a "$logfile"
       echo "  3. If issues, contact maintainer" | tee -a "$logfile"
       echo "" | tee -a "$logfile"
       echo "  [!] WARNING: Force push will rewrite remote history!" | tee -a "$logfile"

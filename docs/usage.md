@@ -59,6 +59,27 @@ Add project-specific prefixes via `CGW_EXTRA_PREFIXES="cuda|tensorrt"` in `.cgw.
 ./scripts/git/merge_with_validation.sh --non-interactive  # execute
 ```
 
+### Merge / cherry-pick / PR with custom branch pair
+
+All four promotion scripts accept `--source`/`--target` to override the configured branch pair for a single invocation without modifying `.cgw.conf`:
+
+```bash
+# Merge hotfix → release branch (not the usual development → main)
+./scripts/git/merge_with_validation.sh --source feature/hotfix --target release/1.2 --dry-run
+./scripts/git/merge_with_validation.sh --source feature/hotfix --target release/1.2 --non-interactive
+
+# Cherry-pick to a release branch
+./scripts/git/cherry_pick_commits.sh --source feature/hotfix --target release/1.2 --commit abc1234
+
+# Docs-only merge to a custom target
+./scripts/git/merge_docs.sh --source feature/hotfix --target release/1.2 --non-interactive
+
+# Open PR for a non-default pair
+./scripts/git/create_pr.sh --source feature/hotfix --target release/1.2 --dry-run
+```
+
+The overrides are ephemeral — they do not mutate `CGW_SOURCE_BRANCH` / `CGW_TARGET_BRANCH` in config.
+
 ### Create PR (triggers Charlie CI + GitHub Actions)
 
 ```bash
@@ -75,7 +96,8 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use PRs by default.
 
 ```bash
 ./scripts/git/push_validated.sh               # with lint check
-./scripts/git/push_validated.sh --skip-lint   # skip lint check
+./scripts/git/push_validated.sh --skip-lint   # skip all lint
+./scripts/git/push_validated.sh --skip-md-lint  # skip markdown lint only
 ./scripts/git/push_validated.sh --dry-run     # preview
 ```
 
@@ -92,7 +114,7 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use PRs by default.
 ./scripts/git/rollback_merge.sh                           # interactive (hard reset)
 ./scripts/git/rollback_merge.sh --revert                  # safe revert (preserves history, no force-push)
 ./scripts/git/rollback_merge.sh --non-interactive         # auto-select latest backup
-./scripts/git/rollback_merge.sh --target pre-merge-backup-20260101_120000
+./scripts/git/rollback_merge.sh --target pre-merge-backup-20260101_120000-12345
 ```
 
 ### Cherry-pick
@@ -172,7 +194,7 @@ Creates a backup tag before any destructive operation.
 ./scripts/git/rebase_safe.sh --continue               # continue after resolving conflicts
 ```
 
-Creates a backup tag (`pre-rebase-TIMESTAMP`) before rebasing. Warns if commits already pushed.
+Creates a backup tag (`pre-rebase-<timestamp>-<pid>`) before rebasing. Warns if commits already pushed.
 
 ### Bisect a bug
 

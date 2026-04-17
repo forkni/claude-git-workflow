@@ -51,7 +51,7 @@ main() {
         echo "  -h, --help          Show this help"
         echo ""
         echo "Safety checks performed:"
-        echo "  - Verifies remote 'origin' is reachable"
+        echo "  - Verifies the configured remote (CGW_REMOTE) is reachable"
         echo "  - Blocks force-push to protected branches without explicit --force"
         echo "  - Warns if local branch is behind remote (may overwrite remote work)"
         echo "  - Optional pre-push lint check"
@@ -118,7 +118,7 @@ main() {
   fi
 
   echo "Branch to push: ${target_branch}" | tee -a "$logfile"
-  echo "Remote: origin" | tee -a "$logfile"
+  echo "Remote: ${CGW_REMOTE}" | tee -a "$logfile"
 
   # Check force-push protection against configured protected branches
   local is_protected=0
@@ -154,20 +154,20 @@ main() {
   # [2/5] Check remote reachability
   log_section_start "REMOTE CHECK" "$logfile"
 
-  echo "Checking remote origin..." | tee -a "$logfile"
-  if ! git ls-remote --exit-code origin HEAD >/dev/null 2>&1; then
-    err "Remote 'origin' is not reachable. Check network/auth."
+  echo "Checking remote ${CGW_REMOTE}..." | tee -a "$logfile"
+  if ! git ls-remote --exit-code "${CGW_REMOTE}" HEAD >/dev/null 2>&1; then
+    err "Remote '${CGW_REMOTE}' is not reachable. Check network/auth."
     log_section_end "REMOTE CHECK" "$logfile" "1"
     exit 1
   fi
-  echo "[OK] Remote 'origin' is reachable" | tee -a "$logfile"
+  echo "[OK] Remote '${CGW_REMOTE}' is reachable" | tee -a "$logfile"
 
   # Check if local is behind remote
-  git fetch origin "${target_branch}" >>"$logfile" 2>&1 || true
+  git fetch "${CGW_REMOTE}" "${target_branch}" >>"$logfile" 2>&1 || true
   local behind
-  behind=$(git rev-list --count "HEAD..origin/${target_branch}" 2>/dev/null || echo "0")
+  behind=$(git rev-list --count "HEAD..${CGW_REMOTE}/${target_branch}" 2>/dev/null || echo "0")
   if [[ "${behind}" -gt 0 ]]; then
-    echo "[!] WARNING: Local branch is ${behind} commit(s) behind origin/${target_branch}" | tee -a "$logfile"
+    echo "[!] WARNING: Local branch is ${behind} commit(s) behind ${CGW_REMOTE}/${target_branch}" | tee -a "$logfile"
     echo "  A normal push may fail or overwrite remote changes." | tee -a "$logfile"
     echo "  Consider: ./scripts/git/sync_branches.sh" | tee -a "$logfile"
     if [[ ${non_interactive} -eq 0 ]] && [[ ${force_push} -eq 0 ]]; then
@@ -212,16 +212,16 @@ main() {
   # [4/5] Show what will be pushed
   echo "[4/5] Commits to be pushed:" | tee -a "$logfile"
   local ahead
-  ahead=$(git rev-list --count "origin/${target_branch}..HEAD" 2>/dev/null || echo "unknown")
-  echo "  Local ahead of origin/${target_branch}: ${ahead} commit(s)" | tee -a "$logfile"
+  ahead=$(git rev-list --count "${CGW_REMOTE}/${target_branch}..HEAD" 2>/dev/null || echo "unknown")
+  echo "  Local ahead of ${CGW_REMOTE}/${target_branch}: ${ahead} commit(s)" | tee -a "$logfile"
   if [[ "${ahead}" != "0" ]] && [[ "${ahead}" != "unknown" ]]; then
-    git log "origin/${target_branch}..HEAD" --oneline 2>/dev/null | tee -a "$logfile" || true
+    git log "${CGW_REMOTE}/${target_branch}..HEAD" --oneline 2>/dev/null | tee -a "$logfile" || true
   fi
   echo "" | tee -a "$logfile"
 
   if [[ ${dry_run} -eq 1 ]]; then
     echo "=== DRY RUN -- no push performed ===" | tee -a "$logfile"
-    echo "Would push: ${target_branch} -> origin/${target_branch}" | tee -a "$logfile"
+    echo "Would push: ${target_branch} -> ${CGW_REMOTE}/${target_branch}" | tee -a "$logfile"
     if [[ ${force_push} -eq 1 ]]; then
       echo "Would use: --force-with-lease" | tee -a "$logfile"
     fi
@@ -232,7 +232,7 @@ main() {
   log_section_start "GIT PUSH" "$logfile"
 
   local push_flags=()
-  push_flags+=("origin" "${target_branch}")
+  push_flags+=("${CGW_REMOTE}" "${target_branch}")
   if [[ ${force_push} -eq 1 ]]; then
     push_flags+=("--force-with-lease")
     echo "Using --force-with-lease (safer than --force)" | tee -a "$logfile"
@@ -248,7 +248,7 @@ main() {
     } | tee -a "$logfile"
     echo "[OK] PUSH SUCCESSFUL" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
-    echo "  Branch: ${target_branch} -> origin/${target_branch}" | tee -a "$logfile"
+    echo "  Branch: ${target_branch} -> ${CGW_REMOTE}/${target_branch}" | tee -a "$logfile"
     echo "  Commits pushed: ${ahead}" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
     {

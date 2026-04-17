@@ -53,6 +53,7 @@ cp cgw.conf.example .cgw.conf
 |----------|---------|-------------|
 | `CGW_SOURCE_BRANCH` | `development` | Branch where development happens |
 | `CGW_TARGET_BRANCH` | `main` | Stable/production branch |
+| `CGW_REMOTE` | `origin` | Remote name for fetch/push — set to `upstream` for fork workflows |
 | `CGW_LOCAL_FILES` | `CLAUDE.md MEMORY.md .claude/ logs/` | Files never committed (space-separated) |
 | `CGW_LINT_CMD` | `ruff` | Lint tool (`""` to disable) |
 | `CGW_FORMAT_CMD` | `ruff` | Format tool (`""` to disable) |
@@ -60,7 +61,14 @@ cp cgw.conf.example .cgw.conf
 | `CGW_LINT_FIX_ARGS` | `check --fix .` | Arguments for lint auto-fix |
 | `CGW_FORMAT_CHECK_ARGS` | `format --check .` | Arguments for format check |
 | `CGW_FORMAT_FIX_ARGS` | `format .` | Arguments for format auto-fix |
+| `CGW_LINT_EXCLUDES` | `--extend-exclude logs --extend-exclude .venv` | Exclusion flags appended to lint commands |
+| `CGW_FORMAT_EXCLUDES` | `--exclude logs --exclude .venv` | Exclusion flags appended to format commands |
 | `CGW_LINT_EXTENSIONS` | `*.py` | File globs for `--modified-only` lint mode (e.g. `*.js *.ts`) |
+| `CGW_MARKDOWNLINT_CMD` | `` | Markdown lint tool; set to e.g. `markdownlint-cli2` to enable |
+| `CGW_MARKDOWNLINT_ARGS` | `**/*.md !CLAUDE.md !MEMORY.md` | Arguments passed to markdown lint tool |
+| `CGW_SKIP_LINT` | `0` | Set to `1` to skip all lint checks at runtime |
+| `CGW_SKIP_MD_LINT` | `0` | Set to `1` to skip only the markdown lint step |
+| `CGW_STAGED_ONLY` | `0` | Set to `1` to commit only pre-staged files (`commit_enhanced.sh`) |
 | `CGW_EXTRA_PREFIXES` | `` | Extra commit prefixes (pipe-separated, e.g. `cuda\|tensorrt`) |
 | `CGW_DOCS_PATTERN` | `` | Regex for allowed docs filenames (`""` to skip) |
 | `CGW_DEV_ONLY_FILES` | `` | Files to warn about in cherry-pick (space-separated) |
