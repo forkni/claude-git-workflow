@@ -184,19 +184,19 @@ main() {
   done <<<"${commits}"
 
   # Build output directly from the already-categorized arrays
-  declare -A cats
-  cats[feat]="" cats[fix]="" cats[docs]="" cats[perf]=""
-  cats[refactor]="" cats[style]="" cats[test]="" cats[chore]="" cats[other]=""
+  # (Using individual vars instead of declare -A for Bash 3.2 compat)
+  local cats_feat="" cats_fix="" cats_docs="" cats_perf=""
+  local cats_refactor="" cats_style="" cats_test="" cats_chore="" cats_other=""
 
-  for item in "${cat_feat[@]+"${cat_feat[@]}"}"; do cats[feat]+="  - ${item}"$'\n'; done
-  for item in "${cat_fix[@]+"${cat_fix[@]}"}"; do cats[fix]+="  - ${item}"$'\n'; done
-  for item in "${cat_docs[@]+"${cat_docs[@]}"}"; do cats[docs]+="  - ${item}"$'\n'; done
-  for item in "${cat_perf[@]+"${cat_perf[@]}"}"; do cats[perf]+="  - ${item}"$'\n'; done
-  for item in "${cat_refactor[@]+"${cat_refactor[@]}"}"; do cats[refactor]+="  - ${item}"$'\n'; done
-  for item in "${cat_style[@]+"${cat_style[@]}"}"; do cats[style]+="  - ${item}"$'\n'; done
-  for item in "${cat_test[@]+"${cat_test[@]}"}"; do cats[test]+="  - ${item}"$'\n'; done
-  for item in "${cat_chore[@]+"${cat_chore[@]}"}"; do cats[chore]+="  - ${item}"$'\n'; done
-  for item in "${cat_other[@]+"${cat_other[@]}"}"; do cats[other]+="  - ${item}"$'\n'; done
+  for item in "${cat_feat[@]+"${cat_feat[@]}"}"; do cats_feat+="  - ${item}"$'\n'; done
+  for item in "${cat_fix[@]+"${cat_fix[@]}"}"; do cats_fix+="  - ${item}"$'\n'; done
+  for item in "${cat_docs[@]+"${cat_docs[@]}"}"; do cats_docs+="  - ${item}"$'\n'; done
+  for item in "${cat_perf[@]+"${cat_perf[@]}"}"; do cats_perf+="  - ${item}"$'\n'; done
+  for item in "${cat_refactor[@]+"${cat_refactor[@]}"}"; do cats_refactor+="  - ${item}"$'\n'; done
+  for item in "${cat_style[@]+"${cat_style[@]}"}"; do cats_style+="  - ${item}"$'\n'; done
+  for item in "${cat_test[@]+"${cat_test[@]}"}"; do cats_test+="  - ${item}"$'\n'; done
+  for item in "${cat_chore[@]+"${cat_chore[@]}"}"; do cats_chore+="  - ${item}"$'\n'; done
+  for item in "${cat_other[@]+"${cat_other[@]}"}"; do cats_other+="  - ${item}"$'\n'; done
 
   local section_map_md=(
     "feat:New Features"
@@ -230,9 +230,17 @@ main() {
     for sec in "${section_map_md[@]}"; do
       local key="${sec%%:*}"
       local title="${sec#*:}"
-      if [[ -n "${cats[${key}]}" ]]; then
+      local cat_val=""
+      case "${key}" in
+        feat) cat_val="${cats_feat}" ;; fix) cat_val="${cats_fix}" ;;
+        docs) cat_val="${cats_docs}" ;; perf) cat_val="${cats_perf}" ;;
+        refactor) cat_val="${cats_refactor}" ;; style) cat_val="${cats_style}" ;;
+        test) cat_val="${cats_test}" ;; chore) cat_val="${cats_chore}" ;;
+        other) cat_val="${cats_other}" ;;
+      esac
+      if [[ -n "${cat_val}" ]]; then
         output+="### ${title}"$'\n\n'
-        output+="${cats[${key}]}"$'\n'
+        output+="${cat_val}"$'\n'
         has_any=1
       fi
     done
@@ -245,9 +253,17 @@ main() {
     for sec in "${section_map_text[@]}"; do
       local key="${sec%%:*}"
       local title="${sec#*:}"
-      if [[ -n "${cats[${key}]}" ]]; then
+      local cat_val=""
+      case "${key}" in
+        feat) cat_val="${cats_feat}" ;; fix) cat_val="${cats_fix}" ;;
+        docs) cat_val="${cats_docs}" ;; perf) cat_val="${cats_perf}" ;;
+        refactor) cat_val="${cats_refactor}" ;; style) cat_val="${cats_style}" ;;
+        test) cat_val="${cats_test}" ;; chore) cat_val="${cats_chore}" ;;
+        other) cat_val="${cats_other}" ;;
+      esac
+      if [[ -n "${cat_val}" ]]; then
         output+="${title}:"$'\n'
-        output+="${cats[${key}]}"$'\n'
+        output+="${cat_val}"$'\n'
       fi
     done
   fi

@@ -346,7 +346,7 @@ main() {
     echo "[!] .gitattributes already exists."
     echo ""
     read -r -p "Overwrite? (yes/no) [no]: " answer
-    case "${answer,,}" in
+    case "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" in
       y | yes) ;;
       *)
         echo "Aborted -- .gitattributes not modified."

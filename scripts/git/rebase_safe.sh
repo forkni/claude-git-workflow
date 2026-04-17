@@ -212,7 +212,7 @@ main() {
 # ---------------------------------------------------------------------------
 _create_backup_tag() {
   get_timestamp
-  local backup_tag="pre-rebase-${timestamp}"
+  local backup_tag="pre-rebase-${timestamp}-$$"
   if git tag "${backup_tag}" 2>/dev/null; then
     echo "[OK] Backup tag: ${backup_tag}" | tee -a "$logfile"
     echo "  To restore: git checkout ${backup_tag}" | tee -a "$logfile"
@@ -312,15 +312,15 @@ _cmd_rebase_onto() {
   fi
 
   # Check if onto_ref is a local or remote branch and fetch latest
-  if git rev-parse "origin/${onto_ref}" >/dev/null 2>&1; then
-    echo "  Fetching latest ${onto_ref} from origin..." | tee -a "$logfile"
-    git fetch origin "${onto_ref}" 2>&1 | tee -a "$logfile" || true
+  if git rev-parse "${CGW_REMOTE}/${onto_ref}" >/dev/null 2>&1; then
+    echo "  Fetching latest ${onto_ref} from ${CGW_REMOTE}..." | tee -a "$logfile"
+    git fetch "${CGW_REMOTE}" "${onto_ref}" 2>&1 | tee -a "$logfile" || true
   fi
 
   # Count pushed commits (commits on current branch not on origin/current_branch)
   local pushed_count=0
-  if git rev-parse "origin/${current_branch}" >/dev/null 2>&1; then
-    pushed_count=$(git rev-list --count "origin/${current_branch}..HEAD" 2>/dev/null || echo "0")
+  if git rev-parse "${CGW_REMOTE}/${current_branch}" >/dev/null 2>&1; then
+    pushed_count=$(git rev-list --count "${CGW_REMOTE}/${current_branch}..HEAD" 2>/dev/null || echo "0")
   fi
 
   # Count commits that would be rebased
@@ -444,9 +444,9 @@ _cmd_squash_last() {
 
   # Count pushed commits in the squash range
   local pushed_count=0
-  if git rev-parse "origin/${current_branch}" >/dev/null 2>&1; then
+  if git rev-parse "${CGW_REMOTE}/${current_branch}" >/dev/null 2>&1; then
     # Count how many of the last N commits exist on origin
-    pushed_count=$(git rev-list --count "origin/${current_branch}..HEAD" 2>/dev/null || echo "0")
+    pushed_count=$(git rev-list --count "${CGW_REMOTE}/${current_branch}..HEAD" 2>/dev/null || echo "0")
     # Clamp to squash range
     if [[ "${pushed_count}" -gt "${squash_n}" ]]; then
       pushed_count="${squash_n}"

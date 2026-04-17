@@ -158,14 +158,14 @@ main() {
   if [[ ${dry_run} -eq 1 ]]; then
     echo "--- Dry run: no tag created ---"
     echo "Command would be: git tag -a '${version}' -m '${tag_message}'"
-    [[ ${push_tag} -eq 1 ]] && echo "Followed by:       git push origin '${version}'"
+    [[ ${push_tag} -eq 1 ]] && echo "Followed by:       git push \${CGW_REMOTE} '${version}'"
     exit 0
   fi
 
   # Confirm
   if [[ ${non_interactive} -eq 0 ]]; then
     read -r -p "Create annotated tag '${version}'? (yes/no): " answer
-    case "${answer,,}" in
+    case "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" in
       y | yes) ;;
       *)
         echo "Cancelled"
@@ -184,21 +184,21 @@ main() {
 
   # Push tag if requested
   if [[ ${push_tag} -eq 1 ]]; then
-    echo "Pushing tag to origin..."
-    if git push origin "${version}"; then
+    echo "Pushing tag to ${CGW_REMOTE}..."
+    if git push "${CGW_REMOTE}" "${version}"; then
       echo "[OK] Tag pushed: ${version}"
       echo ""
       echo "GitHub Release workflow triggered."
-      echo "Check: https://github.com/$(git remote get-url origin | sed 's|.*github.com[:/]||;s|\.git$||')/actions"
+      echo "Check: https://github.com/$(git remote get-url "${CGW_REMOTE}" | sed 's|.*github.com[:/]||;s|\.git$||')/actions"
     else
       echo "[ERROR] Failed to push tag. Push manually:" >&2
-      echo "  git push origin ${version}" >&2
+      echo "  git push ${CGW_REMOTE} ${version}" >&2
       exit 1
     fi
   else
     echo ""
     echo "Next step -- push to trigger GitHub Release:"
-    echo "  git push origin ${version}"
+    echo "  git push ${CGW_REMOTE} ${version}"
   fi
 }
 

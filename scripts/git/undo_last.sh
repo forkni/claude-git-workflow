@@ -140,12 +140,12 @@ _cmd_undo_commit() {
   # Warn if commit appears to have been pushed
   local current_branch upstream_ref
   current_branch=$(git branch --show-current)
-  upstream_ref="refs/remotes/origin/${current_branch}"
+  upstream_ref="refs/remotes/${CGW_REMOTE}/${current_branch}"
   if git show-ref --verify --quiet "${upstream_ref}" 2>/dev/null; then
     local ahead
-    ahead=$(git rev-list --count "origin/${current_branch}..HEAD" 2>/dev/null || echo "0")
+    ahead=$(git rev-list --count "${CGW_REMOTE}/${current_branch}..HEAD" 2>/dev/null || echo "0")
     if [[ "${ahead}" -eq 0 ]]; then
-      echo "[!] WARNING: The last commit appears to have been pushed to origin."
+      echo "[!] WARNING: The last commit appears to have been pushed to ${CGW_REMOTE}."
       echo "  Undoing it locally will create a diverged state requiring force-push."
       if [[ "${non_interactive}" -eq 0 ]]; then
         read -r -p "  Continue anyway? (yes/no): " pushed_confirm
@@ -182,7 +182,7 @@ _cmd_undo_commit() {
 
   # Create backup tag before reset
   get_timestamp
-  local backup_tag="pre-undo-commit-${timestamp}"
+  local backup_tag="pre-undo-commit-${timestamp}-$$"
   if git tag "${backup_tag}" 2>/dev/null; then
     echo "[OK] Backup tag: ${backup_tag}"
   else
@@ -378,10 +378,10 @@ _cmd_amend_message() {
   # Warn if commit has been pushed
   local current_branch upstream_ref
   current_branch=$(git branch --show-current)
-  upstream_ref="refs/remotes/origin/${current_branch}"
+  upstream_ref="refs/remotes/${CGW_REMOTE}/${current_branch}"
   if git show-ref --verify --quiet "${upstream_ref}" 2>/dev/null; then
     local ahead
-    ahead=$(git rev-list --count "origin/${current_branch}..HEAD" 2>/dev/null || echo "0")
+    ahead=$(git rev-list --count "${CGW_REMOTE}/${current_branch}..HEAD" 2>/dev/null || echo "0")
     if [[ "${ahead}" -eq 0 ]]; then
       echo "  [!] WARNING: This commit appears to have been pushed. Amending will require force-push."
       if [[ "${non_interactive}" -eq 1 ]]; then

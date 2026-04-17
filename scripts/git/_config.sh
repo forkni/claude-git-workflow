@@ -80,6 +80,10 @@ fi
 CGW_SOURCE_BRANCH="${CGW_SOURCE_BRANCH:-development}"
 CGW_TARGET_BRANCH="${CGW_TARGET_BRANCH:-main}"
 
+# --- Remote name ---
+# Override with CGW_REMOTE=upstream (or any remote name) for fork-based workflows.
+CGW_REMOTE="${CGW_REMOTE:-origin}"
+
 # --- Local-only files (space-separated; trailing / denotes a directory) ---
 # These files are never committed. configure.sh auto-detects project-specific ones.
 CGW_LOCAL_FILES="${CGW_LOCAL_FILES:-CLAUDE.md MEMORY.md .claude/ logs/}"

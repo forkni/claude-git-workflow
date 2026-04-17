@@ -11,6 +11,8 @@
 #   CGW_TARGET_BRANCH   - Target branch (default: main)
 # Arguments:
 #   --non-interactive   Skip prompts
+#   --source <branch>   Override source branch for this invocation
+#   --target <branch>   Override target branch for this invocation
 #   -h, --help          Show help
 # Returns:
 #   0 on success, 1 on failure
@@ -41,6 +43,8 @@ trap cleanup EXIT INT TERM
 
 main() {
   local non_interactive=0
+  local src_branch="${CGW_SOURCE_BRANCH}"
+  local tgt_branch="${CGW_TARGET_BRANCH}"
 
   while [[ $# -gt 0 ]]; do
     case "${1}" in
@@ -52,6 +56,8 @@ main() {
         echo ""
         echo "Options:"
         echo "  --non-interactive   Skip prompts"
+        echo "  --source <branch>   Override source branch for this invocation"
+        echo "  --target <branch>   Override target branch for this invocation"
         echo "  -h, --help          Show this help"
         echo ""
         echo "Configuration:"
@@ -66,6 +72,22 @@ main() {
         exit 0
         ;;
       --non-interactive) non_interactive=1 ;;
+      --source)
+        src_branch="${2:-}"
+        if [[ -z "${src_branch}" ]]; then
+          echo "[ERROR] --source requires a branch name" >&2
+          exit 1
+        fi
+        shift
+        ;;
+      --target)
+        tgt_branch="${2:-}"
+        if [[ -z "${tgt_branch}" ]]; then
+          echo "[ERROR] --target requires a branch name" >&2
+          exit 1
+        fi
+        shift
+        ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2
         exit 1
@@ -76,6 +98,20 @@ main() {
 
   [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
 
+  # Pre-flight branch validation
+  if ! git check-ref-format --branch "${src_branch}" 2>/dev/null; then
+    err "Invalid source branch name: '${src_branch}'"
+    exit 1
+  fi
+  if ! git check-ref-format --branch "${tgt_branch}" 2>/dev/null; then
+    err "Invalid target branch name: '${tgt_branch}'"
+    exit 1
+  fi
+  if [[ "${src_branch}" == "${tgt_branch}" ]]; then
+    err "Source and target branch are the same: '${src_branch}'"
+    exit 1
+  fi
+
   {
     echo "========================================="
     echo "Documentation Merge Log"
@@ -84,7 +120,7 @@ main() {
     echo "Working Directory: ${PROJECT_ROOT}"
   } >"$logfile"
 
-  echo "=== Documentation Merge: ${CGW_SOURCE_BRANCH} -> ${CGW_TARGET_BRANCH} ===" | tee -a "$logfile"
+  echo "=== Documentation Merge: ${src_branch} -> ${tgt_branch} ===" | tee -a "$logfile"
   echo "" | tee -a "$logfile"
 
   cd "${PROJECT_ROOT}" || {
@@ -96,7 +132,8 @@ main() {
   log_section_start "PRE-MERGE VALIDATION" "$logfile"
 
   if [[ -f "${SCRIPT_DIR}/validate_branches.sh" ]]; then
-    if ! bash "${SCRIPT_DIR}/validate_branches.sh" >>"$logfile" 2>&1; then
+    if ! CGW_SOURCE_BRANCH="${src_branch}" CGW_TARGET_BRANCH="${tgt_branch}" \
+      bash "${SCRIPT_DIR}/validate_branches.sh" >>"$logfile" 2>&1; then
       echo "[FAIL] Validation failed - aborting documentation merge" | tee -a "$logfile"
       log_section_end "PRE-MERGE VALIDATION" "$logfile" "1"
       echo "Please fix validation errors before retrying"
@@ -114,8 +151,8 @@ main() {
   original_branch=$(git branch --show-current)
   echo "Current branch: ${original_branch}" | tee -a "$logfile"
 
-  if ! run_git_with_logging "GIT CHECKOUT" "$logfile" checkout "${CGW_TARGET_BRANCH}"; then
-    echo "[FAIL] Failed to checkout ${CGW_TARGET_BRANCH} branch" | tee -a "$logfile"
+  if ! run_git_with_logging "GIT CHECKOUT" "$logfile" checkout "${tgt_branch}"; then
+    echo "[FAIL] Failed to checkout ${tgt_branch} branch" | tee -a "$logfile"
     exit 1
   fi
 
@@ -125,8 +162,8 @@ main() {
   # [3/7] Check for documentation changes
   echo "[3/7] Checking for documentation changes..."
 
-  if [[ -z "$(git diff --name-only "${CGW_TARGET_BRANCH}" "${CGW_SOURCE_BRANCH}" -- docs/)" ]]; then
-    log_message "[!] No documentation changes found between ${CGW_TARGET_BRANCH} and ${CGW_SOURCE_BRANCH}" "${logfile}"
+  if [[ -z "$(git diff --name-only "${tgt_branch}" "${src_branch}" -- docs/)" ]]; then
+    log_message "[!] No documentation changes found between ${tgt_branch} and ${src_branch}" "${logfile}"
     if [[ ${non_interactive} -eq 1 ]]; then
       log_message "Documentation merge cancelled (nothing to do)" "${logfile}"
       git checkout "${original_branch}"
@@ -143,21 +180,21 @@ main() {
   fi
 
   echo "Documentation files to be merged:"
-  git diff --name-only "${CGW_TARGET_BRANCH}" "${CGW_SOURCE_BRANCH}" -- docs/
+  git diff --name-only "${tgt_branch}" "${src_branch}" -- docs/
   echo ""
 
   # [4/7] Check for non-documentation changes
   echo "[4/7] Checking for code changes..."
   local non_docs_count
-  non_docs_count=$(git diff --name-only "${CGW_TARGET_BRANCH}" "${CGW_SOURCE_BRANCH}" | grep -vc "^docs/")
+  non_docs_count=$(git diff --name-only "${tgt_branch}" "${src_branch}" | grep -vc "^docs/")
 
   if [[ "${non_docs_count}" -gt 0 ]]; then
     echo "[!] WARNING: Non-documentation changes detected"
     echo ""
     echo "This merge will ONLY include docs/ changes."
-    echo "Other changes will remain on ${CGW_SOURCE_BRANCH} branch."
+    echo "Other changes will remain on ${src_branch} branch."
     echo ""
-    git diff --name-only "${CGW_TARGET_BRANCH}" "${CGW_SOURCE_BRANCH}" | grep -v "^docs/"
+    git diff --name-only "${tgt_branch}" "${src_branch}" | grep -v "^docs/"
     echo ""
     if [[ ${non_interactive} -eq 1 ]]; then
       echo "[Non-interactive] Proceeding with docs-only merge despite non-docs changes" | tee -a "$logfile"
@@ -179,7 +216,7 @@ main() {
   log_section_start "CREATE BACKUP TAG" "$logfile"
 
   if [[ -z "${timestamp:-}" ]]; then get_timestamp; fi
-  local backup_tag="pre-docs-merge-${timestamp}"
+  local backup_tag="pre-docs-merge-${timestamp}-$$"
 
   if git tag "${backup_tag}" >>"$logfile" 2>&1; then
     echo "[OK] Created backup tag: ${backup_tag}" | tee -a "$logfile"
@@ -195,8 +232,8 @@ main() {
 
   did_mutate_worktree=1
 
-  if ! run_git_with_logging "GIT CHECKOUT DOCS" "$logfile" checkout "${CGW_SOURCE_BRANCH}" -- docs/; then
-    echo "[FAIL] Failed to checkout documentation from ${CGW_SOURCE_BRANCH}" | tee -a "$logfile"
+  if ! run_git_with_logging "GIT CHECKOUT DOCS" "$logfile" checkout "${src_branch}" -- docs/; then
+    echo "[FAIL] Failed to checkout documentation from ${src_branch}" | tee -a "$logfile"
     git checkout "${original_branch}" >>"$logfile" 2>&1
     exit 1
   fi
@@ -219,8 +256,8 @@ main() {
   log_section_start "GIT COMMIT" "$logfile"
 
   if run_git_with_logging "GIT COMMIT DOCS" "$logfile" commit \
-    -m "docs: Sync documentation from ${CGW_SOURCE_BRANCH}" \
-    -m "- Updated docs/ directory from ${CGW_SOURCE_BRANCH} branch" \
+    -m "docs: Sync documentation from ${src_branch}" \
+    -m "- Updated docs/ directory from ${src_branch} branch" \
     -m "- Docs-only update (no code changes)" \
     -m "- Backup tag: ${backup_tag}"; then
     log_section_end "GIT COMMIT" "$logfile" "0"

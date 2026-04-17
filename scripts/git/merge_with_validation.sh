@@ -14,6 +14,8 @@
 # Arguments:
 #   --non-interactive   Skip all prompts (aborts on unexpected state)
 #   --dry-run           Show what would happen without making changes
+#   --source <branch>   Override source branch for this invocation
+#   --target <branch>   Override target branch for this invocation
 #   -h, --help          Show help
 # Returns:
 #   0 on successful merge, 1 on any failure
@@ -118,6 +120,7 @@ validate_docs_ci_policy() {
 #   $1 - "amend" or "stage"
 cleanup_tests_dir() {
   local commit_mode="$1"
+  local _tgt="${2:-${CGW_TARGET_BRANCH}}"
 
   # Skip unless explicitly enabled
   if [[ "${CGW_CLEANUP_TESTS}" != "1" ]]; then
@@ -129,7 +132,7 @@ cleanup_tests_dir() {
 
   if grep -q "^tests/\$" .gitignore 2>/dev/null; then
     if [[ -d "tests" ]]; then
-      echo "[!] Removing tests/ directory from ${CGW_TARGET_BRANCH} branch (per .gitignore policy)" | tee -a "$logfile"
+      echo "[!] Removing tests/ directory from ${_tgt} branch (per .gitignore policy)" | tee -a "$logfile"
       if git rm -r tests >>"$logfile" 2>&1; then
         echo "[OK] Removed tests/ directory" | tee -a "$logfile"
         if [[ "${commit_mode}" == "amend" ]]; then
@@ -144,31 +147,15 @@ cleanup_tests_dir() {
       echo "[OK] No tests/ directory found" | tee -a "$logfile"
     fi
   else
-    echo "[OK] tests/ is tracked in git -- keeping on ${CGW_TARGET_BRANCH}" | tee -a "$logfile"
+    echo "[OK] tests/ is tracked in git -- keeping on ${_tgt}" | tee -a "$logfile"
   fi
 }
 
 main() {
-  {
-    echo "========================================="
-    echo "Merge With Validation Log"
-    echo "========================================="
-    echo "Start Time: $(date)"
-    echo "Working Directory: ${PROJECT_ROOT}"
-  } >"$logfile"
-
-  echo "=== Safe Merge: ${CGW_SOURCE_BRANCH} -> ${CGW_TARGET_BRANCH} ===" | tee -a "$logfile"
-  echo "" | tee -a "$logfile"
-  echo "Workflow Log: ${logfile}" | tee -a "$logfile"
-  echo "" | tee -a "$logfile"
-
-  cd "${PROJECT_ROOT}" || {
-    err "Cannot find project root"
-    exit 1
-  }
-
   local non_interactive=0
   local dry_run=0
+  local src_branch="${CGW_SOURCE_BRANCH}"
+  local tgt_branch="${CGW_TARGET_BRANCH}"
 
   while [[ $# -gt 0 ]]; do
     case "${1}" in
@@ -178,15 +165,24 @@ main() {
         echo "Safely merge source branch into target with conflict resolution."
         echo ""
         echo "Options:"
-        echo "  --non-interactive   Skip all prompts (aborts on unexpected state)"
-        echo "  --dry-run           Show commits/files that would be merged"
-        echo "  -h, --help          Show this help"
+        echo "  --non-interactive      Skip all prompts (aborts on unexpected state)"
+        echo "  --dry-run              Show commits/files that would be merged"
+        echo "  --source <branch>      Override source branch for this invocation"
+        echo "  --target <branch>      Override target branch for this invocation"
+        echo "  -h, --help             Show this help"
         echo ""
         echo "Configuration:"
         echo "  CGW_SOURCE_BRANCH    Source branch (default: development)"
         echo "  CGW_TARGET_BRANCH    Target branch (default: main)"
         echo "  CGW_DOCS_PATTERN     Regex for allowed doc filenames (default: empty = skip)"
         echo "  CGW_CLEANUP_TESTS    Remove tests/ from target if gitignored (default: 0)"
+        echo ""
+        echo "Examples:"
+        echo "  # Default: merge development -> main"
+        echo "  ./scripts/git/merge_with_validation.sh"
+        echo ""
+        echo "  # Override: merge feature/x -> release/y"
+        echo "  ./scripts/git/merge_with_validation.sh --source feature/x --target release/y"
         echo ""
         echo "Environment:"
         echo "  CGW_NON_INTERACTIVE=1        Same as --non-interactive"
@@ -195,6 +191,22 @@ main() {
         ;;
       --non-interactive) non_interactive=1 ;;
       --dry-run) dry_run=1 ;;
+      --source)
+        src_branch="${2:-}"
+        if [[ -z "${src_branch}" ]]; then
+          echo "[ERROR] --source requires a branch name" >&2
+          exit 1
+        fi
+        shift
+        ;;
+      --target)
+        tgt_branch="${2:-}"
+        if [[ -z "${tgt_branch}" ]]; then
+          echo "[ERROR] --target requires a branch name" >&2
+          exit 1
+        fi
+        shift
+        ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2
         exit 1
@@ -205,14 +217,59 @@ main() {
 
   [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
 
+  # Pre-flight: validate branch names and local existence before any git operations
+  if ! git check-ref-format --branch "${src_branch}" 2>/dev/null; then
+    err "Invalid source branch name: '${src_branch}'"
+    exit 1
+  fi
+  if ! git check-ref-format --branch "${tgt_branch}" 2>/dev/null; then
+    err "Invalid target branch name: '${tgt_branch}'"
+    exit 1
+  fi
+  if [[ "${src_branch}" == "${tgt_branch}" ]]; then
+    err "Source and target branch are the same: '${src_branch}'"
+    exit 1
+  fi
+  if ! git rev-parse --verify --quiet "refs/heads/${src_branch}" >/dev/null 2>&1; then
+    err "Source branch '${src_branch}' does not exist locally"
+    exit 1
+  fi
+  if ! git rev-parse --verify --quiet "refs/heads/${tgt_branch}" >/dev/null 2>&1; then
+    err "Target branch '${tgt_branch}' does not exist locally"
+    exit 1
+  fi
+
+  local branch_label="${src_branch} -> ${tgt_branch}"
+  if [[ "${src_branch}" != "${CGW_SOURCE_BRANCH}" ]] || [[ "${tgt_branch}" != "${CGW_TARGET_BRANCH}" ]]; then
+    branch_label="${src_branch} -> ${tgt_branch} (overridden)"
+  fi
+
+  {
+    echo "========================================="
+    echo "Merge With Validation Log"
+    echo "========================================="
+    echo "Start Time: $(date)"
+    echo "Working Directory: ${PROJECT_ROOT}"
+  } >"$logfile"
+
+  echo "=== Safe Merge: ${branch_label} ===" | tee -a "$logfile"
+  echo "" | tee -a "$logfile"
+  echo "Workflow Log: ${logfile}" | tee -a "$logfile"
+  echo "" | tee -a "$logfile"
+
+  cd "${PROJECT_ROOT}" || {
+    err "Cannot find project root"
+    exit 1
+  }
+
   if [[ ${dry_run} -eq 1 ]]; then
     echo "=== DRY RUN MODE -- no changes will be made ===" | tee -a "$logfile"
-    echo "Would merge: ${CGW_SOURCE_BRANCH} -> ${CGW_TARGET_BRANCH}" | tee -a "$logfile"
+    echo "Would merge: ${src_branch} -> ${tgt_branch}" | tee -a "$logfile"
     echo "Commits to merge:" | tee -a "$logfile"
-    git log "${CGW_TARGET_BRANCH}..${CGW_SOURCE_BRANCH}" --oneline | tee -a "$logfile"
+    git log "${tgt_branch}..${src_branch}" --oneline | tee -a "$logfile"
     echo ""
     echo "Files that would change:" | tee -a "$logfile"
-    git diff --name-status "${CGW_TARGET_BRANCH}..${CGW_SOURCE_BRANCH}" | tee -a "$logfile"
+    git diff --name-status "${tgt_branch}..${src_branch}" | tee -a "$logfile"
     exit 0
   fi
 
@@ -220,7 +277,8 @@ main() {
   log_section_start "PRE-MERGE VALIDATION" "$logfile"
 
   if [[ -f "${SCRIPT_DIR}/validate_branches.sh" ]]; then
-    if ! bash "${SCRIPT_DIR}/validate_branches.sh" >>"$logfile" 2>&1; then
+    if ! CGW_SOURCE_BRANCH="${src_branch}" CGW_TARGET_BRANCH="${tgt_branch}" \
+      bash "${SCRIPT_DIR}/validate_branches.sh" >>"$logfile" 2>&1; then
       echo "[FAIL] Validation failed - aborting merge" | tee -a "$logfile"
       log_section_end "PRE-MERGE VALIDATION" "$logfile" "1"
       echo "Please fix validation errors before retrying"
@@ -240,12 +298,12 @@ main() {
   _merge_original_branch="${original_branch}"
   echo "Current branch: ${original_branch}" | tee -a "$logfile"
 
-  if [[ "${original_branch}" == "${CGW_TARGET_BRANCH}" ]]; then
-    echo "[FAIL] ERROR: Already on ${CGW_TARGET_BRANCH} branch" | tee -a "$logfile"
-    echo "  Run this script from ${CGW_SOURCE_BRANCH} branch" | tee -a "$logfile"
+  if [[ "${original_branch}" == "${tgt_branch}" ]]; then
+    echo "[FAIL] ERROR: Already on ${tgt_branch} branch" | tee -a "$logfile"
+    echo "  Run this script from ${src_branch} branch" | tee -a "$logfile"
     exit 1
-  elif [[ "${original_branch}" != "${CGW_SOURCE_BRANCH}" ]]; then
-    echo "[!] WARNING: Not on ${CGW_SOURCE_BRANCH} branch" | tee -a "$logfile"
+  elif [[ "${original_branch}" != "${src_branch}" ]]; then
+    echo "[!] WARNING: Not on ${src_branch} branch" | tee -a "$logfile"
     echo "  Current: ${original_branch}" | tee -a "$logfile"
 
     if [[ ${non_interactive} -eq 0 ]]; then
@@ -261,8 +319,8 @@ main() {
     fi
   fi
 
-  if ! run_git_with_logging "GIT CHECKOUT" "$logfile" checkout "${CGW_TARGET_BRANCH}"; then
-    echo "[FAIL] Failed to checkout ${CGW_TARGET_BRANCH} branch" | tee -a "$logfile"
+  if ! run_git_with_logging "GIT CHECKOUT" "$logfile" checkout "${tgt_branch}"; then
+    echo "[FAIL] Failed to checkout ${tgt_branch} branch" | tee -a "$logfile"
     exit 1
   fi
   _merge_did_checkout_target=1
@@ -274,7 +332,7 @@ main() {
   log_section_start "CREATE BACKUP TAG" "$logfile"
 
   if [[ -z "${timestamp:-}" ]]; then get_timestamp; fi
-  local backup_tag="pre-merge-backup-${timestamp}"
+  local backup_tag="pre-merge-backup-${timestamp}-$$"
 
   if git tag "${backup_tag}" >>"$logfile" 2>&1; then
     echo "[OK] Created backup tag: ${backup_tag}" | tee -a "$logfile"
@@ -298,12 +356,12 @@ main() {
   fi
 
   # shellcheck disable=SC2068  # Intentional: empty array expands to zero words (${arr[@]+...} is Bash 3.x portable)
-  if run_git_with_logging "GIT MERGE SOURCE" "$logfile" merge "${CGW_SOURCE_BRANCH}" --no-ff -m "Merge ${CGW_SOURCE_BRANCH} into ${CGW_TARGET_BRANCH}" ${merge_extra_args[@]+"${merge_extra_args[@]}"}; then
+  if run_git_with_logging "GIT MERGE SOURCE" "$logfile" merge "${src_branch}" --no-ff -m "Merge ${src_branch} into ${tgt_branch}" ${merge_extra_args[@]+"${merge_extra_args[@]}"}; then
     echo "[OK] Merge completed without conflicts" | tee -a "$logfile"
     log_section_end "GIT MERGE" "$logfile" "0"
 
     validate_docs_ci_policy "committed" "${original_branch}"
-    cleanup_tests_dir "amend"
+    cleanup_tests_dir "amend" "${tgt_branch}"
 
   else
     local merge_exit_code="${GIT_EXIT_CODE:-1}"
@@ -378,8 +436,36 @@ main() {
       exit 1
     fi
 
+    # UD (deleted by us, modified by theirs): requires manual resolution
+    if git status --short | grep -q "^UD "; then
+      echo "" | tee -a "$logfile"
+      echo "[FAIL] Deleted-by-us conflicts require manual resolution:" | tee -a "$logfile"
+      git status --short | grep "^UD " | tee -a "$logfile"
+      echo ""
+      echo "Please resolve manually (for each file):"
+      echo "  Keep deletion: git rm <file>"
+      echo "  Keep theirs:   git checkout --theirs <file> && git add <file>"
+      echo ""
+      echo "Or abort: git merge --abort && git checkout ${original_branch}"
+      exit 1
+    fi
+
+    # AD/DA (added differently on each side): requires manual resolution
+    if git status --short | grep -qE "^(AD|DA) "; then
+      echo "" | tee -a "$logfile"
+      echo "[FAIL] Add/delete conflicts require manual resolution:" | tee -a "$logfile"
+      git status --short | grep -E "^(AD|DA) " | tee -a "$logfile"
+      echo ""
+      echo "Please resolve manually (for each file):"
+      echo "  Keep ours:   git checkout --ours <file> && git add <file>"
+      echo "  Keep theirs: git checkout --theirs <file> && git add <file>"
+      echo ""
+      echo "Or abort: git merge --abort && git checkout ${original_branch}"
+      exit 1
+    fi
+
     validate_docs_ci_policy "staged" "${original_branch}"
-    cleanup_tests_dir "stage"
+    cleanup_tests_dir "stage" "${tgt_branch}"
     echo "" | tee -a "$logfile"
 
     # [7/7] Complete the merge

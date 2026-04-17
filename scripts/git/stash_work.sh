@@ -194,7 +194,7 @@ main() {
 
       echo "Dropping: $(git stash list | grep "^${ref}" || echo "${ref}")"
       read -r -p "Confirm drop? (yes/no): " answer
-      case "${answer,,}" in
+      case "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" in
         y | yes)
           git stash drop "${ref}" && echo "[OK] Stash dropped"
           ;;
