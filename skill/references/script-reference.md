@@ -121,14 +121,17 @@ Checks: current branch is source/target (warning if not), no uncommitted changes
 **`merge_with_validation.sh`** — Safe merge from source to target
 ```bash
 ./scripts/git/merge_with_validation.sh [--non-interactive] [--dry-run]
+./scripts/git/merge_with_validation.sh --source feature/hotfix --target release/1.2 --non-interactive
 ```
 
 | Flag | Purpose |
 |------|---------|
 | `--non-interactive` | Skip prompts (aborts on unexpected branch) |
 | `--dry-run` | Show commits/files without merging |
+| `--source <branch>` | Override source branch for this invocation (ephemeral, doesn't mutate config) |
+| `--target <branch>` | Override target branch for this invocation |
 
-Workflow: validate → backup tag → merge → auto-resolve DU/DD conflicts → stop on UU/AU/AA → docs CI check → tests cleanup → commit.
+Workflow: validate → backup tag (`pre-merge-backup-<timestamp>-<pid>`) → merge → auto-resolve DU/DD/UD/AD/DA conflicts → stop on UU/AU/AA → docs CI check → tests cleanup → commit.
 
 **`rollback_merge.sh`** — Emergency rollback
 ```bash
@@ -147,6 +150,7 @@ Must be on target branch. Requires typing `ROLLBACK` to confirm in interactive m
 **`cherry_pick_commits.sh`** — Cherry-pick commit from source to target
 ```bash
 ./scripts/git/cherry_pick_commits.sh [--non-interactive] [--commit <hash>] [--dry-run]
+./scripts/git/cherry_pick_commits.sh --source feature/hotfix --target release/1.2 --commit abc1234
 ```
 
 | Flag | Purpose |
@@ -154,18 +158,29 @@ Must be on target branch. Requires typing `ROLLBACK` to confirm in interactive m
 | `--non-interactive` | Skip prompts; requires `--commit` |
 | `--commit <hash>` | Specify commit hash to cherry-pick |
 | `--dry-run` | Show commit details without cherry-picking |
+| `--source <branch>` | Override source branch for this invocation |
+| `--target <branch>` | Override target branch for this invocation |
 
-Validates commit is on source branch before picking. Creates backup tag.
+Validates commit is on source branch before picking. Creates `pre-cherry-pick-<timestamp>-<pid>` backup tag.
 
 **`merge_docs.sh`** — Documentation-only merge from source to target
 ```bash
 ./scripts/git/merge_docs.sh [--non-interactive]
+./scripts/git/merge_docs.sh --source feature/hotfix --target release/1.2 --non-interactive
 ```
-Merges only `docs/` changes. Warns if non-docs changes exist. In non-interactive mode, skips confirmations.
+
+| Flag | Purpose |
+|------|---------|
+| `--non-interactive` | Skip confirmations |
+| `--source <branch>` | Override source branch for this invocation |
+| `--target <branch>` | Override target branch for this invocation |
+
+Merges only `docs/` changes. Warns if non-docs changes exist. Creates `pre-docs-merge-<timestamp>-<pid>` backup tag.
 
 **`create_pr.sh`** — Create a GitHub PR from source to target branch
 ```bash
 ./scripts/git/create_pr.sh [--non-interactive] [--dry-run] [--title <title>] [--draft]
+./scripts/git/create_pr.sh --source feature/hotfix --target release/1.2 --dry-run
 ```
 
 | Flag | Purpose |
@@ -174,6 +189,8 @@ Merges only `docs/` changes. Warns if non-docs changes exist. In non-interactive
 | `--dry-run` | Show what would be created without opening a PR |
 | `--title <title>` | Override auto-generated PR title |
 | `--draft` | Open PR as draft (skips Charlie CI auto-review) |
+| `--source <branch>` | Override source (head) branch for this invocation |
+| `--target <branch>` | Override target (base) branch for this invocation |
 
 Requires `gh` CLI authenticated (`gh auth login`). Checks ahead/behind status, then opens a PR. Charlie CI auto-reviews on PR open.
 
@@ -202,7 +219,7 @@ Requires `gh` CLI authenticated (`gh auth login`). Checks ahead/behind status, t
 | `--non-interactive` | Skip confirmation prompts (requires `--autosquash` with `--squash-last`) | Automation |
 | `--dry-run` | Show plan without rebasing | Preview |
 
-Creates `pre-rebase-TIMESTAMP` backup tag before any rebase. Warns if commits already pushed.
+Creates `pre-rebase-<timestamp>-<pid>` backup tag before any rebase. Warns if commits already pushed.
 
 **`bisect_helper.sh`** — Guided git bisect for bug hunting
 ```bash
@@ -222,7 +239,7 @@ Creates `pre-rebase-TIMESTAMP` backup tag before any rebase. Warns if commits al
 | `--non-interactive` | Skip prompts (requires `--run`) | Automation |
 | `--dry-run` | Show plan without starting | Preview |
 
-Creates `pre-bisect-TIMESTAMP` backup tag before starting.
+Creates `pre-bisect-<timestamp>-<pid>` backup tag before starting.
 
 **`undo_last.sh`** — Safe undo for common operations
 ```bash
@@ -234,7 +251,7 @@ Creates `pre-bisect-TIMESTAMP` backup tag before starting.
 
 | Subcommand | Purpose | Notes |
 |------------|---------|-------|
-| `commit` | `git reset --soft HEAD~1` — keeps changes staged | Creates `pre-undo-commit-*` backup tag |
+| `commit` | `git reset --soft HEAD~1` — keeps changes staged | Creates `pre-undo-commit-<timestamp>-<pid>` backup tag |
 | `unstage <file>...` | Remove file(s) from staging area | Validates files are staged first |
 | `discard <file>...` | Discard working-tree changes (irreversible) | Refused in `--non-interactive` mode |
 | `amend-message <msg>` | Rewrite last commit message | Warns if commit already pushed |
@@ -350,7 +367,7 @@ Safety checks: verifies remote reachability, warns if behind remote, blocks ungu
 | `--all` | Sync both source and target branches |
 | `--non-interactive` | Abort (instead of prompt) if uncommitted changes found |
 
-Runs `git fetch origin` then `git pull --rebase` on each target.
+Runs `git fetch ${CGW_REMOTE}` then `git pull --rebase` on each target.
 
 ---
 
@@ -365,6 +382,9 @@ Runs `git fetch origin` then `git pull --rebase` on each target.
 | `CGW_STAGED_ONLY=1` | Use pre-staged files only (`commit_enhanced.sh`) |
 | `CGW_SOURCE_BRANCH=<name>` | Override source branch |
 | `CGW_TARGET_BRANCH=<name>` | Override target branch |
+| `CGW_REMOTE=<name>` | Remote name for fetch/push (default: `origin`; set to `upstream` for forks) |
+| `CGW_MERGE_CONFLICT_STYLE=diff3` | Show base version in merge conflict markers |
+| `CGW_MERGE_IGNORE_WHITESPACE=1` | Ignore whitespace differences during merge |
 | `CGW_LINT_CMD=<tool>` | Override lint tool (default: `ruff`; `""` = disable lint) |
 | `CGW_FORMAT_CMD=<tool>` | Override format tool (default: `ruff`; `""` = disable format) |
 | `CGW_EXTRA_PREFIXES=<list>` | Pipe-separated extra commit prefixes (e.g. `"cuda\|tensorrt"`) |

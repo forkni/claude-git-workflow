@@ -14,6 +14,8 @@
 #   --draft                Create PR as draft (not ready for review)
 #   --non-interactive      Accept all defaults, no prompts
 #   --dry-run              Preview PR details without creating
+#   --source <branch>      Override source (head) branch for this invocation
+#   --target <branch>      Override target (base) branch for this invocation
 #   -h, --help             Show help
 # Returns:
 #   0 on successful PR creation, 1 on failure

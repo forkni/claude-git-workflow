@@ -122,6 +122,9 @@ After commit: verify with git log --oneline -1
 
 # Execute merge:
 ./scripts/git/merge_with_validation.sh --non-interactive
+
+# Override branch pair for this invocation (doesn't mutate config):
+./scripts/git/merge_with_validation.sh --source feature/hotfix --target release/1.2 --non-interactive
 ```
 Handles: pre-merge validation, backup tag, modify/delete/both-deleted conflict auto-resolution, content conflict detection (stops for manual review).
 
@@ -141,6 +144,7 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 ./scripts/git/create_pr.sh --dry-run                # preview only
 ./scripts/git/create_pr.sh --title "feat: my PR"   # override title
 ./scripts/git/create_pr.sh --draft                  # open as draft
+./scripts/git/create_pr.sh --source feature/hotfix --target release/1.2
 ```
 Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login`. Charlie CI auto-reviews on PR open.
 
@@ -155,7 +159,7 @@ Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login
 ./scripts/git/rollback_merge.sh                          # interactive (hard reset)
 ./scripts/git/rollback_merge.sh --revert                 # safe revert (preserves history, no force-push)
 ./scripts/git/rollback_merge.sh --dry-run
-./scripts/git/rollback_merge.sh --non-interactive --target pre-merge-backup-20260101_120000
+./scripts/git/rollback_merge.sh --non-interactive --target pre-merge-backup-20260101_120000-12345
 ```
 
 **Cherry-picking a commit:**
@@ -163,12 +167,14 @@ Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login
 ./scripts/git/cherry_pick_commits.sh                       # interactive
 ./scripts/git/cherry_pick_commits.sh --commit abc1234      # non-interactive
 ./scripts/git/cherry_pick_commits.sh --dry-run --commit abc1234
+./scripts/git/cherry_pick_commits.sh --source feature/hotfix --target release/1.2 --commit abc1234
 ```
 
 **Merging docs only:**
 ```bash
 ./scripts/git/merge_docs.sh
 ./scripts/git/merge_docs.sh --non-interactive
+./scripts/git/merge_docs.sh --source feature/hotfix --target release/1.2 --non-interactive
 ```
 
 **Undoing something:**
