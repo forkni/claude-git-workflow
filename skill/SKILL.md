@@ -73,6 +73,46 @@ If `.git/index.lock` exists, remove it first:
 rm -f .git/index.lock && git add src/file.py && ./scripts/git/commit_enhanced.sh "feat: add feature"
 ```
 
+### Rule 5: Selective Commits — Staging Intent Is Respected
+
+**The script's staging behavior depends on what is already staged when it runs:**
+
+| Pre-staged files? | Unstaged changes? | Non-interactive action |
+|:-:|:-:|---|
+| No | No | Exit — nothing to commit |
+| No | Yes | Auto-stage all tracked changes (`git add -u`) |
+| Yes | No | Commit staged files as-is |
+| **Yes** | **Yes** | **Commit pre-staged files ONLY** — warns loudly about excluded changes |
+
+**Use `--only` for the clearest intent (preferred in Claude Code):**
+```bash
+# Commit exactly two files — any prior index state is reset first
+./scripts/git/commit_enhanced.sh --no-venv \
+  --only src/foo.py \
+  --only src/bar.py \
+  "feat: selective change"
+```
+
+**Or pre-stage + commit (safe default respects your selection):**
+```bash
+git add src/foo.py src/bar.py && \
+  ./scripts/git/commit_enhanced.sh --no-venv "feat: selective change"
+```
+
+**To include all tracked changes regardless of index state:**
+```bash
+./scripts/git/commit_enhanced.sh --all --no-venv "chore: bulk update"
+# Equivalent env var: CGW_ALL=1
+```
+
+**Never do this when you have pre-existing tracked modifications and only want to commit some of them:**
+```bash
+# DANGEROUS (old pattern) — auto-stages EVERYTHING in non-interactive mode if nothing pre-staged
+git reset HEAD && git add src/foo.py && ./scripts/git/commit_enhanced.sh "feat: ..."
+# SAFE (new pattern) — use --only instead
+./scripts/git/commit_enhanced.sh --only src/foo.py "feat: ..."
+```
+
 ---
 
 ## Commit Message Format
@@ -101,6 +141,16 @@ Additional project-specific prefixes can be configured via `CGW_EXTRA_PREFIXES` 
 Is .venv directory present?
 ├─ Yes → ./scripts/git/commit_enhanced.sh "feat: message"
 └─ No  → ./scripts/git/commit_enhanced.sh --no-venv "feat: message"
+
+Committing specific files only?
+├─ Yes → use --only <path> (repeatable); resets index, stages listed paths only
+│         ./scripts/git/commit_enhanced.sh --only src/a.py --only src/b.py --no-venv "feat: ..."
+└─ No  → Commit all tracked changes: ./scripts/git/commit_enhanced.sh --all --no-venv "feat: ..."
+          OR pre-stage nothing, let script auto-stage everything (same as --all)
+
+Did you pre-stage some files but have other unstaged changes?
+├─ Yes → Script commits pre-staged ONLY (safe default). Run --all to include everything.
+└─ No  → Proceed normally
 
 Are local-only files staged?
 ├─ Yes → commit_enhanced.sh unstages them automatically
@@ -132,9 +182,11 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 
 **Pushing to remote:**
 ```bash
-./scripts/git/push_validated.sh               # with lint check
-./scripts/git/push_validated.sh --dry-run     # preview
-./scripts/git/push_validated.sh --skip-lint   # skip lint check
+./scripts/git/push_validated.sh                       # with lint check
+./scripts/git/push_validated.sh --no-venv             # no .venv (forwards to check_lint.sh)
+./scripts/git/push_validated.sh --dry-run             # preview
+./scripts/git/push_validated.sh --skip-lint           # skip lint check entirely
+./scripts/git/push_validated.sh --no-venv --skip-lint # both
 ```
 
 **Creating a PR** (when `CGW_MERGE_MODE="pr"`):

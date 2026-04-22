@@ -88,16 +88,32 @@ git diff --quiet && git diff --cached --quiet
 
 ### Phase 2: Commit to Source Branch
 
-**Step 2.1: Stage all changes**
+**Step 2.1: Stage changes**
 
+*Full workflow (commit everything):*
 ```bash
 git add .
 ```
 
+*Selective commit (specific files only) — skip Step 2.1 and use `--only` in Step 2.2:*
+```bash
+# No git add needed — --only resets index and stages listed paths only
+# See Step 2.2 alternate form below
+```
+
 **Step 2.2: Create commit**
 
+*Full workflow:*
 ```bash
 ./scripts/git/commit_enhanced.sh --non-interactive "feat: descriptive commit message"
+```
+
+*Selective commit (no prior `git add`):*
+```bash
+./scripts/git/commit_enhanced.sh --non-interactive \
+  --only src/file_a.py \
+  --only src/file_b.py \
+  "feat: descriptive commit message"
 ```
 
 Replace message with appropriate conventional commit (feat:, fix:, docs:, chore:, test:).
@@ -106,6 +122,7 @@ Replace message with appropriate conventional commit (feat:, fix:, docs:, chore:
 - Unstages local-only files (configured via `CGW_LOCAL_FILES`)
 - Validates commit message format
 - Runs lint check
+- Respects pre-staged files: if you staged specific files and have other unstaged changes, commits pre-staged only (use `--all` to override)
 
 **Step 2.3: Capture commit info for final report**
 
