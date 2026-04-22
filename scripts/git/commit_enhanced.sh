@@ -12,10 +12,18 @@
 # Arguments:
 #   --non-interactive  Skip all prompts
 #   --interactive      Force interactive mode even without TTY
+#   --only <pathspec>  Stage only listed paths (repeatable); resets index first
 #   --staged-only      Use pre-staged files only, skip auto-staging
+#   --all              Force bulk-stage all tracked changes (override pre-stage respect)
 #   --no-venv          Use system ruff instead of .venv ruff
 #   --skip-md-lint     (no-op, preserved for backward compat)
 #   -h, --help         Show help
+#
+# Staging behavior (non-interactive):
+#   - If anything is pre-staged AND unstaged changes exist: commits pre-staged only
+#     (warns about unstaged files that are being left out). Use --all to override.
+#   - If nothing is pre-staged: auto-stages all tracked changes (legacy behavior).
+#   - --only <path>: explicit selection, resets index, stages listed paths only.
 # Returns:
 #   0 on successful commit, 1 on failure
 
@@ -79,6 +87,8 @@ main() {
   local skip_lint=0
   local skip_md_lint=0
   local staged_only=0
+  local all_flag=0
+  local only_paths=()
   local commit_msg_param=""
 
   # Auto-detect non-interactive mode when no TTY
@@ -89,6 +99,7 @@ main() {
   # CGW_* environment variable overrides
   [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
   [[ "${CGW_STAGED_ONLY:-0}" == "1" ]] && staged_only=1
+  [[ "${CGW_ALL:-0}" == "1" ]] && all_flag=1
   [[ "${CGW_NO_VENV:-0}" == "1" ]] && SKIP_VENV=1
   [[ "${CGW_SKIP_LINT:-0}" == "1" ]] && skip_lint=1 && skip_md_lint=1
   [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]] && skip_md_lint=1
@@ -101,13 +112,21 @@ main() {
         echo "Enhanced commit workflow with lint validation and local-only file protection."
         echo ""
         echo "Options:"
-        echo "  --non-interactive   Skip all prompts (auto-stage, auto-fix lint)"
+        echo "  --non-interactive   Skip all prompts (auto-fix lint; staging as below)"
         echo "  --interactive       Force interactive mode even without TTY"
+        echo "  --only <pathspec>   Stage only listed paths (repeatable); resets index first"
         echo "  --staged-only       Use pre-staged files only, skip auto-staging"
+        echo "  --all               Force bulk-stage all tracked changes (overrides pre-stage respect)"
         echo "  --no-venv           Use system ruff instead of .venv ruff"
         echo "  --skip-lint         Skip all lint checks (code + markdown)"
         echo "  --skip-md-lint      Skip markdown lint only (CGW_MARKDOWNLINT_CMD step)"
         echo "  -h, --help          Show this help"
+        echo ""
+        echo "Staging defaults (non-interactive):"
+        echo "  1. Pre-staged + unstaged present -> commits pre-staged only (warns)"
+        echo "  2. Nothing pre-staged            -> auto-stages all tracked changes"
+        echo "  3. --only <path>                 -> resets index, stages only listed paths"
+        echo "  4. --all                         -> always bulk-stage (old default)"
         echo ""
         echo "Commit message format: <type>: <message>"
         echo "  Standard types: feat fix docs chore test refactor style perf"
@@ -116,6 +135,7 @@ main() {
         echo "Environment:"
         echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
         echo "  CGW_STAGED_ONLY=1       Same as --staged-only"
+        echo "  CGW_ALL=1               Same as --all"
         echo "  CGW_NO_VENV=1           Same as --no-venv"
         echo "  CGW_SKIP_LINT=1         Same as --skip-lint"
         echo "  CGW_SKIP_MD_LINT=1      Same as --skip-md-lint"
@@ -145,6 +165,18 @@ main() {
       --staged-only)
         staged_only=1
         shift
+        ;;
+      --all)
+        all_flag=1
+        shift
+        ;;
+      --only)
+        if [[ -z "${2:-}" ]] || [[ "${2:0:2}" == "--" ]]; then
+          echo "[ERROR] --only requires a pathspec argument" >&2
+          exit 1
+        fi
+        only_paths+=("$2")
+        shift 2
         ;;
       --no-venv)
         SKIP_VENV=1
@@ -197,6 +229,23 @@ main() {
   # [1] Check for uncommitted changes
   echo "[1/6] Checking for changes..."
 
+  # Apply --only: reset index and stage only the listed paths
+  if [[ ${#only_paths[@]} -gt 0 ]]; then
+    echo "[--only] Resetting index and staging ${#only_paths[@]} path(s)..."
+    git reset HEAD >/dev/null 2>&1 || true
+    local only_path
+    for only_path in "${only_paths[@]}"; do
+      if ! git add -- "${only_path}" 2>&1; then
+        err "Failed to stage: ${only_path}"
+        exit 1
+      fi
+      echo "  + ${only_path}"
+    done
+    # --only implies staged-only semantics
+    staged_only=1
+    echo ""
+  fi
+
   git diff --quiet
   local has_unstaged=$?
   git diff --cached --quiet
@@ -207,14 +256,36 @@ main() {
     exit 0
   fi
 
-  if [[ ${has_unstaged} -ne 0 ]]; then
+  # Determine effective staging mode.
+  # Safe default: if user pre-staged anything AND has unstaged changes,
+  # respect their selection (implicit --staged-only). --all overrides.
+  local effective_staged_only=0
+  if [[ ${staged_only} -eq 1 ]]; then
+    effective_staged_only=1
+  elif [[ ${all_flag} -eq 1 ]]; then
+    effective_staged_only=0
+  elif [[ ${has_staged} -ne 0 ]] && [[ ${has_unstaged} -ne 0 ]]; then
+    effective_staged_only=1
+    echo ""
+    echo "===================================================================="
+    echo "[!] PRE-STAGED FILES DETECTED + UNSTAGED CHANGES PRESENT"
+    echo "===================================================================="
+    echo "Committing pre-staged files ONLY. The following unstaged changes"
+    echo "will NOT be included in this commit:"
+    echo ""
+    git diff --name-status | sed 's/^/  /'
+    echo ""
+    echo "To include everything, re-run with --all (or CGW_ALL=1)."
+    echo "===================================================================="
+    echo ""
+  fi
+
+  if [[ ${has_unstaged} -ne 0 ]] && [[ ${effective_staged_only} -eq 0 ]]; then
     echo "Unstaged changes detected:"
     git diff --name-status
     echo ""
 
-    if [[ ${staged_only} -eq 1 ]]; then
-      echo "[--staged-only] Using pre-staged files only"
-    elif [[ ${non_interactive} -eq 1 ]]; then
+    if [[ ${non_interactive} -eq 1 ]]; then
       echo "[Non-interactive] Auto-staging tracked changes..."
       git add -u
       unstage_local_only_files
@@ -230,8 +301,16 @@ main() {
         exit 1
       fi
     fi
+  elif [[ ${effective_staged_only} -eq 1 ]]; then
+    echo "[staged-only] Committing pre-staged files only"
   fi
   echo ""
+
+  # Capture originally-staged file list for re-stage after lint auto-fix
+  local originally_staged_files=""
+  if [[ ${effective_staged_only} -eq 1 ]]; then
+    originally_staged_files=$(git diff --cached --name-only)
+  fi
 
   # [2] Validate staged files -- unstage and verify local-only files
   echo "[2/6] Validating staged files..."
@@ -338,7 +417,16 @@ main() {
           "${format_cmd}" ${CGW_FORMAT_FIX_ARGS} ${CGW_FORMAT_EXCLUDES} 2>&1 | tee -a "$logfile"
         fi
 
-        if [[ ${staged_only} -eq 0 ]]; then
+        # Re-stage files that lint auto-fix may have modified
+        if [[ ${effective_staged_only} -eq 1 ]]; then
+          # Respect original selection: re-add only the files that were originally staged
+          if [[ -n "${originally_staged_files}" ]]; then
+            while IFS= read -r f; do
+              [[ -n "$f" ]] && git add -- "$f" 2>/dev/null || true
+            done <<<"${originally_staged_files}"
+            unstage_local_only_files
+          fi
+        else
           git add -u
           unstage_local_only_files
         fi
@@ -370,7 +458,15 @@ main() {
               # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_FIX_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
               "${format_cmd}" ${CGW_FORMAT_FIX_ARGS} ${CGW_FORMAT_EXCLUDES}
             fi
-            git add -u
+            if [[ ${effective_staged_only} -eq 1 ]]; then
+              if [[ -n "${originally_staged_files}" ]]; then
+                while IFS= read -r f; do
+                  [[ -n "$f" ]] && git add -- "$f" 2>/dev/null || true
+                done <<<"${originally_staged_files}"
+              fi
+            else
+              git add -u
+            fi
             unstage_local_only_files
             ;;
           skip | s)

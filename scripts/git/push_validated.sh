@@ -12,6 +12,8 @@
 #   --non-interactive   Skip prompts
 #   --dry-run           Show what would be pushed without pushing
 #   --skip-lint         Skip pre-push lint check
+#   --skip-md-lint      Skip markdown lint only in pre-push check
+#   --no-venv           Forward to check_lint.sh: use system lint tool (no .venv)
 #   --force             Allow force-push (uses --force-with-lease)
 #   --branch <name>     Override push target branch (default: current branch)
 #   -h, --help          Show help
@@ -31,6 +33,7 @@ main() {
   local dry_run=0
   local skip_lint=0
   local skip_md_lint=0
+  local no_venv=0
   local force_push=0
   local target_branch=""
 
@@ -46,6 +49,7 @@ main() {
         echo "  --dry-run           Show what would be pushed without pushing"
         echo "  --skip-lint         Skip pre-push lint check (all lint)"
         echo "  --skip-md-lint      Skip markdown lint only in pre-push check"
+        echo "  --no-venv           Forward to check_lint.sh: use system lint tool (no .venv)"
         echo "  --force             Allow force-push (uses --force-with-lease)"
         echo "  --branch <name>     Override push target branch (default: current branch)"
         echo "  -h, --help          Show this help"
@@ -67,6 +71,7 @@ main() {
       --dry-run) dry_run=1 ;;
       --skip-lint) skip_lint=1 ;;
       --skip-md-lint) skip_md_lint=1 ;;
+      --no-venv) no_venv=1 ;;
       --force) force_push=1 ;;
       --branch)
         target_branch="${2:-}"
@@ -83,6 +88,7 @@ main() {
   [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
   [[ "${CGW_SKIP_LINT:-0}" == "1" ]] && skip_lint=1
   [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]] && skip_md_lint=1
+  [[ "${CGW_NO_VENV:-0}" == "1" ]] && no_venv=1
 
   {
     echo "========================================="
@@ -190,6 +196,7 @@ main() {
     echo "Running pre-push lint check..." | tee -a "$logfile"
     local lint_args=()
     [[ ${skip_md_lint} -eq 1 ]] && lint_args+=("--skip-md-lint")
+    [[ ${no_venv} -eq 1 ]] && lint_args+=("--no-venv")
     if "${SCRIPT_DIR}/check_lint.sh" "${lint_args[@]}" >>"$logfile" 2>&1; then
       echo "[OK] Lint check passed" | tee -a "$logfile"
       log_section_end "PRE-PUSH LINT CHECK" "$logfile" "0"

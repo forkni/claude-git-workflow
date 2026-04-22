@@ -75,6 +75,11 @@ _run_push() {
   [ "${status}" -eq 0 ]
 }
 
+@test "--no-venv is accepted and exits 0 in dry-run" {
+  run _run_push "--no-venv --skip-lint --dry-run"
+  [ "${status}" -eq 0 ]
+}
+
 # ── Protected branch force-push protection ────────────────────────────────────
 
 @test "force-push to protected main branch aborts in non-interactive" {
