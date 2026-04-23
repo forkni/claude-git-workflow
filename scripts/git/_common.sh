@@ -39,6 +39,16 @@ err() {
   echo "[ERROR] $*" >&2
 }
 
+# Error helper that also appends to the active logfile (set by init_logging).
+# Falls back to stderr-only if logfile is not yet initialised.
+err_tee() {
+  if [[ -n "${logfile:-}" ]]; then
+    echo "$*" | tee -a "${logfile}" >&2
+  else
+    echo "$*" >&2
+  fi
+}
+
 # Section timer storage -- associative array avoids global clobbering when
 # sections are nested (e.g. run_tool_with_logging called inside another section)
 declare -A _SECTION_START_TIMES=() 2>/dev/null || true

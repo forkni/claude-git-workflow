@@ -80,12 +80,27 @@ Auto-detects project type (Python, TouchDesigner, GLSL, images/assets). Safe to 
 |------|---------|-------------|
 | `--non-interactive` | Skip all prompts, use defaults | Auto-detected in Claude Code, CI/CD |
 | `--no-venv` | Use system lint tool (no .venv) | Projects without virtual environment |
-| `--staged-only` | Commit pre-staged files only | Selective commits, incremental work |
+| `--only <pathspec>` | Reset index and stage listed paths only (repeatable) | Selective commits — clearest intent |
+| `--staged-only` | Commit pre-staged files only (skip auto-staging) | Equivalent to pre-staging + default behavior |
+| `--all` | Force bulk-stage all tracked changes | Override pre-stage respect; commit everything |
 | `--interactive` | Force interactive mode | Debugging, manual control |
 | `--skip-lint` | Skip all lint checks | When lint is handled separately |
 | `--skip-md-lint` | Skip markdown lint only | When only markdown lint causes noise |
 
 **Auto-detection**: When no TTY (Claude Code context), script automatically enables `--non-interactive`.
+
+**Staging decision matrix (non-interactive default):**
+
+| Pre-staged? | Unstaged? | Action |
+|:-:|:-:|---|
+| No | No | Exit — nothing to commit |
+| No | Yes | Auto-stage all tracked changes (`git add -u`) |
+| Yes | No | Commit staged files as-is |
+| **Yes** | **Yes** | **Commit pre-staged ONLY** — warns about excluded changes |
+
+Override with `--all` to always bulk-stage, or `--only <path>` to explicitly select files (resets index first).
+
+**Environment**: `CGW_ALL=1` mirrors `--all`.
 
 ---
 
@@ -352,6 +367,7 @@ Categories recognized: `feat`, `fix`, `docs`, `perf`, `refactor`, `style`, `test
 | `--dry-run` | Show what would be pushed without pushing |
 | `--skip-lint` | Skip all pre-push lint checks |
 | `--skip-md-lint` | Skip markdown lint only in pre-push check |
+| `--no-venv` | Forward to `check_lint.sh`: use system lint tool (no .venv) |
 | `--force` | Allow force-push (uses `--force-with-lease`; blocks for protected branches) |
 | `--branch <name>` | Override push target branch |
 
@@ -380,6 +396,7 @@ Runs `git fetch ${CGW_REMOTE}` then `git pull --rebase` on each target.
 | `CGW_NON_INTERACTIVE=1` | Force non-interactive mode (all scripts) |
 | `CGW_NO_VENV=1` | Use system lint tool without .venv |
 | `CGW_STAGED_ONLY=1` | Use pre-staged files only (`commit_enhanced.sh`) |
+| `CGW_ALL=1` | Force bulk-stage all tracked changes, overriding pre-stage respect (`commit_enhanced.sh`) |
 | `CGW_SOURCE_BRANCH=<name>` | Override source branch |
 | `CGW_TARGET_BRANCH=<name>` | Override target branch |
 | `CGW_REMOTE=<name>` | Remote name for fetch/push (default: `origin`; set to `upstream` for forks) |

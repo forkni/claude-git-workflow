@@ -123,3 +123,88 @@ _run_commit() {
   run _run_commit "--skip-lint \"feat: auto-staged change\""
   [ "${status}" -eq 0 ]
 }
+
+# ── Safe default: pre-staged files are respected ──────────────────────────────
+
+@test "pre-staged files only: unstaged changes do NOT get bundled (safe default)" {
+  # Setup: create two tracked files, commit them, then modify both
+  echo "file_a v1" > "${TEST_REPO_DIR}/file_a.txt"
+  echo "file_b v1" > "${TEST_REPO_DIR}/file_b.txt"
+  git -C "${TEST_REPO_DIR}" add file_a.txt file_b.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add both files"
+
+  echo "file_a v2" > "${TEST_REPO_DIR}/file_a.txt"  # intended change
+  echo "file_b v2" > "${TEST_REPO_DIR}/file_b.txt"  # unrelated, should NOT be committed
+
+  # Pre-stage only file_a
+  git -C "${TEST_REPO_DIR}" add file_a.txt
+
+  run _run_commit "--skip-lint \"feat: intended change to file_a\""
+  [ "${status}" -eq 0 ]
+
+  # file_a.txt in the new commit
+  changed_files=$(git -C "${TEST_REPO_DIR}" show --name-only --pretty=format: HEAD | grep -v '^$')
+  [[ "${changed_files}" == *"file_a.txt"* ]]
+  # file_b.txt must NOT be in the commit
+  [[ "${changed_files}" != *"file_b.txt"* ]]
+
+  # file_b.txt should still be a pending working-tree change
+  git -C "${TEST_REPO_DIR}" diff --name-only | grep -q "^file_b.txt$"
+}
+
+# ── --all flag: force bulk-stage ──────────────────────────────────────────────
+
+@test "--all overrides pre-stage respect and commits everything" {
+  echo "file_a v1" > "${TEST_REPO_DIR}/file_a.txt"
+  echo "file_b v1" > "${TEST_REPO_DIR}/file_b.txt"
+  git -C "${TEST_REPO_DIR}" add file_a.txt file_b.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add both files"
+
+  echo "file_a v2" > "${TEST_REPO_DIR}/file_a.txt"
+  echo "file_b v2" > "${TEST_REPO_DIR}/file_b.txt"
+
+  # Pre-stage only file_a, but pass --all to override
+  git -C "${TEST_REPO_DIR}" add file_a.txt
+
+  run _run_commit "--skip-lint --all \"feat: intentional bulk commit\""
+  [ "${status}" -eq 0 ]
+
+  # Both files should be in the new commit
+  changed_files=$(git -C "${TEST_REPO_DIR}" show --name-only --pretty=format: HEAD | grep -v '^$')
+  [[ "${changed_files}" == *"file_a.txt"* ]]
+  [[ "${changed_files}" == *"file_b.txt"* ]]
+}
+
+# ── --only flag: explicit selective staging ───────────────────────────────────
+
+@test "--only stages only listed paths, ignoring prior index state" {
+  echo "file_a v1" > "${TEST_REPO_DIR}/file_a.txt"
+  echo "file_b v1" > "${TEST_REPO_DIR}/file_b.txt"
+  echo "file_c v1" > "${TEST_REPO_DIR}/file_c.txt"
+  git -C "${TEST_REPO_DIR}" add file_a.txt file_b.txt file_c.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add three files"
+
+  echo "file_a v2" > "${TEST_REPO_DIR}/file_a.txt"
+  echo "file_b v2" > "${TEST_REPO_DIR}/file_b.txt"
+  echo "file_c v2" > "${TEST_REPO_DIR}/file_c.txt"
+
+  # Pre-stage file_a (should get reset), then --only should pick file_b + file_c
+  git -C "${TEST_REPO_DIR}" add file_a.txt
+
+  run _run_commit "--skip-lint --only file_b.txt --only file_c.txt \"feat: only b and c\""
+  [ "${status}" -eq 0 ]
+
+  changed_files=$(git -C "${TEST_REPO_DIR}" show --name-only --pretty=format: HEAD | grep -v '^$')
+  [[ "${changed_files}" != *"file_a.txt"* ]]
+  [[ "${changed_files}" == *"file_b.txt"* ]]
+  [[ "${changed_files}" == *"file_c.txt"* ]]
+
+  # file_a should still be a pending working-tree change
+  git -C "${TEST_REPO_DIR}" diff --name-only | grep -q "^file_a.txt$"
+}
+
+@test "--only rejects missing pathspec argument" {
+  run _run_commit "--only --skip-lint \"feat: bad usage\""
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"--only requires a pathspec"* ]]
+}

@@ -107,7 +107,7 @@ main() {
 
   if [[ "${current_branch}" != "${CGW_TARGET_BRANCH}" ]]; then
     echo "" | tee -a "$logfile"
-    echo "[FAIL] ERROR: Not on target branch (${CGW_TARGET_BRANCH})" | tee -a "$logfile"
+    err_tee "[FAIL] ERROR: Not on target branch (${CGW_TARGET_BRANCH})"
     echo "This script should only be run from the target branch" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
     echo "Current branch: ${current_branch}" | tee -a "$logfile"
@@ -298,7 +298,8 @@ main() {
       echo "[OK] REVERT SUCCESSFUL" | tee -a "$logfile"
       echo "" | tee -a "$logfile"
       echo "Summary:" | tee -a "$logfile"
-      git log --oneline -1 | while read -r line; do echo "  Current HEAD: $line" | tee -a "$logfile"; done
+      line="$(git log --oneline -1)"
+      echo "  Current HEAD: ${line}" | tee -a "${logfile}"
       echo "" | tee -a "$logfile"
       echo "Next steps:" | tee -a "$logfile"
       echo "  1. Verify revert: git log --oneline -5" | tee -a "$logfile"
@@ -314,7 +315,7 @@ main() {
     else
       log_section_end "GIT REVERT" "$logfile" "1"
       echo "" | tee -a "$logfile"
-      echo "[FAIL] Revert failed" | tee -a "$logfile"
+      err_tee "[FAIL] Revert failed"
       echo "Please manually revert: git revert -m 1 ${rollback_target}"
       exit 1
     fi
@@ -332,7 +333,8 @@ main() {
       echo "[OK] ROLLBACK SUCCESSFUL" | tee -a "$logfile"
       echo "" | tee -a "$logfile"
       echo "Summary:" | tee -a "$logfile"
-      git log --oneline -1 | while read -r line; do echo "  Current HEAD: $line" | tee -a "$logfile"; done
+      line="$(git log --oneline -1)"
+      echo "  Current HEAD: ${line}" | tee -a "${logfile}"
       echo "" | tee -a "$logfile"
       echo "Next steps:" | tee -a "$logfile"
       echo "  1. Verify rollback: git log --oneline -5" | tee -a "$logfile"
@@ -350,7 +352,7 @@ main() {
     else
       log_section_end "GIT RESET" "$logfile" "1"
       echo "" | tee -a "$logfile"
-      echo "[FAIL] Rollback failed" | tee -a "$logfile"
+      err_tee "[FAIL] Rollback failed"
       echo "Please manually reset: git reset --hard ${rollback_target}"
       exit 1
     fi

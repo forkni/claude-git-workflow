@@ -381,7 +381,7 @@ _cmd_rebase_onto() {
 
   if [[ ${rebase_exit} -ne 0 ]]; then
     echo "" | tee -a "$logfile"
-    echo "[FAIL] REBASE HIT CONFLICTS" | tee -a "$logfile"
+    err_tee "[FAIL] REBASE HIT CONFLICTS"
     echo "" | tee -a "$logfile"
     echo "  Conflicting files:"
     git diff --name-only --diff-filter=U 2>/dev/null | sed 's/^/    /' || true
@@ -513,7 +513,7 @@ _cmd_squash_last() {
 
   if [[ ${rebase_exit} -ne 0 ]]; then
     echo "" | tee -a "$logfile"
-    echo "[FAIL] INTERACTIVE REBASE HIT CONFLICTS" | tee -a "$logfile"
+    err_tee "[FAIL] INTERACTIVE REBASE HIT CONFLICTS"
     echo "" | tee -a "$logfile"
     echo "  Resolve conflicts, then:"
     echo "    git add <resolved-files>"

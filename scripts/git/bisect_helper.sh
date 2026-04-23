@@ -324,7 +324,7 @@ main() {
         echo "  $(git log -1 --oneline "${first_bad}" 2>/dev/null || true)" | tee -a "$logfile"
       fi
     else
-      echo "[FAIL] Bisect run encountered errors -- check log: $logfile" | tee -a "$logfile"
+      err_tee "[FAIL] Bisect run encountered errors -- check log: $logfile"
     fi
   else
     # Manual mode -- bisect is active, user marks good/bad interactively
