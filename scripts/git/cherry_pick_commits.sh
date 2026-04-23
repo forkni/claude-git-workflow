@@ -134,7 +134,7 @@ main() {
   if [[ -f "${SCRIPT_DIR}/validate_branches.sh" ]]; then
     if ! CGW_SOURCE_BRANCH="${src_branch}" CGW_TARGET_BRANCH="${tgt_branch}" \
       bash "${SCRIPT_DIR}/validate_branches.sh" >>"$logfile" 2>&1; then
-      echo "[FAIL] Validation failed - aborting cherry-pick" | tee -a "$logfile"
+      err_tee "[FAIL] Validation failed - aborting cherry-pick"
       log_section_end "PRE-CHERRY-PICK VALIDATION" "$logfile" "1"
       echo "Please fix validation errors before retrying"
       exit 1
@@ -153,7 +153,7 @@ main() {
   _cp_original_branch="${original_branch}"
 
   if [[ -z "${original_branch}" ]]; then
-    echo "[FAIL] Failed to determine current branch" | tee -a "$logfile"
+    err_tee "[FAIL] Failed to determine current branch"
     log_section_end "GIT CHECKOUT TARGET" "$logfile" "1"
     exit 1
   fi
@@ -161,7 +161,7 @@ main() {
   echo "Current branch: ${original_branch}" | tee -a "$logfile"
 
   if ! run_git_with_logging "GIT CHECKOUT" "$logfile" checkout "${tgt_branch}"; then
-    echo "[FAIL] Failed to checkout ${tgt_branch} branch" | tee -a "$logfile"
+    err_tee "[FAIL] Failed to checkout ${tgt_branch} branch"
     exit 1
   fi
   _cp_did_checkout_target=1
@@ -210,7 +210,7 @@ main() {
   if ! git merge-base --is-ancestor "${commit_hash}" "${src_branch}" 2>/dev/null; then
     echo "[!] WARNING: ${commit_hash} is not an ancestor of ${src_branch}" | tee -a "$logfile"
     if [[ ${non_interactive} -eq 1 ]]; then
-      echo "[FAIL] [Non-interactive] Aborting -- commit not on ${src_branch} branch" | tee -a "$logfile"
+      err_tee "[FAIL] [Non-interactive] Aborting -- commit not on ${src_branch} branch"
       git checkout "${original_branch}"
       exit 1
     fi
@@ -255,7 +255,7 @@ main() {
       done
       echo ""
       if [[ ${non_interactive} -eq 1 ]]; then
-        echo "[FAIL] [Non-interactive] Aborting -- commit touches dev-only files" | tee -a "$logfile"
+        err_tee "[FAIL] [Non-interactive] Aborting -- commit touches dev-only files"
         git checkout "${original_branch}"
         exit 1
       fi
@@ -298,7 +298,8 @@ main() {
     } | tee -a "$logfile"
     echo "[OK] CHERRY-PICK SUCCESSFUL" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
-    git log -1 --oneline | while read -r line; do echo "  Cherry-picked: $line" | tee -a "$logfile"; done
+    line="$(git log -1 --oneline)"
+    echo "  Cherry-picked: ${line}" | tee -a "${logfile}"
     echo "  Original commit: ${commit_hash}" | tee -a "$logfile"
     echo "  Backup tag: ${backup_tag}" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
@@ -336,7 +337,7 @@ main() {
         echo "[OK] Auto-resolved modify/delete conflicts" | tee -a "$logfile"
         conflict_status=$(git status --short)
       else
-        echo "[FAIL] Auto-resolution failed for some files" | tee -a "$logfile"
+        err_tee "[FAIL] Auto-resolution failed for some files"
         exit 1
       fi
     fi

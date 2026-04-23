@@ -100,7 +100,7 @@ sync_one_branch() {
 
   if [[ "${current_branch}" != "${branch}" ]]; then
     if ! git checkout "${branch}" >>"$logfile" 2>&1; then
-      echo "  [FAIL] Failed to checkout ${branch}" | tee -a "$logfile"
+      err_tee "  [FAIL] Failed to checkout ${branch}"
       return 1
     fi
     echo "  Switched to ${branch}" | tee -a "$logfile"
@@ -127,7 +127,7 @@ sync_one_branch() {
     echo "  [OK] ${branch} synced successfully" | tee -a "$logfile"
     return 0
   else
-    echo "  [FAIL] Rebase failed for ${branch}" | tee -a "$logfile"
+    err_tee "  [FAIL] Rebase failed for ${branch}"
     echo "  Aborting rebase..." | tee -a "$logfile"
     git rebase --abort 2>/dev/null || true
     echo "  Manual action needed: git pull --rebase ${CGW_REMOTE} ${branch}" | tee -a "$logfile"
@@ -251,7 +251,7 @@ main() {
     echo "[OK] Fetch complete" | tee -a "$logfile"
     log_section_end "[2/4] GIT FETCH" "$logfile" "0"
   else
-    echo "[FAIL] Fetch failed -- check network/auth" | tee -a "$logfile"
+    err_tee "[FAIL] Fetch failed -- check network/auth"
     log_section_end "[2/4] GIT FETCH" "$logfile" "1"
     exit 1
   fi

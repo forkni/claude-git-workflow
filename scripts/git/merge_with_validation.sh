@@ -79,7 +79,7 @@ validate_docs_ci_policy() {
       doc_name=$(basename "${doc_file}")
       if ! [[ "${doc_name}" =~ ${CGW_DOCS_PATTERN} ]]; then
         if git diff --diff-filter=A --name-only HEAD~1 HEAD -- "${doc_file}" | grep -q .; then
-          echo "[FAIL] ERROR: Unauthorized doc file: ${doc_file}" | tee -a "$logfile"
+          err_tee "[FAIL] ERROR: Unauthorized doc file: ${doc_file}"
           echo "   Not in CGW_DOCS_PATTERN allowlist" | tee -a "$logfile"
           docs_validation_failed=1
         fi
@@ -91,7 +91,7 @@ validate_docs_ci_policy() {
       local doc_name
       doc_name=$(basename "${doc_file}")
       if ! [[ "${doc_name}" =~ ${CGW_DOCS_PATTERN} ]]; then
-        echo "[FAIL] ERROR: Unauthorized doc file: ${doc_file}" | tee -a "$logfile"
+        err_tee "[FAIL] ERROR: Unauthorized doc file: ${doc_file}"
         echo "   Not in CGW_DOCS_PATTERN allowlist" | tee -a "$logfile"
         docs_validation_failed=1
       fi
@@ -100,7 +100,7 @@ validate_docs_ci_policy() {
 
   if [[ ${docs_validation_failed} -eq 1 ]]; then
     echo "" | tee -a "$logfile"
-    echo "[FAIL] CI POLICY VIOLATION: Unauthorized documentation detected" | tee -a "$logfile"
+    err_tee "[FAIL] CI POLICY VIOLATION: Unauthorized documentation detected"
     if [[ "${check_mode}" == "committed" ]]; then
       echo "Rolling back merge..." | tee -a "$logfile"
       git reset --hard HEAD~1 >>"$logfile" 2>&1
@@ -141,7 +141,7 @@ cleanup_tests_dir() {
           git add -u >>"$logfile" 2>&1
         fi
       else
-        echo "[FAIL] ERROR: Failed to remove tests/ directory" | tee -a "$logfile"
+        err_tee "[FAIL] ERROR: Failed to remove tests/ directory"
       fi
     else
       echo "[OK] No tests/ directory found" | tee -a "$logfile"
@@ -259,7 +259,7 @@ main() {
   if [[ -f "${SCRIPT_DIR}/validate_branches.sh" ]]; then
     if ! CGW_SOURCE_BRANCH="${src_branch}" CGW_TARGET_BRANCH="${tgt_branch}" \
       bash "${SCRIPT_DIR}/validate_branches.sh" >>"$logfile" 2>&1; then
-      echo "[FAIL] Validation failed - aborting merge" | tee -a "$logfile"
+      err_tee "[FAIL] Validation failed - aborting merge"
       log_section_end "PRE-MERGE VALIDATION" "$logfile" "1"
       echo "Please fix validation errors before retrying"
       exit 1
@@ -279,7 +279,7 @@ main() {
   echo "Current branch: ${original_branch}" | tee -a "$logfile"
 
   if [[ "${original_branch}" == "${tgt_branch}" ]]; then
-    echo "[FAIL] ERROR: Already on ${tgt_branch} branch" | tee -a "$logfile"
+    err_tee "[FAIL] ERROR: Already on ${tgt_branch} branch"
     echo "  Run this script from ${src_branch} branch" | tee -a "$logfile"
     exit 1
   elif [[ "${original_branch}" != "${src_branch}" ]]; then
@@ -300,7 +300,7 @@ main() {
   fi
 
   if ! run_git_with_logging "GIT CHECKOUT" "$logfile" checkout "${tgt_branch}"; then
-    echo "[FAIL] Failed to checkout ${tgt_branch} branch" | tee -a "$logfile"
+    err_tee "[FAIL] Failed to checkout ${tgt_branch} branch"
     exit 1
   fi
   _merge_did_checkout_target=1
@@ -371,7 +371,7 @@ main() {
 
       if [[ ${resolution_failed} -eq 1 ]]; then
         echo "" | tee -a "$logfile"
-        echo "[FAIL] Auto-resolution failed for some files" | tee -a "$logfile"
+        err_tee "[FAIL] Auto-resolution failed for some files"
         printf '%s\n' "${conflict_status}" | tee -a "$logfile"
         exit 1
       fi
@@ -383,7 +383,7 @@ main() {
     # AU/AA conflicts require manual resolution
     if printf '%s\n' "${conflict_status}" | grep -qE "^(AU|AA) "; then
       echo "" | tee -a "$logfile"
-      echo "[FAIL] Add/add or add/unmerged conflicts require manual resolution:" | tee -a "$logfile"
+      err_tee "[FAIL] Add/add or add/unmerged conflicts require manual resolution:"
       printf '%s\n' "${conflict_status}" | grep -E "^(AU|AA) " | tee -a "$logfile"
       echo ""
       echo "Please resolve manually:"
@@ -407,7 +407,7 @@ main() {
     # UU (both modified): requires manual resolution
     if printf '%s\n' "${conflict_status}" | grep -q "^UU "; then
       echo "" | tee -a "$logfile"
-      echo "[FAIL] Content conflicts require manual resolution:" | tee -a "$logfile"
+      err_tee "[FAIL] Content conflicts require manual resolution:"
       printf '%s\n' "${conflict_status}" | grep "^UU "
       echo ""
       echo "Please resolve manually:"
@@ -422,7 +422,7 @@ main() {
     # UD (deleted by us, modified by theirs): requires manual resolution
     if printf '%s\n' "${conflict_status}" | grep -q "^UD "; then
       echo "" | tee -a "$logfile"
-      echo "[FAIL] Deleted-by-us conflicts require manual resolution:" | tee -a "$logfile"
+      err_tee "[FAIL] Deleted-by-us conflicts require manual resolution:"
       printf '%s\n' "${conflict_status}" | grep "^UD " | tee -a "$logfile"
       echo ""
       echo "Please resolve manually (for each file):"
@@ -436,7 +436,7 @@ main() {
     # AD/DA (added differently on each side): requires manual resolution
     if printf '%s\n' "${conflict_status}" | grep -qE "^(AD|DA) "; then
       echo "" | tee -a "$logfile"
-      echo "[FAIL] Add/delete conflicts require manual resolution:" | tee -a "$logfile"
+      err_tee "[FAIL] Add/delete conflicts require manual resolution:"
       printf '%s\n' "${conflict_status}" | grep -E "^(AD|DA) " | tee -a "$logfile"
       echo ""
       echo "Please resolve manually (for each file):"
@@ -457,7 +457,7 @@ main() {
       if run_git_with_logging "GIT COMMIT MERGE" "$logfile" commit --no-edit; then
         echo "[OK] Merge commit completed" | tee -a "$logfile"
       else
-        echo "[FAIL] Failed to complete merge commit" | tee -a "$logfile"
+        err_tee "[FAIL] Failed to complete merge commit"
         log_section_end "GIT COMMIT" "$logfile" "1"
         echo "To abort: git merge --abort"
         exit 1
@@ -476,7 +476,8 @@ main() {
 
   echo "[OK] MERGE SUCCESSFUL" | tee -a "$logfile"
   echo "" | tee -a "$logfile"
-  git log -1 --oneline | while read -r line; do echo "  Latest commit: $line" | tee -a "$logfile"; done
+  line="$(git log -1 --oneline)"
+  echo "  Latest commit: ${line}" | tee -a "${logfile}"
   echo "  Backup tag: ${backup_tag}" | tee -a "$logfile"
   echo "" | tee -a "$logfile"
   echo "Next steps:" | tee -a "$logfile"

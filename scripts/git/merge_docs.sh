@@ -122,7 +122,7 @@ main() {
   if [[ -f "${SCRIPT_DIR}/validate_branches.sh" ]]; then
     if ! CGW_SOURCE_BRANCH="${src_branch}" CGW_TARGET_BRANCH="${tgt_branch}" \
       bash "${SCRIPT_DIR}/validate_branches.sh" >>"$logfile" 2>&1; then
-      echo "[FAIL] Validation failed - aborting documentation merge" | tee -a "$logfile"
+      err_tee "[FAIL] Validation failed - aborting documentation merge"
       log_section_end "PRE-MERGE VALIDATION" "$logfile" "1"
       echo "Please fix validation errors before retrying"
       exit 1
@@ -140,7 +140,7 @@ main() {
   echo "Current branch: ${original_branch}" | tee -a "$logfile"
 
   if ! run_git_with_logging "GIT CHECKOUT" "$logfile" checkout "${tgt_branch}"; then
-    echo "[FAIL] Failed to checkout ${tgt_branch} branch" | tee -a "$logfile"
+    err_tee "[FAIL] Failed to checkout ${tgt_branch} branch"
     exit 1
   fi
 
@@ -221,7 +221,7 @@ main() {
   did_mutate_worktree=1
 
   if ! run_git_with_logging "GIT CHECKOUT DOCS" "$logfile" checkout "${src_branch}" -- docs/; then
-    echo "[FAIL] Failed to checkout documentation from ${src_branch}" | tee -a "$logfile"
+    err_tee "[FAIL] Failed to checkout documentation from ${src_branch}"
     git checkout "${original_branch}" >>"$logfile" 2>&1
     exit 1
   fi
@@ -257,7 +257,8 @@ main() {
     } | tee -a "$logfile"
     echo "[OK] DOCUMENTATION MERGE SUCCESSFUL" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
-    git log -1 --oneline | while read -r line; do echo "  Latest commit: $line" | tee -a "$logfile"; done
+    line="$(git log -1 --oneline)"
+    echo "  Latest commit: ${line}" | tee -a "${logfile}"
     echo "  Backup tag: ${backup_tag}" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
     echo "Merged files:" | tee -a "$logfile"
@@ -276,7 +277,7 @@ main() {
   else
     log_section_end "GIT COMMIT" "$logfile" "1"
     echo "" | tee -a "$logfile"
-    echo "[FAIL] Failed to commit documentation merge" | tee -a "$logfile"
+    err_tee "[FAIL] Failed to commit documentation merge"
     echo ""
     echo "To abort: git reset --hard HEAD"
     exit 1

@@ -267,7 +267,7 @@ main() {
   else
     log_section_end "GIT PUSH" "$logfile" "1"
     echo "" | tee -a "$logfile"
-    echo "[FAIL] Push failed" | tee -a "$logfile"
+    err_tee "[FAIL] Push failed"
     echo "" | tee -a "$logfile"
     echo "Common causes:" | tee -a "$logfile"
     echo "  - Remote has new commits: ./scripts/git/sync_branches.sh" | tee -a "$logfile"

@@ -58,18 +58,23 @@ if [[ -f "${_CGW_CONF}" ]]; then
     [[ "${_line}" =~ ^[[:space:]]*$ ]] && continue # skip blank lines
     # Only accept CGW_* assignment lines (optionally prefixed with export).
     # Reject anything else to prevent eval of arbitrary shell statements.
-    if [[ "${_line}" =~ ^[[:space:]]*(export[[:space:]]+)?(CGW_[A-Z0-9_]+)= ]]; then
+    if [[ "${_line}" =~ ^[[:space:]]*(export[[:space:]]+)?(CGW_[A-Z0-9_]+)=(.*) ]]; then
       _cgw_var="${BASH_REMATCH[2]}"
+      _cgw_val="${BASH_REMATCH[3]}"
       # Only set if not already in environment (preserves env var priority)
       if [[ -z "${!_cgw_var+x}" ]]; then
-        # shellcheck disable=SC2163  # eval required: _line contains "KEY=VALUE" or "export KEY=VALUE"
-        eval "${_line}"
+        # Strip optional surrounding double/single quotes from the value
+        if [[ "${_cgw_val}" =~ ^\"(.*)\"$ ]] || [[ "${_cgw_val}" =~ ^\'(.*)\'$ ]]; then
+          _cgw_val="${BASH_REMATCH[1]}"
+        fi
+        printf -v "${_cgw_var}" '%s' "${_cgw_val}"
+        export "${_cgw_var?}"
       fi
     else
       printf '%s\n' "[WARN] Ignoring unsupported line in .cgw.conf: ${_line}" >&2
     fi
   done <"${_CGW_CONF}"
-  unset _line _cgw_var
+  unset _line _cgw_var _cgw_val
 fi
 
 # ============================================================================

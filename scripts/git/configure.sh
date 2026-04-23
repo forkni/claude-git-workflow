@@ -304,9 +304,9 @@ _install_hook() {
       echo "  [OK] Pre-commit hook already installed"
       return 0
     fi
-    echo "  [!] Hook template not found at: ${hook_template}"
-    echo "      Fix: copy the hooks/ directory from the CGW source repo into your project root,"
-    echo "      then re-run: ./scripts/git/configure.sh"
+    echo "  [!] Hook template not found at: ${hook_template}" >&2
+    echo "      Fix: copy the hooks/ directory from the CGW source repo into your project root," >&2
+    echo "      then re-run: ./scripts/git/configure.sh" >&2
     return 1
   fi
 
@@ -358,9 +358,9 @@ _install_hook() {
   if bash "${SCRIPT_DIR}/install_hooks.sh" >/dev/null 2>&1; then
     echo "  [OK] Git hooks installed (pre-commit + pre-push)"
   else
-    echo "  [!] Hooks written to .githooks/ but failed to copy to .git/hooks/"
-    echo "      Fix: run manually: ./scripts/git/install_hooks.sh"
-    echo "      If that also fails, check that .git/hooks/ is writable."
+    echo "  [!] Hooks written to .githooks/ but failed to copy to .git/hooks/" >&2
+    echo "      Fix: run manually: ./scripts/git/install_hooks.sh" >&2
+    echo "      If that also fails, check that .git/hooks/ is writable." >&2
   fi
 }
 
@@ -387,9 +387,9 @@ _install_skill() {
     echo "  [OK] Claude Code skill already installed (${install_mode})"
     return 0
   else
-    echo "  [!] Skill template not found."
-    echo "      Fix: copy skill/ and command/ from the CGW source repo into your"
-    echo "      project root, then re-run: ./scripts/git/configure.sh"
+    echo "  [!] Skill template not found." >&2
+    echo "      Fix: copy skill/ and command/ from the CGW source repo into your" >&2
+    echo "      project root, then re-run: ./scripts/git/configure.sh" >&2
     return 1
   fi
 

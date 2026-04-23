@@ -72,7 +72,7 @@ main() {
       chmod +x ".git/hooks/pre-commit" >>"$logfile" 2>&1
       echo "  [OK] pre-commit installed" | tee -a "$logfile"
     else
-      echo "  [FAIL] Failed to install pre-commit hook" | tee -a "$logfile"
+      err_tee "  [FAIL] Failed to install pre-commit hook"
       hooks_ok=1
     fi
   else
