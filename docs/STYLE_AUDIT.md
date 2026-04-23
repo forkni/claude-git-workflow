@@ -21,10 +21,10 @@
 | File header comments | PASS |
 | Return-value guards (`mv`/`cp`/`cd`) | PASS |
 | `main "$@"` pattern | PASS |
-| **`eval` usage** | **FAIL — 3 sites** |
-| **Pipe-to-while** | **FAIL — 5 sites** |
-| **STDERR routing for `[FAIL]` messages** | **FAIL — ~35 sites** |
-| **`${var}` vs `$var` consistency** | **FAIL — 2 files** |
+| **`eval` usage** | **RESOLVED in v0.3.0 — 3 sites fixed** |
+| **Pipe-to-while** | **RESOLVED in v0.3.0 — 5 sites fixed** |
+| **STDERR routing for `[FAIL]` messages** | **RESOLVED in v0.3.0 — ~35 sites fixed** |
+| **`${var}` vs `$var` consistency** | **RESOLVED in v0.3.0 — 2 files fixed** |
 | Line length > 80 chars | OUT OF SCOPE |
 | Shebangs (`#!/usr/bin/env bash`) | OUT OF SCOPE |
 | Function `Globals/Arguments/Returns` headers | OUT OF SCOPE |
@@ -81,6 +81,8 @@
 `bash -c "$cmd"` — same behaviour for trusted command strings, but explicit
 about intent. (Full array-based refactor deferred.)
 
+**Resolution (v0.3.0):** All three sites fixed. `_config.sh` now uses a regex-based parser with `printf -v`; `.cgw.conf` values are treated as literal strings. `install_benchmark.sh` uses `bash -c "${cmd}"` with justification comment.
+
 ---
 
 ### §1.4 Pipe-to-while — 5 violations
@@ -97,6 +99,8 @@ making the `while` loop unnecessary.
 | `scripts/git/merge_docs.sh` | 260 | `git log -1 --oneline \| while read -r line; do ... done` |
 
 **Fix**: Replace with `line="$(git log -1 --oneline)"` + direct `echo`.
+
+**Resolution (v0.3.0):** All five sites eliminated — replaced with plain command substitution.
 
 ---
 
@@ -125,6 +129,8 @@ All affected files (sampled sites):
 | `bisect_helper.sh` | 327 |
 | `configure.sh` | 307, 361, 390 (direct echo, no tee — add `>&2`) |
 
+**Resolution (v0.3.0):** `err_tee()` helper added to `_common.sh`; ~34 `[FAIL]`/`[ERROR]` sites across 9 scripts replaced with `err_tee` calls. Three `configure.sh` warning lines redirected to `>&2`.
+
 ---
 
 ### §2.6 `${var}` consistency — 2 files
@@ -136,19 +142,21 @@ All affected files (sampled sites):
 `$1`–`$9`, special vars (`$?`, `$#`, `$*`, `$@`, `$$`), single-quoted strings,
 already-braced expansions, and heredoc content prefixed with `\$`.
 
+**Resolution (v0.3.0):** Sweep applied to both files; 49 sites in `commit_enhanced.sh` and 238 sites in `install_benchmark.sh` updated.
+
 ---
 
 ## Verification Checklist
 
 After applying fixes:
 
-- [ ] `shellcheck -x --source-path=scripts/git scripts/git/*.sh` — clean
-- [ ] `shellcheck tests/benchmark/install_benchmark.sh` — clean
-- [ ] `shfmt -d -i 2 -ci scripts/` — no diffs
-- [ ] `bats tests/unit/` — all pass
-- [ ] `bats tests/integration/commit_enhanced.bats` — all pass
-- [ ] Smoke-test `_config.sh`: verify `.cgw.conf` with `export CGW_FOO=bar`,
+- [x] `shellcheck -x --source-path=scripts/git scripts/git/*.sh` — clean
+- [x] `shellcheck tests/benchmark/install_benchmark.sh` — clean
+- [x] `shfmt -d -i 2 -ci scripts/` — no diffs
+- [x] `bats tests/unit/` — all pass
+- [x] `bats tests/integration/commit_enhanced.bats` — all pass
+- [x] Smoke-test `_config.sh`: verify `.cgw.conf` with `export CGW_FOO=bar`,
   `CGW_BAZ="quoted value"`, comment lines, and one rejected line produces
   `[WARN]` and correct variable resolution
-- [ ] Smoke-test STDERR routing: `./script ... 2>/dev/null` suppresses `[FAIL]`
+- [x] Smoke-test STDERR routing: `./script ... 2>/dev/null` suppresses `[FAIL]`
   lines; `./script ... >/dev/null` still shows them on stderr

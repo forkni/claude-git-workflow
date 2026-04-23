@@ -48,9 +48,29 @@ Add project-specific prefixes via `CGW_EXTRA_PREFIXES="cuda|tensorrt"` in `.cgw.
 # Non-interactive (CI/CD, Claude Code)
 ./scripts/git/commit_enhanced.sh --non-interactive "feat: add feature"
 
-# Skip lint checks
+# Stage only specific paths, then commit
+./scripts/git/commit_enhanced.sh --only src/foo.py --only src/bar.py "fix: narrow fix"
+
+# Commit pre-staged files only (skip auto-staging)
+./scripts/git/commit_enhanced.sh --staged-only "fix: pre-staged only"
+
+# Force-stage all tracked changes (override pre-staged respect)
+./scripts/git/commit_enhanced.sh --all "chore: bulk update"
+
+# Skip lint checks (all)
 ./scripts/git/commit_enhanced.sh --skip-lint "feat: add feature"
+
+# Skip markdown lint only
+./scripts/git/commit_enhanced.sh --skip-md-lint "docs: update readme"
+
+# Force interactive mode even without a TTY
+./scripts/git/commit_enhanced.sh --interactive "feat: review before commit"
 ```
+
+**Staging behaviour (non-interactive):**
+- Pre-staged files exist + unstaged changes exist → commits pre-staged only (warns about skipped files). Use `--all` to override.
+- Nothing pre-staged → auto-stages all tracked changes (legacy behaviour).
+- `--only <path>` → resets index, stages listed paths only.
 
 ### Merge to target branch (direct)
 
@@ -99,13 +119,18 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use PRs by default.
 ./scripts/git/push_validated.sh --skip-lint   # skip all lint
 ./scripts/git/push_validated.sh --skip-md-lint  # skip markdown lint only
 ./scripts/git/push_validated.sh --dry-run     # preview
+./scripts/git/push_validated.sh --no-venv     # use system lint tool (no .venv)
+./scripts/git/push_validated.sh --branch hotfix/1.2  # push a different branch
 ```
 
 ### Sync with remote
 
 ```bash
-./scripts/git/sync_branches.sh           # sync current branch
-./scripts/git/sync_branches.sh --all     # sync both branches
+./scripts/git/sync_branches.sh              # sync current branch
+./scripts/git/sync_branches.sh --all        # sync both source and target branches
+./scripts/git/sync_branches.sh --branch main  # sync a specific branch
+./scripts/git/sync_branches.sh --dry-run    # preview (fetch only, no merge)
+./scripts/git/sync_branches.sh --prune      # also remove stale remote-tracking refs
 ```
 
 ### Rollback a merge
@@ -228,6 +253,10 @@ All scripts support `CGW_*` environment variables to override config at runtime:
 CGW_NON_INTERACTIVE=1 ./scripts/git/commit_enhanced.sh "feat: message"
 CGW_SOURCE_BRANCH=dev ./scripts/git/merge_with_validation.sh --dry-run
 CGW_LINT_CMD="" ./scripts/git/check_lint.sh   # skip lint for this run
+CGW_NO_VENV=1 ./scripts/git/commit_enhanced.sh "feat: message"  # system lint
+CGW_SKIP_LINT=1 ./scripts/git/commit_enhanced.sh "feat: message"  # skip all lint
+CGW_SKIP_MD_LINT=1 ./scripts/git/commit_enhanced.sh "docs: update"  # skip md lint only
+CGW_ALL=1 ./scripts/git/commit_enhanced.sh "chore: bulk stage"  # force-stage all
 ```
 
 Legacy `CLAUDE_GIT_*` variables are still supported:

@@ -149,7 +149,7 @@ rm -f .git/hooks/pre-commit .git/hooks/pre-push
 rm -rf .githooks/
 
 # Remove config
-rm -f .cgw.conf cgw.conf.example
+rm -f .cgw.conf
 
 # Remove Claude Code integration (if installed locally)
 rm -rf .claude/skills/auto-git-workflow/

@@ -22,9 +22,11 @@ claude-git-workflow\install.cmd
 ### Unix / manual
 
 ```bash
-# 1. Copy scripts + hook template into your project
+# 1. Copy scripts, hook templates, and Claude Code integration into your project
 cp -r claude-git-workflow/scripts/git/ your-project/scripts/git/
 cp -r claude-git-workflow/hooks/ your-project/hooks/
+cp -r claude-git-workflow/skill/ your-project/.claude/skills/auto-git-workflow/
+cp claude-git-workflow/command/auto-git-workflow.md your-project/.claude/commands/
 
 # 2. Auto-configure (scans project, generates config, installs hooks + skill)
 cd your-project && ./scripts/git/configure.sh
@@ -95,6 +97,7 @@ See [docs/configuration.md](docs/configuration.md) for all options and language-
 | [Configuration](docs/configuration.md) | Config system, all options, lint examples for 7 ecosystems |
 | [CI Setup](docs/ci-setup.md) | GitHub Actions, Charlie CI, local tool install |
 | [Claude Code](docs/claude-code-integration.md) | Skill install (local and global), slash command |
+| [Shell Style Audit](docs/STYLE_AUDIT.md) | Google Shell Style Guide compliance report and fixes (v0.3.0) |
 | [cgw.conf.example](cgw.conf.example) | Inline-documented reference for every config variable |
 
 ---
