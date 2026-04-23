@@ -375,12 +375,15 @@ Safety checks: verifies remote reachability, warns if behind remote, blocks ungu
 
 **`sync_branches.sh`** — Sync local branches with remote
 ```bash
-./scripts/git/sync_branches.sh [--all] [--non-interactive]
+./scripts/git/sync_branches.sh [--all] [--branch <name>] [--dry-run] [--prune] [--non-interactive]
 ```
 
 | Flag | Purpose |
 |------|---------|
 | `--all` | Sync both source and target branches |
+| `--branch <name>` | Sync a specific named branch (overrides `--all`) |
+| `--dry-run` | Show what would be synced without making changes |
+| `--prune` | Remove stale remote-tracking refs during fetch |
 | `--non-interactive` | Abort (instead of prompt) if uncommitted changes found |
 
 Runs `git fetch ${CGW_REMOTE}` then `git pull --rebase` on each target.

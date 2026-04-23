@@ -202,8 +202,11 @@ Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login
 
 **Syncing with remote:**
 ```bash
-./scripts/git/sync_branches.sh           # sync current branch
-./scripts/git/sync_branches.sh --all     # sync both branches
+./scripts/git/sync_branches.sh              # sync current branch
+./scripts/git/sync_branches.sh --all        # sync both source and target branches
+./scripts/git/sync_branches.sh --branch main  # sync a specific branch
+./scripts/git/sync_branches.sh --dry-run    # preview (fetch only, no merge)
+./scripts/git/sync_branches.sh --prune      # also remove stale remote-tracking refs
 ```
 
 **Rollback a merge:**
@@ -261,14 +264,23 @@ Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login
 # Rebase current branch onto target:
 ./scripts/git/rebase_safe.sh --onto main
 
+# Rebase with auto-stash (stash dirty tree before, restore after):
+./scripts/git/rebase_safe.sh --onto main --autostash
+
 # Squash last N commits (opens editor):
 ./scripts/git/rebase_safe.sh --squash-last 3
+
+# Squash non-interactively using fixup!/squash! prefixes:
+./scripts/git/rebase_safe.sh --squash-last 5 --autosquash
 
 # Abort in-progress rebase:
 ./scripts/git/rebase_safe.sh --abort
 
 # Continue after resolving conflicts:
 ./scripts/git/rebase_safe.sh --continue
+
+# Skip the current conflicting commit:
+./scripts/git/rebase_safe.sh --skip
 ```
 
 **Bisecting a bug:**
@@ -306,8 +318,13 @@ Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login
 ```bash
 ./scripts/git/setup_attributes.sh --dry-run   # preview .gitattributes changes
 ./scripts/git/setup_attributes.sh             # write .gitattributes
+./scripts/git/setup_attributes.sh --force     # overwrite existing .gitattributes without prompting
 ./scripts/git/clean_build.sh                  # dry-run artifact cleanup
 ./scripts/git/clean_build.sh --execute        # actually delete artifacts
+./scripts/git/clean_build.sh --python --execute   # Python artifacts only
+./scripts/git/clean_build.sh --td --execute       # TouchDesigner artifacts only
+./scripts/git/clean_build.sh --glsl --execute     # GLSL compiled shaders only
+./scripts/git/clean_build.sh --all --execute      # all artifact types regardless of detection
 ./scripts/git/repo_health.sh                  # integrity check + size report
 ./scripts/git/repo_health.sh --gc             # also run garbage collection
 ```

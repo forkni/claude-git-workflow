@@ -16,7 +16,8 @@
 #   --staged-only      Use pre-staged files only, skip auto-staging
 #   --all              Force bulk-stage all tracked changes (override pre-stage respect)
 #   --no-venv          Use system ruff instead of .venv ruff
-#   --skip-md-lint     (no-op, preserved for backward compat)
+#   --skip-lint        Skip all lint checks
+#   --skip-md-lint     Skip markdown lint only (CGW_MARKDOWNLINT_CMD step)
 #   -h, --help         Show help
 #
 # Staging behavior (non-interactive):
