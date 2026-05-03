@@ -53,7 +53,8 @@ if [[ -f "${_CGW_CONF}" ]]; then
   # Read .cgw.conf line-by-line, only applying variables not already set in the environment.
   # This ensures env vars take priority AND derived values (e.g. CGW_PROTECTED_BRANCHES
   # referencing CGW_TARGET_BRANCH) stay consistent with the values actually used.
-  while IFS= read -r _line; do
+  while IFS= read -r _line || [[ -n "${_line}" ]]; do
+    _line="${_line%$'\r'}" # tolerate CRLF .cgw.conf (e.g., touched by a Windows editor)
     [[ "${_line}" =~ ^[[:space:]]*# ]] && continue # skip comments
     [[ "${_line}" =~ ^[[:space:]]*$ ]] && continue # skip blank lines
     # Only accept CGW_* assignment lines (optionally prefixed with export).
