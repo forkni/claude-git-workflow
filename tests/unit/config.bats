@@ -140,6 +140,17 @@ teardown() {
   [[ "${result}" == *"CGW_LINT_CMD=golangci-lint"* ]]
 }
 
+@test ".cgw.conf with CRLF line endings is read correctly" {
+  # Regression: when a Windows editor saves .cgw.conf with CRLF, the trailing
+  # \r leaked into variable values and broke quote-stripping (e.g.
+  # CGW_LINT_CMD became literal '"ruff"\r', causing 'command not found').
+  sed 's/$/\r/' "${FIXTURES_DIR}/sample.cgw.conf" > "${TEST_REPO_DIR}/.cgw.conf"
+  result=$(_source_config)
+  [[ "${result}" == *"CGW_SOURCE_BRANCH=feature"* ]]
+  [[ "${result}" == *"CGW_TARGET_BRANCH=stable"* ]]
+  [[ "${result}" == *"CGW_LINT_CMD=eslint"* ]]
+}
+
 # ── Backward compatibility mappings ───────────────────────────────────────────
 
 @test "CLAUDE_GIT_NON_INTERACTIVE=1 sets CGW_NON_INTERACTIVE=1" {

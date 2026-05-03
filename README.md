@@ -81,6 +81,7 @@ Scripts use a three-tier resolution system — environment variables override `.
 | `CGW_TARGET_BRANCH` | `main` | Stable/production branch |
 | `CGW_REMOTE` | `origin` | Remote name for fetch/push (use `upstream` for forks) |
 | `CGW_LOCAL_FILES` | `CLAUDE.md MEMORY.md .claude/ logs/` | Files never committed |
+| `CGW_LOCAL_FILES_EXEMPT` | `""` | Files exempted from local-only protection (exact paths) |
 | `CGW_LINT_CMD` | `ruff` | Lint tool (`""` to disable) |
 | `CGW_MERGE_MODE` | `direct` | `direct` (local merge) or `pr` (create GitHub PR) |
 

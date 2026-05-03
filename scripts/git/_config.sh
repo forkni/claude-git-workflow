@@ -53,7 +53,8 @@ if [[ -f "${_CGW_CONF}" ]]; then
   # Read .cgw.conf line-by-line, only applying variables not already set in the environment.
   # This ensures env vars take priority AND derived values (e.g. CGW_PROTECTED_BRANCHES
   # referencing CGW_TARGET_BRANCH) stay consistent with the values actually used.
-  while IFS= read -r _line; do
+  while IFS= read -r _line || [[ -n "${_line}" ]]; do
+    _line="${_line%$'\r'}" # tolerate CRLF .cgw.conf (e.g., touched by a Windows editor)
     [[ "${_line}" =~ ^[[:space:]]*# ]] && continue # skip comments
     [[ "${_line}" =~ ^[[:space:]]*$ ]] && continue # skip blank lines
     # Only accept CGW_* assignment lines (optionally prefixed with export).
@@ -92,6 +93,9 @@ CGW_REMOTE="${CGW_REMOTE:-origin}"
 # --- Local-only files (space-separated; trailing / denotes a directory) ---
 # These files are never committed. configure.sh auto-detects project-specific ones.
 CGW_LOCAL_FILES="${CGW_LOCAL_FILES:-CLAUDE.md MEMORY.md .claude/ logs/}"
+
+# --- Exempt files (exact paths allowed through CGW_LOCAL_FILES protection) ---
+CGW_LOCAL_FILES_EXEMPT="${CGW_LOCAL_FILES_EXEMPT:-}"
 
 # --- Commit message prefixes ---
 # Standard conventional commit prefixes (always included):

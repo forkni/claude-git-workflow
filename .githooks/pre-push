@@ -14,7 +14,8 @@
 # and CGW_ALL_PREFIXES. To regenerate, run: ./scripts/git/configure.sh --skip-skill
 #
 # CONVENTIONAL PREFIXES: feat|fix|docs|chore|test|refactor|style|perf
-# LOCAL FILES PATTERN:   CLAUDE\.md|MEMORY\.md|\.claude|logs
+# LOCAL FILES PATTERN:   CLAUDE\.md|SESSION_LOG\.md|\.claude|logs
+# EXEMPT FILES PATTERN:  
 
 set -uo pipefail
 
@@ -22,8 +23,9 @@ set -uo pipefail
 # Read stdin: remote <name>, url <url>, <local-ref> <local-sha> <remote-ref> <remote-sha>
 # ---------------------------------------------------------------------------
 
-LOCAL_FILES_PATTERN="CLAUDE\.md|MEMORY\.md|\.claude|logs"
+LOCAL_FILES_PATTERN="CLAUDE\.md|SESSION_LOG\.md|\.claude|logs"
 ALL_PREFIXES="feat|fix|docs|chore|test|refactor|style|perf"
+EXEMPT_PATTERN=""
 
 # Collect push info from stdin (git passes it to pre-push)
 while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
@@ -50,7 +52,10 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   if [[ -n "${LOCAL_FILES_PATTERN}" ]]; then
     for COMMIT in ${COMMITS}; do
       FILES_IN_COMMIT=$(git diff-tree --no-commit-id -r --name-only "${COMMIT}" 2>/dev/null || true)
-      PROBLEM=$(echo "${FILES_IN_COMMIT}" | grep -E "${LOCAL_FILES_PATTERN}" || true)
+      PROBLEM=$(echo "${FILES_IN_COMMIT}" \
+        | grep -E "${LOCAL_FILES_PATTERN}" \
+        | { if [[ -n "${EXEMPT_PATTERN}" ]]; then grep -vE "^(${EXEMPT_PATTERN})$"; else cat; fi; } \
+        || true)
       if [[ -n "${PROBLEM}" ]]; then
         echo ""
         echo "ERROR [pre-push]: Commit ${COMMIT} contains local-only files:"

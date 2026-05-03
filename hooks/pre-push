@@ -15,6 +15,7 @@
 #
 # CONVENTIONAL PREFIXES: __CGW_ALL_PREFIXES__
 # LOCAL FILES PATTERN:   __CGW_LOCAL_FILES_PATTERN__
+# EXEMPT FILES PATTERN:  __CGW_EXEMPT_PATTERN__
 
 set -uo pipefail
 
@@ -24,6 +25,7 @@ set -uo pipefail
 
 LOCAL_FILES_PATTERN="__CGW_LOCAL_FILES_PATTERN__"
 ALL_PREFIXES="__CGW_ALL_PREFIXES__"
+EXEMPT_PATTERN="__CGW_EXEMPT_PATTERN__"
 
 # Collect push info from stdin (git passes it to pre-push)
 while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
@@ -50,7 +52,10 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   if [[ -n "${LOCAL_FILES_PATTERN}" ]]; then
     for COMMIT in ${COMMITS}; do
       FILES_IN_COMMIT=$(git diff-tree --no-commit-id -r --name-only "${COMMIT}" 2>/dev/null || true)
-      PROBLEM=$(echo "${FILES_IN_COMMIT}" | grep -E "${LOCAL_FILES_PATTERN}" || true)
+      PROBLEM=$(echo "${FILES_IN_COMMIT}" \
+        | grep -E "${LOCAL_FILES_PATTERN}" \
+        | { if [[ -n "${EXEMPT_PATTERN}" ]]; then grep -vE "^(${EXEMPT_PATTERN})$"; else cat; fi; } \
+        || true)
       if [[ -n "${PROBLEM}" ]]; then
         echo ""
         echo "ERROR [pre-push]: Commit ${COMMIT} contains local-only files:"
