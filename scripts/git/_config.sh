@@ -64,9 +64,16 @@ if [[ -f "${_CGW_CONF}" ]]; then
       _cgw_val="${BASH_REMATCH[3]}"
       # Only set if not already in environment (preserves env var priority)
       if [[ -z "${!_cgw_var+x}" ]]; then
-        # Strip optional surrounding double/single quotes from the value
-        if [[ "${_cgw_val}" =~ ^\"(.*)\"$ ]] || [[ "${_cgw_val}" =~ ^\'(.*)\'$ ]]; then
+        # Strip surrounding quotes and any trailing inline comment (` # …`).
+        # Quoted form: take content of the first balanced "…" or '…', discard the rest.
+        # Unquoted form: strip from the first space-hash onwards.
+        if [[ "${_cgw_val}" =~ ^\"([^\"]*)\" ]]; then
           _cgw_val="${BASH_REMATCH[1]}"
+        elif [[ "${_cgw_val}" =~ ^\'([^\']*)\' ]]; then
+          _cgw_val="${BASH_REMATCH[1]}"
+        else
+          _cgw_val="${_cgw_val%%[[:space:]]#*}"   # strip ` #comment`
+          _cgw_val="${_cgw_val%"${_cgw_val##*[![:space:]]}"}" # rtrim
         fi
         printf -v "${_cgw_var}" '%s' "${_cgw_val}"
         export "${_cgw_var?}"
