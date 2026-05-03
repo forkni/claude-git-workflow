@@ -10,9 +10,14 @@
 
 set -uo pipefail
 
+EXEMPT_PATTERN=""
+
 echo "Checking for local-only files..."
 
-PROBLEMATIC_FILES=$(git diff --cached --name-status | grep -E "^[AM][[:space:]]+(CLAUDE\.md|MEMORY\.md|\.claude|logs)" || true)
+PROBLEMATIC_FILES=$(git diff --cached --name-status \
+  | grep -E "^[AM][[:space:]]+(CLAUDE\.md|SESSION_LOG\.md|\.claude|logs)" \
+  | { if [[ -n "${EXEMPT_PATTERN}" ]]; then grep -vE "^[AM][[:space:]]+(${EXEMPT_PATTERN})"; else cat; fi; } \
+  || true)
 
 if [[ -n "${PROBLEMATIC_FILES}" ]]; then
   echo "ERROR: Attempting to add or modify local-only files!"
@@ -28,7 +33,10 @@ if [[ -n "${PROBLEMATIC_FILES}" ]]; then
   exit 1
 fi
 
-DELETED_FILES=$(git diff --cached --name-status | grep -E "^D[[:space:]]+(CLAUDE\.md|MEMORY\.md|\.claude|logs)" || true)
+DELETED_FILES=$(git diff --cached --name-status \
+  | grep -E "^D[[:space:]]+(CLAUDE\.md|SESSION_LOG\.md|\.claude|logs)" \
+  | { if [[ -n "${EXEMPT_PATTERN}" ]]; then grep -vE "^D[[:space:]]+(${EXEMPT_PATTERN})"; else cat; fi; } \
+  || true)
 if [[ -n "${DELETED_FILES}" ]]; then
   echo "  Local-only files being removed from git tracking (allowed)"
 fi

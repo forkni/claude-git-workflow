@@ -67,18 +67,29 @@ EOF
   echo "End Time: $(date)" >>"${logfile}"
 }
 
+_is_exempt() {
+  local target="$1"
+  local exempt
+  for exempt in ${CGW_LOCAL_FILES_EXEMPT}; do
+    [[ "${target}" == "${exempt}" ]] && return 0
+  done
+  return 1
+}
+
 unstage_local_only_files() {
   # Unstage files listed in CGW_LOCAL_FILES (space-separated).
   # Entries ending with / are treated as directory prefixes.
+  # Files matching CGW_LOCAL_FILES_EXEMPT are left staged.
   local file
   for file in ${CGW_LOCAL_FILES}; do
     if [[ "${file}" == */ ]]; then
       # Directory prefix: unstage all matching staged files
       while read -r f; do
+        _is_exempt "${f}" && continue
         git reset HEAD "${f}" 2>/dev/null || true
       done < <(git diff --cached --name-only | grep "^${file}" || true)
     else
-      git reset HEAD "${file}" 2>/dev/null || true
+      _is_exempt "${file}" || git reset HEAD "${file}" 2>/dev/null || true
     fi
   done
 }

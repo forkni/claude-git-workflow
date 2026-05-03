@@ -52,6 +52,8 @@ Works on `commit_enhanced.sh`, `check_lint.sh`, and `fix_lint.sh`. Also supporte
 Files configured in `.cgw.conf` as `CGW_LOCAL_FILES` must never be committed.
 Default protected files: `CLAUDE.md`, `MEMORY.md`, `.claude/`, `logs/`
 
+Use `CGW_LOCAL_FILES_EXEMPT` in `.cgw.conf` to allow specific files inside a blocked directory (e.g., `.claude/settings.json` is a shared project config inside the blocked `.claude/` dir).
+
 Before any commit, verify:
 ```bash
 git diff --cached --name-only | grep -E "(CLAUDE\.md|MEMORY\.md|\.claude/|logs/)"

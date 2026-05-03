@@ -319,13 +319,28 @@ _install_hook() {
     files_pattern="${files_pattern}${escaped}"
   done
 
+  # Build regex pattern from exempt files list (exact paths, no trailing-slash stripping)
+  local exempt_files
+  exempt_files=$(grep -m1 '^CGW_LOCAL_FILES_EXEMPT=' "${PROJECT_ROOT}/.cgw.conf" \
+    | sed 's/CGW_LOCAL_FILES_EXEMPT=//;s/"//g' || true)
+  local exempt_pattern=""
+  for f in ${exempt_files}; do
+    local escaped_ex="${f//./\\.}"
+    [[ -n "${exempt_pattern}" ]] && exempt_pattern="${exempt_pattern}|"
+    exempt_pattern="${exempt_pattern}${escaped_ex}"
+  done
+
   # Create .githooks/ and write patched pre-commit hook
   # Escape backslashes first, then & (sed replacement special char), then | (sed delimiter)
   local sed_files_pattern="${files_pattern//\\/\\\\}"
   sed_files_pattern="${sed_files_pattern//&/\\&}"
   sed_files_pattern="${sed_files_pattern//|/\\|}"
+  local sed_exempt_pattern="${exempt_pattern//\\/\\\\}"
+  sed_exempt_pattern="${sed_exempt_pattern//&/\\&}"
+  sed_exempt_pattern="${sed_exempt_pattern//|/\\|}"
   mkdir -p "${PROJECT_ROOT}/.githooks"
-  sed "s|__CGW_LOCAL_FILES_PATTERN__|${sed_files_pattern}|g" \
+  sed -e "s|__CGW_LOCAL_FILES_PATTERN__|${sed_files_pattern}|g" \
+      -e "s|__CGW_EXEMPT_PATTERN__|${sed_exempt_pattern}|g" \
     "${hook_template}" >"${PROJECT_ROOT}/.githooks/pre-commit"
   chmod +x "${PROJECT_ROOT}/.githooks/pre-commit"
 
@@ -350,6 +365,7 @@ _install_hook() {
     all_prefixes_escaped="${all_prefixes_escaped//|/\\|}"
     sed -e "s|__CGW_LOCAL_FILES_PATTERN__|${sed_files_pattern}|g" \
       -e "s|__CGW_ALL_PREFIXES__|${all_prefixes_escaped}|g" \
+      -e "s|__CGW_EXEMPT_PATTERN__|${sed_exempt_pattern}|g" \
       "${pre_push_template}" >"${PROJECT_ROOT}/.githooks/pre-push"
     chmod +x "${PROJECT_ROOT}/.githooks/pre-push"
   fi
@@ -537,6 +553,14 @@ main() {
   local source_branch="${detected_source}"
 
   local local_files="${detected_local_files:-CLAUDE.md MEMORY.md .claude/ logs/}"
+
+  # When .cgw.conf already exists (not reconfiguring), honour its CGW_LOCAL_FILES value
+  # for hook generation so manually-configured extras survive re-runs.
+  if [[ -f ".cgw.conf" ]] && [[ ${reconfigure} -eq 0 ]]; then
+    local conf_local_files
+    conf_local_files=$(grep -m1 '^CGW_LOCAL_FILES=' ".cgw.conf" | sed 's/CGW_LOCAL_FILES=//;s/"//g' || true)
+    [[ -n "${conf_local_files}" ]] && local_files="${conf_local_files}"
+  fi
 
   if [[ ${non_interactive} -eq 0 ]] && { [[ ! -f ".cgw.conf" ]] || [[ ${reconfigure} -eq 1 ]]; }; then
     echo "Press Enter to accept [default], or type a different value."

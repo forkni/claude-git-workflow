@@ -93,6 +93,9 @@ CGW_REMOTE="${CGW_REMOTE:-origin}"
 # These files are never committed. configure.sh auto-detects project-specific ones.
 CGW_LOCAL_FILES="${CGW_LOCAL_FILES:-CLAUDE.md MEMORY.md .claude/ logs/}"
 
+# --- Exempt files (exact paths allowed through CGW_LOCAL_FILES protection) ---
+CGW_LOCAL_FILES_EXEMPT="${CGW_LOCAL_FILES_EXEMPT:-}"
+
 # --- Commit message prefixes ---
 # Standard conventional commit prefixes (always included):
 _CGW_BASE_PREFIXES="feat|fix|docs|chore|test|refactor|style|perf"
