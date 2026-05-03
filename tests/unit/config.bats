@@ -151,6 +151,41 @@ teardown() {
   [[ "${result}" == *"CGW_LINT_CMD=eslint"* ]]
 }
 
+@test ".cgw.conf inline comment after value is stripped" {
+  # Regression: configure.sh emits lines like
+  #   CGW_LINT_CMD=""  # no lint tool detected; set to enable
+  # The comment leaked into the value, making CGW_LINT_CMD literal '""  # ...',
+  # which then failed as 'command not found'.
+  cat >"${TEST_REPO_DIR}/.cgw.conf" <<'EOF'
+CGW_SOURCE_BRANCH="feature"  # source branch
+CGW_TARGET_BRANCH="stable"   # target branch
+CGW_LINT_CMD=""              # no lint tool detected; set to enable
+EOF
+  result=$(_source_config)
+  [[ "${result}" == *"CGW_SOURCE_BRANCH=feature"* ]]
+  [[ "${result}" == *"CGW_TARGET_BRANCH=stable"* ]]
+  [[ "${result}" == *"CGW_LINT_CMD="* ]]
+  # CGW_LINT_CMD must be EMPTY, not '""  # no lint tool detected...'
+  lint_line=$(echo "${result}" | grep "^CGW_LINT_CMD=")
+  [[ "${lint_line}" == "CGW_LINT_CMD=" ]]
+}
+
+@test ".cgw.conf hash inside quoted value is preserved" {
+  # The inline-comment stripper must NOT touch # characters inside a quoted value.
+  cat >"${TEST_REPO_DIR}/.cgw.conf" <<'EOF'
+CGW_LOCAL_FILES="foo #notacomment bar"
+EOF
+  result=$(_source_config)
+  # Confirm the # was kept inside the value (we don't echo CGW_LOCAL_FILES from
+  # the helper, so source again here and inspect directly).
+  bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    [[ \"\${CGW_LOCAL_FILES}\" == 'foo #notacomment bar' ]]
+  "
+}
+
 # ── Backward compatibility mappings ───────────────────────────────────────────
 
 @test "CLAUDE_GIT_NON_INTERACTIVE=1 sets CGW_NON_INTERACTIVE=1" {
