@@ -431,9 +431,15 @@ _install_cc_guardrail() {
   guardrail_src="$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)/cc-block-dangerous-git.sh" 2>/dev/null || true
 
   if [[ ! -f "${guardrail_src:-}" ]]; then
-    echo "  [!] hooks/cc-block-dangerous-git.sh not found." >&2
-    echo "      Re-copy hooks/ from the CGW source directory, then re-run: ./scripts/git/configure.sh" >&2
-    return 1
+    # Fallback: accept the already-installed copy so reconfigure works after
+    # the staging hooks/ directory has been cleaned up.
+    if [[ -f "${PROJECT_ROOT}/.claude/hooks/cc-block-dangerous-git.sh" ]]; then
+      guardrail_src="${PROJECT_ROOT}/.claude/hooks/cc-block-dangerous-git.sh"
+    else
+      echo "  [!] hooks/cc-block-dangerous-git.sh not found." >&2
+      echo "      Re-copy hooks/ from the CGW source directory, then re-run: ./scripts/git/configure.sh" >&2
+      return 1
+    fi
   fi
 
   # Determine destination paths
@@ -451,9 +457,11 @@ _install_cc_guardrail() {
     hook_cmd='"$CLAUDE_PROJECT_DIR"/.claude/hooks/cc-block-dangerous-git.sh'
   fi
 
-  # Copy guardrail script to .claude/hooks/
+  # Copy guardrail script to .claude/hooks/ (skip if source and destination are the same)
   mkdir -p "$(dirname "${hook_dst}")"
-  cp "${guardrail_src}" "${hook_dst}"
+  if [[ "${guardrail_src}" != "${hook_dst}" ]]; then
+    cp "${guardrail_src}" "${hook_dst}"
+  fi
   chmod +x "${hook_dst}"
 
   # Merge into settings.json — requires jq
@@ -470,27 +478,79 @@ _install_cc_guardrail() {
     echo '{}' > "${settings_json}"
   fi
 
-  # Idempotency: skip if guardrail command is already registered
-  if jq -e '[.hooks.PreToolUse[]?.hooks[]?.command | select(contains("cc-block-dangerous-git"))] | length > 0' \
+  # Idempotency: skip if a valid guardrail command is already registered.
+  # "Valid" means it contains "cc-block-dangerous-git" but does NOT contain a
+  # known-bad MSYS-converted substring (Program Files/Git).  A corrupted entry
+  # falls through so it gets replaced below.
+  if jq -e '
+      [.hooks.PreToolUse[]?.hooks[]?.command
+        | select(contains("cc-block-dangerous-git"))
+        | select(contains("Program Files/Git") | not)
+      ] | length > 0' \
        "${settings_json}" >/dev/null 2>&1; then
     echo "  [OK] PreToolUse guardrail already registered in ${settings_json}"
     return 0
   fi
 
+  # Remove any corrupted/stale guardrail entries before re-registering
+  local clean_settings
+  clean_settings="$(mktemp)"
+  jq '
+    .hooks.PreToolUse |= if . then
+      map(select(
+        .hooks | map(.command | contains("cc-block-dangerous-git")) | any | not
+      ))
+    else . end' \
+    "${settings_json}" > "${clean_settings}" && mv "${clean_settings}" "${settings_json}"
+
   # Merge: append a new PreToolUse Bash-matcher entry without overwriting existing hooks
-  local tmp_settings
+  # Split hook_cmd at the first "/" and reconstruct inside jq, so neither
+  # argument fragment starts with "/" and MSYS2 has nothing to path-convert
+  # when the value crosses into jq.exe on Git Bash (Windows).
+  # e.g. '"$CLAUDE_PROJECT_DIR"/.claude/hooks/...' →
+  #        pfx='"$CLAUDE_PROJECT_DIR"'  sfx='.claude/hooks/...'
+  # This is a no-op on macOS / Linux / WSL where MSYS is not in play.
+  local tmp_settings hook_pfx hook_sfx
   tmp_settings="$(mktemp)"
-  jq --arg cmd "${hook_cmd}" \
-    '.hooks.PreToolUse |= (. // []) + [{"matcher":"Bash","hooks":[{"type":"command","command":$cmd}]}]' \
+  hook_pfx="${hook_cmd%%/*}"
+  hook_sfx="${hook_cmd#*/}"
+  jq --arg pfx "${hook_pfx}" --arg sfx "${hook_sfx}" \
+    '.hooks.PreToolUse |= (. // []) + [{"matcher":"Bash","hooks":[{"type":"command","command":($pfx + "/" + $sfx)}]}]' \
     "${settings_json}" > "${tmp_settings}" && mv "${tmp_settings}" "${settings_json}"
   echo "  [OK] PreToolUse guardrail registered in ${settings_json}"
 
-  # Smoke test: verify the script blocks a raw git commit
-  local test_input='{"tool_input":{"command":"git commit -m \"smoke-test\""}}'
-  if echo "${test_input}" | bash "${hook_dst}" >/dev/null 2>&1; then
-    echo "  [WARN] Smoke test: guardrail did not block a raw git commit — check ${hook_dst}" >&2
+  # Smoke test: read the registered command back out of settings.json, substitute
+  # $CLAUDE_PROJECT_DIR with the actual project root, verify the file exists, and
+  # then confirm it blocks a raw git commit.  This catches path-corruption bugs
+  # (e.g. MSYS converting /.claude/... to C:/Program Files/Git/.claude/...) that
+  # direct script invocation cannot detect.
+  local registered_cmd resolved_cmd
+  registered_cmd="$(jq -r \
+    '[.hooks.PreToolUse[]?.hooks[]? | select(.command | contains("cc-block-dangerous-git")) | .command][0] // empty' \
+    "${settings_json}")"
+  resolved_cmd="${registered_cmd//\"\$CLAUDE_PROJECT_DIR\"/${PROJECT_ROOT}}"
+  resolved_cmd="${resolved_cmd//\$CLAUDE_PROJECT_DIR/${PROJECT_ROOT}}"
+  resolved_cmd="${resolved_cmd#\"}"
+  resolved_cmd="${resolved_cmd%\"}"
+
+  if [[ -z "${registered_cmd}" ]]; then
+    echo "  [WARN] Smoke test: no guardrail entry found in ${settings_json}" >&2
+  elif [[ ! -f "${resolved_cmd}" ]]; then
+    echo "  [FAIL] Smoke test: registered command does not resolve to a file." >&2
+    echo "         Registered: ${registered_cmd}" >&2
+    echo "         Resolved:   ${resolved_cmd}" >&2
+    echo "         Guardrail will silently fail at runtime — re-run configure.sh." >&2
+    return 1
   else
-    echo "  [OK] Smoke test passed: raw git commit correctly blocked"
+    local test_input='{"tool_input":{"command":"git commit -m \"smoke-test\""}}'
+    local exit_code=0
+    echo "${test_input}" | CLAUDE_PROJECT_DIR="${PROJECT_ROOT}" \
+      bash -c "${registered_cmd}" >/dev/null 2>&1 || exit_code=$?
+    if [[ "${exit_code}" -eq 2 ]]; then
+      echo "  [OK] Smoke test passed: registered command blocks raw git commit"
+    else
+      echo "  [WARN] Smoke test: registered command did not block (exit=${exit_code})" >&2
+    fi
   fi
 }
 
@@ -510,6 +570,19 @@ _update_gitignore() {
     echo "  [OK] Added to .gitignore: ${added[*]}"
   else
     echo "  [OK] .gitignore already up to date"
+  fi
+}
+
+_cleanup_legacy_artifacts() {
+  # Remove files that older CGW versions installed but the current version does
+  # not produce.  Safe to call on fresh installs (both checks are no-ops).
+  if [[ -d "${PROJECT_ROOT}/scripts/git/batch" ]]; then
+    rm -rf "${PROJECT_ROOT}/scripts/git/batch"
+    echo "  [OK] Removed legacy scripts/git/batch/ (.bat wrappers from pre-v0.3 CGW)"
+  fi
+  if [[ -f "${PROJECT_ROOT}/scripts/git/README.md" ]]; then
+    rm -f "${PROJECT_ROOT}/scripts/git/README.md"
+    echo "  [OK] Removed legacy scripts/git/README.md"
   fi
 }
 
@@ -564,6 +637,8 @@ main() {
     echo "[ERROR] Cannot change to project root: ${PROJECT_ROOT}" >&2
     exit 1
   }
+
+  _cleanup_legacy_artifacts
 
   echo ""
   echo "=== claude-git-workflow: Auto-Configuration ==="

@@ -217,3 +217,34 @@ EOF
     [ "${count}" -le 1 ]
   fi
 }
+
+@test "registered guardrail path resolves to an existing file (regression: MSYS path conversion)" {
+  # Catches the bug where Git Bash MSYS converts /.claude/... inside a jq --arg
+  # value to C:/Program Files/Git/.claude/... when crossing into jq.exe, producing
+  # a non-existent path that the previous string-contains test did not detect.
+  mkdir -p "${TEST_REPO_DIR}/.claude"
+  _run_configure "--non-interactive" || true
+  [ -f "${TEST_REPO_DIR}/.claude/settings.json" ] || skip "settings.json not created"
+
+  local registered resolved
+  registered="$(jq -r \
+    '[.hooks.PreToolUse[]?.hooks[]? | select(.command | contains("cc-block-dangerous-git")) | .command][0] // empty' \
+    "${TEST_REPO_DIR}/.claude/settings.json")"
+  [ -n "${registered}" ] || {
+    echo "No cc-block-dangerous-git entry in settings.json" >&2
+    return 1
+  }
+
+  # Substitute $CLAUDE_PROJECT_DIR with the actual test repo root, strip quotes
+  resolved="${registered//\"\$CLAUDE_PROJECT_DIR\"/${TEST_REPO_DIR}}"
+  resolved="${resolved//\$CLAUDE_PROJECT_DIR/${TEST_REPO_DIR}}"
+  resolved="${resolved#\"}"
+  resolved="${resolved%\"}"
+
+  [ -f "${resolved}" ] || {
+    echo "Registered command: ${registered}" >&2
+    echo "Resolved path:      ${resolved}" >&2
+    echo "File does not exist — MSYS path conversion likely corrupted the registration." >&2
+    return 1
+  }
+}

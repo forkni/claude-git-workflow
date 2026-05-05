@@ -64,13 +64,29 @@ main() {
 
   log_section_start "INSTALL HOOKS" "$logfile"
 
+  # Resolve the active hooks directory: honour core.hooksPath if configured,
+  # otherwise fall back to the standard .git/hooks/ location.
+  local hooks_dir
+  hooks_dir="$(git config --get core.hooksPath 2>/dev/null || true)"
+  [[ -z "${hooks_dir}" ]] && hooks_dir=".git/hooks"
+  mkdir -p "${hooks_dir}"
+
+  # Determine whether the resolved hooks dir is already .githooks/ so we can
+  # skip the copy and just ensure the files are executable.
+  local githooks_abs hooks_dir_abs
+  githooks_abs="$(cd .githooks && pwd)"
+  hooks_dir_abs="$(cd "${hooks_dir}" 2>/dev/null && pwd || true)"
+
   local hooks_ok=0
 
   if [[ -f ".githooks/pre-commit" ]]; then
     echo "Installing pre-commit hook..." | tee -a "$logfile"
-    if cp ".githooks/pre-commit" ".git/hooks/pre-commit" >>"$logfile" 2>&1; then
-      chmod +x ".git/hooks/pre-commit" >>"$logfile" 2>&1
-      echo "  [OK] pre-commit installed" | tee -a "$logfile"
+    if [[ "${hooks_dir_abs}" == "${githooks_abs}" ]]; then
+      chmod +x ".githooks/pre-commit" >>"$logfile" 2>&1
+      echo "  [OK] core.hooksPath=${hooks_dir} — pre-commit already in place" | tee -a "$logfile"
+    elif cp ".githooks/pre-commit" "${hooks_dir}/pre-commit" >>"$logfile" 2>&1; then
+      chmod +x "${hooks_dir}/pre-commit" >>"$logfile" 2>&1
+      echo "  [OK] pre-commit installed at ${hooks_dir}/pre-commit" | tee -a "$logfile"
     else
       err_tee "  [FAIL] Failed to install pre-commit hook"
       hooks_ok=1
@@ -84,9 +100,12 @@ main() {
 
   if [[ -f ".githooks/pre-push" ]]; then
     echo "Installing pre-push hook..." | tee -a "$logfile"
-    if cp ".githooks/pre-push" ".git/hooks/pre-push" >>"$logfile" 2>&1; then
-      chmod +x ".git/hooks/pre-push" >>"$logfile" 2>&1
-      echo "  [OK] pre-push installed" | tee -a "$logfile"
+    if [[ "${hooks_dir_abs}" == "${githooks_abs}" ]]; then
+      chmod +x ".githooks/pre-push" >>"$logfile" 2>&1
+      echo "  [OK] core.hooksPath=${hooks_dir} — pre-push already in place" | tee -a "$logfile"
+    elif cp ".githooks/pre-push" "${hooks_dir}/pre-push" >>"$logfile" 2>&1; then
+      chmod +x "${hooks_dir}/pre-push" >>"$logfile" 2>&1
+      echo "  [OK] pre-push installed at ${hooks_dir}/pre-push" | tee -a "$logfile"
     else
       echo "  [!] Failed to install pre-push hook (non-fatal)" | tee -a "$logfile"
     fi
@@ -112,7 +131,7 @@ main() {
   echo "  git commit --no-verify / git push --no-verify"
   echo ""
   echo "To uninstall:"
-  echo "  rm .git/hooks/pre-commit .git/hooks/pre-push"
+  echo "  rm ${hooks_dir}/pre-commit ${hooks_dir}/pre-push"
   echo ""
 
   {
