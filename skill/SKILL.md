@@ -35,6 +35,8 @@ git commit -m "message"  # WRONG — bypasses lint, protection, logging
 
 `commit_enhanced.sh` provides: lint validation, local-only file protection, branch verification, commit message format checking, and comprehensive logging.
 
+> **Optional defense-in-depth:** If the CGW PreToolUse guardrail was installed (offered during `configure.sh`), this rule is also enforced at the Claude Code harness layer — even if asked to run `git commit` directly, the hook blocks it before it reaches the shell. See `references/error-recovery.md` → *PreToolUse Guardrail* for disable instructions.
+
 ### Rule 2: Use `--no-venv` When No Virtual Environment
 
 ```bash

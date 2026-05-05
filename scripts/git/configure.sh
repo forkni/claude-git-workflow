@@ -423,6 +423,77 @@ _install_skill() {
   fi
 }
 
+_install_cc_guardrail() {
+  local install_mode="${1:-local}" # "local" or "global"
+
+  # Find source script (staging area during install.cmd, or already-installed copy)
+  local guardrail_src
+  guardrail_src="$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)/cc-block-dangerous-git.sh" 2>/dev/null || true
+
+  if [[ ! -f "${guardrail_src:-}" ]]; then
+    echo "  [!] hooks/cc-block-dangerous-git.sh not found." >&2
+    echo "      Re-copy hooks/ from the CGW source directory, then re-run: ./scripts/git/configure.sh" >&2
+    return 1
+  fi
+
+  # Determine destination paths
+  local hook_dst settings_json hook_cmd
+  if [[ "${install_mode}" == "global" ]]; then
+    hook_dst="${HOME}/.claude/hooks/cc-block-dangerous-git.sh"
+    settings_json="${HOME}/.claude/settings.json"
+    hook_cmd="~/.claude/hooks/cc-block-dangerous-git.sh"
+  else
+    hook_dst="${PROJECT_ROOT}/.claude/hooks/cc-block-dangerous-git.sh"
+    settings_json="${PROJECT_ROOT}/.claude/settings.json"
+    # Literal double-quotes around $CLAUDE_PROJECT_DIR are intentional:
+    # they become JSON-escaped \" in settings.json and are expanded by the shell
+    # when Claude Code executes the hook command at runtime.
+    hook_cmd='"$CLAUDE_PROJECT_DIR"/.claude/hooks/cc-block-dangerous-git.sh'
+  fi
+
+  # Copy guardrail script to .claude/hooks/
+  mkdir -p "$(dirname "${hook_dst}")"
+  cp "${guardrail_src}" "${hook_dst}"
+  chmod +x "${hook_dst}"
+
+  # Merge into settings.json — requires jq
+  if ! command -v jq &>/dev/null; then
+    echo "  [!] jq not found — cannot auto-merge ${settings_json}" >&2
+    echo "      Manually add the following to ${settings_json}:" >&2
+    printf '      {"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"%s"}]}]}}\n' \
+      "${hook_cmd}" >&2
+    return 1
+  fi
+
+  # Initialize settings.json if it does not exist
+  if [[ ! -f "${settings_json}" ]]; then
+    echo '{}' > "${settings_json}"
+  fi
+
+  # Idempotency: skip if guardrail command is already registered
+  if jq -e '[.hooks.PreToolUse[]?.hooks[]?.command | select(contains("cc-block-dangerous-git"))] | length > 0' \
+       "${settings_json}" >/dev/null 2>&1; then
+    echo "  [OK] PreToolUse guardrail already registered in ${settings_json}"
+    return 0
+  fi
+
+  # Merge: append a new PreToolUse Bash-matcher entry without overwriting existing hooks
+  local tmp_settings
+  tmp_settings="$(mktemp)"
+  jq --arg cmd "${hook_cmd}" \
+    '.hooks.PreToolUse |= (. // []) + [{"matcher":"Bash","hooks":[{"type":"command","command":$cmd}]}]' \
+    "${settings_json}" > "${tmp_settings}" && mv "${tmp_settings}" "${settings_json}"
+  echo "  [OK] PreToolUse guardrail registered in ${settings_json}"
+
+  # Smoke test: verify the script blocks a raw git commit
+  local test_input='{"tool_input":{"command":"git commit -m \"smoke-test\""}}'
+  if echo "${test_input}" | bash "${hook_dst}" >/dev/null 2>&1; then
+    echo "  [WARN] Smoke test: guardrail did not block a raw git commit — check ${hook_dst}" >&2
+  else
+    echo "  [OK] Smoke test passed: raw git commit correctly blocked"
+  fi
+}
+
 _update_gitignore() {
   local gitignore="${PROJECT_ROOT}/.gitignore"
   local entries=("logs/" ".cgw.conf")
@@ -451,6 +522,7 @@ main() {
   local reconfigure=0
   local skip_hooks=0
   local skip_skill=0
+  local skip_cc_guardrail=0
   local global_skill=0
 
   while [[ $# -gt 0 ]]; do
@@ -463,12 +535,13 @@ main() {
         echo "and optionally installs the Claude Code skill."
         echo ""
         echo "Options:"
-        echo "  --non-interactive   Accept all auto-detected defaults"
-        echo "  --reconfigure       Overwrite existing .cgw.conf"
-        echo "  --skip-hooks        Don't install git pre-commit hook"
-        echo "  --skip-skill        Don't install Claude Code skill"
-        echo "  --global            Install Claude Code skill to ~/.claude/ (available in all projects)"
-        echo "  -h, --help          Show this help"
+        echo "  --non-interactive    Accept all auto-detected defaults"
+        echo "  --reconfigure        Overwrite existing .cgw.conf"
+        echo "  --skip-hooks         Don't install git pre-commit hook"
+        echo "  --skip-skill         Don't install Claude Code skill"
+        echo "  --skip-cc-guardrail  Don't install PreToolUse harness guardrail"
+        echo "  --global             Install Claude Code skill to ~/.claude/ (available in all projects)"
+        echo "  -h, --help           Show this help"
         echo ""
         echo "After running, edit .cgw.conf to customize any detected values."
         exit 0
@@ -477,6 +550,7 @@ main() {
       --reconfigure) reconfigure=1 ;;
       --skip-hooks) skip_hooks=1 ;;
       --skip-skill) skip_skill=1 ;;
+      --skip-cc-guardrail) skip_cc_guardrail=1 ;;
       --global) global_skill=1 ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2
@@ -701,6 +775,34 @@ main() {
         _install_skill "global"
       else
         _install_skill "local"
+      fi
+    fi
+  fi
+
+  # -- Install PreToolUse harness guardrail ----------------------------------
+
+  if [[ ${skip_cc_guardrail} -eq 0 ]]; then
+    echo ""
+    echo "The PreToolUse guardrail is a Claude Code hook that blocks dangerous git"
+    echo "commands (raw 'git commit', '--no-verify', 'git reset --hard', etc.) at the"
+    echo "harness layer, before they execute. This is defense-in-depth on top of the"
+    echo "repo-side git hooks — the model cannot bypass it by being asked to skip CGW."
+    local install_guardrail="yes"
+    if [[ ${non_interactive} -eq 0 ]]; then
+      local guardrail_dest_hint=".claude/settings.json"
+      [[ ${global_skill} -eq 1 ]] && guardrail_dest_hint="~/.claude/settings.json"
+      read -r -p "Install PreToolUse guardrail to ${guardrail_dest_hint}? (yes/no) [yes]: " answer
+      case "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" in
+        n | no) install_guardrail="no" ;;
+      esac
+    fi
+
+    if [[ "${install_guardrail}" == "yes" ]]; then
+      echo "Installing PreToolUse guardrail..."
+      if [[ ${global_skill} -eq 1 ]]; then
+        _install_cc_guardrail "global"
+      else
+        _install_cc_guardrail "local"
       fi
     fi
   fi

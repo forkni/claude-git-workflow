@@ -1,5 +1,33 @@
 # Error Recovery
 
+## PreToolUse Guardrail
+
+If Claude Code blocks a command with `BLOCKED: ...`, the CGW harness guardrail is active. The block message includes a redirect to the correct CGW wrapper script.
+
+**Block message format:**
+```
+BLOCKED: Command matched dangerous pattern "<pattern>".
+<redirect — the CGW wrapper to use instead>
+The user has prevented you from doing this.
+```
+
+**Normal response:** follow the redirect. For example, replace `git commit -m "..."` with `./scripts/git/commit_enhanced.sh "..."`.
+
+**Temporary disable** (current shell session only):
+```bash
+export SKIP_CGW_GUARDRAIL=1
+# Run your command
+unset SKIP_CGW_GUARDRAIL
+```
+
+**Permanent uninstall:**
+1. Remove the PreToolUse entry from `.claude/settings.json` (delete the object whose `command` contains `cc-block-dangerous-git`)
+2. Delete `.claude/hooks/cc-block-dangerous-git.sh`
+
+**Reinstall:** re-run `./scripts/git/configure.sh` and answer yes to the guardrail prompt.
+
+---
+
 ## Lint Failures
 
 **Auto-fix and retry:**
