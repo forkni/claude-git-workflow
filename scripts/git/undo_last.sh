@@ -96,6 +96,7 @@ main() {
   }
 
   init_logging "undo_last"
+  ensure_no_stale_index_lock || exit 1
 
   {
     echo "========================================="

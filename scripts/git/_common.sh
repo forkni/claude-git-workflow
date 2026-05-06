@@ -18,6 +18,7 @@
 #   run_tool_with_logging() - Run a tool and capture output to log
 #   run_git_with_logging()  - Run git command with section logging
 #   validate_branch_pair()  - Validate src/tgt branch names and local existence; exit 1 on error
+#   ensure_no_stale_index_lock() - Detect/remove stale .git/index.lock; return 1 if refused/active
 
 # SCRIPT_DIR must be set by the caller before sourcing _common.sh:
 #   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -260,4 +261,101 @@ validate_branch_pair() {
     err "Target branch '${tgt}' does not exist locally"
     exit 1
   fi
+}
+
+# ensure_no_stale_index_lock - Detect and auto-remove abandoned .git/index.lock files.
+#
+# Stale locks (left by crashed/killed git processes) cause:
+#   "fatal: Unable to create '.git/index.lock': File exists."
+# This helper clears stale locks safely before any git-mutating operation.
+#
+# Safety: refuses to remove if a rebase/merge/cherry-pick/revert/bisect op is
+# in progress (detected via state dirs/sentinel files in the .git dir).
+# Handles git worktrees correctly by resolving the real .git dir via git itself.
+#
+# Honors:
+#   CGW_AUTO_REMOVE_INDEX_LOCK   (default 1): 0 = warn-only; 1 = auto-remove stale locks
+#   CGW_INDEX_LOCK_MAX_AGE_SECONDS (default 30): locks older than this are stale
+#   CGW_INDEX_LOCK_WAIT_SECONDS  (default 10): poll window for fresh locks
+#
+# Returns:
+#   0 - no lock present, OR lock cleared successfully, OR lock cleared during wait
+#   1 - refused to remove (op in progress, auto-remove disabled, rm failed, fresh+persistent)
+#   2 - environment problem (not a git repo, .git unreadable)
+ensure_no_stale_index_lock() {
+  # Resolve the real .git dir — handles worktrees where .git is a file, not dir.
+  # Use -C PROJECT_ROOT so the result is independent of the caller's cwd.
+  local git_dir
+  git_dir="$(git -C "${PROJECT_ROOT:-.}" rev-parse --git-dir 2>/dev/null)" || return 2
+  # Absolutise if relative (git outputs relative paths when cwd == PROJECT_ROOT).
+  [[ "${git_dir}" != /* ]] && git_dir="${PROJECT_ROOT:-.}/${git_dir}"
+
+  local lock_file="${git_dir}/index.lock"
+  [[ -f "${lock_file}" ]] || return 0  # fast path: nothing to do
+
+  # Refuse if a git operation is actively in progress — removing the lock
+  # while rebase/merge/cherry-pick is paused (e.g. editor open) would corrupt it.
+  local -a active_op_sentinels=(
+    "${git_dir}/rebase-merge"
+    "${git_dir}/rebase-apply"
+    "${git_dir}/MERGE_HEAD"
+    "${git_dir}/CHERRY_PICK_HEAD"
+    "${git_dir}/REVERT_HEAD"
+    "${git_dir}/BISECT_LOG"
+  )
+  local sentinel
+  for sentinel in "${active_op_sentinels[@]}"; do
+    if [[ -e "${sentinel}" ]]; then
+      err_tee "[cgw-lock] REFUSED: git operation in progress (${sentinel##*/}). Resolve or abort it first."
+      return 1
+    fi
+  done
+
+  # Compute lock age in seconds. Clamp negative values (clock skew) to 0.
+  local now mtime age
+  now="$(date +%s)"
+  mtime="$(stat -c %Y "${lock_file}" 2>/dev/null || stat -f %m "${lock_file}" 2>/dev/null)" || {
+    err_tee "[cgw-lock] Could not stat ${lock_file}"
+    return 1
+  }
+  age=$(( now - mtime ))
+  (( age < 0 )) && age=0
+
+  local max_age="${CGW_INDEX_LOCK_MAX_AGE_SECONDS:-30}"
+  local wait_sec="${CGW_INDEX_LOCK_WAIT_SECONDS:-10}"
+  local auto_remove="${CGW_AUTO_REMOVE_INDEX_LOCK:-1}"
+
+  if (( age < max_age )); then
+    # Lock is fresh — may belong to a concurrent git process. Poll briefly.
+    err_tee "[cgw-lock] index.lock is ${age}s old (threshold ${max_age}s); waiting up to ${wait_sec}s..."
+    local waited=0
+    while (( waited < wait_sec )); do
+      sleep 0.5 2>/dev/null || sleep 1  # busybox sleep may not support fractions
+      (( waited++ ))
+      [[ ! -f "${lock_file}" ]] && return 0  # lock cleared itself — done
+    done
+    # Re-compute age after waiting
+    now="$(date +%s)"
+    mtime="$(stat -c %Y "${lock_file}" 2>/dev/null || stat -f %m "${lock_file}" 2>/dev/null)" || mtime="${now}"
+    age=$(( now - mtime ))
+    (( age < 0 )) && age=0
+    if (( age < max_age )); then
+      err_tee "[cgw-lock] Lock still present after ${wait_sec}s wait and age ${age}s < ${max_age}s threshold. Another git process may be active. Stopping."
+      return 1
+    fi
+  fi
+
+  # Lock is stale. Remove it (or refuse if auto-remove is disabled).
+  if [[ "${auto_remove}" != "1" ]]; then
+    err_tee "[cgw-lock] Stale index.lock detected (age ${age}s). CGW_AUTO_REMOVE_INDEX_LOCK=0 — not removing."
+    err_tee "[cgw-lock] Run: rm -f \"${lock_file}\""
+    return 1
+  fi
+
+  err_tee "[cgw-lock] Removing stale index.lock (age ${age}s): ${lock_file}"
+  if ! rm -f "${lock_file}"; then
+    err_tee "[cgw-lock] Failed to remove ${lock_file} — another process may hold it. Close other git sessions and retry."
+    return 1
+  fi
+  return 0
 }

@@ -27,6 +27,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
 
 init_logging "cherry_pick_commits"
+ensure_no_stale_index_lock || exit 1
 
 _cp_original_branch=""
 _cp_did_checkout_target=0

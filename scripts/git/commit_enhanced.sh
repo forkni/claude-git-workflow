@@ -207,6 +207,7 @@ main() {
   done
 
   init_logging "commit_enhanced"
+  ensure_no_stale_index_lock || exit 1
 
   if [[ -z "${logfile}" ]] || [[ -z "${reportfile}" ]]; then
     err "Failed to initialize logging"

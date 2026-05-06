@@ -214,3 +214,157 @@ teardown() {
   run_tool_with_logging "MOCK" "${logfile}" bash -c "echo 'All good'; exit 0"
   [ "${TOOL_ERROR_COUNT}" -eq 0 ]
 }
+
+# ── ensure_no_stale_index_lock() ─────────────────────────────────────────────
+# Helpers — back-date a lock file to simulate a stale one.
+
+_make_stale_lock() {
+  local seconds_ago="${1:-60}"
+  local f="${TEST_REPO_DIR}/.git/index.lock"
+  : >"${f}"
+  # GNU touch first; fall back to epoch-arithmetic for BSD/macOS
+  if ! touch -d "${seconds_ago} seconds ago" "${f}" 2>/dev/null; then
+    local epoch
+    epoch=$(( $(date +%s) - seconds_ago ))
+    touch -t "$(date -u -r "${epoch}" +%Y%m%d%H%M.%S 2>/dev/null \
+              || date -u -d "@${epoch}" +%Y%m%d%H%M.%S)" "${f}"
+  fi
+}
+
+_make_fresh_lock() {
+  : >"${TEST_REPO_DIR}/.git/index.lock"
+}
+
+@test "ensure_no_stale_index_lock: returns 0 with no lock present" {
+  cd "${TEST_REPO_DIR}"
+  PROJECT_ROOT="${TEST_REPO_DIR}"
+  run ensure_no_stale_index_lock
+  [ "${status}" -eq 0 ]
+}
+
+@test "ensure_no_stale_index_lock: removes stale lock with default config" {
+  cd "${TEST_REPO_DIR}"
+  PROJECT_ROOT="${TEST_REPO_DIR}"
+  _make_stale_lock 60
+  [ -f "${TEST_REPO_DIR}/.git/index.lock" ]
+  CGW_AUTO_REMOVE_INDEX_LOCK=1 CGW_INDEX_LOCK_MAX_AGE_SECONDS=30 \
+    CGW_INDEX_LOCK_WAIT_SECONDS=0 run ensure_no_stale_index_lock
+  [ "${status}" -eq 0 ]
+  [ ! -f "${TEST_REPO_DIR}/.git/index.lock" ]
+  [[ "${output}" == *"[cgw-lock]"* ]]
+  [[ "${output}" == *"Removing stale"* ]]
+}
+
+@test "ensure_no_stale_index_lock: refuses stale lock when auto-remove disabled" {
+  cd "${TEST_REPO_DIR}"
+  PROJECT_ROOT="${TEST_REPO_DIR}"
+  _make_stale_lock 60
+  CGW_AUTO_REMOVE_INDEX_LOCK=0 CGW_INDEX_LOCK_MAX_AGE_SECONDS=30 \
+    CGW_INDEX_LOCK_WAIT_SECONDS=0 run ensure_no_stale_index_lock
+  [ "${status}" -eq 1 ]
+  [ -f "${TEST_REPO_DIR}/.git/index.lock" ]
+  [[ "${output}" == *"CGW_AUTO_REMOVE_INDEX_LOCK=0"* ]]
+}
+
+@test "ensure_no_stale_index_lock: returns 0 when fresh lock clears during wait" {
+  cd "${TEST_REPO_DIR}"
+  PROJECT_ROOT="${TEST_REPO_DIR}"
+  _make_fresh_lock
+  ( sleep 1 && rm -f "${TEST_REPO_DIR}/.git/index.lock" ) &
+  local bg_pid=$!
+  CGW_AUTO_REMOVE_INDEX_LOCK=1 CGW_INDEX_LOCK_MAX_AGE_SECONDS=30 \
+    CGW_INDEX_LOCK_WAIT_SECONDS=5 run ensure_no_stale_index_lock
+  wait "${bg_pid}" 2>/dev/null || true
+  [ "${status}" -eq 0 ]
+  [ ! -f "${TEST_REPO_DIR}/.git/index.lock" ]
+}
+
+@test "ensure_no_stale_index_lock: returns 1 when fresh lock persists past wait" {
+  cd "${TEST_REPO_DIR}"
+  PROJECT_ROOT="${TEST_REPO_DIR}"
+  _make_fresh_lock
+  CGW_AUTO_REMOVE_INDEX_LOCK=1 CGW_INDEX_LOCK_MAX_AGE_SECONDS=999 \
+    CGW_INDEX_LOCK_WAIT_SECONDS=2 run ensure_no_stale_index_lock
+  [ "${status}" -eq 1 ]
+  [ -f "${TEST_REPO_DIR}/.git/index.lock" ]
+  [[ "${output}" == *"still present"* ]]
+}
+
+@test "ensure_no_stale_index_lock: removes lock after it ages past threshold during wait" {
+  cd "${TEST_REPO_DIR}"
+  PROJECT_ROOT="${TEST_REPO_DIR}"
+  _make_fresh_lock
+  # max_age=1s, wait=4s → after waiting the lock will be >1s old → removed
+  CGW_AUTO_REMOVE_INDEX_LOCK=1 CGW_INDEX_LOCK_MAX_AGE_SECONDS=1 \
+    CGW_INDEX_LOCK_WAIT_SECONDS=4 run ensure_no_stale_index_lock
+  [ "${status}" -eq 0 ]
+  [ ! -f "${TEST_REPO_DIR}/.git/index.lock" ]
+}
+
+@test "ensure_no_stale_index_lock: returns 2 outside a git repo" {
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  run bash -c "
+    cd '${tmpdir}'
+    SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    PROJECT_ROOT='${tmpdir}'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    ensure_no_stale_index_lock
+  "
+  [ "${status}" -eq 2 ]
+  rm -rf "${tmpdir}"
+}
+
+@test "ensure_no_stale_index_lock: treats future-dated mtime as fresh (clock skew)" {
+  cd "${TEST_REPO_DIR}"
+  PROJECT_ROOT="${TEST_REPO_DIR}"
+  _make_fresh_lock
+  # Bump mtime 120s into the future to simulate clock skew
+  local future_epoch
+  future_epoch=$(( $(date +%s) + 120 ))
+  touch -t "$(date -u -d "@${future_epoch}" +%Y%m%d%H%M.%S 2>/dev/null \
+            || date -u -r "${future_epoch}" +%Y%m%d%H%M.%S)" \
+    "${TEST_REPO_DIR}/.git/index.lock" 2>/dev/null || true
+  # age=-120 clamped to 0 → treated as fresh → refuses even with wait=0
+  CGW_AUTO_REMOVE_INDEX_LOCK=1 CGW_INDEX_LOCK_MAX_AGE_SECONDS=30 \
+    CGW_INDEX_LOCK_WAIT_SECONDS=0 run ensure_no_stale_index_lock
+  [ "${status}" -eq 1 ]
+  [ -f "${TEST_REPO_DIR}/.git/index.lock" ]
+}
+
+@test "ensure_no_stale_index_lock: refuses when MERGE_HEAD present (op in progress)" {
+  cd "${TEST_REPO_DIR}"
+  PROJECT_ROOT="${TEST_REPO_DIR}"
+  _make_stale_lock 60
+  touch "${TEST_REPO_DIR}/.git/MERGE_HEAD"
+  CGW_AUTO_REMOVE_INDEX_LOCK=1 CGW_INDEX_LOCK_MAX_AGE_SECONDS=30 \
+    CGW_INDEX_LOCK_WAIT_SECONDS=0 run ensure_no_stale_index_lock
+  [ "${status}" -eq 1 ]
+  [ -f "${TEST_REPO_DIR}/.git/index.lock" ]
+  [[ "${output}" == *"REFUSED"* ]]
+  rm -f "${TEST_REPO_DIR}/.git/MERGE_HEAD"
+}
+
+@test "ensure_no_stale_index_lock: refuses when CHERRY_PICK_HEAD present" {
+  cd "${TEST_REPO_DIR}"
+  PROJECT_ROOT="${TEST_REPO_DIR}"
+  _make_stale_lock 60
+  touch "${TEST_REPO_DIR}/.git/CHERRY_PICK_HEAD"
+  CGW_AUTO_REMOVE_INDEX_LOCK=1 CGW_INDEX_LOCK_MAX_AGE_SECONDS=30 \
+    CGW_INDEX_LOCK_WAIT_SECONDS=0 run ensure_no_stale_index_lock
+  [ "${status}" -eq 1 ]
+  [ -f "${TEST_REPO_DIR}/.git/index.lock" ]
+  rm -f "${TEST_REPO_DIR}/.git/CHERRY_PICK_HEAD"
+}
+
+@test "ensure_no_stale_index_lock: refuses when rebase-merge dir present" {
+  cd "${TEST_REPO_DIR}"
+  PROJECT_ROOT="${TEST_REPO_DIR}"
+  _make_stale_lock 60
+  mkdir -p "${TEST_REPO_DIR}/.git/rebase-merge"
+  CGW_AUTO_REMOVE_INDEX_LOCK=1 CGW_INDEX_LOCK_MAX_AGE_SECONDS=30 \
+    CGW_INDEX_LOCK_WAIT_SECONDS=0 run ensure_no_stale_index_lock
+  [ "${status}" -eq 1 ]
+  [ -f "${TEST_REPO_DIR}/.git/index.lock" ]
+  rm -rf "${TEST_REPO_DIR}/.git/rebase-merge"
+}

@@ -33,6 +33,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
 
 init_logging "rebase_safe"
+ensure_no_stale_index_lock || exit 1
 
 _rebase_original_branch=""
 _rebase_stash_created=0

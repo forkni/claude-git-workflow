@@ -63,19 +63,32 @@ git diff --cached --name-only | grep -E "(CLAUDE\.md|MEMORY\.md|\.claude/|logs/)
 
 `commit_enhanced.sh` automatically unstages all configured local-only files before committing.
 
-### Rule 4: Chain Git Commands to Prevent Lock Files
+### Rule 4: Stale Lock Auto-Recovery
 
-```bash
-# Correct — single chained call
-git add src/file.py && ./scripts/git/commit_enhanced.sh "feat: add feature"
+CGW scripts automatically detect and remove stale `.git/index.lock` files left by crashed or killed git processes (the most common Claude Code failure mode). When this happens you will see:
 
-# Wrong — separate calls risk .git/index.lock race conditions
+```
+[cgw-lock] Removing stale index.lock (age 47s): /path/to/.git/index.lock
 ```
 
-If `.git/index.lock` exists, remove it first:
+**Safety guards — the helper refuses to remove the lock when:**
+- A `rebase`, `merge`, `cherry-pick`, `revert`, or `bisect` is in progress (detected by state dirs/sentinels in `.git/`). This protects you if a `git rebase -i` editor is open in another terminal.
+- `CGW_AUTO_REMOVE_INDEX_LOCK=0` is set (warn-only mode).
+
+**Manual removal** is only needed if the auto-recovery refuses. Use the worktree-aware path (not always literally `.git/index.lock`):
 ```bash
-rm -f .git/index.lock && git add src/file.py && ./scripts/git/commit_enhanced.sh "feat: add feature"
+rm -f "$(git rev-parse --git-dir)/index.lock"
 ```
+
+**Tuning** (via env or `.cgw.conf`):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CGW_AUTO_REMOVE_INDEX_LOCK` | `1` | `0` = warn-only, `1` = auto-remove |
+| `CGW_INDEX_LOCK_MAX_AGE_SECONDS` | `30` | Locks older than this are stale |
+| `CGW_INDEX_LOCK_WAIT_SECONDS` | `10` | Poll window for fresh locks |
+
+If you regularly run `git rebase -i` and pause in the editor for minutes, set `CGW_INDEX_LOCK_MAX_AGE_SECONDS=300` to avoid interruption.
 
 ### Rule 5: Selective Commits — Staging Intent Is Respected
 

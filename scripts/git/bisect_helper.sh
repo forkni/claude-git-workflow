@@ -28,6 +28,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
 
 init_logging "bisect_helper"
+ensure_no_stale_index_lock || exit 1
 
 _bisect_original_branch=""
 

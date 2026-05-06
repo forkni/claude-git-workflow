@@ -24,6 +24,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/git/_common.sh
 source "${SCRIPT_DIR}/_common.sh"
+ensure_no_stale_index_lock || exit 1
 
 usage() {
   echo "Usage: ./scripts/git/stash_work.sh <command> [OPTIONS]"

@@ -26,6 +26,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
 
 init_logging "merge_with_validation"
+ensure_no_stale_index_lock || exit 1
 
 # ============================================================================
 # CLEANUP TRAP

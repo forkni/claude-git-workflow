@@ -174,6 +174,36 @@ CGW_PROTECTED_BRANCHES="${CGW_PROTECTED_BRANCHES:-${CGW_TARGET_BRANCH}}"
 # "pr":     create a GitHub PR via create_pr.sh (triggers Charlie CI + GitHub Actions)
 CGW_MERGE_MODE="${CGW_MERGE_MODE:-direct}"
 
+# --- Stale index.lock auto-recovery ---
+# CGW scripts detect and remove abandoned .git/index.lock files left by
+# crashed or killed git processes (the most common Claude Code failure mode).
+#
+# Safety guards: removal is refused if a rebase/merge/cherry-pick/revert/bisect
+# operation is currently in progress (state dirs/sentinels detected in .git/).
+# Locks newer than MAX_AGE are given WAIT_SECONDS to clear before removal.
+#
+# Set CGW_AUTO_REMOVE_INDEX_LOCK=0 to disable auto-removal (warn-only mode).
+CGW_AUTO_REMOVE_INDEX_LOCK="${CGW_AUTO_REMOVE_INDEX_LOCK:-1}"
+CGW_INDEX_LOCK_MAX_AGE_SECONDS="${CGW_INDEX_LOCK_MAX_AGE_SECONDS:-30}"
+CGW_INDEX_LOCK_WAIT_SECONDS="${CGW_INDEX_LOCK_WAIT_SECONDS:-10}"
+
+# Numeric validation: non-numeric values would cause silent arithmetic bugs;
+# reset to defaults and warn the operator.
+_cgw_validate_int() {
+  local var_name="$1" default="$2"
+  local val="${!var_name}"
+  if ! [[ "${val}" =~ ^[0-9]+$ ]]; then
+    printf '[WARN] %s has non-numeric value "%s"; resetting to %s\n' \
+      "${var_name}" "${val}" "${default}" >&2
+    printf -v "${var_name}" '%s' "${default}"
+    export "${var_name?}"
+  fi
+}
+_cgw_validate_int CGW_AUTO_REMOVE_INDEX_LOCK 1
+_cgw_validate_int CGW_INDEX_LOCK_MAX_AGE_SECONDS 30
+_cgw_validate_int CGW_INDEX_LOCK_WAIT_SECONDS 10
+unset -f _cgw_validate_int
+
 # ============================================================================
 # BACKWARD COMPATIBILITY
 # ============================================================================
