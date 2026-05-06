@@ -263,3 +263,28 @@ Legacy `CLAUDE_GIT_*` variables are still supported:
 - `CLAUDE_GIT_NON_INTERACTIVE=1` → `CGW_NON_INTERACTIVE=1`
 - `CLAUDE_GIT_NO_VENV=1` → `CGW_NO_VENV=1`
 - `CLAUDE_GIT_STAGED_ONLY=1` → `CGW_STAGED_ONLY=1`
+
+---
+
+## Updating local-only file protection
+
+`CGW_LOCAL_FILES` (and `CGW_LOCAL_FILES_EXEMPT`) is read from `.cgw.conf` by the
+git hooks at run time, so editing the config takes effect immediately:
+
+```bash
+# Add a new local-only entry — no re-render needed
+sed -i 's/^CGW_LOCAL_FILES=.*/CGW_LOCAL_FILES="CLAUDE.md MEMORY.md notes.md .claude\/ logs\/"/' .cgw.conf
+git add notes.md && git commit -m "test"   # → blocked by pre-commit on next try
+```
+
+Match contract:
+- A bare name (`CLAUDE.md`) matches the path **exactly** — `CLAUDE.md.bak` does NOT match.
+- A trailing-slash entry (`logs/`) matches the directory itself or anything inside it.
+- `CGW_LOCAL_FILES_EXEMPT` accepts exact paths that override a match.
+- No globs, no substring matches.
+
+> **Migration note:** if you upgraded from a CGW version older than the
+> single-source-of-truth matcher, your `.git/hooks/pre-commit` and
+> `.git/hooks/pre-push` may still contain compiled-in patterns from the old
+> `configure.sh`. Re-run `./scripts/git/install_hooks.sh` once to refresh
+> them — afterwards `.cgw.conf` edits will be picked up at run time.

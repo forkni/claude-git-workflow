@@ -61,7 +61,7 @@ Before any commit, verify:
 git diff --cached --name-only | grep -E "(CLAUDE\.md|MEMORY\.md|\.claude/|logs/)"
 ```
 
-`commit_enhanced.sh` automatically unstages all configured local-only files before committing.
+`commit_enhanced.sh` automatically unstages all configured local-only files before committing. The pre-commit and pre-push hooks read `CGW_LOCAL_FILES` from `.cgw.conf` at run time, so editing the config takes effect immediately — no need to re-run `configure.sh`.
 
 ### Rule 4: Stale Lock Auto-Recovery
 

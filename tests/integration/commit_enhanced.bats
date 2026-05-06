@@ -90,6 +90,46 @@ _run_commit() {
   [ -z "${tracked}" ]
 }
 
+@test "CGW_LOCAL_FILES_EXEMPT lets a plain-file entry through (bug #4 regression)" {
+  # Bug #4: _is_exempt was only consulted in the directory branch, so an exempt
+  # plain-file entry (e.g. "CLAUDE.md") was still unstaged. Now it should commit.
+  echo "# Claude" > "${TEST_REPO_DIR}/CLAUDE.md"
+  git -C "${TEST_REPO_DIR}" add CLAUDE.md
+  bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_NON_INTERACTIVE=1
+    export CGW_LOCAL_FILES='CLAUDE.md'
+    export CGW_LOCAL_FILES_EXEMPT='CLAUDE.md'
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --skip-lint 'docs: add exempt CLAUDE.md'
+  "
+  # CLAUDE.md should now be tracked
+  tracked=$(git -C "${TEST_REPO_DIR}" ls-files CLAUDE.md)
+  [ -n "${tracked}" ]
+}
+
+@test "anchored matching: logs.md is not blocked when CGW_LOCAL_FILES is 'logs/' (bug #6 regression)" {
+  # Bug #6: prefix match without "$" anchor blocked anything starting with the
+  # entry, so "logs/" wrongly blocked logs.md. Anchored match now permits it.
+  echo "# Logs" > "${TEST_REPO_DIR}/logs.md"
+  git -C "${TEST_REPO_DIR}" add logs.md
+  bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_NON_INTERACTIVE=1
+    export CGW_LOCAL_FILES='logs/'
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --skip-lint 'docs: add logs.md'
+  "
+  tracked=$(git -C "${TEST_REPO_DIR}" ls-files logs.md)
+  [ -n "${tracked}" ]
+}
+
 # ── --skip-lint flag ──────────────────────────────────────────────────────────
 
 @test "--skip-lint skips lint step" {

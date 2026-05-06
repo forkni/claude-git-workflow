@@ -30,7 +30,7 @@ The overrides are validated (branch must exist locally, names must be valid, sou
 
 Receives merges from the source branch. Typically contains production-ready code.
 
-`commit_enhanced.sh` auto-unstages local-only files (configured via `CGW_LOCAL_FILES`) before any commit.
+`commit_enhanced.sh` auto-unstages local-only files (configured via `CGW_LOCAL_FILES`) before any commit. The pre-commit and pre-push hooks read `CGW_LOCAL_FILES` from `.cgw.conf` at run time — editing the config takes effect on the next invocation, no `configure.sh` re-run required.
 
 ### Source Branch (default: `development`)
 

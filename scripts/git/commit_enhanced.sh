@@ -67,31 +67,11 @@ EOF
   echo "End Time: $(date)" >>"${logfile}"
 }
 
-_is_exempt() {
-  local target="$1"
-  local exempt
-  for exempt in ${CGW_LOCAL_FILES_EXEMPT}; do
-    [[ "${target}" == "${exempt}" ]] && return 0
-  done
-  return 1
-}
-
 unstage_local_only_files() {
-  # Unstage files listed in CGW_LOCAL_FILES (space-separated).
-  # Entries ending with / are treated as directory prefixes.
-  # Files matching CGW_LOCAL_FILES_EXEMPT are left staged.
-  local file
-  for file in ${CGW_LOCAL_FILES}; do
-    if [[ "${file}" == */ ]]; then
-      # Directory prefix: unstage all matching staged files
-      while read -r f; do
-        _is_exempt "${f}" && continue
-        git reset HEAD "${f}" 2>/dev/null || true
-      done < <(git diff --cached --name-only | grep "^${file}" || true)
-    else
-      _is_exempt "${file}" || git reset HEAD "${file}" 2>/dev/null || true
-    fi
-  done
+  local f
+  while read -r f; do
+    git reset HEAD "${f}" 2>/dev/null || true
+  done < <(git diff --cached --name-only | cgw_filter_local_files)
 }
 
 main() {
@@ -334,14 +314,11 @@ main() {
   local staged_files
   staged_files=$(git diff --cached --name-only)
 
-  local file
-  for file in ${CGW_LOCAL_FILES}; do
-    local check_file="${file%/}" # strip trailing slash
-    if echo "${staged_files}" | grep -q "^${check_file}"; then
-      echo "[X] ERROR: '${check_file}' is staged (local-only file -- should not be committed)" >&2
-      found_local_files=1
-    fi
-  done
+  local f
+  while read -r f; do
+    echo "[X] ERROR: '${f}' is staged (local-only file -- should not be committed)" >&2
+    found_local_files=1
+  done < <(echo "${staged_files}" | cgw_filter_local_files)
 
   if [[ ${found_local_files} -eq 1 ]]; then
     echo "Remove these files from staging: git reset HEAD <file>" >&2

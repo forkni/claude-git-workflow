@@ -66,6 +66,17 @@ teardown() {
   [[ "${result}" == *"CGW_NON_INTERACTIVE=0"* ]]
 }
 
+@test "CGW_LOCAL_FILES_EXEMPT defaults to empty" {
+  # The matcher uses CGW_LOCAL_FILES_EXEMPT to suppress matches; default must be empty
+  # so an unconfigured project doesn't accidentally exempt files.
+  bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    [[ -z \"\${CGW_LOCAL_FILES_EXEMPT}\" ]]
+  "
+}
+
 # ── CGW_ALL_PREFIXES construction ──────────────────────────────────────────────
 
 @test "CGW_ALL_PREFIXES without extras contains base prefixes" {

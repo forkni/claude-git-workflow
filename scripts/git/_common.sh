@@ -22,6 +22,8 @@
 #   cgw_create_backup_tag() - Create pre-<op>-<ts>-<pid> tag; sets $CGW_BACKUP_TAG
 #   cgw_backup_tag_glob()   - Echo glob pattern(s) for backup tag filtering
 #   cgw_list_backup_tags()  - Echo existing backup tags; optional op filter
+#   cgw_is_local_file()     - Return 0 if path matches any local-only entry (reads CGW_LOCAL_FILES)
+#   cgw_filter_local_files() - Filter stdin/args paths; echoes matches; returns 0 if any match
 
 # SCRIPT_DIR must be set by the caller before sourcing _common.sh:
 #   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -416,4 +418,43 @@ cgw_list_backup_tags() {
       git tag -l "pre-${_known}-*"
     done
   fi
+}
+
+# ── local-only file matcher ────────────────────────────────────────────────────
+# Single source of truth for matching paths against CGW_LOCAL_FILES.
+# Match contract (no globs):
+#   Entry with trailing slash ("dir/") — path matches if path == "dir" OR path == "dir/"*
+#   Entry without trailing slash       — exact match (path == entry)
+#   CGW_LOCAL_FILES_EXEMPT entries     — exact match suppresses local-file match
+# Returns 0 (match) / 1 (no match).
+cgw_is_local_file() {
+  local path="$1" entry
+  for entry in ${CGW_LOCAL_FILES_EXEMPT:-}; do
+    [[ "${path}" == "${entry}" ]] && return 1
+  done
+  for entry in ${CGW_LOCAL_FILES:-}; do
+    if [[ "${entry}" == */ ]]; then
+      local dir="${entry%/}"
+      [[ "${path}" == "${dir}" || "${path}" == "${dir}"/* ]] && return 0
+    else
+      [[ "${path}" == "${entry}" ]] && return 0
+    fi
+  done
+  return 1
+}
+
+# Filter paths from stdin (one per line) or positional args.
+# Echoes only matching paths to stdout; returns 0 if any matched, 1 if none.
+cgw_filter_local_files() {
+  local p any=1
+  if (( $# > 0 )); then
+    for p in "$@"; do
+      cgw_is_local_file "${p}" && { echo "${p}"; any=0; }
+    done
+  else
+    while IFS= read -r p; do
+      cgw_is_local_file "${p}" && { echo "${p}"; any=0; }
+    done
+  fi
+  return ${any}
 }

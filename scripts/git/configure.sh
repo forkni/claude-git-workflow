@@ -288,7 +288,6 @@ _build_lint_config() {
 }
 
 _install_hook() {
-  local local_files="$1"
   local hooks_template_dir="${SCRIPT_DIR}/../../hooks"
 
   # Try staging area first (present during install.cmd), then fall back to already-installed hook
@@ -310,63 +309,14 @@ _install_hook() {
     return 1
   fi
 
-  # Build regex pattern from local files list
-  local files_pattern=""
-  for f in ${local_files}; do
-    local escaped="${f%/}"      # strip trailing slash
-    escaped="${escaped//./\\.}" # escape dots
-    [[ -n "${files_pattern}" ]] && files_pattern="${files_pattern}|"
-    files_pattern="${files_pattern}${escaped}"
-  done
-
-  # Build regex pattern from exempt files list (exact paths, no trailing-slash stripping)
-  local exempt_files
-  exempt_files=$(grep -m1 '^CGW_LOCAL_FILES_EXEMPT=' "${PROJECT_ROOT}/.cgw.conf" \
-    | sed 's/CGW_LOCAL_FILES_EXEMPT=//;s/"//g' || true)
-  local exempt_pattern=""
-  for f in ${exempt_files}; do
-    local escaped_ex="${f//./\\.}"
-    [[ -n "${exempt_pattern}" ]] && exempt_pattern="${exempt_pattern}|"
-    exempt_pattern="${exempt_pattern}${escaped_ex}"
-  done
-
-  # Create .githooks/ and write patched pre-commit hook
-  # Escape backslashes first, then & (sed replacement special char), then | (sed delimiter)
-  local sed_files_pattern="${files_pattern//\\/\\\\}"
-  sed_files_pattern="${sed_files_pattern//&/\\&}"
-  sed_files_pattern="${sed_files_pattern//|/\\|}"
-  local sed_exempt_pattern="${exempt_pattern//\\/\\\\}"
-  sed_exempt_pattern="${sed_exempt_pattern//&/\\&}"
-  sed_exempt_pattern="${sed_exempt_pattern//|/\\|}"
+  # Hooks read CGW_LOCAL_FILES from .cgw.conf at run time — no pattern substitution needed.
   mkdir -p "${PROJECT_ROOT}/.githooks"
-  sed -e "s|__CGW_LOCAL_FILES_PATTERN__|${sed_files_pattern}|g" \
-      -e "s|__CGW_EXEMPT_PATTERN__|${sed_exempt_pattern}|g" \
-    "${hook_template}" >"${PROJECT_ROOT}/.githooks/pre-commit"
+  cp "${hook_template}" "${PROJECT_ROOT}/.githooks/pre-commit"
   chmod +x "${PROJECT_ROOT}/.githooks/pre-commit"
 
-  # Also install pre-push hook if template exists alongside pre-commit
   local pre_push_template="${hooks_template_dir}/pre-push"
   if [[ -f "${pre_push_template}" ]]; then
-    # Build CGW_ALL_PREFIXES for substitution into pre-push template.
-    # Can't source _config.sh here (see top-of-file comment), so compute locally
-    # by reading CGW_EXTRA_PREFIXES from the just-written .cgw.conf.
-    local _base_prefixes="feat|fix|docs|chore|test|refactor|style|perf"
-    local _extra_prefixes
-    _extra_prefixes=$(grep -m1 '^CGW_EXTRA_PREFIXES=' "${PROJECT_ROOT}/.cgw.conf" |
-      sed 's/CGW_EXTRA_PREFIXES=//;s/"//g' || true)
-    local _all_prefixes
-    if [[ -n "${_extra_prefixes}" ]]; then
-      _all_prefixes="${_base_prefixes}|${_extra_prefixes}"
-    else
-      _all_prefixes="${_base_prefixes}"
-    fi
-    local all_prefixes_escaped="${_all_prefixes//\\/\\\\}"
-    all_prefixes_escaped="${all_prefixes_escaped//&/\\&}"
-    all_prefixes_escaped="${all_prefixes_escaped//|/\\|}"
-    sed -e "s|__CGW_LOCAL_FILES_PATTERN__|${sed_files_pattern}|g" \
-      -e "s|__CGW_ALL_PREFIXES__|${all_prefixes_escaped}|g" \
-      -e "s|__CGW_EXEMPT_PATTERN__|${sed_exempt_pattern}|g" \
-      "${pre_push_template}" >"${PROJECT_ROOT}/.githooks/pre-push"
+    cp "${pre_push_template}" "${PROJECT_ROOT}/.githooks/pre-push"
     chmod +x "${PROJECT_ROOT}/.githooks/pre-push"
   fi
 
@@ -791,7 +741,7 @@ main() {
 
     if [[ "${install_hook}" == "yes" ]]; then
       echo "Installing pre-commit hook..."
-      _install_hook "${local_files}"
+      _install_hook
     fi
   fi
 

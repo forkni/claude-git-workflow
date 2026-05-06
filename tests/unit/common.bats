@@ -425,3 +425,103 @@ _make_fresh_lock() {
   echo "${result}" | grep -q "pre-merge-"
   echo "${result}" | grep -q "pre-bisect-"
 }
+
+# ── cgw_is_local_file() ──────────────────────────────────────────────────────
+
+@test "cgw_is_local_file: plain file exact match returns 0" {
+  CGW_LOCAL_FILES="CLAUDE.md MEMORY.md"
+  CGW_LOCAL_FILES_EXEMPT=""
+  cgw_is_local_file "CLAUDE.md"
+}
+
+@test "cgw_is_local_file: trailing chars do NOT match (anchoring)" {
+  CGW_LOCAL_FILES="MEMORY"
+  CGW_LOCAL_FILES_EXEMPT=""
+  run cgw_is_local_file "MEMORY.md"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_is_local_file: substring does NOT match (anchoring)" {
+  CGW_LOCAL_FILES="logs"
+  CGW_LOCAL_FILES_EXEMPT=""
+  run cgw_is_local_file "logs.md"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_is_local_file: directory entry matches file inside" {
+  CGW_LOCAL_FILES=".claude/"
+  CGW_LOCAL_FILES_EXEMPT=""
+  cgw_is_local_file ".claude/foo.md"
+}
+
+@test "cgw_is_local_file: directory entry matches the directory itself" {
+  CGW_LOCAL_FILES=".claude/"
+  CGW_LOCAL_FILES_EXEMPT=""
+  cgw_is_local_file ".claude"
+}
+
+@test "cgw_is_local_file: directory entry does NOT match similar-prefix dir (bug #6 regression)" {
+  CGW_LOCAL_FILES=".claude/"
+  CGW_LOCAL_FILES_EXEMPT=""
+  run cgw_is_local_file ".claudefoo"
+  [ "${status}" -eq 1 ]
+  run cgw_is_local_file ".claudefoo/bar"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_is_local_file: exempt suppresses match for plain file (bug #4 regression)" {
+  CGW_LOCAL_FILES="CLAUDE.md"
+  CGW_LOCAL_FILES_EXEMPT="CLAUDE.md"
+  run cgw_is_local_file "CLAUDE.md"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_is_local_file: exempt suppresses match for directory entry" {
+  CGW_LOCAL_FILES=".claude/"
+  CGW_LOCAL_FILES_EXEMPT=".claude/keep.md"
+  run cgw_is_local_file ".claude/keep.md"
+  [ "${status}" -eq 1 ]
+  cgw_is_local_file ".claude/other.md"
+}
+
+@test "cgw_is_local_file: empty CGW_LOCAL_FILES returns 1 for any path" {
+  CGW_LOCAL_FILES=""
+  CGW_LOCAL_FILES_EXEMPT=""
+  run cgw_is_local_file "CLAUDE.md"
+  [ "${status}" -eq 1 ]
+}
+
+# ── cgw_filter_local_files() ─────────────────────────────────────────────────
+
+@test "cgw_filter_local_files: stdin filters and echoes matches" {
+  CGW_LOCAL_FILES="CLAUDE.md .claude/"
+  CGW_LOCAL_FILES_EXEMPT=""
+  result=$(printf '%s\n' "CLAUDE.md" "src/foo.py" ".claude/bar" "README.md" | cgw_filter_local_files)
+  echo "${result}" | grep -qx "CLAUDE.md"
+  echo "${result}" | grep -qx ".claude/bar"
+  ! echo "${result}" | grep -qx "src/foo.py"
+  ! echo "${result}" | grep -qx "README.md"
+}
+
+@test "cgw_filter_local_files: returns 1 when no matches" {
+  CGW_LOCAL_FILES="CLAUDE.md"
+  CGW_LOCAL_FILES_EXEMPT=""
+  run bash -c "
+    SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_LOCAL_FILES='CLAUDE.md'
+    CGW_LOCAL_FILES_EXEMPT=''
+    printf '%s\n' 'src/foo.py' 'README.md' | cgw_filter_local_files
+  "
+  [ "${status}" -eq 1 ]
+  [ -z "${output}" ]
+}
+
+@test "cgw_filter_local_files: positional args filter and echo matches" {
+  CGW_LOCAL_FILES="CLAUDE.md .claude/"
+  CGW_LOCAL_FILES_EXEMPT=""
+  result=$(cgw_filter_local_files "CLAUDE.md" "src/foo.py" ".claude/bar")
+  echo "${result}" | grep -qx "CLAUDE.md"
+  echo "${result}" | grep -qx ".claude/bar"
+  ! echo "${result}" | grep -qx "src/foo.py"
+}
