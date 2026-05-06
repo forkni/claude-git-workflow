@@ -368,3 +368,60 @@ _make_fresh_lock() {
   [ -f "${TEST_REPO_DIR}/.git/index.lock" ]
   rm -rf "${TEST_REPO_DIR}/.git/rebase-merge"
 }
+
+# ── cgw_create_backup_tag() ──────────────────────────────────────────────────
+
+@test "cgw_create_backup_tag: sets CGW_BACKUP_TAG to pre-<op>-<ts>-<pid> format" {
+  cd "${TEST_REPO_DIR}"
+  cgw_create_backup_tag merge
+  [[ "${CGW_BACKUP_TAG}" =~ ^pre-merge-[0-9]{8}_[0-9]{6}-[0-9]+$ ]]
+}
+
+@test "cgw_create_backup_tag: creates the git tag in the repo" {
+  cd "${TEST_REPO_DIR}"
+  cgw_create_backup_tag undo-commit
+  git tag -l "${CGW_BACKUP_TAG}" | grep -q "${CGW_BACKUP_TAG}"
+}
+
+@test "cgw_create_backup_tag: unknown op returns 1 with error" {
+  run bash -c "
+    SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cd '${TEST_REPO_DIR}'
+    cgw_create_backup_tag bogus-op 2>&1
+  "
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"unknown op"* ]]
+}
+
+# ── cgw_backup_tag_glob() ────────────────────────────────────────────────────
+
+@test "cgw_backup_tag_glob: no arg yields one pattern per op" {
+  result=$(cgw_backup_tag_glob)
+  line_count=$(printf '%s\n' "${result}" | wc -l | tr -d ' ')
+  [ "${line_count}" -eq "${#CGW_BACKUP_OPS[@]}" ]
+}
+
+@test "cgw_backup_tag_glob: with op echoes single glob" {
+  [ "$(cgw_backup_tag_glob merge)" = "pre-merge-*" ]
+}
+
+# ── cgw_list_backup_tags() ───────────────────────────────────────────────────
+
+@test "cgw_list_backup_tags: with op returns only that op's tags" {
+  cd "${TEST_REPO_DIR}"
+  git tag "pre-merge-20200101_000000-1"
+  git tag "pre-rebase-20200101_000000-2"
+  result=$(cgw_list_backup_tags merge)
+  echo "${result}" | grep -q "pre-merge-"
+  ! echo "${result}" | grep -q "pre-rebase-"
+}
+
+@test "cgw_list_backup_tags: no arg returns tags from all ops" {
+  cd "${TEST_REPO_DIR}"
+  git tag "pre-merge-20200102_000000-1"
+  git tag "pre-bisect-20200102_000000-2"
+  result=$(cgw_list_backup_tags)
+  echo "${result}" | grep -q "pre-merge-"
+  echo "${result}" | grep -q "pre-bisect-"
+}

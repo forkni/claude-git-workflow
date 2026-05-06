@@ -47,11 +47,11 @@ _run_merge() {
 
 # ── Backup tag creation ───────────────────────────────────────────────────────
 
-@test "clean merge creates pre-merge-backup tag on target" {
+@test "clean merge creates pre-merge tag on target" {
   git -C "${TEST_REPO_DIR}" checkout development
   _run_merge "--non-interactive" || true
   # Check for any backup tag
-  tags=$(git -C "${TEST_REPO_DIR}" tag -l "pre-merge-backup-*")
+  tags=$(git -C "${TEST_REPO_DIR}" tag -l "pre-merge-*")
   [ -n "${tags}" ]
 }
 
@@ -177,10 +177,10 @@ _run_merge() {
   git -C "${TEST_REPO_DIR}" checkout development
   _run_merge "--non-interactive" || true
   local tags
-  tags=$(git -C "${TEST_REPO_DIR}" tag -l "pre-merge-backup-*")
+  tags=$(git -C "${TEST_REPO_DIR}" tag -l "pre-merge-*")
   # PID suffix means tag name has at least two hyphen-separated segments after the timestamp
-  # e.g. pre-merge-backup-20260417_120000-12345
-  echo "${tags}" | grep -qE "pre-merge-backup-[0-9]{8}_[0-9]{6}-[0-9]+"
+  # e.g. pre-merge-20260417_120000-12345
+  echo "${tags}" | grep -qE "pre-merge-[0-9]{8}_[0-9]{6}-[0-9]+"
 }
 
 # ── CGW_CLEANUP_TESTS ─────────────────────────────────────────────────────────

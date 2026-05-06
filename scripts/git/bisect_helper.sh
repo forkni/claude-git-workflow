@@ -262,13 +262,8 @@ main() {
   _bisect_original_branch=$(git branch --show-current 2>/dev/null || true)
 
   # -- Create backup tag -----------------------------------------------------
-  get_timestamp
-  local backup_tag="pre-bisect-${timestamp}-$$"
-  if git tag "${backup_tag}" 2>/dev/null; then
-    echo "[OK] Backup tag: ${backup_tag}" | tee -a "$logfile"
-  else
-    echo "[!] Could not create backup tag (continuing)" | tee -a "$logfile"
-  fi
+  cgw_create_backup_tag bisect
+  local backup_tag="${CGW_BACKUP_TAG}"
   echo "" | tee -a "$logfile"
 
   log_section_start "GIT BISECT" "$logfile"

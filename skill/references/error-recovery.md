@@ -79,11 +79,11 @@ When you need to undo a merge to the target branch:
 ./scripts/git/rollback_merge.sh --dry-run
 
 # Specific target:
-./scripts/git/rollback_merge.sh --non-interactive --target pre-merge-backup-20260101_120000-12345
+./scripts/git/rollback_merge.sh --non-interactive --target pre-merge-20260101_120000-12345
 ```
 
 Interactive mode prompts for rollback target:
-1. Latest `pre-merge-backup-*` tag (recommended)
+1. Latest `pre-merge-*` tag (recommended)
 2. `HEAD~1` (commit before merge)
 3. Specific commit hash
 
@@ -101,7 +101,7 @@ Requires typing `ROLLBACK` to confirm (interactive mode). Force-push warning sho
 **Manual rollback** (if script unavailable):
 ```bash
 git checkout main
-git reset --hard pre-merge-backup-<timestamp>-<pid>
+git reset --hard pre-merge-<timestamp>-<pid>
 git checkout development
 ```
 

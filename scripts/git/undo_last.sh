@@ -185,13 +185,8 @@ _cmd_undo_commit() {
   fi
 
   # Create backup tag before reset
-  get_timestamp
-  local backup_tag="pre-undo-commit-${timestamp}-$$"
-  if git tag "${backup_tag}" 2>/dev/null; then
-    echo "[OK] Backup tag: ${backup_tag}"
-  else
-    echo "[!] Could not create backup tag (continuing)"
-  fi
+  cgw_create_backup_tag undo-commit
+  local backup_tag="${CGW_BACKUP_TAG}"
 
   if git reset --soft HEAD~1; then
     echo ""

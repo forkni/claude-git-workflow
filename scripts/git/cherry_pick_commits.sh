@@ -273,16 +273,9 @@ main() {
   # [5/6] Create backup tag
   log_section_start "CREATE BACKUP TAG" "$logfile"
 
-  if [[ -z "${timestamp:-}" ]]; then get_timestamp; fi
-  local backup_tag="pre-cherry-pick-${timestamp}-$$"
-
-  if git tag "${backup_tag}" >>"$logfile" 2>&1; then
-    echo "[OK] Created backup tag: ${backup_tag}" | tee -a "$logfile"
-    log_section_end "CREATE BACKUP TAG" "$logfile" "0"
-  else
-    echo "[!] Warning: Could not create backup tag" | tee -a "$logfile"
-    log_section_end "CREATE BACKUP TAG" "$logfile" "1"
-  fi
+  cgw_create_backup_tag cherry-pick
+  local backup_tag="${CGW_BACKUP_TAG}"
+  log_section_end "CREATE BACKUP TAG" "$logfile" "0"
   echo "" | tee -a "$logfile"
 
   # [6/6] Cherry-pick

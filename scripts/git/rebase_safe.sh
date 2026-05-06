@@ -212,22 +212,6 @@ main() {
 }
 
 # ---------------------------------------------------------------------------
-# Shared: create backup tag before any destructive operation
-# ---------------------------------------------------------------------------
-_create_backup_tag() {
-  get_timestamp
-  local backup_tag="pre-rebase-${timestamp}-$$"
-  if git tag "${backup_tag}" 2>/dev/null; then
-    echo "[OK] Backup tag: ${backup_tag}" | tee -a "$logfile"
-    echo "  To restore: git checkout ${backup_tag}" | tee -a "$logfile"
-  else
-    echo "[!] Could not create backup tag (continuing)" | tee -a "$logfile"
-  fi
-  echo "" | tee -a "$logfile"
-  echo "${backup_tag}"
-}
-
-# ---------------------------------------------------------------------------
 # Shared: warn if current branch has commits already pushed to origin
 # ---------------------------------------------------------------------------
 _check_pushed_commits() {
@@ -369,7 +353,9 @@ _cmd_rebase_onto() {
   fi
 
   # Create backup
-  _create_backup_tag
+  cgw_create_backup_tag rebase
+  echo "  To restore: git checkout ${CGW_BACKUP_TAG}" | tee -a "$logfile"
+  echo "" | tee -a "$logfile"
 
   log_section_start "GIT REBASE ONTO" "$logfile"
 
@@ -497,7 +483,9 @@ _cmd_squash_last() {
   fi
 
   # Create backup
-  _create_backup_tag
+  cgw_create_backup_tag rebase
+  echo "  To restore: git checkout ${CGW_BACKUP_TAG}" | tee -a "$logfile"
+  echo "" | tee -a "$logfile"
 
   log_section_start "GIT REBASE INTERACTIVE" "$logfile"
 

@@ -19,6 +19,9 @@
 #   run_git_with_logging()  - Run git command with section logging
 #   validate_branch_pair()  - Validate src/tgt branch names and local existence; exit 1 on error
 #   ensure_no_stale_index_lock() - Detect/remove stale .git/index.lock; return 1 if refused/active
+#   cgw_create_backup_tag() - Create pre-<op>-<ts>-<pid> tag; sets $CGW_BACKUP_TAG
+#   cgw_backup_tag_glob()   - Echo glob pattern(s) for backup tag filtering
+#   cgw_list_backup_tags()  - Echo existing backup tags; optional op filter
 
 # SCRIPT_DIR must be set by the caller before sourcing _common.sh:
 #   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -358,4 +361,59 @@ ensure_no_stale_index_lock() {
     return 1
   fi
   return 0
+}
+
+# ── backup-tag module ──────────────────────────────────────────────────────────
+# Closed registry of CGW ops that create a backup tag before mutating state.
+# To add an op: edit this array AND add a cgw_create_backup_tag call to the script.
+declare -gra CGW_BACKUP_OPS=(merge cherry-pick docs-merge bisect rebase undo-commit) 2>/dev/null || true
+
+# Create a lightweight tag pre-<op>-<timestamp>-<pid> at HEAD.
+# Sets global CGW_BACKUP_TAG. Warns but always proceeds on git tag failure.
+# Returns 1 only if <op> is not in CGW_BACKUP_OPS (programming error in caller).
+cgw_create_backup_tag() {
+  local op="$1"
+  local _found=0 _known
+  for _known in "${CGW_BACKUP_OPS[@]}"; do
+    [[ "${op}" == "${_known}" ]] && { _found=1; break; }
+  done
+  if (( _found == 0 )); then
+    err "cgw_create_backup_tag: unknown op '${op}' (must be one of: ${CGW_BACKUP_OPS[*]})"
+    return 1
+  fi
+  [[ -z "${timestamp:-}" ]] && get_timestamp
+  CGW_BACKUP_TAG="pre-${op}-${timestamp}-$$"
+  local _log="${logfile:-/dev/null}"
+  if git tag "${CGW_BACKUP_TAG}" >>"${_log}" 2>&1; then
+    echo "[OK] Created backup tag: ${CGW_BACKUP_TAG}" | tee -a "${_log}"
+  else
+    echo "[!] Could not create backup tag: ${CGW_BACKUP_TAG} (continuing)" | tee -a "${_log}"
+  fi
+  return 0
+}
+
+# Echo the glob pattern for the given op, or one pattern per op if no arg.
+cgw_backup_tag_glob() {
+  local _op="${1:-}"
+  if [[ -n "${_op}" ]]; then
+    printf 'pre-%s-*\n' "${_op}"
+  else
+    local _known
+    for _known in "${CGW_BACKUP_OPS[@]}"; do
+      printf 'pre-%s-*\n' "${_known}"
+    done
+  fi
+}
+
+# Echo existing backup tags (one per line). Pass an op name to filter to one op.
+cgw_list_backup_tags() {
+  local _op="${1:-}"
+  if [[ -n "${_op}" ]]; then
+    git tag -l "pre-${_op}-*"
+  else
+    local _known
+    for _known in "${CGW_BACKUP_OPS[@]}"; do
+      git tag -l "pre-${_known}-*"
+    done
+  fi
 }

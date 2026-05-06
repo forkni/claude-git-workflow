@@ -94,3 +94,11 @@ teardown() {
   # Tag is deleted
   ! git -C "${TEST_REPO_DIR}" tag | grep -q "pre-merge-backup-20200101_000000"
 }
+
+@test "--tags cleans up new-format pre-merge tags (no -backup- infix)" {
+  git -C "${TEST_REPO_DIR}" tag "pre-merge-20200101_000000-12345" HEAD
+
+  run run_script branch_cleanup.sh --tags --execute --older-than 0 --non-interactive
+  [ "${status}" -eq 0 ]
+  ! git -C "${TEST_REPO_DIR}" tag | grep -q "pre-merge-20200101_000000-12345"
+}

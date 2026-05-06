@@ -155,13 +155,13 @@ main() {
   log_section_start "FIND ROLLBACK TARGET" "$logfile"
 
   local backup_tags
-  backup_tags=$(git tag -l "pre-merge-backup-*" | sort -r | head -5)
+  backup_tags=$(cgw_list_backup_tags merge | sort -r | head -5)
   if [[ -n "${backup_tags}" ]]; then
     echo "Available backup tags:" | tee -a "$logfile"
     echo "${backup_tags}" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
   else
-    echo "No backup tags found (pre-merge-backup-*)" | tee -a "$logfile"
+    echo "No backup tags found (pre-merge-*)" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
   fi
 
@@ -190,7 +190,7 @@ main() {
     echo "Rollback target (from --target): ${rollback_target}" | tee -a "$logfile"
   elif [[ ${non_interactive} -eq 1 ]]; then
     local latest_tag
-    latest_tag=$(git tag -l "pre-merge-backup-*" | sort -r | head -1)
+    latest_tag=$(cgw_list_backup_tags merge | sort -r | head -1)
     if [[ -n "${latest_tag}" ]]; then
       rollback_target="${latest_tag}"
       echo "[Non-interactive] Using latest backup tag: ${rollback_target}" | tee -a "$logfile"
@@ -212,7 +212,7 @@ main() {
 
     case "${rollback_choice}" in
       1)
-        rollback_target=$(git tag -l "pre-merge-backup-*" | sort -r | head -1)
+        rollback_target=$(cgw_list_backup_tags merge | sort -r | head -1)
         if [[ -z "${rollback_target}" ]]; then
           err "No backup tags found"
           echo "Please use option 2 or 3"

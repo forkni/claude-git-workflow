@@ -146,7 +146,7 @@ Checks: current branch is source/target (warning if not), no uncommitted changes
 | `--source <branch>` | Override source branch for this invocation (ephemeral, doesn't mutate config) |
 | `--target <branch>` | Override target branch for this invocation |
 
-Workflow: validate → backup tag (`pre-merge-backup-<timestamp>-<pid>`) → merge → auto-resolve DU/DD/UD/AD/DA conflicts → stop on UU/AU/AA → docs CI check → tests cleanup → commit.
+Workflow: validate → backup tag (`pre-merge-<timestamp>-<pid>`, created via `cgw_create_backup_tag merge` in `_common.sh`) → merge → auto-resolve DU/DD/UD/AD/DA conflicts → stop on UU/AU/AA → docs CI check → tests cleanup → commit.
 
 **`rollback_merge.sh`** — Emergency rollback
 ```bash
@@ -286,7 +286,7 @@ Global flags: `--non-interactive`, `--dry-run`, `--help`
 | *(no flags)* | Dry-run — shows what would be deleted (safe default) |
 | `--execute` | Actually perform deletions |
 | `--remote` | Prune stale remote-tracking refs (`git remote prune`) |
-| `--tags` | Remove old `pre-merge-backup-*`, `pre-cherry-pick-*`, `pre-docs-merge-*`, `pre-bisect-*`, `pre-rebase-*`, `pre-undo-commit-*` backup tags |
+| `--tags` | Remove old `pre-merge-*`, `pre-cherry-pick-*`, `pre-docs-merge-*`, `pre-bisect-*`, `pre-rebase-*`, `pre-undo-commit-*` backup tags |
 | `--older-than <N>` | Only target branches/tags older than N days |
 | `--non-interactive` | Skip confirmation prompts |
 

@@ -160,14 +160,14 @@ main() {
   # -- [4] Backup tag count --------------------------------------------------
   echo "--- [4/5] Backup Tags ---"
   local backup_count
-  backup_count=$(git tag -l "pre-merge-backup-*" "pre-cherry-pick-*" "pre-docs-merge-*" "pre-bisect-*" "pre-rebase-*" "pre-undo-commit-*" 2>/dev/null | wc -l | tr -d ' ')
+  backup_count=$(cgw_list_backup_tags 2>/dev/null | wc -l | tr -d ' ')
   echo "  Backup tags: ${backup_count}"
 
   if [[ ${backup_count} -gt 20 ]]; then
     echo "  [!] Many backup tags -- consider running:"
     echo "    ./scripts/git/branch_cleanup.sh --tags --execute"
   elif [[ ${backup_count} -gt 0 ]]; then
-    echo "  Most recent: $(git tag -l 'pre-merge-backup-*' 'pre-cherry-pick-*' 'pre-docs-merge-*' 'pre-bisect-*' 'pre-rebase-*' 'pre-undo-commit-*' | sort -r | head -1)"
+    echo "  Most recent: $(cgw_list_backup_tags | sort -r | head -1)"
   fi
   echo ""
 

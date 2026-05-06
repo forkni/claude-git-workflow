@@ -139,7 +139,7 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use PRs by default.
 ./scripts/git/rollback_merge.sh                           # interactive (hard reset)
 ./scripts/git/rollback_merge.sh --revert                  # safe revert (preserves history, no force-push)
 ./scripts/git/rollback_merge.sh --non-interactive         # auto-select latest backup
-./scripts/git/rollback_merge.sh --target pre-merge-backup-20260101_120000-12345
+./scripts/git/rollback_merge.sh --target pre-merge-20260101_120000-12345
 ```
 
 ### Cherry-pick

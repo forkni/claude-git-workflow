@@ -87,3 +87,19 @@ teardown() {
   current_sha=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
   [ "${current_sha}" = "${before_sha}" ]
 }
+
+@test "--target with new-format pre-merge tag (no -backup- infix) rolls back correctly" {
+  local before_sha
+  before_sha=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+  git -C "${TEST_REPO_DIR}" tag "pre-merge-20250101_000000-12345" HEAD
+  echo "after" > "${TEST_REPO_DIR}/after.txt"
+  git -C "${TEST_REPO_DIR}" add after.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: after tag commit"
+
+  run run_script rollback_merge.sh --non-interactive --target pre-merge-20250101_000000-12345
+  [ "${status}" -eq 0 ]
+
+  local current_sha
+  current_sha=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+  [ "${current_sha}" = "${before_sha}" ]
+}
