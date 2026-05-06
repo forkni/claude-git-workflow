@@ -525,3 +525,85 @@ _make_fresh_lock() {
   echo "${result}" | grep -qx ".claude/bar"
   ! echo "${result}" | grep -qx "src/foo.py"
 }
+
+# ── cgw_classify_conflicts() ─────────────────────────────────────────────────
+
+@test "cgw_classify_conflicts: empty input sets TOTAL=0 and returns 1" {
+  run cgw_classify_conflicts ""
+  [ "${status}" -eq 1 ]
+  [ "${CGW_CONFLICT_TOTAL}" -eq 0 ]
+}
+
+@test "cgw_classify_conflicts: single DU line populates DU_FILES and TOTAL=1" {
+  cgw_classify_conflicts "DU src/foo.py"
+  [ "${CGW_CONFLICT_TOTAL}" -eq 1 ]
+  [ "${#CGW_CONFLICT_DU_FILES[@]}" -eq 1 ]
+  [ "${CGW_CONFLICT_DU_FILES[0]}" = "src/foo.py" ]
+  [ "${#CGW_CONFLICT_UU_FILES[@]}" -eq 0 ]
+}
+
+@test "cgw_classify_conflicts: single DD line populates DD_FILES" {
+  cgw_classify_conflicts "DD old/file.txt"
+  [ "${CGW_CONFLICT_TOTAL}" -eq 1 ]
+  [ "${#CGW_CONFLICT_DD_FILES[@]}" -eq 1 ]
+  [ "${CGW_CONFLICT_DD_FILES[0]}" = "old/file.txt" ]
+}
+
+@test "cgw_classify_conflicts: UU, AU, AA, UD, AD, DA each populate their array" {
+  cgw_classify_conflicts "UU a.py
+AU b.py
+AA c.py
+UD d.py
+AD e.py
+DA f.py"
+  [ "${CGW_CONFLICT_TOTAL}" -eq 6 ]
+  [ "${#CGW_CONFLICT_UU_FILES[@]}" -eq 1 ]
+  [ "${#CGW_CONFLICT_AU_FILES[@]}" -eq 1 ]
+  [ "${#CGW_CONFLICT_AA_FILES[@]}" -eq 1 ]
+  [ "${#CGW_CONFLICT_UD_FILES[@]}" -eq 1 ]
+  [ "${#CGW_CONFLICT_AD_FILES[@]}" -eq 1 ]
+  [ "${#CGW_CONFLICT_DA_FILES[@]}" -eq 1 ]
+}
+
+@test "cgw_classify_conflicts: mixed DU+UU assigns to correct arrays" {
+  cgw_classify_conflicts "DU a.py
+UU b.py
+DU c.py"
+  [ "${CGW_CONFLICT_TOTAL}" -eq 3 ]
+  [ "${#CGW_CONFLICT_DU_FILES[@]}" -eq 2 ]
+  [ "${#CGW_CONFLICT_UU_FILES[@]}" -eq 1 ]
+  [ "${CGW_CONFLICT_DU_FILES[0]}" = "a.py" ]
+  [ "${CGW_CONFLICT_DU_FILES[1]}" = "c.py" ]
+  [ "${CGW_CONFLICT_UU_FILES[0]}" = "b.py" ]
+}
+
+@test "cgw_classify_conflicts: non-conflict prefixes are ignored" {
+  # Returns 1 (no conflicts); || true prevents bats treating return-1 as test failure.
+  cgw_classify_conflicts "?? new.py
+ M staged.py
+M  worktree.py" || true
+  [ "${CGW_CONFLICT_TOTAL}" -eq 0 ]
+  [ "${#CGW_CONFLICT_DU_FILES[@]}" -eq 0 ]
+}
+
+@test "cgw_classify_conflicts: returns 0 (has conflicts) when TOTAL > 0" {
+  run cgw_classify_conflicts "UU conflict.py"
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_classify_conflicts: blank lines in input are ignored" {
+  cgw_classify_conflicts "DU a.py
+
+UU b.py
+"
+  [ "${CGW_CONFLICT_TOTAL}" -eq 2 ]
+}
+
+@test "cgw_classify_conflicts: second call resets arrays from prior call" {
+  cgw_classify_conflicts "DU a.py"
+  [ "${CGW_CONFLICT_TOTAL}" -eq 1 ]
+  cgw_classify_conflicts "UU b.py"
+  [ "${CGW_CONFLICT_TOTAL}" -eq 1 ]
+  [ "${#CGW_CONFLICT_DU_FILES[@]}" -eq 0 ]
+  [ "${#CGW_CONFLICT_UU_FILES[@]}" -eq 1 ]
+}

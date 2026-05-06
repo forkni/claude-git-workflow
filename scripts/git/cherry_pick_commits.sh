@@ -312,56 +312,11 @@ main() {
     echo "" | tee -a "$logfile"
     echo "[!] Cherry-pick conflicts detected - analyzing..." | tee -a "$logfile"
 
-    local conflict_status
-    conflict_status=$(git status --short)
-
-    # Auto-resolve DU (modify/delete) conflicts
-    if printf '%s\n' "${conflict_status}" | grep -q "^DU "; then
-      echo "  Found modify/delete conflicts -- auto-resolving..."
-      local resolution_failed=0
-      while read -r conflict_file; do
-        if git rm "${conflict_file}" >/dev/null 2>&1; then
-          echo "  [OK] Removed: ${conflict_file}"
-        else
-          echo "  [FAIL] Failed to remove ${conflict_file}"
-          resolution_failed=1
-        fi
-      done < <(printf '%s\n' "${conflict_status}" | grep "^DU " | cut -c 4-)
-      if [[ ${resolution_failed} -eq 0 ]]; then
-        echo "[OK] Auto-resolved modify/delete conflicts" | tee -a "$logfile"
-        conflict_status=$(git status --short)
-      else
-        err_tee "[FAIL] Auto-resolution failed for some files"
-        exit 1
-      fi
-    fi
-
-    # DD (both deleted): auto-resolve by accepting deletion
-    if printf '%s\n' "${conflict_status}" | grep -q "^DD "; then
-      echo "  Found both-deleted conflicts -- auto-resolving..." | tee -a "$logfile"
-      while read -r conflict_file; do
-        git rm "${conflict_file}" >/dev/null 2>&1 || true
-        echo "  [OK] Removed (both deleted): ${conflict_file}" | tee -a "$logfile"
-      done < <(printf '%s\n' "${conflict_status}" | grep "^DD " | cut -c 4-)
-      conflict_status=$(git status --short)
-    fi
-
-    # Remaining conflicts require manual resolution
-    if printf '%s\n' "${conflict_status}" | grep -qE "^(UU|AU|AA|UD|AD|DA) "; then
-      echo "" | tee -a "$logfile"
-      printf '%s\n' "${conflict_status}" | grep -E "^(UU|AU|AA|UD|AD|DA) " | tee -a "$logfile"
-      echo ""
-      echo "Please resolve conflicts manually:"
-      echo "  1. Edit conflicted files"
-      echo "  2. git add <resolved files>"
-      echo "  3. git cherry-pick --continue"
-      echo ""
-      echo "Or abort: git cherry-pick --abort && git checkout ${original_branch}"
-      echo "Backup available: git reset --hard ${backup_tag}"
+    if ! cgw_resolve_safe_conflicts cherry-pick "${original_branch}"; then
       exit 1
     fi
 
-    # If only DU/DD were present and auto-resolved, prompt user to continue
+    # All conflicts auto-resolved; cherry-pick is still paused — user must --continue.
     echo "" | tee -a "$logfile"
     echo "[OK] All conflicts auto-resolved. To complete the cherry-pick:" | tee -a "$logfile"
     echo "  git cherry-pick --continue" | tee -a "$logfile"

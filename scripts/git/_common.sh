@@ -24,6 +24,9 @@
 #   cgw_list_backup_tags()  - Echo existing backup tags; optional op filter
 #   cgw_is_local_file()     - Return 0 if path matches any local-only entry (reads CGW_LOCAL_FILES)
 #   cgw_filter_local_files() - Filter stdin/args paths; echoes matches; returns 0 if any match
+#   cgw_classify_conflicts() - Parse git status into 8 conflict-category arrays; sets CGW_CONFLICT_TOTAL
+#   cgw_resolve_safe_conflicts() - Auto-resolve DU/DD, emit halt messages; sets CGW_CONFLICT_STATE
+#   cgw_print_conflict_summary() - Print categorised file list from last cgw_classify_conflicts call
 
 # SCRIPT_DIR must be set by the caller before sourcing _common.sh:
 #   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -457,4 +460,232 @@ cgw_filter_local_files() {
     done
   fi
   return ${any}
+}
+
+# ── conflict-policy module ─────────────────────────────────────────────────────
+# Single source of truth for git conflict classification and safe auto-resolution.
+#
+# cgw_classify_conflicts [<porcelain_override>]
+#   Parses git status --short (or an optional injected fixture string) into eight
+#   category arrays. Returns 0 if any conflicts present, 1 if none.
+#
+# cgw_resolve_safe_conflicts <op> <original_branch>
+#   Owns the policy: auto-resolves DU + DD (propagates failure), re-classifies,
+#   emits per-category halt messages with op-specific recovery footer.
+#   Sets CGW_CONFLICT_STATE (none|resolved|unresolved). Returns 0 if no manual
+#   action needed, 1 if caller should exit 1.
+
+# Conflict-category arrays — reset on every cgw_classify_conflicts call.
+declare -g CGW_CONFLICT_DU_FILES=()   # modify/delete   (auto-resolvable: git rm)
+declare -g CGW_CONFLICT_DD_FILES=()   # both deleted    (auto-resolvable: git rm)
+declare -g CGW_CONFLICT_UU_FILES=()   # both modified   (halt: content conflict)
+declare -g CGW_CONFLICT_AU_FILES=()   # add/unmerged    (halt: add-side)
+declare -g CGW_CONFLICT_AA_FILES=()   # both added      (halt: add-side)
+declare -g CGW_CONFLICT_UD_FILES=()   # deleted by them (halt: accept deletion vs keep ours)
+declare -g CGW_CONFLICT_AD_FILES=()   # added by us, deleted by theirs  (halt: keep-ours vs keep-theirs)
+declare -g CGW_CONFLICT_DA_FILES=()   # deleted by us, added by theirs  (halt: keep-ours vs keep-theirs)
+declare -g CGW_CONFLICT_TOTAL=0
+# shellcheck disable=SC2034  # CGW_CONFLICT_STATE is read by callers outside _common.sh
+declare -g CGW_CONFLICT_STATE="none"  # none | resolved | unresolved
+
+# shellcheck disable=SC2120  # optional arg used by unit tests; callers inside file omit it
+cgw_classify_conflicts() {
+  CGW_CONFLICT_DU_FILES=()
+  CGW_CONFLICT_DD_FILES=()
+  CGW_CONFLICT_UU_FILES=()
+  CGW_CONFLICT_AU_FILES=()
+  CGW_CONFLICT_AA_FILES=()
+  CGW_CONFLICT_UD_FILES=()
+  CGW_CONFLICT_AD_FILES=()
+  CGW_CONFLICT_DA_FILES=()
+  CGW_CONFLICT_TOTAL=0
+
+  local porcelain
+  if [[ $# -gt 0 ]]; then
+    porcelain="$1"
+  else
+    porcelain="$(git status --short 2>/dev/null)" || true
+  fi
+
+  local line code path
+  while IFS= read -r line; do
+    [[ -z "${line}" ]] && continue
+    code="${line:0:2}"
+    path="${line:3}"
+    case "${code}" in
+      DU) CGW_CONFLICT_DU_FILES+=("${path}"); CGW_CONFLICT_TOTAL=$(( CGW_CONFLICT_TOTAL + 1 )) ;;
+      DD) CGW_CONFLICT_DD_FILES+=("${path}"); CGW_CONFLICT_TOTAL=$(( CGW_CONFLICT_TOTAL + 1 )) ;;
+      UU) CGW_CONFLICT_UU_FILES+=("${path}"); CGW_CONFLICT_TOTAL=$(( CGW_CONFLICT_TOTAL + 1 )) ;;
+      AU) CGW_CONFLICT_AU_FILES+=("${path}"); CGW_CONFLICT_TOTAL=$(( CGW_CONFLICT_TOTAL + 1 )) ;;
+      AA) CGW_CONFLICT_AA_FILES+=("${path}"); CGW_CONFLICT_TOTAL=$(( CGW_CONFLICT_TOTAL + 1 )) ;;
+      UD) CGW_CONFLICT_UD_FILES+=("${path}"); CGW_CONFLICT_TOTAL=$(( CGW_CONFLICT_TOTAL + 1 )) ;;
+      AD) CGW_CONFLICT_AD_FILES+=("${path}"); CGW_CONFLICT_TOTAL=$(( CGW_CONFLICT_TOTAL + 1 )) ;;
+      DA) CGW_CONFLICT_DA_FILES+=("${path}"); CGW_CONFLICT_TOTAL=$(( CGW_CONFLICT_TOTAL + 1 )) ;;
+    esac
+  done <<< "${porcelain}"
+
+  [[ "${CGW_CONFLICT_TOTAL}" -gt 0 ]]
+}
+
+# shellcheck disable=SC2034  # CGW_CONFLICT_STATE is read by callers outside _common.sh
+cgw_resolve_safe_conflicts() {
+  local op="$1" original_branch="$2"
+  local _log="${logfile:-/dev/null}"
+  CGW_CONFLICT_STATE="none"
+
+  cgw_classify_conflicts
+  if [[ "${CGW_CONFLICT_TOTAL}" -eq 0 ]]; then
+    return 0
+  fi
+
+  # Auto-resolve DU (modify/delete): accept the deletion.
+  local f resolution_failed=0
+  for f in "${CGW_CONFLICT_DU_FILES[@]}"; do
+    echo "  Found modify/delete conflict: ${f}"
+    if git rm "${f}" >/dev/null 2>&1; then
+      echo "  [OK] Removed: ${f}"
+    else
+      echo "  [FAIL] Failed to remove ${f}"
+      resolution_failed=1
+    fi
+  done
+
+  # Auto-resolve DD (both deleted): same as DU — propagate failure.
+  for f in "${CGW_CONFLICT_DD_FILES[@]}"; do
+    echo "  Found both-deleted conflict: ${f}"
+    if git rm "${f}" >/dev/null 2>&1; then
+      echo "  [OK] Removed (both deleted): ${f}"
+    else
+      echo "  [FAIL] Failed to remove ${f}"
+      resolution_failed=1
+    fi
+  done
+
+  if [[ "${resolution_failed}" -eq 1 ]]; then
+    err_tee "[FAIL] Auto-resolution failed for some files"
+    CGW_CONFLICT_STATE="unresolved"
+    return 1
+  fi
+
+  # Capture auto-resolve count before re-classify resets the arrays.
+  local auto_resolved=$(( ${#CGW_CONFLICT_DU_FILES[@]} + ${#CGW_CONFLICT_DD_FILES[@]} ))
+
+  # Re-classify so halt checks see the post-rm state (fixes stale-snapshot bug).
+  cgw_classify_conflicts
+  if [[ "${CGW_CONFLICT_TOTAL}" -eq 0 ]]; then
+    if [[ "${auto_resolved}" -gt 0 ]]; then
+      echo "[OK] Auto-resolved modify/delete and both-deleted conflicts" | tee -a "${_log}"
+    fi
+    CGW_CONFLICT_STATE="resolved"
+    return 0
+  fi
+
+  if [[ "${auto_resolved}" -gt 0 ]]; then
+    echo "[OK] Auto-resolved modify/delete and both-deleted conflicts" | tee -a "${_log}"
+  fi
+
+  # Op-specific recovery footer.
+  local continue_hint abort_hint
+  case "${op}" in
+    merge)
+      continue_hint="  1. Edit conflicted files
+  2. git add <resolved files>
+  3. git commit"
+      abort_hint="Or abort: git merge --abort && git checkout ${original_branch}" ;;
+    cherry-pick)
+      continue_hint="  1. Edit conflicted files
+  2. git add <resolved files>
+  3. git cherry-pick --continue"
+      abort_hint="Or abort: git cherry-pick --abort && git checkout ${original_branch}" ;;
+    *)
+      continue_hint="  1. Edit conflicted files
+  2. git add <resolved files>"
+      abort_hint="Or restore: git checkout ${original_branch}" ;;
+  esac
+
+  local any_halt=0
+
+  # UU — both modified (content conflict)
+  if [[ "${#CGW_CONFLICT_UU_FILES[@]}" -gt 0 ]]; then
+    echo "" | tee -a "${_log}"
+    err_tee "[FAIL] Content conflicts require manual resolution:"
+    printf '  %s\n' "${CGW_CONFLICT_UU_FILES[@]}" | tee -a "${_log}"
+    echo ""
+    echo "Please resolve manually:"
+    printf '%s\n' "${continue_hint}"
+    echo ""
+    printf '%s\n' "${abort_hint}"
+    any_halt=1
+  fi
+
+  # AU/AA — add-side conflicts
+  if [[ $(( ${#CGW_CONFLICT_AU_FILES[@]} + ${#CGW_CONFLICT_AA_FILES[@]} )) -gt 0 ]]; then
+    echo "" | tee -a "${_log}"
+    err_tee "[FAIL] Add/add or add/unmerged conflicts require manual resolution:"
+    [[ "${#CGW_CONFLICT_AU_FILES[@]}" -gt 0 ]] && \
+      printf '  %s\n' "${CGW_CONFLICT_AU_FILES[@]}" | tee -a "${_log}"
+    [[ "${#CGW_CONFLICT_AA_FILES[@]}" -gt 0 ]] && \
+      printf '  %s\n' "${CGW_CONFLICT_AA_FILES[@]}" | tee -a "${_log}"
+    echo ""
+    echo "Please resolve manually:"
+    printf '%s\n' "${continue_hint}"
+    echo ""
+    printf '%s\n' "${abort_hint}"
+    any_halt=1
+  fi
+
+  # UD — updated by us, deleted by them
+  if [[ "${#CGW_CONFLICT_UD_FILES[@]}" -gt 0 ]]; then
+    echo "" | tee -a "${_log}"
+    err_tee "[FAIL] Deleted-by-them conflicts require manual resolution:"
+    printf '  %s\n' "${CGW_CONFLICT_UD_FILES[@]}" | tee -a "${_log}"
+    echo ""
+    echo "Please resolve manually (for each file):"
+    echo "  Accept deletion: git rm <file>"
+    echo "  Keep ours:       git add <file>"
+    echo ""
+    printf '%s\n' "${abort_hint}"
+    any_halt=1
+  fi
+
+  # AD/DA — add/delete conflicts
+  if [[ $(( ${#CGW_CONFLICT_AD_FILES[@]} + ${#CGW_CONFLICT_DA_FILES[@]} )) -gt 0 ]]; then
+    echo "" | tee -a "${_log}"
+    err_tee "[FAIL] Add/delete conflicts require manual resolution:"
+    [[ "${#CGW_CONFLICT_AD_FILES[@]}" -gt 0 ]] && \
+      printf '  %s\n' "${CGW_CONFLICT_AD_FILES[@]}" | tee -a "${_log}"
+    [[ "${#CGW_CONFLICT_DA_FILES[@]}" -gt 0 ]] && \
+      printf '  %s\n' "${CGW_CONFLICT_DA_FILES[@]}" | tee -a "${_log}"
+    echo ""
+    echo "Please resolve manually (for each file):"
+    echo "  Keep ours:   git checkout --ours <file> && git add <file>"
+    echo "  Keep theirs: git checkout --theirs <file> && git add <file>"
+    echo ""
+    printf '%s\n' "${abort_hint}"
+    any_halt=1
+  fi
+
+  if [[ "${any_halt}" -eq 1 ]]; then
+    CGW_CONFLICT_STATE="unresolved"
+    return 1
+  fi
+
+  CGW_CONFLICT_STATE="resolved"
+  return 0
+}
+
+# Print a categorised conflict file list from the most recent cgw_classify_conflicts call.
+# Does nothing if CGW_CONFLICT_TOTAL == 0.
+cgw_print_conflict_summary() {
+  [[ "${CGW_CONFLICT_TOTAL}" -eq 0 ]] && return 0
+  local _f
+  echo "  Conflicting files:"
+  for _f in "${CGW_CONFLICT_UU_FILES[@]}"; do echo "    ${_f} (both modified)"; done
+  for _f in "${CGW_CONFLICT_DU_FILES[@]}"; do echo "    ${_f} (modify/delete)"; done
+  for _f in "${CGW_CONFLICT_UD_FILES[@]}"; do echo "    ${_f} (deleted by them)"; done
+  for _f in "${CGW_CONFLICT_AA_FILES[@]}"; do echo "    ${_f} (both added)"; done
+  for _f in "${CGW_CONFLICT_AU_FILES[@]}"; do echo "    ${_f} (add/unmerged)"; done
+  for _f in "${CGW_CONFLICT_AD_FILES[@]}"; do echo "    ${_f} (added by us, deleted by theirs)"; done
+  for _f in "${CGW_CONFLICT_DA_FILES[@]}"; do echo "    ${_f} (deleted by us, added by theirs)"; done
+  for _f in "${CGW_CONFLICT_DD_FILES[@]}"; do echo "    ${_f} (both deleted)"; done
 }

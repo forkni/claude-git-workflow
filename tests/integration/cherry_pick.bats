@@ -69,3 +69,60 @@ teardown() {
   run run_script cherry_pick_commits.sh --commit "deadbeef1234567890" --non-interactive
   [ "${status}" -eq 1 ]
 }
+
+# ── Conflict resolution: UU (drift-parity with merge) ────────────────────────
+
+@test "UU conflict: cherry-pick exits 1 with same content-conflict message as merge" {
+  # development modifies conflict.txt; main also independently changed the same line
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'original line\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add conflict.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff -m "chore: sync conflict.txt"
+  printf 'dev modified line\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev modifies conflict.txt"
+  local pick_commit
+  pick_commit=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'main modified line\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "fix: main modifies conflict.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  run run_script cherry_pick_commits.sh --commit "${pick_commit}" --non-interactive
+  [ "${status}" -eq 1 ]
+  # Must use the same per-category message as merge_with_validation.sh (drift fix)
+  [[ "${output}" == *"Content conflicts require manual resolution"* ]]
+}
+
+# ── Conflict resolution: DU (auto-resolve, user must --continue) ─────────────
+
+@test "DU conflict: cherry-pick auto-resolves and exits 1 with --continue hint" {
+  # main deleted shared.txt; cherry-picked commit modifies it (DU: deleted by us)
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'shared content\n' > "${TEST_REPO_DIR}/shared.txt"
+  git -C "${TEST_REPO_DIR}" add shared.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add shared.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff -m "chore: sync shared.txt"
+  printf 'shared content\ndev added\n' > "${TEST_REPO_DIR}/shared.txt"
+  git -C "${TEST_REPO_DIR}" add shared.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev modifies shared.txt"
+  local pick_commit
+  pick_commit=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+
+  git -C "${TEST_REPO_DIR}" checkout main
+  git -C "${TEST_REPO_DIR}" rm shared.txt --quiet
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: main deletes shared.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  run run_script cherry_pick_commits.sh --commit "${pick_commit}" --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"--continue"* ]]
+  [[ "${output}" == *"Auto-resolved"* ]] || [[ "${output}" == *"auto-resolved"* ]]
+}

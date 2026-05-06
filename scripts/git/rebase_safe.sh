@@ -370,8 +370,8 @@ _cmd_rebase_onto() {
     echo "" | tee -a "$logfile"
     err_tee "[FAIL] REBASE HIT CONFLICTS"
     echo "" | tee -a "$logfile"
-    echo "  Conflicting files:"
-    git diff --name-only --diff-filter=U 2>/dev/null | sed 's/^/    /' || true
+    cgw_classify_conflicts || true
+    cgw_print_conflict_summary
     echo ""
     echo "  Resolve conflicts, then:"
     echo "    git add <resolved-files>"
@@ -504,6 +504,9 @@ _cmd_squash_last() {
     echo "" | tee -a "$logfile"
     err_tee "[FAIL] INTERACTIVE REBASE HIT CONFLICTS"
     echo "" | tee -a "$logfile"
+    cgw_classify_conflicts || true
+    cgw_print_conflict_summary
+    echo ""
     echo "  Resolve conflicts, then:"
     echo "    git add <resolved-files>"
     echo "    ./scripts/git/rebase_safe.sh --continue"
@@ -572,12 +575,10 @@ _cmd_continue() {
   fi
 
   # Check for unresolved conflicts
-  local unresolved
-  unresolved=$(git diff --name-only --diff-filter=U 2>/dev/null || true)
-  if [[ -n "${unresolved}" ]]; then
+  cgw_classify_conflicts || true
+  if [[ "${CGW_CONFLICT_TOTAL}" -gt 0 ]]; then
     err "Unresolved conflicts still present -- resolve and 'git add' them first:"
-    # shellcheck disable=SC2001  # sed needed for per-line prefix on multi-line string
-    echo "${unresolved}" | sed 's/^/  /'
+    cgw_print_conflict_summary
     exit 1
   fi
 
@@ -595,8 +596,8 @@ _cmd_continue() {
   else
     err "rebase --continue failed -- check for remaining conflicts"
     echo ""
-    echo "  Conflicting files:"
-    git diff --name-only --diff-filter=U 2>/dev/null | sed 's/^/    /' || true
+    cgw_classify_conflicts || true
+    cgw_print_conflict_summary
     echo ""
     echo "  To abort: ./scripts/git/rebase_safe.sh --abort"
     exit 1
