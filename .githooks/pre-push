@@ -18,13 +18,8 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 # shellcheck source=scripts/git/_common.sh
 source "${REPO_ROOT}/scripts/git/_common.sh"
 
-# Compute conventional commit prefix list from config (no baked-in pattern).
-_base_prefixes="feat|fix|docs|chore|test|refactor|style|perf"
-if [[ -n "${CGW_EXTRA_PREFIXES:-}" ]]; then
-  ALL_PREFIXES="${_base_prefixes}|${CGW_EXTRA_PREFIXES}"
-else
-  ALL_PREFIXES="${_base_prefixes}"
-fi
+# CGW_ALL_PREFIXES is computed by _config.sh (sourced via _common.sh above)
+# and includes CGW_EXTRA_PREFIXES from .cgw.conf automatically.
 
 # Collect push info from stdin (git passes it to pre-push)
 while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
@@ -65,7 +60,7 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   done
 
   # ── [2] Conventional commit format check ──────────────────────────────
-  if [[ -n "${ALL_PREFIXES}" ]]; then
+  if [[ -n "${CGW_ALL_PREFIXES}" ]]; then
     for COMMIT in ${COMMITS}; do
       MSG=$(git log -1 --format="%s" "${COMMIT}" 2>/dev/null || true)
 
@@ -73,13 +68,13 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
       PARENT_COUNT=$(git cat-file -p "${COMMIT}" 2>/dev/null | grep -c "^parent " || true)
       [[ "${PARENT_COUNT}" -ge 2 ]] && continue
 
-      if ! echo "${MSG}" | grep -qE "^(${ALL_PREFIXES}):"; then
+      if ! cgw_validate_commit_message "${MSG}"; then
         echo ""
         echo "WARNING [pre-push]: Commit ${COMMIT} has non-conventional message:"
         echo "  ${MSG}"
         echo ""
         echo "Expected format: <type>: <description>"
-        echo "Types: ${ALL_PREFIXES}"
+        echo "Types: ${CGW_ALL_PREFIXES}"
         echo ""
         echo "Push blocked. Fix with: ./scripts/git/undo_last.sh amend-message '<type>: <msg>'"
         echo "Or bypass (not recommended): git push --no-verify"

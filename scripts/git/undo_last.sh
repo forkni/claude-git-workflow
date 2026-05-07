@@ -362,7 +362,7 @@ _cmd_amend_message() {
   fi
 
   # Validate conventional format
-  if ! echo "${new_msg}" | grep -qE "^(${CGW_ALL_PREFIXES}):"; then
+  if ! cgw_validate_commit_message "${new_msg}"; then
     echo "  [!] Message does not follow conventional format: ${new_msg}"
     echo "  Expected: <type>: <description> (types: ${CGW_ALL_PREFIXES/|/, })"
     if [[ "${non_interactive}" -eq 0 ]]; then

@@ -689,3 +689,16 @@ cgw_print_conflict_summary() {
   for _f in "${CGW_CONFLICT_DA_FILES[@]}"; do echo "    ${_f} (deleted by us, added by theirs)"; done
   for _f in "${CGW_CONFLICT_DD_FILES[@]}"; do echo "    ${_f} (both deleted)"; done
 }
+
+# ── commit-message format module ───────────────────────────────────────────────
+# Validates commit messages against the conventional-commit prefix grammar.
+#
+# cgw_validate_commit_message <msg>
+#   Returns 0 if msg matches ^(<CGW_ALL_PREFIXES>): grammar, 1 otherwise.
+#   Pure predicate — no stdout/stderr output. Caller owns all user-facing
+#   messages and merge-commit skipping (parent-count check).
+
+cgw_validate_commit_message() {
+  local msg="$1"
+  echo "${msg}" | grep -qE "^(${CGW_ALL_PREFIXES}):"
+}

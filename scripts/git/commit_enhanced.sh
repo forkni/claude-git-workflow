@@ -520,12 +520,12 @@ main() {
 
   local commit_msg="${commit_msg_param}"
 
-  if ! echo "${commit_msg}" | grep -qE "^(${CGW_ALL_PREFIXES}):"; then
+  if ! cgw_validate_commit_message "${commit_msg}"; then
     echo "[!] WARNING: Message doesn't follow conventional format"
     echo "  Configured types: ${CGW_ALL_PREFIXES/|/, }"
     if [[ ${non_interactive} -eq 1 ]]; then
       err "Commit message must follow conventional format in non-interactive mode"
-      err "Use --skip-lint or set CGW_EXTRA_PREFIXES if you need a custom prefix"
+      err "To add a custom type prefix: set CGW_EXTRA_PREFIXES in .cgw.conf"
       exit 1
     else
       read -rp "Continue anyway? (yes/no): " continue_commit

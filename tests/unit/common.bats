@@ -607,3 +607,37 @@ UU b.py
   [ "${#CGW_CONFLICT_DU_FILES[@]}" -eq 0 ]
   [ "${#CGW_CONFLICT_UU_FILES[@]}" -eq 1 ]
 }
+
+# ── cgw_validate_commit_message() ─────────────────────────────────────────────
+
+@test "cgw_validate_commit_message accepts all built-in prefixes" {
+  for prefix in feat fix docs chore test refactor style perf; do
+    run cgw_validate_commit_message "${prefix}: description"
+    [ "${status}" -eq 0 ]
+  done
+}
+
+@test "cgw_validate_commit_message accepts a CGW_EXTRA_PREFIXES custom type" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export CGW_EXTRA_PREFIXES='cuda'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_validate_commit_message 'cuda: add kernel'
+  "
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_validate_commit_message rejects empty message" {
+  run cgw_validate_commit_message ""
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_validate_commit_message rejects unprefixed message" {
+  run cgw_validate_commit_message "add something without a type"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_validate_commit_message rejects unknown prefix" {
+  run cgw_validate_commit_message "wip: work in progress"
+  [ "${status}" -eq 1 ]
+}

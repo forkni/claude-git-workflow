@@ -94,12 +94,11 @@ _run_configure() {
 }
 
 @test "--non-interactive installs pre-push hook" {
-  # Regression test: configure.sh used CGW_ALL_PREFIXES (unbound var) when
-  # building the pre-push hook template substitution. Verify the hook is
-  # written and contains the expected prefixes pattern.
+  # Regression test: ensure the installed pre-push hook is a valid CGW hook
+  # that performs commit-message validation via cgw_validate_commit_message.
   _run_configure "--non-interactive"
   [ -f "${TEST_REPO_DIR}/.githooks/pre-push" ]
-  grep -q "feat" "${TEST_REPO_DIR}/.githooks/pre-push"
+  grep -q "cgw_validate_commit_message" "${TEST_REPO_DIR}/.githooks/pre-push"
 }
 
 @test "--skip-hooks does not install hooks" {
