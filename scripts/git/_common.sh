@@ -892,7 +892,7 @@ cgw_confirm() {
       accept) return 0 ;;
       deny)   return 1 ;;
       abort)
-        echo "[!] Non-interactive: '${prompt}' requires confirmation — aborting" >&2
+        echo "[!] non-interactive: '${prompt}' requires confirmation — aborting" >&2
         exit 1
         ;;
     esac
