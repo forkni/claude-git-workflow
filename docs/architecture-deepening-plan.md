@@ -15,8 +15,10 @@
 | #1 | Local-only file matcher (`cgw_is_local_file` / `cgw_filter_local_files`) | DONE | `c44a6a0` |
 | #7 | Conflict-resolution policy (`cgw_classify_conflicts` / `cgw_resolve_safe_conflicts` / `cgw_print_conflict_summary`) | DONE | `b05f30e` |
 | **#6** | **Lint pipeline + commit-message format modules** | **DONE** | `9a96466` `79b02c4` `b268b66` `5161461` |
+| **#A** | **Lint pipeline helpers round 2** (`cgw_run_lint_check` / `cgw_run_format_check` / `cgw_run_lint_fix` / `cgw_run_markdownlint_check` / helpers) | **DONE** | `fb0e9b0` `4580afe` `da51b7b` |
+| **#B** | **Interactive confirmation** (`cgw_confirm` across 15 scripts) | **DONE** | `6f0e208` `21170db` + docs |
 
-Test baseline: **381 bats tests passing** (`bats tests/unit/ tests/integration/`).
+Test baseline: **~403 bats tests passing** (`bats tests/unit/ tests/integration/`) — up from 381 before the Phase A+B run.
 Branch: `development`, in sync with `origin/development`.
 
 ---
@@ -198,4 +200,105 @@ at: docs/architecture-deepening-plan.md (in the project repo).
 Start by entering plan mode, then run the Phase 1 exploration described in
 that plan ("Where to look first" + "Workflow for the next session" sections).
 Don't write any code until I approve via ExitPlanMode.
+```
+
+---
+
+## Candidate #A — Lint Pipeline Helpers Round 2 (COMPLETED — 3 commits)
+
+### Why it was needed
+
+`commit_enhanced.sh`, `check_lint.sh`, `fix_lint.sh`, and the pre-commit
+hooks still had inline `run_tool_with_logging` calls duplicating the
+lint/format/markdownlint invocation pattern. The pre-commit hook hardcoded
+`ruff check` and `\.py$` — partial drift from the #6 work that introduced
+`cgw_resolve_lint_binary` but didn't finish the hook rewrite.
+
+### What shipped (3 commits)
+
+| Commit | Change |
+|--------|--------|
+| `fb0e9b0` | refactor: extract lint pipeline helpers to `_common.sh` — 4 new seam functions + 2 utilities + caller rewrites in `commit_enhanced.sh`, `check_lint.sh`, `fix_lint.sh` + 10 unit tests |
+| `4580afe` | refactor: pre-commit hook adopts `cgw_run_lint_check` — `.githooks/pre-commit` and `hooks/pre-commit` rewritten; 2 integration tests added |
+| `da51b7b` | docs: add lint-pipeline and commit-message-format terms to CONTEXT.md, mark #6 done |
+
+### Drift bugs closed
+
+- Pre-commit hook hardcoded `ruff check` and `\.py$` extension filter — now routes through `cgw_run_lint_check` with `${STAGED_FILES}` and respects `CGW_LINT_CMD`.
+
+### Test count delta
+
+`381 → ~393` (+12, no regressions):
+- `tests/unit/common.bats`: +10 (all four run helpers + `cgw_strip_path_arg` + `cgw_modified_files_for_lint`)
+- `tests/integration/pre_commit_hook.bats`: +2 (CGW_LINT_CMD empty skips silently; lint failure → WARN but exits 0)
+
+### Files changed
+
+```
+scripts/git/_common.sh                 | +6 new functions (cgw_run_lint_check, cgw_run_format_check,
+                                       |   cgw_run_lint_fix, cgw_run_markdownlint_check,
+                                       |   cgw_strip_path_arg, cgw_modified_files_for_lint)
+scripts/git/commit_enhanced.sh         | inline lint blocks → 4 helper calls + private _restage_after_fix
+scripts/git/check_lint.sh              | thin orchestrator over helper calls
+scripts/git/fix_lint.sh                | thin orchestrator over cgw_run_lint_fix
+.githooks/pre-commit                   | hardcoded ruff → cgw_run_lint_check; non-blocking PASS/WARN
+hooks/pre-commit                       | same
+tests/unit/common.bats                 | +10 unit tests
+tests/integration/pre_commit_hook.bats | +2 integration tests
+CONTEXT.md                             | "lint pipeline" section extended with 8 new seam entries
+```
+
+---
+
+## Candidate #B — Interactive Confirmation (`cgw_confirm`) (COMPLETED — 3 commits)
+
+### Why it was needed
+
+35+ inline `read -r -p ... (yes/no)` prompts scattered across 15 scripts
+with inconsistent non-interactive policy — some silently accepted, some
+aborted, some used single-char `[y/N]` grammar. No seam to test, no
+locality to change policy. One grammar outlier (`merge_with_validation.sh`
+used `[y/N]` / `read -n 1 -r` vs every other site's `(yes/no)` literal-yes).
+
+### What shipped (3 commits)
+
+| Commit | Change |
+|--------|--------|
+| `6f0e208` | refactor: add `cgw_confirm` interactive prompt helper — helper in `_common.sh` + 10 unit tests in `common.bats` |
+| `21170db` | refactor: adopt `cgw_confirm` across 15 scripts — 35+ inline prompts replaced; NI policy explicit at each call site; `[y/N]` outlier normalized; net −170 LOC (130 insertions, 300 deletions) |
+| docs commit | docs: pin interactive-confirmation seam in CONTEXT.md + update this tracking doc |
+
+### Drift bugs closed
+
+- `merge_with_validation.sh` `[y/N]` / `-n 1 -r` single-char grammar outlier — normalized to `(yes/no)` literal-yes.
+- Inconsistent non-interactive policy (scripts silently accepted or hung) — each call site now declares `--non-interactive abort|accept|deny` explicitly.
+
+### Test count delta
+
+`~393 → ~403` (+10, no regressions):
+- `tests/unit/common.bats`: +10 (`cgw_confirm` — default mode, `--default yes`, `--literal-token`, `--non-interactive abort|accept|deny`)
+
+Existing integration tests for all 15 affected scripts continued to pass unchanged.
+
+### Files changed
+
+```
+scripts/git/_common.sh                 | +cgw_confirm (new interactive prompts module section)
+scripts/git/bisect_helper.sh           | cgw_confirm adoption
+scripts/git/branch_cleanup.sh          | cgw_confirm adoption
+scripts/git/cherry_pick_commits.sh     | cgw_confirm adoption
+scripts/git/commit_enhanced.sh         | cgw_confirm adoption (3-way skip left inline)
+scripts/git/configure.sh               | cgw_confirm adoption + y|yes → yes normalization
+scripts/git/create_release.sh          | cgw_confirm adoption
+scripts/git/merge_docs.sh              | cgw_confirm adoption
+scripts/git/merge_with_validation.sh   | cgw_confirm adoption + [y/N] outlier removed
+scripts/git/push_validated.sh          | cgw_confirm adoption
+scripts/git/rebase_safe.sh             | cgw_confirm adoption
+scripts/git/rollback_merge.sh          | cgw_confirm adoption (menu/hash inputs left inline)
+scripts/git/setup_attributes.sh        | cgw_confirm adoption
+scripts/git/stash_work.sh              | cgw_confirm adoption
+scripts/git/sync_branches.sh           | cgw_confirm adoption
+scripts/git/undo_last.sh               | cgw_confirm adoption
+tests/unit/common.bats                 | +10 unit tests
+CONTEXT.md                             | new "interactive confirmation" domain term
 ```

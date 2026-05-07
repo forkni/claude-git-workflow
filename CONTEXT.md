@@ -68,3 +68,17 @@ The conventional-commit grammar enforced on every `commit_enhanced.sh` invocatio
 An annotated git tag recording the state of a branch immediately before a mutating CGW operation. Format: `pre-<op>-<YYYYMMDD_HHMMSS>-<pid>`. Created by `cgw_create_backup_tag <op>` before any merge, cherry-pick, rebase, bisect, or undo-commit. Enables `git reset --hard <tag>` rollback.
 
 **Implementation seam**: `cgw_create_backup_tag` / `cgw_list_backup_tags` in `scripts/git/_common.sh`.
+
+---
+
+## interactive confirmation
+
+The shared module for all binary yes/no confirmation prompts in CGW scripts. Concentrates a seam previously scattered across 35+ inline `read -r -p` sites in 15 scripts, with inconsistent non-interactive policy at each site.
+
+**Implementation seam**: `cgw_confirm <prompt> [options]` in `scripts/git/_common.sh`.
+- Default mode: reads a line from stdin; `yes` → returns 0, anything else → returns 1.
+- `--default yes|no`: maps an empty answer to confirmed or denied.
+- `--literal-token TOKEN`: requires the literal token (e.g., `CLEAR`, `FORCE`, `ROLLBACK`) instead of `yes/no` — used for destructive-operation double-confirms.
+- `--non-interactive abort|accept|deny`: explicit non-interactive policy declared at the call site. When `CGW_NON_INTERACTIVE=1`: `abort` prints a message and exits 1; `accept` returns 0 silently; `deny` returns 1 silently. Callers own the `CGW_NON_INTERACTIVE=1` assignment from their `[[ ! -t 0 ]]` check — `cgw_confirm` does not test TTY internally.
+
+**Callers**: every binary confirmation prompt in `bisect_helper.sh`, `branch_cleanup.sh`, `cherry_pick_commits.sh`, `commit_enhanced.sh`, `configure.sh`, `create_release.sh`, `merge_docs.sh`, `merge_with_validation.sh`, `push_validated.sh`, `rebase_safe.sh`, `rollback_merge.sh`, `setup_attributes.sh`, `stash_work.sh`, `sync_branches.sh`, `undo_last.sh`. The 3-way `(yes/no/skip)` prompt in `commit_enhanced.sh` stays inline — the helper is binary only.
