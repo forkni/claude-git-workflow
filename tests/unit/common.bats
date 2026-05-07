@@ -641,3 +641,34 @@ UU b.py
   run cgw_validate_commit_message "wip: work in progress"
   [ "${status}" -eq 1 ]
 }
+
+# ── cgw_resolve_lint_binary() ─────────────────────────────────────────────────
+
+@test "cgw_resolve_lint_binary: returns venv path when binary exists in PYTHON_BIN" {
+  local fake_venv
+  fake_venv="$(mktemp -d)"
+  touch "${fake_venv}/ruff"
+  PYTHON_BIN="${fake_venv}" PYTHON_EXT="" run cgw_resolve_lint_binary ruff
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "${fake_venv}/ruff" ]
+  rm -rf "${fake_venv}"
+}
+
+@test "cgw_resolve_lint_binary: falls back to system cmd when binary absent from PYTHON_BIN" {
+  local fake_venv
+  fake_venv="$(mktemp -d)"
+  PYTHON_BIN="${fake_venv}" PYTHON_EXT="" run cgw_resolve_lint_binary ruff
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "ruff" ]
+  rm -rf "${fake_venv}"
+}
+
+@test "cgw_resolve_lint_binary: respects PYTHON_EXT suffix" {
+  local fake_venv
+  fake_venv="$(mktemp -d)"
+  touch "${fake_venv}/ruff.exe"
+  PYTHON_BIN="${fake_venv}" PYTHON_EXT=".exe" run cgw_resolve_lint_binary ruff
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "${fake_venv}/ruff.exe" ]
+  rm -rf "${fake_venv}"
+}

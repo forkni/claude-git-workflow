@@ -693,6 +693,29 @@ cgw_print_conflict_summary() {
 # ── commit-message format module ───────────────────────────────────────────────
 # Validates commit messages against the conventional-commit prefix grammar.
 #
+# ── lint pipeline module ───────────────────────────────────────────────────────
+# Shared helpers for venv-aware binary resolution, lint check, lint fix, and
+# markdownlint. Callers: commit_enhanced.sh, check_lint.sh, fix_lint.sh,
+# .githooks/pre-commit.
+#
+# cgw_resolve_lint_binary <cmd>
+#   Stdout: absolute path to .venv/<cmd>${PYTHON_EXT} when the binary exists in
+#   the active venv, else <cmd> verbatim (falls back to system PATH).
+#   Reads PYTHON_BIN and PYTHON_EXT — caller must pre-populate via get_python_path.
+#   Returns 0 always; pure path resolution, no side effects.
+
+cgw_resolve_lint_binary() {
+  local cmd="$1"
+  if [[ -n "${PYTHON_BIN:-}" ]] && [[ -f "${PYTHON_BIN}/${cmd}${PYTHON_EXT:-}" ]]; then
+    echo "${PYTHON_BIN}/${cmd}${PYTHON_EXT:-}"
+  else
+    echo "${cmd}"
+  fi
+}
+
+# ── commit-message format module ───────────────────────────────────────────────
+# Validates commit messages against the conventional-commit prefix grammar.
+#
 # cgw_validate_commit_message <msg>
 #   Returns 0 if msg matches ^(<CGW_ALL_PREFIXES>): grammar, 1 otherwise.
 #   Pure predicate — no stdout/stderr output. Caller owns all user-facing

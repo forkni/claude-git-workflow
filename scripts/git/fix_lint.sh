@@ -77,9 +77,7 @@ main() {
   local lint_cmd="${CGW_LINT_CMD}"
   if [[ "${CGW_LINT_CMD}" == "ruff" ]]; then
     get_python_path 2>/dev/null || true
-    if [[ -n "${PYTHON_BIN:-}" ]] && [[ -f "${PYTHON_BIN}/ruff${PYTHON_EXT:-}" ]]; then
-      lint_cmd="${PYTHON_BIN}/ruff${PYTHON_EXT:-}"
-    fi
+    lint_cmd=$(cgw_resolve_lint_binary ruff)
   fi
 
   # Handle --modified-only mode

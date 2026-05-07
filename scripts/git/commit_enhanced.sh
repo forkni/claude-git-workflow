@@ -352,16 +352,8 @@ main() {
     if [[ -n "${CGW_LINT_CMD}" ]] || [[ -n "${CGW_FORMAT_CMD}" ]]; then
       get_python_path 2>/dev/null || true
     fi
-    if [[ -n "${CGW_LINT_CMD}" && "${CGW_LINT_CMD}" == "ruff" ]]; then
-      if [[ -n "${PYTHON_BIN:-}" ]] && [[ -f "${PYTHON_BIN}/ruff${PYTHON_EXT:-}" ]]; then
-        lint_cmd="${PYTHON_BIN}/ruff${PYTHON_EXT:-}"
-      fi
-    fi
-    if [[ -n "${CGW_FORMAT_CMD}" && "${CGW_FORMAT_CMD}" == "ruff" ]]; then
-      if [[ -n "${PYTHON_BIN:-}" ]] && [[ -f "${PYTHON_BIN}/ruff${PYTHON_EXT:-}" ]]; then
-        format_cmd="${PYTHON_BIN}/ruff${PYTHON_EXT:-}"
-      fi
-    fi
+    [[ -n "${CGW_LINT_CMD}" && "${CGW_LINT_CMD}" == "ruff" ]] && lint_cmd=$(cgw_resolve_lint_binary ruff)
+    [[ -n "${CGW_FORMAT_CMD}" && "${CGW_FORMAT_CMD}" == "ruff" ]] && format_cmd=$(cgw_resolve_lint_binary ruff)
 
     local lint_error=0 format_error=0 lint_output format_output
 
