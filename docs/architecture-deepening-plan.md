@@ -14,9 +14,9 @@
 | #2 | Backup-tag registry module (`cgw_create_backup_tag` / `CGW_BACKUP_OPS`) | DONE | `c070a22` |
 | #1 | Local-only file matcher (`cgw_is_local_file` / `cgw_filter_local_files`) | DONE | `c44a6a0` |
 | #7 | Conflict-resolution policy (`cgw_classify_conflicts` / `cgw_resolve_safe_conflicts` / `cgw_print_conflict_summary`) | DONE | `b05f30e` |
-| **#6** | **`commit_enhanced.sh` phase extraction** | **NEXT SESSION** | — |
+| **#6** | **Lint pipeline + commit-message format modules** | **DONE** | `9a96466` `79b02c4` `b268b66` `5161461` |
 
-Test baseline: **362 bats tests passing** (`bats tests/unit/ tests/integration/`).
+Test baseline: **381 bats tests passing** (`bats tests/unit/ tests/integration/`).
 Branch: `development`, in sync with `origin/development`.
 
 ---
@@ -76,7 +76,53 @@ Total: 9 files, +555 / -181.
 
 ---
 
-## Candidate #6 — `commit_enhanced.sh` phase extraction (NEXT SESSION)
+## Candidate #6 — Lint Pipeline + Commit-Message Format Modules (COMPLETED — 4 commits)
+
+### Why it shipped as three sub-candidates
+
+Phase 1 exploration disconfirmed the original "phase extraction" hypothesis: most `commit_enhanced.sh` phases are single-caller (deletion test fails — shuffling, not concentrating). The actual deepening opportunities were duplication-driven:
+
+- **Sub-candidate B**: `cgw_validate_commit_message` — the conventional-commit regex was copy-pasted into `commit_enhanced.sh`, `undo_last.sh`, and `.githooks/pre-push` (each also baking in the `_base_prefixes` string). Extracted to `_common.sh` as a pure predicate.
+- **Sub-candidate C**: `cgw_resolve_lint_binary` — four verbatim venv-path-or-fallback blocks across `commit_enhanced.sh` (×2), `check_lint.sh`, `fix_lint.sh`. Extracted to `_common.sh`.
+- **Sub-candidate A**: `run_tool_with_logging` adoption — `check_lint.sh` and `fix_lint.sh` already used the shared logging helper; `commit_enhanced.sh` had inline equivalents. Replaced the inline blocks. Also: fixed the pre-commit hook's hardcoded `ruff` → `cgw_resolve_lint_binary`; fixed a re-stage drift bug (non-interactive `unstage_local_only_files` called inside inner guard instead of after outer if).
+
+### What shipped (4 commits)
+
+| Commit | Change |
+|--------|--------|
+| `9a96466` | test: close lint test-coverage gap (+11 tests in commit_enhanced.bats + fix_lint.bats) |
+| `79b02c4` | refactor: extract `cgw_validate_commit_message` to `_common.sh` |
+| `b268b66` | refactor: extract `cgw_resolve_lint_binary` to `_common.sh` (+3 unit tests) |
+| `5161461` | refactor: adopt `run_tool_with_logging` in `commit_enhanced`, fix pre-commit `CGW_LINT_CMD`, fix re-stage drift |
+
+### Test count delta
+
+`362 → 381` tests passing (`+19`, no regressions):
+- `tests/integration/commit_enhanced.bats`: +7 (lint auto-fix, format check, markdownlint, --no-venv, prefix strict)
+- `tests/integration/fix_lint.bats`: +4 (new file — CGW_LINT_CMD empty skips, --help, lint pass, lint fail)
+- `tests/unit/common.bats`: +5 (`cgw_validate_commit_message`) + 3 (`cgw_resolve_lint_binary`) = +8
+
+### Files changed
+
+```
+scripts/git/_common.sh           | +47 / -0   (two new functions + section headers)
+scripts/git/commit_enhanced.sh   | -28 net    (inline blocks replaced, drift bug fixed)
+scripts/git/check_lint.sh        |  -6 net    (cgw_resolve_lint_binary adoption)
+scripts/git/fix_lint.sh          |  -6 net    (cgw_resolve_lint_binary adoption)
+scripts/git/undo_last.sh         |  -5 net    (cgw_validate_commit_message adoption)
+.githooks/pre-commit             |  +3 net    (hardcoded ruff → cgw_resolve_lint_binary)
+hooks/pre-commit                 |  +3 net    (same)
+tests/integration/commit_enhanced.bats | +7 new tests
+tests/integration/fix_lint.bats  | new file (+4 tests)
+tests/unit/common.bats           | +8 new tests
+tests/integration/configure.bats | 1 assertion updated (hook no longer has "feat" literal)
+CONTEXT.md                       | +2 new domain terms
+docs/architecture-deepening-plan.md | updated
+```
+
+---
+
+## Candidate #6 — `commit_enhanced.sh` phase extraction (SUPERSEDED — see above)
 
 ### Why it's queued
 
