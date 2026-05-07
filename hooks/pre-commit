@@ -41,23 +41,17 @@ echo "  No local-only files detected"
 # Optional: lint check for staged files using CGW_LINT_CMD (non-blocking)
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
 
-if [[ -n "${STAGED_FILES}" ]] && [[ "${CGW_LINT_CMD:-}" == "ruff" ]]; then
-  get_python_path 2>/dev/null || true
-  LINT_BIN=$(cgw_resolve_lint_binary ruff)
-  if command -v "${LINT_BIN}" > /dev/null 2>&1; then
-    PY_FILES=$(echo "${STAGED_FILES}" | grep '\.py$' || true)
-    if [[ -n "${PY_FILES}" ]]; then
-      echo ""
-      echo "Checking Python lint (non-blocking)..."
-      # shellcheck disable=SC2086
-      if ! "${LINT_BIN}" check ${PY_FILES} > /dev/null 2>&1; then
-        echo "  WARNING: lint issues in staged Python files"
-        echo "  Run '${LINT_BIN} check --fix .' to auto-fix"
-        echo "  (Commit proceeds — fix lint before pushing)"
-      else
-        echo "  Lint check passed"
-      fi
-    fi
+if [[ -n "${STAGED_FILES}" ]] && [[ -n "${CGW_LINT_CMD:-}" ]]; then
+  echo ""
+  echo "Checking lint (non-blocking)..."
+  logfile=/dev/null
+  # shellcheck disable=SC2086  # STAGED_FILES intentionally word-split into separate file args
+  if cgw_run_lint_check ${STAGED_FILES} >/dev/null 2>&1; then
+    echo "  [PASS] Lint check passed"
+  else
+    echo "  [WARN] Lint issues found in staged files"
+    echo "  Run './scripts/git/fix_lint.sh --modified-only' to auto-fix"
+    echo "  (Commit proceeds — fix lint before pushing)"
   fi
 fi
 

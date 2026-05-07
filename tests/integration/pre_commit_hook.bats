@@ -79,3 +79,27 @@ EOF
   run git -C "${TEST_REPO_DIR}" commit -m "chore: untrack CLAUDE.md"
   [ "${status}" -eq 0 ]
 }
+
+@test "pre-commit hook: CGW_LINT_CMD empty skips lint silently" {
+  echo 'CGW_LINT_CMD=""' > "${TEST_REPO_DIR}/.cgw.conf"
+  echo "print('hello')" > "${TEST_REPO_DIR}/foo.py"
+  git -C "${TEST_REPO_DIR}" add foo.py
+  run git -C "${TEST_REPO_DIR}" commit -m "feat: add foo.py"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"Checking lint"* ]]
+  [[ "${output}" != *"[WARN]"* ]]
+}
+
+@test "pre-commit hook: lint failure surfaces WARN but exits 0 (non-blocking)" {
+  local fake_lint
+  fake_lint="$(mktemp)"
+  printf '#!/usr/bin/env bash\necho "foo.py:1:1: E501 line too long"\nexit 1\n' > "${fake_lint}"
+  chmod +x "${fake_lint}"
+  printf 'CGW_LINT_CMD="%s"\n' "${fake_lint}" > "${TEST_REPO_DIR}/.cgw.conf"
+  echo "print('hello')" > "${TEST_REPO_DIR}/foo.py"
+  git -C "${TEST_REPO_DIR}" add foo.py
+  run git -C "${TEST_REPO_DIR}" commit -m "feat: add foo.py"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"[WARN]"* ]]
+  rm -f "${fake_lint}"
+}
