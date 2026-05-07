@@ -355,32 +355,20 @@ main() {
     [[ -n "${CGW_LINT_CMD}" && "${CGW_LINT_CMD}" == "ruff" ]] && lint_cmd=$(cgw_resolve_lint_binary ruff)
     [[ -n "${CGW_FORMAT_CMD}" && "${CGW_FORMAT_CMD}" == "ruff" ]] && format_cmd=$(cgw_resolve_lint_binary ruff)
 
-    local lint_error=0 format_error=0 lint_output format_output
+    local lint_error=0 format_error=0
 
     # -- Code lint (skipped when CGW_LINT_CMD not set) -------------------------
     if [[ -n "${CGW_LINT_CMD}" ]]; then
-      log_section_start "LINT CHECK" "${logfile}"
       # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_CHECK_ARGS/CGW_LINT_EXCLUDES contain multiple flags
-      lint_output=$("${lint_cmd}" ${CGW_LINT_CHECK_ARGS} ${CGW_LINT_EXCLUDES} 2>&1) || lint_error=1
-      if [[ -n "${lint_output}" ]] && [[ "${lint_output}" != *"All checks passed"* ]]; then
-        echo "[LINT ERRORS]" | tee -a "${logfile}"
-        echo "${lint_output}" | tee -a "${logfile}"
-      fi
-      log_section_end "LINT CHECK" "${logfile}" "${lint_error}"
+      run_tool_with_logging "LINT CHECK" "${logfile}" "${lint_cmd}" ${CGW_LINT_CHECK_ARGS} ${CGW_LINT_EXCLUDES} || lint_error=1
     else
       echo "  (lint check skipped -- CGW_LINT_CMD not set)"
     fi
 
     # -- Format check (skipped when CGW_FORMAT_CMD not set) --------------------
     if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-      log_section_start "FORMAT CHECK" "${logfile}"
       # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_CHECK_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
-      format_output=$("${format_cmd}" ${CGW_FORMAT_CHECK_ARGS} ${CGW_FORMAT_EXCLUDES} 2>&1) || format_error=1
-      if [[ -n "${format_output}" ]] && [[ "${format_output}" == *"would reformat"* ]]; then
-        echo "[FORMAT ERRORS]" | tee -a "${logfile}"
-        echo "${format_output}" | tee -a "${logfile}"
-      fi
-      log_section_end "FORMAT CHECK" "${logfile}" "${format_error}"
+      run_tool_with_logging "FORMAT CHECK" "${logfile}" "${format_cmd}" ${CGW_FORMAT_CHECK_ARGS} ${CGW_FORMAT_EXCLUDES} || format_error=1
     fi
 
     # -- Combined error handling -----------------------------------------------
@@ -406,12 +394,11 @@ main() {
             while IFS= read -r f; do
               [[ -n "${f}" ]] && git add -- "${f}" 2>/dev/null || true
             done <<<"${originally_staged_files}"
-            unstage_local_only_files
           fi
         else
           git add -u
-          unstage_local_only_files
         fi
+        unstage_local_only_files
 
         # Re-check
         python_lint_error=0
@@ -466,13 +453,9 @@ main() {
 
     # Markdown lint step (skipped if --skip-md-lint or CGW_MARKDOWNLINT_CMD not set)
     if [[ ${skip_md_lint} -eq 0 ]] && [[ -n "${CGW_MARKDOWNLINT_CMD}" ]]; then
-      log_section_start "MARKDOWN LINT" "${logfile}"
       local md_lint_error=0
       # shellcheck disable=SC2086  # Word splitting intentional: CGW_MARKDOWNLINT_ARGS contains multiple flags/patterns
-      if ! "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS} 2>&1 | tee -a "${logfile}"; then
-        md_lint_error=1
-      fi
-      log_section_end "MARKDOWN LINT" "${logfile}" "${md_lint_error}"
+      run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS} || md_lint_error=1
       if [[ ${md_lint_error} -eq 1 ]]; then
         echo "[!] Markdown lint errors detected"
         if [[ ${non_interactive} -eq 1 ]]; then
