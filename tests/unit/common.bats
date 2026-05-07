@@ -873,3 +873,95 @@ UU b.py
   [ "${status}" -eq 1 ]
   rm -f "${fake_bin}"
 }
+
+# ── cgw_confirm() ─────────────────────────────────────────────────────────────
+
+@test "cgw_confirm: 'yes' returns 0" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    echo 'yes' | cgw_confirm 'Continue?'
+  "
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_confirm: 'no' returns 1" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    echo 'no' | cgw_confirm 'Continue?'
+  "
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_confirm: arbitrary input returns 1" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    echo 'y' | cgw_confirm 'Continue?'
+  "
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_confirm: --default yes empty input returns 0" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    echo '' | cgw_confirm 'Continue?' --default yes
+  "
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_confirm: --default no empty input returns 1" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    echo '' | cgw_confirm 'Continue?' --default no
+  "
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_confirm: --literal-token FORCE with matching token returns 0" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    echo 'FORCE' | cgw_confirm \"Type 'FORCE' to confirm\" --literal-token FORCE
+  "
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_confirm: --literal-token FORCE with wrong case returns 1" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    echo 'force' | cgw_confirm \"Type 'FORCE' to confirm\" --literal-token FORCE
+  "
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_confirm: CGW_NON_INTERACTIVE=1 with abort policy exits 1" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_NON_INTERACTIVE=1 cgw_confirm 'Continue?' --non-interactive abort
+  "
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_confirm: CGW_NON_INTERACTIVE=1 with accept policy returns 0" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_NON_INTERACTIVE=1 cgw_confirm 'Continue?' --non-interactive accept
+  "
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_confirm: CGW_NON_INTERACTIVE=1 with deny policy returns 1" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_NON_INTERACTIVE=1 cgw_confirm 'Continue?' --non-interactive deny
+  " 2>/dev/null
+  [ "${status}" -eq 1 ]
+}

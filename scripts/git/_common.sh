@@ -27,6 +27,7 @@
 #   cgw_classify_conflicts() - Parse git status into 8 conflict-category arrays; sets CGW_CONFLICT_TOTAL
 #   cgw_resolve_safe_conflicts() - Auto-resolve DU/DD, emit halt messages; sets CGW_CONFLICT_STATE
 #   cgw_print_conflict_summary() - Print categorised file list from last cgw_classify_conflicts call
+#   cgw_confirm()               - Unified confirmation prompt; handles NI mode, literal tokens, defaults
 
 # SCRIPT_DIR must be set by the caller before sourcing _common.sh:
 #   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -850,4 +851,68 @@ cgw_run_markdownlint_check() {
 cgw_validate_commit_message() {
   local msg="$1"
   echo "${msg}" | grep -qE "^(${CGW_ALL_PREFIXES}):"
+}
+
+# ── interactive prompts module ─────────────────────────────────────────────────
+# Unified confirmation prompt. Centralises all yes/no and literal-token
+# prompts so non-interactive policy, grammar, and default-value handling
+# are consistent across every script.
+#
+# cgw_confirm <prompt> [--default yes|no] [--literal-token TOKEN] [--non-interactive abort|accept|deny]
+#   Returns 0 = confirmed (proceed), 1 = denied (skip).
+#   Exits 1  = non-interactive + abort policy (fatal — terminates the script).
+#
+#   --default yes|no         Empty input maps to yes/no; omit for no default.
+#   --literal-token TOKEN    Require exact uppercase token (e.g. FORCE, ROLLBACK).
+#   --non-interactive <pol>  Policy when CGW_NON_INTERACTIVE=1 (callers set from --non-interactive flag
+#                            or [[ ! -t 0 ]] check):
+#                              abort  (default) — exit 1 with error message
+#                              accept            — return 0 silently
+#                              deny              — return 1 silently
+
+cgw_confirm() {
+  local prompt="$1"
+  shift
+  local default=""
+  local literal_token=""
+  local ni_policy="abort"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --default)          default="$2";        shift 2 ;;
+      --literal-token)    literal_token="$2";  shift 2 ;;
+      --non-interactive)  ni_policy="$2";      shift 2 ;;
+      *) err "cgw_confirm: unknown option: $1"; return 1 ;;
+    esac
+  done
+
+  # Non-interactive: env var (set by callers from --non-interactive flag or [[ ! -t 0 ]] check)
+  if [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]]; then
+    case "${ni_policy}" in
+      accept) return 0 ;;
+      deny)   return 1 ;;
+      abort)
+        echo "[!] Non-interactive: '${prompt}' requires confirmation — aborting" >&2
+        exit 1
+        ;;
+    esac
+  fi
+
+  # Interactive prompt
+  if [[ -n "${literal_token}" ]]; then
+    read -r -p "${prompt} " response
+    [[ "${response}" == "${literal_token}" ]] && return 0 || return 1
+  else
+    local hint
+    case "${default}" in
+      yes) hint=" [yes]" ;;
+      no)  hint=" [no]" ;;
+      *)   hint="" ;;
+    esac
+    read -r -p "${prompt} (yes/no)${hint}: " response
+    if [[ -z "${response}" ]]; then
+      [[ "${default}" == "yes" ]] && return 0 || return 1
+    fi
+    [[ "${response}" == "yes" ]] && return 0 || return 1
+  fi
 }
