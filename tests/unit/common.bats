@@ -672,3 +672,204 @@ UU b.py
   [ "${output}" = "${fake_venv}/ruff.exe" ]
   rm -rf "${fake_venv}"
 }
+
+# ── cgw_strip_path_arg() ──────────────────────────────────────────────────────
+
+@test "cgw_strip_path_arg: strips trailing token from multi-token string" {
+  run cgw_strip_path_arg "check --select E ."
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "check --select E" ]
+}
+
+@test "cgw_strip_path_arg: returns single token unchanged" {
+  run cgw_strip_path_arg "check"
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "check" ]
+}
+
+@test "cgw_strip_path_arg: strips trailing path placeholder dot" {
+  run cgw_strip_path_arg "format --check ."
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "format --check" ]
+}
+
+# ── cgw_modified_files_for_lint() ─────────────────────────────────────────────
+
+@test "cgw_modified_files_for_lint: returns empty for clean repo" {
+  cd "${TEST_REPO_DIR}"
+  run cgw_modified_files_for_lint
+  [ "${status}" -eq 0 ]
+  [ -z "${output}" ]
+}
+
+@test "cgw_modified_files_for_lint: lists modified .py file" {
+  cd "${TEST_REPO_DIR}"
+  echo "print('hello')" > foo.py
+  git add foo.py
+  git commit -q -m "chore: add foo"
+  echo "print('world')" >> foo.py
+  run cgw_modified_files_for_lint
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"foo.py"* ]]
+}
+
+# ── cgw_run_lint_check() ──────────────────────────────────────────────────────
+
+@test "cgw_run_lint_check: skips when CGW_SKIP_LINT=1" {
+  CGW_SKIP_LINT=1 logfile=/dev/null run cgw_run_lint_check
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"skipped"* ]]
+}
+
+@test "cgw_run_lint_check: skips when CGW_LINT_CMD is empty" {
+  CGW_LINT_CMD="" logfile=/dev/null run cgw_run_lint_check
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"skipped"* ]]
+}
+
+@test "cgw_run_lint_check: returns 0 when lint binary exits clean" {
+  local fake_bin
+  fake_bin="$(mktemp)"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_LINT_CMD='${fake_bin}'
+    CGW_LINT_CHECK_ARGS=''
+    CGW_LINT_EXCLUDES=''
+    logfile='/dev/null'
+    cgw_run_lint_check
+  "
+  [ "${status}" -eq 0 ]
+  rm -f "${fake_bin}"
+}
+
+@test "cgw_run_lint_check: returns 1 when lint binary exits with errors" {
+  local fake_bin
+  fake_bin="$(mktemp)"
+  printf '#!/usr/bin/env bash\necho "src/foo.py:1:1: E501 line too long"\nexit 1\n' > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  CGW_LINT_CMD="${fake_bin}" CGW_LINT_CHECK_ARGS="" CGW_LINT_EXCLUDES="" logfile=/dev/null run cgw_run_lint_check
+  [ "${status}" -eq 1 ]
+  rm -f "${fake_bin}"
+}
+
+# ── cgw_run_format_check() ────────────────────────────────────────────────────
+
+@test "cgw_run_format_check: returns 0 silently when CGW_FORMAT_CMD is empty" {
+  CGW_FORMAT_CMD="" logfile=/dev/null run cgw_run_format_check
+  [ "${status}" -eq 0 ]
+  [ -z "${output}" ]
+}
+
+@test "cgw_run_format_check: returns 0 when format binary exits clean" {
+  local fake_bin
+  fake_bin="$(mktemp)"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_FORMAT_CMD='${fake_bin}'
+    CGW_FORMAT_CHECK_ARGS=''
+    CGW_FORMAT_EXCLUDES=''
+    logfile='/dev/null'
+    cgw_run_format_check
+  "
+  [ "${status}" -eq 0 ]
+  rm -f "${fake_bin}"
+}
+
+@test "cgw_run_format_check: returns 1 when format binary reports failures" {
+  local fake_bin
+  fake_bin="$(mktemp)"
+  printf '#!/usr/bin/env bash\necho "1 file would reformat"\nexit 1\n' > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  CGW_FORMAT_CMD="${fake_bin}" CGW_FORMAT_CHECK_ARGS="" CGW_FORMAT_EXCLUDES="" logfile=/dev/null run cgw_run_format_check
+  [ "${status}" -eq 1 ]
+  rm -f "${fake_bin}"
+}
+
+# ── cgw_run_lint_fix() ────────────────────────────────────────────────────────
+
+@test "cgw_run_lint_fix: skips when CGW_SKIP_LINT=1" {
+  CGW_SKIP_LINT=1 logfile=/dev/null run cgw_run_lint_fix
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"skipped"* ]]
+}
+
+@test "cgw_run_lint_fix: returns 0 silently when both CMDs are empty" {
+  CGW_LINT_CMD="" CGW_FORMAT_CMD="" logfile=/dev/null run cgw_run_lint_fix
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_run_lint_fix: returns 0 when lint binary exits clean" {
+  local fake_bin
+  fake_bin="$(mktemp)"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_LINT_CMD='${fake_bin}'
+    CGW_FORMAT_CMD=''
+    CGW_LINT_FIX_ARGS=''
+    CGW_LINT_EXCLUDES=''
+    logfile='/dev/null'
+    cgw_run_lint_fix
+  "
+  [ "${status}" -eq 0 ]
+  rm -f "${fake_bin}"
+}
+
+@test "cgw_run_lint_fix: returns 1 when lint binary exits with errors" {
+  local fake_bin
+  fake_bin="$(mktemp)"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  CGW_LINT_CMD="${fake_bin}" CGW_FORMAT_CMD="" CGW_LINT_FIX_ARGS="" CGW_LINT_EXCLUDES="" logfile=/dev/null run cgw_run_lint_fix
+  [ "${status}" -eq 1 ]
+  rm -f "${fake_bin}"
+}
+
+# ── cgw_run_markdownlint_check() ──────────────────────────────────────────────
+
+@test "cgw_run_markdownlint_check: skips when CGW_SKIP_MD_LINT=1" {
+  CGW_SKIP_MD_LINT=1 logfile=/dev/null run cgw_run_markdownlint_check
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"skipped"* ]]
+}
+
+@test "cgw_run_markdownlint_check: returns 0 silently when CGW_MARKDOWNLINT_CMD is empty" {
+  CGW_MARKDOWNLINT_CMD="" logfile=/dev/null run cgw_run_markdownlint_check
+  [ "${status}" -eq 0 ]
+  [ -z "${output}" ]
+}
+
+@test "cgw_run_markdownlint_check: returns 0 when markdownlint exits clean" {
+  local fake_bin
+  fake_bin="$(mktemp)"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_MARKDOWNLINT_CMD='${fake_bin}'
+    CGW_MARKDOWNLINT_ARGS=''
+    logfile='/dev/null'
+    cgw_run_markdownlint_check
+  "
+  [ "${status}" -eq 0 ]
+  rm -f "${fake_bin}"
+}
+
+@test "cgw_run_markdownlint_check: returns 1 when markdownlint finds errors" {
+  local fake_bin
+  fake_bin="$(mktemp)"
+  printf '#!/usr/bin/env bash\necho "README.md:5 MD013 line too long"\nexit 1\n' > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  CGW_MARKDOWNLINT_CMD="${fake_bin}" CGW_MARKDOWNLINT_ARGS="" logfile=/dev/null run cgw_run_markdownlint_check
+  [ "${status}" -eq 1 ]
+  rm -f "${fake_bin}"
+}

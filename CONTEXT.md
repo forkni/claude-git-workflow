@@ -42,6 +42,12 @@ The shared module responsible for running lint, format, and markdownlint tool bi
 **Key seams**:
 - `cgw_resolve_lint_binary <cmd>` — pure venv-aware path resolver. Given a binary name (e.g., `ruff`), returns the absolute venv path when it exists, or the bare name for system PATH lookup. Reads `PYTHON_BIN` / `PYTHON_EXT` (pre-populated by `get_python_path`). No side effects.
 - `run_tool_with_logging <section-name> <logfile> <cmd> [args…]` — runs a tool, captures stdout+stderr, writes to the named log section via `log_section_start`/`log_section_end`, returns the tool's exit code. Used by all lint/format/markdownlint invocations.
+- `cgw_run_lint_check [files…]` — runs `CGW_LINT_CMD` with `CGW_LINT_CHECK_ARGS` (and optional file list) via `run_tool_with_logging`. Skips silently when `CGW_SKIP_LINT=1` or `CGW_LINT_CMD` is empty.
+- `cgw_run_format_check [files…]` — runs `CGW_FORMAT_CMD` with `CGW_FORMAT_CHECK_ARGS` via `run_tool_with_logging`. Skips silently when `CGW_FORMAT_CMD` is empty.
+- `cgw_run_lint_fix [files…]` — bundled lint+format fix: runs lint `--fix` then format `--fix` in sequence. Skips silently when both CMDs are empty.
+- `cgw_run_markdownlint_check [files…]` — runs `CGW_MARKDOWNLINT_CMD` with `CGW_MARKDOWNLINT_ARGS` via `run_tool_with_logging`. Skips silently when `CGW_SKIP_MD_LINT=1` or `CGW_MARKDOWNLINT_CMD` is empty.
+- `cgw_strip_path_arg <args-string>` — strips the trailing path token from a CGW args string (the `${ARGS% *}` idiom). Used when a file list is passed explicitly so the default path token doesn't conflict.
+- `cgw_modified_files_for_lint` — returns the space-separated list of `.py` files modified vs HEAD (for `--modified-only` mode in `check_lint.sh` / `fix_lint.sh`).
 
 **Callers**: `commit_enhanced.sh` (lint check, format check, markdownlint, auto-fix loop), `check_lint.sh`, `fix_lint.sh`, `.githooks/pre-commit` (non-blocking advisory check).
 

@@ -690,13 +690,10 @@ cgw_print_conflict_summary() {
   for _f in "${CGW_CONFLICT_DD_FILES[@]}"; do echo "    ${_f} (both deleted)"; done
 }
 
-# ── commit-message format module ───────────────────────────────────────────────
-# Validates commit messages against the conventional-commit prefix grammar.
-#
 # ── lint pipeline module ───────────────────────────────────────────────────────
-# Shared helpers for venv-aware binary resolution, lint check, lint fix, and
-# markdownlint. Callers: commit_enhanced.sh, check_lint.sh, fix_lint.sh,
-# .githooks/pre-commit.
+# Shared helpers for venv-aware binary resolution, file-list selection, lint
+# check, format check, lint/format fix, and markdownlint. Callers:
+# commit_enhanced.sh, check_lint.sh, fix_lint.sh, .githooks/pre-commit.
 #
 # cgw_resolve_lint_binary <cmd>
 #   Stdout: absolute path to .venv/<cmd>${PYTHON_EXT} when the binary exists in
@@ -710,6 +707,135 @@ cgw_resolve_lint_binary() {
     echo "${PYTHON_BIN}/${cmd}${PYTHON_EXT:-}"
   else
     echo "${cmd}"
+  fi
+}
+
+# cgw_strip_path_arg <args-string>
+#   Echo args-string minus its trailing whitespace-delimited token (the path
+#   placeholder, typically "."). Used by --modified-only callers to replace the
+#   default path with an explicit file list.
+cgw_strip_path_arg() {
+  echo "${1% *}"
+}
+
+# cgw_modified_files_for_lint
+#   Stdout: newline-separated list of modified/added files matching
+#   CGW_LINT_EXTENSIONS (default: *.py). Outputs nothing when no files match.
+#   Caller checks for empty output and decides whether to skip early.
+cgw_modified_files_for_lint() {
+  local -a lint_exts
+  read -r -a lint_exts <<<"${CGW_LINT_EXTENSIONS:-*.py}"
+  git diff --name-only --diff-filter=ACMR HEAD -- "${lint_exts[@]}"
+}
+
+# cgw_run_lint_check [files...]
+#   Runs ${CGW_LINT_CMD} check against the project (no files) or a given file
+#   list (strips trailing path token from CGW_LINT_CHECK_ARGS when files given).
+#   Honors CGW_SKIP_LINT=1 and empty CGW_LINT_CMD (returns 0, emits skip line).
+#   Reads ${logfile} from caller scope. Sets TOOL_ERROR_COUNT via run_tool_with_logging.
+#   Returns 0 = clean, 1 = errors found.
+cgw_run_lint_check() {
+  if [[ "${CGW_SKIP_LINT:-0}" == "1" ]]; then
+    echo "  (lint check skipped -- CGW_SKIP_LINT=1)"
+    return 0
+  fi
+  if [[ -z "${CGW_LINT_CMD:-}" ]]; then
+    echo "  (lint check skipped -- CGW_LINT_CMD not set)"
+    return 0
+  fi
+  get_python_path 2>/dev/null || true
+  local lint_bin
+  lint_bin=$(cgw_resolve_lint_binary "${CGW_LINT_CMD}")
+  if [[ $# -gt 0 ]]; then
+    local stripped_args
+    stripped_args=$(cgw_strip_path_arg "${CGW_LINT_CHECK_ARGS:-}")
+    # shellcheck disable=SC2086  # Word splitting intentional: stripped_args contains multiple flags
+    run_tool_with_logging "LINT CHECK" "${logfile}" "${lint_bin}" ${stripped_args} "$@"
+  else
+    # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_CHECK_ARGS/CGW_LINT_EXCLUDES contain multiple flags
+    run_tool_with_logging "LINT CHECK" "${logfile}" "${lint_bin}" ${CGW_LINT_CHECK_ARGS:-} ${CGW_LINT_EXCLUDES:-}
+  fi
+}
+
+# cgw_run_format_check [files...]
+#   Runs ${CGW_FORMAT_CMD} format check. Same file-list and skip conventions as
+#   cgw_run_lint_check. Returns 0 silently when CGW_FORMAT_CMD is unset.
+cgw_run_format_check() {
+  if [[ "${CGW_SKIP_LINT:-0}" == "1" ]]; then
+    return 0
+  fi
+  [[ -z "${CGW_FORMAT_CMD:-}" ]] && return 0
+  get_python_path 2>/dev/null || true
+  local format_bin
+  format_bin=$(cgw_resolve_lint_binary "${CGW_FORMAT_CMD}")
+  if [[ $# -gt 0 ]]; then
+    local stripped_args
+    stripped_args=$(cgw_strip_path_arg "${CGW_FORMAT_CHECK_ARGS:-}")
+    # shellcheck disable=SC2086
+    run_tool_with_logging "FORMAT CHECK" "${logfile}" "${format_bin}" ${stripped_args} "$@"
+  else
+    # shellcheck disable=SC2086
+    run_tool_with_logging "FORMAT CHECK" "${logfile}" "${format_bin}" ${CGW_FORMAT_CHECK_ARGS:-} ${CGW_FORMAT_EXCLUDES:-}
+  fi
+}
+
+# cgw_run_lint_fix [files...]
+#   Runs lint --fix then format --fix (bundled, since every caller pairs them).
+#   Honors CGW_SKIP_LINT=1. Returns 0 if all fixers exited clean; 1 on any error.
+#   Returns 0 when neither CGW_LINT_CMD nor CGW_FORMAT_CMD is set.
+cgw_run_lint_fix() {
+  if [[ "${CGW_SKIP_LINT:-0}" == "1" ]]; then
+    echo "  (lint fix skipped -- CGW_SKIP_LINT=1)"
+    return 0
+  fi
+  local fix_failed=0
+  if [[ -n "${CGW_LINT_CMD:-}" ]]; then
+    get_python_path 2>/dev/null || true
+    local lint_bin
+    lint_bin=$(cgw_resolve_lint_binary "${CGW_LINT_CMD}")
+    if [[ $# -gt 0 ]]; then
+      local stripped_args
+      stripped_args=$(cgw_strip_path_arg "${CGW_LINT_FIX_ARGS:-}")
+      # shellcheck disable=SC2086
+      run_tool_with_logging "LINT AUTO-FIX" "${logfile}" "${lint_bin}" ${stripped_args} "$@" || fix_failed=1
+    else
+      # shellcheck disable=SC2086
+      run_tool_with_logging "LINT AUTO-FIX" "${logfile}" "${lint_bin}" ${CGW_LINT_FIX_ARGS:-} ${CGW_LINT_EXCLUDES:-} || fix_failed=1
+    fi
+  fi
+  if [[ -n "${CGW_FORMAT_CMD:-}" ]]; then
+    get_python_path 2>/dev/null || true
+    local format_bin
+    format_bin=$(cgw_resolve_lint_binary "${CGW_FORMAT_CMD}")
+    if [[ $# -gt 0 ]]; then
+      local stripped_args
+      stripped_args=$(cgw_strip_path_arg "${CGW_FORMAT_FIX_ARGS:-}")
+      # shellcheck disable=SC2086
+      run_tool_with_logging "FORMAT FIX" "${logfile}" "${format_bin}" ${stripped_args} "$@" || fix_failed=1
+    else
+      # shellcheck disable=SC2086
+      run_tool_with_logging "FORMAT FIX" "${logfile}" "${format_bin}" ${CGW_FORMAT_FIX_ARGS:-} ${CGW_FORMAT_EXCLUDES:-} || fix_failed=1
+    fi
+  fi
+  return $fix_failed
+}
+
+# cgw_run_markdownlint_check [files...]
+#   Runs ${CGW_MARKDOWNLINT_CMD}. Honors CGW_SKIP_MD_LINT=1 and empty
+#   CGW_MARKDOWNLINT_CMD (returns 0 silently when unconfigured).
+#   Returns 0 = clean (or skipped/unconfigured), 1 = errors found.
+cgw_run_markdownlint_check() {
+  if [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]]; then
+    echo "  (markdown lint skipped -- CGW_SKIP_MD_LINT=1)"
+    return 0
+  fi
+  [[ -z "${CGW_MARKDOWNLINT_CMD:-}" ]] && return 0
+  if [[ $# -gt 0 ]]; then
+    # shellcheck disable=SC2086
+    run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS:-} "$@"
+  else
+    # shellcheck disable=SC2086
+    run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS:-}
   fi
 }
 

@@ -74,6 +74,25 @@ unstage_local_only_files() {
   done < <(git diff --cached --name-only | cgw_filter_local_files)
 }
 
+# Re-stage files after lint auto-fix, then remove any local-only files that
+# the fixer may have touched. Takes explicit params because main() locals are
+# not visible to script-level functions in bash.
+_restage_after_fix() {
+  local effective_staged_only="$1"
+  local originally_staged_files="$2"
+  if [[ ${effective_staged_only} -eq 1 ]]; then
+    if [[ -n "${originally_staged_files}" ]]; then
+      local f
+      while IFS= read -r f; do
+        [[ -n "${f}" ]] && git add -- "${f}" 2>/dev/null || true
+      done <<<"${originally_staged_files}"
+    fi
+  else
+    git add -u
+  fi
+  unstage_local_only_files
+}
+
 main() {
   local non_interactive=0
   local skip_lint=0
@@ -344,72 +363,23 @@ main() {
   if [[ ${skip_lint} -eq 1 ]]; then
     echo "  (all lint checks skipped -- --skip-lint)"
   else
-    get_lint_exclusions
-
-    # Resolve lint and format binaries independently (each uses venv ruff if available)
-    local lint_cmd="${CGW_LINT_CMD}"
-    local format_cmd="${CGW_FORMAT_CMD}"
-    if [[ -n "${CGW_LINT_CMD}" ]] || [[ -n "${CGW_FORMAT_CMD}" ]]; then
-      get_python_path 2>/dev/null || true
-    fi
-    [[ -n "${CGW_LINT_CMD}" && "${CGW_LINT_CMD}" == "ruff" ]] && lint_cmd=$(cgw_resolve_lint_binary ruff)
-    [[ -n "${CGW_FORMAT_CMD}" && "${CGW_FORMAT_CMD}" == "ruff" ]] && format_cmd=$(cgw_resolve_lint_binary ruff)
-
     local lint_error=0 format_error=0
+    cgw_run_lint_check || lint_error=1
+    cgw_run_format_check || format_error=1
 
-    # -- Code lint (skipped when CGW_LINT_CMD not set) -------------------------
-    if [[ -n "${CGW_LINT_CMD}" ]]; then
-      # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_CHECK_ARGS/CGW_LINT_EXCLUDES contain multiple flags
-      run_tool_with_logging "LINT CHECK" "${logfile}" "${lint_cmd}" ${CGW_LINT_CHECK_ARGS} ${CGW_LINT_EXCLUDES} || lint_error=1
-    else
-      echo "  (lint check skipped -- CGW_LINT_CMD not set)"
-    fi
-
-    # -- Format check (skipped when CGW_FORMAT_CMD not set) --------------------
-    if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-      # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_CHECK_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
-      run_tool_with_logging "FORMAT CHECK" "${logfile}" "${format_cmd}" ${CGW_FORMAT_CHECK_ARGS} ${CGW_FORMAT_EXCLUDES} || format_error=1
-    fi
-
-    # -- Combined error handling -----------------------------------------------
     local python_lint_error=$((lint_error | format_error))
 
     if [[ ${python_lint_error} -eq 1 ]]; then
       echo "[!] Code quality errors detected"
       if [[ ${non_interactive} -eq 1 ]]; then
         echo "[Non-interactive] Auto-fixing code quality issues..."
-        if [[ -n "${CGW_LINT_CMD}" ]]; then
-          # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_FIX_ARGS/CGW_LINT_EXCLUDES contain multiple flags
-          "${lint_cmd}" ${CGW_LINT_FIX_ARGS} ${CGW_LINT_EXCLUDES} 2>&1 | tee -a "${logfile}"
-        fi
-        if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-          # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_FIX_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
-          "${format_cmd}" ${CGW_FORMAT_FIX_ARGS} ${CGW_FORMAT_EXCLUDES} 2>&1 | tee -a "${logfile}"
-        fi
+        cgw_run_lint_fix
+        _restage_after_fix "${effective_staged_only}" "${originally_staged_files}"
 
-        # Re-stage files that lint auto-fix may have modified
-        if [[ ${effective_staged_only} -eq 1 ]]; then
-          # Respect original selection: re-add only the files that were originally staged
-          if [[ -n "${originally_staged_files}" ]]; then
-            while IFS= read -r f; do
-              [[ -n "${f}" ]] && git add -- "${f}" 2>/dev/null || true
-            done <<<"${originally_staged_files}"
-          fi
-        else
-          git add -u
-        fi
-        unstage_local_only_files
-
-        # Re-check
+        # Re-check after fix
         python_lint_error=0
-        if [[ -n "${CGW_LINT_CMD}" ]]; then
-          # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_CHECK_ARGS/CGW_LINT_EXCLUDES contain multiple flags
-          "${lint_cmd}" ${CGW_LINT_CHECK_ARGS} ${CGW_LINT_EXCLUDES} 2>&1 | tee -a "${logfile}" || python_lint_error=1
-        fi
-        if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-          # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_CHECK_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
-          "${format_cmd}" ${CGW_FORMAT_CHECK_ARGS} ${CGW_FORMAT_EXCLUDES} 2>&1 | tee -a "${logfile}" || python_lint_error=1
-        fi
+        cgw_run_lint_check || python_lint_error=1
+        cgw_run_format_check || python_lint_error=1
 
         if [[ ${python_lint_error} -eq 1 ]]; then
           err "Code quality errors remain after auto-fix"
@@ -419,24 +389,8 @@ main() {
         read -rp "Auto-fix code quality issues? (yes/no/skip): " fix_lint
         case "${fix_lint}" in
           yes | y)
-            if [[ -n "${CGW_LINT_CMD}" ]]; then
-              # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_FIX_ARGS/CGW_LINT_EXCLUDES contain multiple flags
-              "${lint_cmd}" ${CGW_LINT_FIX_ARGS} ${CGW_LINT_EXCLUDES}
-            fi
-            if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-              # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_FIX_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
-              "${format_cmd}" ${CGW_FORMAT_FIX_ARGS} ${CGW_FORMAT_EXCLUDES}
-            fi
-            if [[ ${effective_staged_only} -eq 1 ]]; then
-              if [[ -n "${originally_staged_files}" ]]; then
-                while IFS= read -r f; do
-                  [[ -n "${f}" ]] && git add -- "${f}" 2>/dev/null || true
-                done <<<"${originally_staged_files}"
-              fi
-            else
-              git add -u
-            fi
-            unstage_local_only_files
+            cgw_run_lint_fix
+            _restage_after_fix "${effective_staged_only}" "${originally_staged_files}"
             ;;
           skip | s)
             echo "[!] Proceeding with code quality warnings (CI may flag these)"
@@ -452,10 +406,9 @@ main() {
     fi
 
     # Markdown lint step (skipped if --skip-md-lint or CGW_MARKDOWNLINT_CMD not set)
-    if [[ ${skip_md_lint} -eq 0 ]] && [[ -n "${CGW_MARKDOWNLINT_CMD}" ]]; then
+    if [[ ${skip_md_lint} -eq 0 ]]; then
       local md_lint_error=0
-      # shellcheck disable=SC2086  # Word splitting intentional: CGW_MARKDOWNLINT_ARGS contains multiple flags/patterns
-      run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS} || md_lint_error=1
+      cgw_run_markdownlint_check || md_lint_error=1
       if [[ ${md_lint_error} -eq 1 ]]; then
         echo "[!] Markdown lint errors detected"
         if [[ ${non_interactive} -eq 1 ]]; then
