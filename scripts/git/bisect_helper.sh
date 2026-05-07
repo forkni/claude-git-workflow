@@ -122,7 +122,7 @@ main() {
         ;;
       --abort) do_abort=1 ;;
       --continue) do_continue=1 ;;
-      --non-interactive) non_interactive=1 ;;
+      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
       --dry-run) dry_run=1 ;;
       *)
         err "Unknown flag: $1"
@@ -169,17 +169,11 @@ main() {
   if git bisect log >/dev/null 2>&1; then
     echo "[!] An active bisect session is already in progress." >&2
     echo "  Run './scripts/git/bisect_helper.sh --abort' to stop it first." >&2
-    if [[ ${non_interactive} -eq 0 ]]; then
-      read -r -p "  Abort existing session and start fresh? (yes/no): " fresh_confirm
-      if [[ "${fresh_confirm}" != "yes" ]]; then
-        echo "Cancelled"
-        exit 0
-      fi
-      git bisect reset 2>/dev/null || true
-    else
-      err "Cannot start bisect -- session already active (abort it first)"
-      exit 1
+    if ! cgw_confirm "Abort existing session and start fresh?" --non-interactive abort; then
+      echo "Cancelled"
+      exit 0
     fi
+    git bisect reset 2>/dev/null || true
   fi
 
   # -- Auto-detect good_ref ---------------------------------------------------
@@ -245,14 +239,13 @@ main() {
     exit 0
   fi
 
-  if [[ ${non_interactive} -eq 0 ]] && [[ -z "${run_cmd}" ]]; then
+  if [[ -z "${run_cmd}" ]]; then
     echo "Manual bisect mode -- after each checkout, run your test then:"
     echo "  git bisect good   (if the bug is NOT present in this commit)"
     echo "  git bisect bad    (if the bug IS present in this commit)"
     echo "  git bisect skip   (if you cannot test this commit)"
     echo ""
-    read -r -p "Start bisect session? (yes/no): " start_confirm
-    if [[ "${start_confirm}" != "yes" ]]; then
+    if ! cgw_confirm "Start bisect session?" --non-interactive accept; then
       echo "Cancelled"
       exit 0
     fi

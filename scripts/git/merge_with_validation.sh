@@ -190,7 +190,7 @@ main() {
         echo "  CGW_DOCS_PATTERN=<regex>     Override docs allowlist pattern"
         exit 0
         ;;
-      --non-interactive) non_interactive=1 ;;
+      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
       --dry-run) dry_run=1 ;;
       --source)
         src_branch="${2:-}"
@@ -287,15 +287,8 @@ main() {
     echo "[!] WARNING: Not on ${src_branch} branch" | tee -a "$logfile"
     echo "  Current: ${original_branch}" | tee -a "$logfile"
 
-    if [[ ${non_interactive} -eq 0 ]]; then
-      read -p "  Continue anyway? [y/N] " -n 1 -r
-      echo
-      if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "  Aborted" | tee -a "$logfile"
-        exit 1
-      fi
-    else
-      echo "  Non-interactive: aborting for safety" | tee -a "$logfile"
+    if ! cgw_confirm "Continue anyway?" --default no --non-interactive abort; then
+      echo "  Aborted" | tee -a "$logfile"
       exit 1
     fi
   fi

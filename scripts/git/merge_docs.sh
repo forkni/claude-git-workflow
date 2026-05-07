@@ -72,7 +72,7 @@ main() {
         echo "         Any docs-only changes on target not in source will be lost."
         exit 0
         ;;
-      --non-interactive) non_interactive=1 ;;
+      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
       --source)
         src_branch="${2:-}"
         if [[ -z "${src_branch}" ]]; then
@@ -153,14 +153,8 @@ main() {
 
   if [[ -z "$(git diff --name-only "${tgt_branch}" "${src_branch}" -- docs/)" ]]; then
     log_message "[!] No documentation changes found between ${tgt_branch} and ${src_branch}" "${logfile}"
-    if [[ ${non_interactive} -eq 1 ]]; then
-      log_message "Documentation merge cancelled (nothing to do)" "${logfile}"
-      git checkout "${original_branch}"
-      exit 0
-    fi
     echo ""
-    read -r -p "Continue anyway? (yes/no): " continue_choice
-    if [[ "${continue_choice}" != "yes" ]]; then
+    if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
       echo ""
       log_message "Documentation merge cancelled" "${logfile}"
       git checkout "${original_branch}"
@@ -185,16 +179,11 @@ main() {
     echo ""
     git diff --name-only "${tgt_branch}" "${src_branch}" | grep -v "^docs/"
     echo ""
-    if [[ ${non_interactive} -eq 1 ]]; then
-      echo "[Non-interactive] Proceeding with docs-only merge despite non-docs changes" | tee -a "$logfile"
-    else
-      read -r -p "Proceed with docs-only merge? (yes/no): " confirm
-      if [[ "${confirm}" != "yes" ]]; then
-        echo ""
-        log_message "Documentation merge cancelled" "${logfile}"
-        git checkout "${original_branch}"
-        exit 0
-      fi
+    if ! cgw_confirm "Proceed with docs-only merge?" --non-interactive accept; then
+      echo ""
+      log_message "Documentation merge cancelled" "${logfile}"
+      git checkout "${original_branch}"
+      exit 0
     fi
   else
     log_message "[OK] No code changes detected (docs-only merge)" "${logfile}"

@@ -79,7 +79,7 @@ main() {
         echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
         exit 0
         ;;
-      --non-interactive) non_interactive=1 ;;
+      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
       --dry-run) dry_run=1 ;;
       --commit)
         commit_hash_flag="${2:-}"
@@ -210,13 +210,7 @@ main() {
   # Validate commit is on source branch
   if ! git merge-base --is-ancestor "${commit_hash}" "${src_branch}" 2>/dev/null; then
     echo "[!] WARNING: ${commit_hash} is not an ancestor of ${src_branch}" | tee -a "$logfile"
-    if [[ ${non_interactive} -eq 1 ]]; then
-      err_tee "[FAIL] [Non-interactive] Aborting -- commit not on ${src_branch} branch"
-      git checkout "${original_branch}"
-      exit 1
-    fi
-    read -r -p "Continue anyway? (yes/no): " branch_check_choice
-    if [[ "${branch_check_choice}" != "yes" ]]; then
+    if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
       log_message "Cherry-pick cancelled" "${logfile}"
       git checkout "${original_branch}"
       exit 0
@@ -255,13 +249,7 @@ main() {
         git show "${commit_hash}" --name-only --format="" | grep "^${dev_file}" || true
       done
       echo ""
-      if [[ ${non_interactive} -eq 1 ]]; then
-        err_tee "[FAIL] [Non-interactive] Aborting -- commit touches dev-only files"
-        git checkout "${original_branch}"
-        exit 1
-      fi
-      read -r -p "Continue anyway? (yes/no): " continue_choice
-      if [[ "${continue_choice}" != "yes" ]]; then
+      if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
         echo ""
         log_message "Cherry-pick cancelled" "${logfile}"
         git checkout "${original_branch}"

@@ -79,7 +79,7 @@ main() {
         shift
         ;;
       --push) push_tag=1 ;;
-      --non-interactive) non_interactive=1 ;;
+      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
       --dry-run) dry_run=1 ;;
       -*)
         echo "[ERROR] Unknown flag: $1" >&2
@@ -167,15 +167,9 @@ main() {
   fi
 
   # Confirm
-  if [[ ${non_interactive} -eq 0 ]]; then
-    read -r -p "Create annotated tag '${version}'? (yes/no): " answer
-    case "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" in
-      y | yes) ;;
-      *)
-        echo "Cancelled"
-        exit 0
-        ;;
-    esac
+  if ! cgw_confirm "Create annotated tag '${version}'?" --non-interactive accept; then
+    echo "Cancelled"
+    exit 0
   fi
 
   # Create annotated tag

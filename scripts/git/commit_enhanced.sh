@@ -158,6 +158,7 @@ main() {
         ;;
       --non-interactive)
         non_interactive=1
+        CGW_NON_INTERACTIVE=1
         shift
         ;;
       --skip-lint)
@@ -297,21 +298,13 @@ main() {
     git diff --name-status
     echo ""
 
-    if [[ ${non_interactive} -eq 1 ]]; then
-      echo "[Non-interactive] Auto-staging tracked changes..."
+    if cgw_confirm "Stage all tracked changes?" --non-interactive accept; then
       git add -u
       unstage_local_only_files
       echo "[OK] Changes staged"
     else
-      read -rp "Stage all tracked changes? (yes/no): " stage_all
-      if [[ "${stage_all}" == "yes" ]]; then
-        git add -u
-        unstage_local_only_files
-        echo "[OK] Changes staged"
-      else
-        echo "Please stage changes manually: git add <files>"
-        exit 1
-      fi
+      echo "Please stage changes manually: git add <files>"
+      exit 1
     fi
   elif [[ ${effective_staged_only} -eq 1 ]]; then
     echo "[staged-only] Committing pre-staged files only"
@@ -411,12 +404,9 @@ main() {
       cgw_run_markdownlint_check || md_lint_error=1
       if [[ ${md_lint_error} -eq 1 ]]; then
         echo "[!] Markdown lint errors detected"
-        if [[ ${non_interactive} -eq 1 ]]; then
-          err "Markdown lint failed -- fix errors or use --skip-md-lint to bypass"
+        if ! cgw_confirm "Proceed despite markdown lint errors?" --non-interactive abort; then
           exit 1
         fi
-        read -rp "Proceed despite markdown lint errors? (yes/no): " md_choice
-        [[ "${md_choice}" == "yes" ]] || exit 1
       fi
     elif [[ ${skip_md_lint} -eq 1 ]]; then
       echo "  (markdown lint skipped -- --skip-md-lint)"
@@ -451,16 +441,9 @@ main() {
   if ! cgw_validate_commit_message "${commit_msg}"; then
     echo "[!] WARNING: Message doesn't follow conventional format"
     echo "  Configured types: ${CGW_ALL_PREFIXES/|/, }"
-    if [[ ${non_interactive} -eq 1 ]]; then
-      err "Commit message must follow conventional format in non-interactive mode"
-      err "To add a custom type prefix: set CGW_EXTRA_PREFIXES in .cgw.conf"
-      exit 1
-    else
-      read -rp "Continue anyway? (yes/no): " continue_commit
-      if [[ "${continue_commit}" != "yes" ]]; then
-        echo "Commit cancelled"
-        exit 0
-      fi
+    if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
+      echo "Commit cancelled"
+      exit 0
     fi
   fi
 
@@ -470,20 +453,14 @@ main() {
   # [6] Create commit
   echo "[6/6] Creating commit..."
 
-  if [[ ${non_interactive} -eq 1 ]]; then
-    echo "[Non-interactive] Branch: ${current_branch} -- Proceeding..."
-  else
-    echo "[!] Branch verification: you are committing to: ${current_branch}"
-    read -rp "Is this the correct branch? (yes/no): " correct_branch
-    if [[ "${correct_branch}" != "yes" ]]; then
-      echo "Switch to correct branch first: git checkout <branch-name>"
-      exit 0
-    fi
-    read -rp "Proceed with commit? (yes/no): " confirm_commit
-    if [[ "${confirm_commit}" != "yes" ]]; then
-      echo "Commit cancelled"
-      exit 0
-    fi
+  echo "[!] Branch verification: you are committing to: ${current_branch}"
+  if ! cgw_confirm "Is this the correct branch?" --non-interactive accept; then
+    echo "Switch to correct branch first: git checkout <branch-name>"
+    exit 0
+  fi
+  if ! cgw_confirm "Proceed with commit?" --non-interactive accept; then
+    echo "Commit cancelled"
+    exit 0
   fi
 
   if git commit -m "${commit_msg}"; then

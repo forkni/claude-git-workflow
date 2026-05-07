@@ -75,7 +75,7 @@ main() {
         older_than_days="${2:-30}"
         shift
         ;;
-      --non-interactive) non_interactive=1 ;;
+      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2
         exit 1
@@ -138,15 +138,10 @@ main() {
     echo ""
 
     if [[ ${execute} -eq 1 ]]; then
-      if [[ ${non_interactive} -eq 0 ]]; then
-        read -r -p "  Delete ${#merged_branches[@]} merged branch(es)? (yes/no): " confirm
-        if [[ "${confirm}" != "yes" ]]; then
-          echo "  Skipped local branch deletion"
-        else
-          _delete_local_branches "${merged_branches[@]}"
-        fi
-      else
+      if cgw_confirm "Delete ${#merged_branches[@]} merged branch(es)?" --non-interactive accept; then
         _delete_local_branches "${merged_branches[@]}"
+      else
+        echo "  Skipped local branch deletion"
       fi
     else
       echo "  Would delete: ${#merged_branches[@]} branch(es)"
@@ -210,15 +205,10 @@ main() {
       echo "  (${#old_tags[@]} old / ${total_all} total backup tags)"
 
       if [[ ${execute} -eq 1 ]]; then
-        if [[ ${non_interactive} -eq 0 ]]; then
-          read -r -p "  Delete ${#old_tags[@]} old backup tag(s)? (yes/no): " confirm_tags
-          if [[ "${confirm_tags}" != "yes" ]]; then
-            echo "  Skipped backup tag deletion"
-          else
-            _delete_tags "${old_tags[@]}"
-          fi
-        else
+        if cgw_confirm "Delete ${#old_tags[@]} old backup tag(s)?" --non-interactive accept; then
           _delete_tags "${old_tags[@]}"
+        else
+          echo "  Skipped backup tag deletion"
         fi
       else
         echo "  Would delete: ${#old_tags[@]} backup tag(s)"

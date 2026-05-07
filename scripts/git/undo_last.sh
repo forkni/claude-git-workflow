@@ -75,7 +75,7 @@ main() {
   local -a positional=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --non-interactive) non_interactive=1 ;;
+      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
       --dry-run) dry_run=1 ;;
       --help | -h)
         _show_help
@@ -151,15 +151,9 @@ _cmd_undo_commit() {
     if [[ "${ahead}" -eq 0 ]]; then
       echo "[!] WARNING: The last commit appears to have been pushed to ${CGW_REMOTE}."
       echo "  Undoing it locally will create a diverged state requiring force-push."
-      if [[ "${non_interactive}" -eq 0 ]]; then
-        read -r -p "  Continue anyway? (yes/no): " pushed_confirm
-        if [[ "${pushed_confirm}" != "yes" ]]; then
-          echo "Cancelled"
-          exit 0
-        fi
-      else
-        err "Aborting -- last commit has been pushed; use --revert in rollback_merge.sh instead"
-        exit 1
+      if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
+        echo "Cancelled"
+        exit 0
       fi
     fi
   fi
@@ -176,12 +170,9 @@ _cmd_undo_commit() {
     exit 0
   fi
 
-  if [[ "${non_interactive}" -eq 0 ]]; then
-    read -r -p "Undo this commit? (yes/no): " confirm
-    if [[ "${confirm}" != "yes" ]]; then
-      echo "Cancelled"
-      exit 0
-    fi
+  if ! cgw_confirm "Undo this commit?" --non-interactive accept; then
+    echo "Cancelled"
+    exit 0
   fi
 
   # Create backup tag before reset
@@ -252,12 +243,9 @@ _cmd_unstage() {
     exit 0
   fi
 
-  if [[ "${non_interactive}" -eq 0 ]]; then
-    read -r -p "  Unstage ${#to_unstage[@]} file(s)? (yes/no): " confirm
-    if [[ "${confirm}" != "yes" ]]; then
-      echo "Cancelled"
-      exit 0
-    fi
+  if ! cgw_confirm "Unstage ${#to_unstage[@]} file(s)?" --non-interactive accept; then
+    echo "Cancelled"
+    exit 0
   fi
 
   for f in "${to_unstage[@]}"; do
@@ -319,16 +307,9 @@ _cmd_discard() {
     exit 0
   fi
 
-  if [[ "${non_interactive}" -eq 0 ]]; then
-    read -r -p "  PERMANENTLY discard changes in ${#to_discard[@]} file(s)? (yes/no): " confirm
-    if [[ "${confirm}" != "yes" ]]; then
-      echo "Cancelled"
-      exit 0
-    fi
-  else
-    err "Refusing to discard in non-interactive mode (data loss risk)"
-    err "Run interactively or use: git checkout -- <file>"
-    exit 1
+  if ! cgw_confirm "PERMANENTLY discard changes in ${#to_discard[@]} file(s)?" --non-interactive abort; then
+    echo "Cancelled"
+    exit 0
   fi
 
   for f in "${to_discard[@]}"; do
@@ -365,12 +346,9 @@ _cmd_amend_message() {
   if ! cgw_validate_commit_message "${new_msg}"; then
     echo "  [!] Message does not follow conventional format: ${new_msg}"
     echo "  Expected: <type>: <description> (types: ${CGW_ALL_PREFIXES/|/, })"
-    if [[ "${non_interactive}" -eq 0 ]]; then
-      read -r -p "  Continue anyway? (yes/no): " format_confirm
-      if [[ "${format_confirm}" != "yes" ]]; then
-        echo "Cancelled"
-        exit 0
-      fi
+    if ! cgw_confirm "Continue anyway?" --non-interactive accept; then
+      echo "Cancelled"
+      exit 0
     fi
   fi
 
@@ -383,12 +361,10 @@ _cmd_amend_message() {
     ahead=$(git rev-list --count "${CGW_REMOTE}/${current_branch}..HEAD" 2>/dev/null || echo "0")
     if [[ "${ahead}" -eq 0 ]]; then
       echo "  [!] WARNING: This commit appears to have been pushed. Amending will require force-push."
-      if [[ "${non_interactive}" -eq 1 ]]; then
-        err "Refusing to amend pushed commit in non-interactive mode"
-        exit 1
+      if ! cgw_confirm "Amend anyway?" --non-interactive abort; then
+        echo "Cancelled"
+        exit 0
       fi
-      read -r -p "  Amend anyway? (yes/no): " pushed_confirm
-      [[ "${pushed_confirm}" != "yes" ]] && echo "Cancelled" && exit 0
     fi
   fi
 
@@ -402,12 +378,9 @@ _cmd_amend_message() {
     exit 0
   fi
 
-  if [[ "${non_interactive}" -eq 0 ]]; then
-    read -r -p "  Amend commit message? (yes/no): " confirm
-    if [[ "${confirm}" != "yes" ]]; then
-      echo "Cancelled"
-      exit 0
-    fi
+  if ! cgw_confirm "Amend commit message?" --non-interactive accept; then
+    echo "Cancelled"
+    exit 0
   fi
 
   if git commit --amend --no-edit -m "${new_msg}"; then

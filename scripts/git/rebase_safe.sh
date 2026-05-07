@@ -135,7 +135,7 @@ main() {
       --abort) do_abort=1 ;;
       --continue) do_continue=1 ;;
       --skip) do_skip=1 ;;
-      --non-interactive) non_interactive=1 ;;
+      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
       --dry-run) dry_run=1 ;;
       *)
         err "Unknown flag: $1"
@@ -223,13 +223,7 @@ _check_pushed_commits() {
     echo "  Rebasing will rewrite history -- you will need to force-push after rebase." | tee -a "$logfile"
     echo "  This is SAFE only on personal/feature branches, NEVER on shared branches." | tee -a "$logfile"
     echo "" | tee -a "$logfile"
-    if [[ "${non_interactive}" -eq 1 ]]; then
-      err "Refusing to rebase pushed commits in non-interactive mode (history-safety)"
-      err "Use interactive mode or acknowledge the risk with --non-interactive after force-push consent"
-      exit 1
-    fi
-    read -r -p "  Rebase anyway? (yes/no): " pushed_confirm
-    if [[ "${pushed_confirm}" != "yes" ]]; then
+    if ! cgw_confirm "Rebase anyway?" --non-interactive abort; then
       echo "Cancelled"
       exit 0
     fi
@@ -343,13 +337,10 @@ _cmd_rebase_onto() {
   _handle_dirty_tree "${autostash}"
 
   # Confirmation
-  if [[ "${non_interactive}" -eq 0 ]]; then
-    read -r -p "  Rebase ${current_branch} onto ${onto_ref}? (yes/no): " rebase_confirm
-    if [[ "${rebase_confirm}" != "yes" ]]; then
-      echo "Cancelled"
-      _restore_stash_if_needed
-      exit 0
-    fi
+  if ! cgw_confirm "Rebase ${current_branch} onto ${onto_ref}?" --non-interactive accept; then
+    echo "Cancelled"
+    _restore_stash_if_needed
+    exit 0
   fi
 
   # Create backup
@@ -466,20 +457,15 @@ _cmd_squash_last() {
   # Handle dirty tree
   _handle_dirty_tree "${autostash}"
 
-  if [[ "${non_interactive}" -eq 0 ]] && [[ "${autosquash}" -eq 0 ]]; then
+  if [[ "${autosquash}" -eq 0 ]]; then
     echo "  An editor will open for you to mark commits (squash, fixup, reword, etc.)"
     echo "  Change 'pick' to 'squash' (or 's') to fold a commit into the one above it."
     echo ""
-    read -r -p "  Open interactive rebase for last ${squash_n} commits? (yes/no): " squash_confirm
-    if [[ "${squash_confirm}" != "yes" ]]; then
+    if ! cgw_confirm "Open interactive rebase for last ${squash_n} commits?" --non-interactive abort; then
       echo "Cancelled"
       _restore_stash_if_needed
       exit 0
     fi
-  elif [[ "${non_interactive}" -eq 1 ]] && [[ "${autosquash}" -eq 0 ]]; then
-    err "Interactive squash requires an editor -- use --autosquash for non-interactive squash"
-    err "(commits must be prefixed with 'squash!' or 'fixup!' for --autosquash to work)"
-    exit 1
   fi
 
   # Create backup

@@ -569,7 +569,7 @@ main() {
         echo "After running, edit .cgw.conf to customize any detected values."
         exit 0
         ;;
-      --non-interactive) non_interactive=1 ;;
+      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
       --reconfigure) reconfigure=1 ;;
       --skip-hooks) skip_hooks=1 ;;
       --skip-skill) skip_skill=1 ;;
@@ -603,18 +603,13 @@ main() {
   # Check if .cgw.conf already exists
   if [[ -f ".cgw.conf" ]] && [[ ${reconfigure} -eq 0 ]]; then
     echo "[OK] .cgw.conf already exists."
-    if [[ ${non_interactive} -eq 0 ]]; then
-      read -r -p "  Reconfigure? (yes/no) [no]: " answer
-      if [[ "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" =~ ^y(es)?$ ]]; then
-        reconfigure=1
-      else
-        echo ""
-        echo "Using existing configuration. Use --reconfigure to overwrite."
-        echo ""
-        # Still run hook + skill install
-      fi
+    if cgw_confirm "Reconfigure?" --default no --non-interactive deny; then
+      reconfigure=1
     else
-      echo "  Use --reconfigure to overwrite."
+      echo ""
+      echo "Using existing configuration. Use --reconfigure to overwrite."
+      echo ""
+      # Still run hook + skill install
     fi
   fi
 
@@ -730,13 +725,11 @@ main() {
     echo ""
     echo "Git hooks enforce lint checks and local-file protection on every commit"
     echo "and push, catching issues before they reach the remote."
-    local install_hook="yes"
-    if [[ ${non_interactive} -eq 0 ]]; then
-      read -r -p "Install pre-commit hook? (yes/no) [yes]: " answer
-      case "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" in
-        y | yes) install_hook="yes" ;;
-        n | no) install_hook="no" ;;
-      esac
+    local install_hook
+    if cgw_confirm "Install pre-commit hook?" --default yes --non-interactive accept; then
+      install_hook="yes"
+    else
+      install_hook="no"
     fi
 
     if [[ "${install_hook}" == "yes" ]]; then
@@ -752,12 +745,11 @@ main() {
   echo ""
   echo "git rerere remembers how you resolved conflicts so it can auto-replay"
   echo "the same resolution next time the same conflict reappears."
-  local enable_rerere="yes"
-  if [[ ${non_interactive} -eq 0 ]]; then
-    read -r -p "Enable git rerere (auto-replay conflict resolutions)? (yes/no) [yes]: " answer
-    case "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" in
-      n | no) enable_rerere="no" ;;
-    esac
+  local enable_rerere
+  if cgw_confirm "Enable git rerere (auto-replay conflict resolutions)?" --default yes --non-interactive accept; then
+    enable_rerere="yes"
+  else
+    enable_rerere="no"
   fi
 
   if [[ "${enable_rerere}" == "yes" ]]; then
@@ -784,14 +776,12 @@ main() {
       install_skill="yes"
     fi
 
-    if [[ ${non_interactive} -eq 0 ]]; then
-      local skill_dest_hint="project .claude/"
-      [[ ${global_skill} -eq 1 ]] && skill_dest_hint="global ~/.claude/"
-      read -r -p "Install Claude Code skill to ${skill_dest_hint}? (yes/no) [${install_skill}]: " answer
-      case "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" in
-        y | yes) install_skill="yes" ;;
-        n | no) install_skill="no" ;;
-      esac
+    local skill_dest_hint="project .claude/"
+    [[ ${global_skill} -eq 1 ]] && skill_dest_hint="global ~/.claude/"
+    if cgw_confirm "Install Claude Code skill to ${skill_dest_hint}?" --default "${install_skill}" --non-interactive accept; then
+      install_skill="yes"
+    else
+      install_skill="no"
     fi
 
     if [[ "${install_skill}" == "yes" ]]; then
@@ -812,14 +802,13 @@ main() {
     echo "commands (raw 'git commit', '--no-verify', 'git reset --hard', etc.) at the"
     echo "harness layer, before they execute. This is defense-in-depth on top of the"
     echo "repo-side git hooks — the model cannot bypass it by being asked to skip CGW."
-    local install_guardrail="yes"
-    if [[ ${non_interactive} -eq 0 ]]; then
-      local guardrail_dest_hint=".claude/settings.json"
-      [[ ${global_skill} -eq 1 ]] && guardrail_dest_hint="~/.claude/settings.json"
-      read -r -p "Install PreToolUse guardrail to ${guardrail_dest_hint}? (yes/no) [yes]: " answer
-      case "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" in
-        n | no) install_guardrail="no" ;;
-      esac
+    local install_guardrail
+    local guardrail_dest_hint=".claude/settings.json"
+    [[ ${global_skill} -eq 1 ]] && guardrail_dest_hint="~/.claude/settings.json"
+    if cgw_confirm "Install PreToolUse guardrail to ${guardrail_dest_hint}?" --default yes --non-interactive accept; then
+      install_guardrail="yes"
+    else
+      install_guardrail="no"
     fi
 
     if [[ "${install_guardrail}" == "yes" ]]; then

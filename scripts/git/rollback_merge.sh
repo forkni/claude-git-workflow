@@ -66,7 +66,7 @@ main() {
         echo "         With --revert, history is preserved -- no force-push needed."
         exit 0
         ;;
-      --non-interactive) non_interactive=1 ;;
+      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
       --dry-run) dry_run=1 ;;
       --revert) use_revert=1 ;;
       --target)
@@ -132,13 +132,7 @@ main() {
     echo "" | tee -a "$logfile"
     echo "These changes will be LOST during rollback!" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
-    if [[ ${non_interactive} -eq 1 ]]; then
-      echo "[Non-interactive] Aborting -- commit or stash changes first" | tee -a "$logfile"
-      log_section_end "UNCOMMITTED CHANGES CHECK" "$logfile" "1"
-      exit 1
-    fi
-    read -r -p "Continue anyway? (yes/no): " continue_choice
-    if [[ "${continue_choice}" != "yes" ]]; then
+    if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
       echo "" | tee -a "$logfile"
       echo "Rollback cancelled" | tee -a "$logfile"
       echo "Please commit or stash changes first"
@@ -262,14 +256,7 @@ main() {
     exit 0
   fi
 
-  local confirm
-  if [[ ${non_interactive} -eq 0 ]]; then
-    read -r -p "Type 'ROLLBACK' to confirm: " confirm
-  else
-    confirm="ROLLBACK"
-  fi
-
-  if [[ "${confirm}" != "ROLLBACK" ]]; then
+  if ! cgw_confirm "Type 'ROLLBACK' to confirm" --literal-token ROLLBACK --non-interactive accept; then
     echo "" | tee -a "$logfile"
     echo "Rollback cancelled" | tee -a "$logfile"
     _rollback_done=1
