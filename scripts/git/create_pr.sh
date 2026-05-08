@@ -37,6 +37,7 @@ main() {
   # Auto-detect non-interactive mode when no TTY
   if [[ ! -t 0 ]]; then
     non_interactive=1
+    CGW_NON_INTERACTIVE=1
   fi
 
   [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
@@ -86,6 +87,7 @@ main() {
         ;;
       --non-interactive)
         non_interactive=1
+        CGW_NON_INTERACTIVE=1
         shift
         ;;
       --dry-run)

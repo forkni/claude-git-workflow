@@ -348,3 +348,27 @@ _run_commit() {
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"conventional format"* ]] || [[ "${output}" == *"conventional"* ]]
 }
+
+# ── Regression: no-TTY auto-detect must propagate to cgw_confirm ─────────────
+# commit_enhanced.sh auto-detects non-interactive mode via [[ ! -t 0 ]], sets
+# local non_interactive=1, but also MUST export CGW_NON_INTERACTIVE=1 so that
+# cgw_confirm honours the --non-interactive policy at branch verification.
+# Without the export, cgw_confirm reads EOF from stdin and returns 1 (deny),
+# silently cancelling the commit with "Switch to correct branch first".
+
+@test "no-TTY auto-detect propagates to cgw_confirm (regression guard)" {
+  echo "regression guard content" > "${TEST_REPO_DIR}/regression_test.txt"
+  git -C "${TEST_REPO_DIR}" add regression_test.txt
+  # Invoke without CGW_NON_INTERACTIVE set and without --non-interactive flag.
+  # stdin is redirected from /dev/null to simulate Bash-tool / CI invocation.
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export PATH='${MOCK_BIN_DIR}:${PATH}'
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --no-venv 'feat: regression guard commit' </dev/null
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"Switch to correct branch first"* ]]
+  [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+}
