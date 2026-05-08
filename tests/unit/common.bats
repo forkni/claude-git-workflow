@@ -6,18 +6,24 @@ bats_require_minimum_version 1.5.0
 load '../helpers/setup'
 
 # ── Test setup/teardown ────────────────────────────────────────────────────────
+# One repo shared across all 101 tests in this file. BATS_FILE_TMPDIR is
+# auto-cleaned by Bats after teardown_file — no manual cleanup needed.
+# Tests must not rename branches or hard-reset HEAD; tag/add/commit mutations
+# are safe because they are either namespaced or ordered to run after any test
+# that checks pre-mutation state (see audit in commit message).
+
+setup_file() {
+  setup_file_create_test_repo
+}
 
 setup() {
-  create_test_repo
-  # Source _common.sh inside the test repo so PROJECT_ROOT resolves to it
   cd "${TEST_REPO_DIR}"
+  # ensure_no_stale_index_lock tests leave .git/index.lock on purpose (testing
+  # the "refuse" path). Clear it so subsequent tests can run git commands cleanly.
+  rm -f "${TEST_REPO_DIR}/.git/index.lock"
   export SCRIPT_DIR="${CGW_PROJECT_ROOT}/scripts/git"
   # shellcheck source=scripts/git/_common.sh
   source "${CGW_PROJECT_ROOT}/scripts/git/_common.sh"
-}
-
-teardown() {
-  cleanup_test_repo
 }
 
 # ── err() ──────────────────────────────────────────────────────────────────────

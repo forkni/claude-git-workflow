@@ -33,16 +33,22 @@ CGW_SCRIPTS=(
   rebase_safe.sh
 )
 
-setup() {
-  create_test_repo_with_remote
-  setup_mock_bin
+# One repo + one mock-bin shared across all 51 --help tests.
+# None of these tests mutate the repo; BATS_FILE_TMPDIR auto-cleaned by Bats.
+
+setup_file() {
+  setup_file_create_test_repo_with_remote
+  MOCK_BIN_DIR="${BATS_FILE_TMPDIR}/mock-bin"
+  export MOCK_BIN_DIR
+  mkdir -p "${MOCK_BIN_DIR}"
+  export PATH="${MOCK_BIN_DIR}:${PATH}"
   install_mock_gh
   # Provide stub lint tool so scripts that source _config.sh don't fail on missing ruff
   install_mock_lint
 }
 
-teardown() {
-  cleanup_test_repo
+setup() {
+  cd "${TEST_REPO_DIR}"
 }
 
 # ── --help exits 0 for all scripts ───────────────────────────────────────────

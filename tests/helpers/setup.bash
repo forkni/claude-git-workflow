@@ -85,6 +85,53 @@ cleanup_test_repo() {
   cleanup_temp_dir
 }
 
+# ── File-scoped repo helpers (setup_file / teardown_file) ────────────────────
+# Use these when every test in a .bats file needs the same starting repo state
+# and no test mutates the repo destructively (branch renames, reset --hard).
+# Bats auto-cleans BATS_FILE_TMPDIR after teardown_file — no manual cleanup needed.
+
+# setup_file_create_test_repo
+#   Like create_test_repo but backed by BATS_FILE_TMPDIR (one repo per file).
+#   Does NOT set TEST_TMPDIR so that cleanup_temp_dir doesn't remove the shared dir.
+setup_file_create_test_repo() {
+  TEST_REPO_DIR="${BATS_FILE_TMPDIR}/repo"
+  export TEST_REPO_DIR
+  mkdir -p "${TEST_REPO_DIR}/scripts/git"
+
+  git -C "${TEST_REPO_DIR}" init --quiet
+  git -C "${TEST_REPO_DIR}" config user.email "test@example.com"
+  git -C "${TEST_REPO_DIR}" config user.name "Test User"
+  git -C "${TEST_REPO_DIR}" config core.autocrlf false
+
+  echo "# Test Repo" > "${TEST_REPO_DIR}/README.md"
+  git -C "${TEST_REPO_DIR}" add README.md
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: initial commit"
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b main 2>/dev/null || \
+    git -C "${TEST_REPO_DIR}" branch -m main 2>/dev/null || true
+
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b development
+  echo "# Dev note" > "${TEST_REPO_DIR}/DEV.md"
+  git -C "${TEST_REPO_DIR}" add DEV.md
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev commit"
+
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+}
+
+# setup_file_create_test_repo_with_remote
+#   Like create_test_repo_with_remote but backed by BATS_FILE_TMPDIR.
+setup_file_create_test_repo_with_remote() {
+  setup_file_create_test_repo
+
+  TEST_REMOTE_DIR="${BATS_FILE_TMPDIR}/remote.git"
+  export TEST_REMOTE_DIR
+  create_bare_remote "${TEST_REMOTE_DIR}"
+
+  git -C "${TEST_REPO_DIR}" remote add origin "${TEST_REMOTE_DIR}"
+  git -C "${TEST_REPO_DIR}" push --quiet --all origin
+  git -C "${TEST_REPO_DIR}" push --quiet --set-upstream origin main
+  git -C "${TEST_REPO_DIR}" push --quiet --set-upstream origin development
+}
+
 # ── Script path helpers ────────────────────────────────────────────────────────
 
 # script_path <name>  — returns absolute path to scripts/git/<name>
