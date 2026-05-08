@@ -73,8 +73,5 @@ jobs:
           git config --global user.email "ci@example.com"
           git config --global user.name "CI Test"
 
-      - name: Run unit tests
-        run: bats tests/unit/
-
-      - name: Run integration tests
-        run: bats tests/integration/
+      - name: Run test suite (parallel)
+        run: CGW_TEST_JOBS=4 bash tests/run.sh
