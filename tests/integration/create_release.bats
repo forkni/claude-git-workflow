@@ -83,3 +83,17 @@ teardown() {
   # Annotated tags show type "tag"; lightweight show type "commit"
   git -C "${TEST_REPO_DIR}" cat-file -t "v1.1.0" | grep -q "tag"
 }
+
+# ── untracked files guard (bug #C2 — fixed in working-tree-state refactor) ───
+
+@test "untracked source files rejected when tagging release" {
+  # bug: create_release.sh uses diff-index which ignores untracked files;
+  # a release tag can be cut while new source files are present but unstaged.
+  # Fixed by cgw_handle_dirty_tree release abort --include-untracked.
+  skip "bug #C2: create_release.sh silently accepts untracked files -- unskip after working-tree-state refactor"
+  echo "new source" > "${TEST_REPO_DIR}/newfile.py"
+  # intentionally NOT git-added -- file is untracked
+  run run_script create_release.sh v1.0.0 --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"ntracked"* ]]
+}

@@ -96,3 +96,16 @@ _run_push() {
   "
   [ "${status}" -ne 0 ]
 }
+
+@test "force-push to source branch (development) blocked in non-interactive" {
+  # bug: push_validated.sh only checks CGW_PROTECTED_BRANCHES (default=main);
+  # CGW_SOURCE_BRANCH (development) is not included so --force proceeds silently.
+  # Fixed by cgw_is_protected_branch which uses the canonical set
+  # (CGW_TARGET ∪ CGW_SOURCE ∪ CGW_PROTECTED_BRANCHES).
+  skip "bug #C3: push_validated.sh does not protect CGW_SOURCE_BRANCH -- unskip after protected-branch refactor"
+  # development is the current branch (from setup) with a local remote.
+  # CGW_PROTECTED_BRANCHES is left at its default (=main).
+  # Force-pushing to development should be blocked because it is CGW_SOURCE_BRANCH.
+  run _run_push "--force --dry-run --skip-lint"
+  [ "${status}" -ne 0 ]
+}
