@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # tests/run.sh — run the CGW bats suite in parallel
-# Usage: tests/run.sh [extra bats args...]
-#   CGW_TEST_JOBS=N tests/run.sh   # override parallelism (default: half logical cores)
+# Usage:
+#   tests/run.sh                           # full suite (default)
+#   tests/run.sh tests/unit/              # unit tests only  (~25s)
+#   tests/run.sh tests/unit/config.bats   # single file
+#   CGW_TEST_JOBS=N tests/run.sh          # override parallelism (default: half logical cores)
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -9,17 +12,20 @@ _cores="$(nproc 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-4}")"
 jobs="${CGW_TEST_JOBS:-$(( _cores / 2 ))}"
 (( jobs < 1 )) && jobs=1
 
+# Default target: full suite. Callers can pass specific paths to narrow the run.
+_targets=("${@:-tests/unit/ tests/integration/}")
+
 # bats --jobs requires flock/shlock, which Git Bash on Windows does not provide.
 # Fall back to per-file parallelism via xargs -P when flock is unavailable.
 if command -v flock >/dev/null 2>&1 || command -v shlock >/dev/null 2>&1; then
-  exec bats --jobs "${jobs}" "$@" tests/unit/ tests/integration/
+  exec bats --jobs "${jobs}" "${_targets[@]}"
 fi
 
 # ── xargs -P fallback (Windows Git Bash) ──────────────────────────────────────
 _tmpdir="$(mktemp -d)"
 trap 'rm -rf "${_tmpdir}"' EXIT
 
-mapfile -t _files < <(find tests/unit/ tests/integration/ -name "*.bats" | sort)
+mapfile -t _files < <(find "${_targets[@]}" -name "*.bats" | sort)
 
 _run_bats_file() {
   local f="$1" out="$2"
