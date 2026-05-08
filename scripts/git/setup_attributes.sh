@@ -345,14 +345,10 @@ main() {
   if [[ -f "${PROJECT_ROOT}/.gitattributes" ]] && [[ ${force} -eq 0 ]]; then
     echo "[!] .gitattributes already exists."
     echo ""
-    read -r -p "Overwrite? (yes/no) [no]: " answer
-    case "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" in
-      y | yes) ;;
-      *)
-        echo "Aborted -- .gitattributes not modified."
-        exit 0
-        ;;
-    esac
+    if ! cgw_confirm "Overwrite?" --default no --non-interactive deny; then
+      echo "Aborted -- .gitattributes not modified."
+      exit 0
+    fi
   fi
 
   echo "${attr_content}" >"${PROJECT_ROOT}/.gitattributes"

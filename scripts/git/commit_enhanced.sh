@@ -67,31 +67,30 @@ EOF
   echo "End Time: $(date)" >>"${logfile}"
 }
 
-_is_exempt() {
-  local target="$1"
-  local exempt
-  for exempt in ${CGW_LOCAL_FILES_EXEMPT}; do
-    [[ "${target}" == "${exempt}" ]] && return 0
-  done
-  return 1
+unstage_local_only_files() {
+  local f
+  while read -r f; do
+    git reset HEAD "${f}" 2>/dev/null || true
+  done < <(git diff --cached --name-only | cgw_filter_local_files)
 }
 
-unstage_local_only_files() {
-  # Unstage files listed in CGW_LOCAL_FILES (space-separated).
-  # Entries ending with / are treated as directory prefixes.
-  # Files matching CGW_LOCAL_FILES_EXEMPT are left staged.
-  local file
-  for file in ${CGW_LOCAL_FILES}; do
-    if [[ "${file}" == */ ]]; then
-      # Directory prefix: unstage all matching staged files
-      while read -r f; do
-        _is_exempt "${f}" && continue
-        git reset HEAD "${f}" 2>/dev/null || true
-      done < <(git diff --cached --name-only | grep "^${file}" || true)
-    else
-      _is_exempt "${file}" || git reset HEAD "${file}" 2>/dev/null || true
+# Re-stage files after lint auto-fix, then remove any local-only files that
+# the fixer may have touched. Takes explicit params because main() locals are
+# not visible to script-level functions in bash.
+_restage_after_fix() {
+  local effective_staged_only="$1"
+  local originally_staged_files="$2"
+  if [[ ${effective_staged_only} -eq 1 ]]; then
+    if [[ -n "${originally_staged_files}" ]]; then
+      local f
+      while IFS= read -r f; do
+        [[ -n "${f}" ]] && git add -- "${f}" 2>/dev/null || true
+      done <<<"${originally_staged_files}"
     fi
-  done
+  else
+    git add -u
+  fi
+  unstage_local_only_files
 }
 
 main() {
@@ -159,6 +158,7 @@ main() {
         ;;
       --non-interactive)
         non_interactive=1
+        CGW_NON_INTERACTIVE=1
         shift
         ;;
       --skip-lint)
@@ -207,6 +207,7 @@ main() {
   done
 
   init_logging "commit_enhanced"
+  ensure_no_stale_index_lock || exit 1
 
   if [[ -z "${logfile}" ]] || [[ -z "${reportfile}" ]]; then
     err "Failed to initialize logging"
@@ -297,21 +298,13 @@ main() {
     git diff --name-status
     echo ""
 
-    if [[ ${non_interactive} -eq 1 ]]; then
-      echo "[Non-interactive] Auto-staging tracked changes..."
+    if cgw_confirm "Stage all tracked changes?" --non-interactive accept; then
       git add -u
       unstage_local_only_files
       echo "[OK] Changes staged"
     else
-      read -rp "Stage all tracked changes? (yes/no): " stage_all
-      if [[ "${stage_all}" == "yes" ]]; then
-        git add -u
-        unstage_local_only_files
-        echo "[OK] Changes staged"
-      else
-        echo "Please stage changes manually: git add <files>"
-        exit 1
-      fi
+      echo "Please stage changes manually: git add <files>"
+      exit 1
     fi
   elif [[ ${effective_staged_only} -eq 1 ]]; then
     echo "[staged-only] Committing pre-staged files only"
@@ -333,14 +326,11 @@ main() {
   local staged_files
   staged_files=$(git diff --cached --name-only)
 
-  local file
-  for file in ${CGW_LOCAL_FILES}; do
-    local check_file="${file%/}" # strip trailing slash
-    if echo "${staged_files}" | grep -q "^${check_file}"; then
-      echo "[X] ERROR: '${check_file}' is staged (local-only file -- should not be committed)" >&2
-      found_local_files=1
-    fi
-  done
+  local f
+  while read -r f; do
+    echo "[X] ERROR: '${f}' is staged (local-only file -- should not be committed)" >&2
+    found_local_files=1
+  done < <(echo "${staged_files}" | cgw_filter_local_files)
 
   if [[ ${found_local_files} -eq 1 ]]; then
     echo "Remove these files from staging: git reset HEAD <file>" >&2
@@ -366,93 +356,23 @@ main() {
   if [[ ${skip_lint} -eq 1 ]]; then
     echo "  (all lint checks skipped -- --skip-lint)"
   else
-    get_lint_exclusions
+    local lint_error=0 format_error=0
+    cgw_run_lint_check || lint_error=1
+    cgw_run_format_check || format_error=1
 
-    # Resolve lint and format binaries independently (each uses venv ruff if available)
-    local lint_cmd="${CGW_LINT_CMD}"
-    local format_cmd="${CGW_FORMAT_CMD}"
-    if [[ -n "${CGW_LINT_CMD}" ]] || [[ -n "${CGW_FORMAT_CMD}" ]]; then
-      get_python_path 2>/dev/null || true
-    fi
-    if [[ -n "${CGW_LINT_CMD}" && "${CGW_LINT_CMD}" == "ruff" ]]; then
-      if [[ -n "${PYTHON_BIN:-}" ]] && [[ -f "${PYTHON_BIN}/ruff${PYTHON_EXT:-}" ]]; then
-        lint_cmd="${PYTHON_BIN}/ruff${PYTHON_EXT:-}"
-      fi
-    fi
-    if [[ -n "${CGW_FORMAT_CMD}" && "${CGW_FORMAT_CMD}" == "ruff" ]]; then
-      if [[ -n "${PYTHON_BIN:-}" ]] && [[ -f "${PYTHON_BIN}/ruff${PYTHON_EXT:-}" ]]; then
-        format_cmd="${PYTHON_BIN}/ruff${PYTHON_EXT:-}"
-      fi
-    fi
-
-    local lint_error=0 format_error=0 lint_output format_output
-
-    # -- Code lint (skipped when CGW_LINT_CMD not set) -------------------------
-    if [[ -n "${CGW_LINT_CMD}" ]]; then
-      log_section_start "LINT CHECK" "${logfile}"
-      # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_CHECK_ARGS/CGW_LINT_EXCLUDES contain multiple flags
-      lint_output=$("${lint_cmd}" ${CGW_LINT_CHECK_ARGS} ${CGW_LINT_EXCLUDES} 2>&1) || lint_error=1
-      if [[ -n "${lint_output}" ]] && [[ "${lint_output}" != *"All checks passed"* ]]; then
-        echo "[LINT ERRORS]" | tee -a "${logfile}"
-        echo "${lint_output}" | tee -a "${logfile}"
-      fi
-      log_section_end "LINT CHECK" "${logfile}" "${lint_error}"
-    else
-      echo "  (lint check skipped -- CGW_LINT_CMD not set)"
-    fi
-
-    # -- Format check (skipped when CGW_FORMAT_CMD not set) --------------------
-    if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-      log_section_start "FORMAT CHECK" "${logfile}"
-      # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_CHECK_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
-      format_output=$("${format_cmd}" ${CGW_FORMAT_CHECK_ARGS} ${CGW_FORMAT_EXCLUDES} 2>&1) || format_error=1
-      if [[ -n "${format_output}" ]] && [[ "${format_output}" == *"would reformat"* ]]; then
-        echo "[FORMAT ERRORS]" | tee -a "${logfile}"
-        echo "${format_output}" | tee -a "${logfile}"
-      fi
-      log_section_end "FORMAT CHECK" "${logfile}" "${format_error}"
-    fi
-
-    # -- Combined error handling -----------------------------------------------
     local python_lint_error=$((lint_error | format_error))
 
     if [[ ${python_lint_error} -eq 1 ]]; then
       echo "[!] Code quality errors detected"
       if [[ ${non_interactive} -eq 1 ]]; then
         echo "[Non-interactive] Auto-fixing code quality issues..."
-        if [[ -n "${CGW_LINT_CMD}" ]]; then
-          # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_FIX_ARGS/CGW_LINT_EXCLUDES contain multiple flags
-          "${lint_cmd}" ${CGW_LINT_FIX_ARGS} ${CGW_LINT_EXCLUDES} 2>&1 | tee -a "${logfile}"
-        fi
-        if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-          # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_FIX_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
-          "${format_cmd}" ${CGW_FORMAT_FIX_ARGS} ${CGW_FORMAT_EXCLUDES} 2>&1 | tee -a "${logfile}"
-        fi
+        cgw_run_lint_fix
+        _restage_after_fix "${effective_staged_only}" "${originally_staged_files}"
 
-        # Re-stage files that lint auto-fix may have modified
-        if [[ ${effective_staged_only} -eq 1 ]]; then
-          # Respect original selection: re-add only the files that were originally staged
-          if [[ -n "${originally_staged_files}" ]]; then
-            while IFS= read -r f; do
-              [[ -n "${f}" ]] && git add -- "${f}" 2>/dev/null || true
-            done <<<"${originally_staged_files}"
-            unstage_local_only_files
-          fi
-        else
-          git add -u
-          unstage_local_only_files
-        fi
-
-        # Re-check
+        # Re-check after fix
         python_lint_error=0
-        if [[ -n "${CGW_LINT_CMD}" ]]; then
-          # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_CHECK_ARGS/CGW_LINT_EXCLUDES contain multiple flags
-          "${lint_cmd}" ${CGW_LINT_CHECK_ARGS} ${CGW_LINT_EXCLUDES} 2>&1 | tee -a "${logfile}" || python_lint_error=1
-        fi
-        if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-          # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_CHECK_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
-          "${format_cmd}" ${CGW_FORMAT_CHECK_ARGS} ${CGW_FORMAT_EXCLUDES} 2>&1 | tee -a "${logfile}" || python_lint_error=1
-        fi
+        cgw_run_lint_check || python_lint_error=1
+        cgw_run_format_check || python_lint_error=1
 
         if [[ ${python_lint_error} -eq 1 ]]; then
           err "Code quality errors remain after auto-fix"
@@ -462,24 +382,8 @@ main() {
         read -rp "Auto-fix code quality issues? (yes/no/skip): " fix_lint
         case "${fix_lint}" in
           yes | y)
-            if [[ -n "${CGW_LINT_CMD}" ]]; then
-              # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_FIX_ARGS/CGW_LINT_EXCLUDES contain multiple flags
-              "${lint_cmd}" ${CGW_LINT_FIX_ARGS} ${CGW_LINT_EXCLUDES}
-            fi
-            if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-              # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_FIX_ARGS/CGW_FORMAT_EXCLUDES contain multiple flags
-              "${format_cmd}" ${CGW_FORMAT_FIX_ARGS} ${CGW_FORMAT_EXCLUDES}
-            fi
-            if [[ ${effective_staged_only} -eq 1 ]]; then
-              if [[ -n "${originally_staged_files}" ]]; then
-                while IFS= read -r f; do
-                  [[ -n "${f}" ]] && git add -- "${f}" 2>/dev/null || true
-                done <<<"${originally_staged_files}"
-              fi
-            else
-              git add -u
-            fi
-            unstage_local_only_files
+            cgw_run_lint_fix
+            _restage_after_fix "${effective_staged_only}" "${originally_staged_files}"
             ;;
           skip | s)
             echo "[!] Proceeding with code quality warnings (CI may flag these)"
@@ -495,22 +399,14 @@ main() {
     fi
 
     # Markdown lint step (skipped if --skip-md-lint or CGW_MARKDOWNLINT_CMD not set)
-    if [[ ${skip_md_lint} -eq 0 ]] && [[ -n "${CGW_MARKDOWNLINT_CMD}" ]]; then
-      log_section_start "MARKDOWN LINT" "${logfile}"
+    if [[ ${skip_md_lint} -eq 0 ]]; then
       local md_lint_error=0
-      # shellcheck disable=SC2086  # Word splitting intentional: CGW_MARKDOWNLINT_ARGS contains multiple flags/patterns
-      if ! "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS} 2>&1 | tee -a "${logfile}"; then
-        md_lint_error=1
-      fi
-      log_section_end "MARKDOWN LINT" "${logfile}" "${md_lint_error}"
+      cgw_run_markdownlint_check || md_lint_error=1
       if [[ ${md_lint_error} -eq 1 ]]; then
         echo "[!] Markdown lint errors detected"
-        if [[ ${non_interactive} -eq 1 ]]; then
-          err "Markdown lint failed -- fix errors or use --skip-md-lint to bypass"
+        if ! cgw_confirm "Proceed despite markdown lint errors?" --non-interactive abort; then
           exit 1
         fi
-        read -rp "Proceed despite markdown lint errors? (yes/no): " md_choice
-        [[ "${md_choice}" == "yes" ]] || exit 1
       fi
     elif [[ ${skip_md_lint} -eq 1 ]]; then
       echo "  (markdown lint skipped -- --skip-md-lint)"
@@ -542,19 +438,12 @@ main() {
 
   local commit_msg="${commit_msg_param}"
 
-  if ! echo "${commit_msg}" | grep -qE "^(${CGW_ALL_PREFIXES}):"; then
+  if ! cgw_validate_commit_message "${commit_msg}"; then
     echo "[!] WARNING: Message doesn't follow conventional format"
     echo "  Configured types: ${CGW_ALL_PREFIXES/|/, }"
-    if [[ ${non_interactive} -eq 1 ]]; then
-      err "Commit message must follow conventional format in non-interactive mode"
-      err "Use --skip-lint or set CGW_EXTRA_PREFIXES if you need a custom prefix"
-      exit 1
-    else
-      read -rp "Continue anyway? (yes/no): " continue_commit
-      if [[ "${continue_commit}" != "yes" ]]; then
-        echo "Commit cancelled"
-        exit 0
-      fi
+    if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
+      echo "Commit cancelled"
+      exit 0
     fi
   fi
 
@@ -564,20 +453,14 @@ main() {
   # [6] Create commit
   echo "[6/6] Creating commit..."
 
-  if [[ ${non_interactive} -eq 1 ]]; then
-    echo "[Non-interactive] Branch: ${current_branch} -- Proceeding..."
-  else
-    echo "[!] Branch verification: you are committing to: ${current_branch}"
-    read -rp "Is this the correct branch? (yes/no): " correct_branch
-    if [[ "${correct_branch}" != "yes" ]]; then
-      echo "Switch to correct branch first: git checkout <branch-name>"
-      exit 0
-    fi
-    read -rp "Proceed with commit? (yes/no): " confirm_commit
-    if [[ "${confirm_commit}" != "yes" ]]; then
-      echo "Commit cancelled"
-      exit 0
-    fi
+  echo "[!] Branch verification: you are committing to: ${current_branch}"
+  if ! cgw_confirm "Is this the correct branch?" --non-interactive accept; then
+    echo "Switch to correct branch first: git checkout <branch-name>"
+    exit 0
+  fi
+  if ! cgw_confirm "Proceed with commit?" --non-interactive accept; then
+    echo "Commit cancelled"
+    exit 0
   fi
 
   if git commit -m "${commit_msg}"; then

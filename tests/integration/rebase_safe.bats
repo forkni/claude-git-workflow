@@ -107,3 +107,45 @@ teardown() {
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"Invalid"* ]] || [[ "${output}" == *"invalid"* ]]
 }
+
+# ── Conflict resolution: categorised display ─────────────────────────────────
+
+@test "--autostash stashes dirty changes and restores after successful rebase" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  # Create a tracked-file modification (diff-index detects this as dirty).
+  echo "wip content" >> "${TEST_REPO_DIR}/DEV.md"
+
+  run run_script rebase_safe.sh --onto main --autostash --non-interactive
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"REBASE COMPLETE"* ]] || [[ "${output}" == *"complete"* ]]
+
+  # Stash should have been popped -- dirty content restored.
+  grep -q "wip content" "${TEST_REPO_DIR}/DEV.md"
+
+  # Backup tag created.
+  git -C "${TEST_REPO_DIR}" tag | grep -q "^pre-rebase-"
+}
+
+@test "--onto with UU conflict displays categorised conflict summary" {
+  # Both main and development independently modify the same line
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'original\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add conflict.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff -m "chore: sync conflict.txt"
+  printf 'dev version\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev modifies conflict.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'main version\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "fix: main modifies conflict.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  run run_script rebase_safe.sh --onto main --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"(both modified)"* ]]
+}

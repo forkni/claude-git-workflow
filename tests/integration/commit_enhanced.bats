@@ -90,6 +90,46 @@ _run_commit() {
   [ -z "${tracked}" ]
 }
 
+@test "CGW_LOCAL_FILES_EXEMPT lets a plain-file entry through (bug #4 regression)" {
+  # Bug #4: _is_exempt was only consulted in the directory branch, so an exempt
+  # plain-file entry (e.g. "CLAUDE.md") was still unstaged. Now it should commit.
+  echo "# Claude" > "${TEST_REPO_DIR}/CLAUDE.md"
+  git -C "${TEST_REPO_DIR}" add CLAUDE.md
+  bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_NON_INTERACTIVE=1
+    export CGW_LOCAL_FILES='CLAUDE.md'
+    export CGW_LOCAL_FILES_EXEMPT='CLAUDE.md'
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --skip-lint 'docs: add exempt CLAUDE.md'
+  "
+  # CLAUDE.md should now be tracked
+  tracked=$(git -C "${TEST_REPO_DIR}" ls-files CLAUDE.md)
+  [ -n "${tracked}" ]
+}
+
+@test "anchored matching: logs.md is not blocked when CGW_LOCAL_FILES is 'logs/' (bug #6 regression)" {
+  # Bug #6: prefix match without "$" anchor blocked anything starting with the
+  # entry, so "logs/" wrongly blocked logs.md. Anchored match now permits it.
+  echo "# Logs" > "${TEST_REPO_DIR}/logs.md"
+  git -C "${TEST_REPO_DIR}" add logs.md
+  bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_NON_INTERACTIVE=1
+    export CGW_LOCAL_FILES='logs/'
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --skip-lint 'docs: add logs.md'
+  "
+  tracked=$(git -C "${TEST_REPO_DIR}" ls-files logs.md)
+  [ -n "${tracked}" ]
+}
+
 # ── --skip-lint flag ──────────────────────────────────────────────────────────
 
 @test "--skip-lint skips lint step" {
@@ -207,4 +247,104 @@ _run_commit() {
   run _run_commit "--only --skip-lint \"feat: bad usage\""
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"--only requires a pathspec"* ]]
+}
+
+# ── Lint failure / auto-fix ───────────────────────────────────────────────────
+
+@test "lint failure in NI mode exits 1 when errors remain after auto-fix" {
+  install_mock_lint_with_errors
+  echo "bad python" > "${TEST_REPO_DIR}/lint_test.txt"
+  git -C "${TEST_REPO_DIR}" add lint_test.txt
+  run _run_commit "\"feat: lint failure test\""
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"quality"* ]] || [[ "${output}" == *"lint"* ]] || \
+    [[ "${output}" == *"error"* ]]
+}
+
+@test "lint auto-fix succeeds: exits 0 and creates commit" {
+  install_mock_lint_fixable
+  echo "fixable content" > "${TEST_REPO_DIR}/fixable.txt"
+  git -C "${TEST_REPO_DIR}" add fixable.txt
+  run _run_commit "\"feat: auto-fix succeeds\""
+  [ "${status}" -eq 0 ]
+  last_msg=$(git -C "${TEST_REPO_DIR}" log -1 --format="%s")
+  [ "${last_msg}" = "feat: auto-fix succeeds" ]
+}
+
+# ── Format check ──────────────────────────────────────────────────────────────
+
+@test "format check failure surfaces FORMAT ERRORS message" {
+  install_mock_format_with_errors
+  echo "unformatted" > "${TEST_REPO_DIR}/fmt_test.txt"
+  git -C "${TEST_REPO_DIR}" add fmt_test.txt
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD='ruff'
+    export CGW_FORMAT_CHECK_ARGS='format --check'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'feat: format test'
+  "
+  [[ "${output}" == *"FORMAT ERRORS"* ]] || [[ "${output}" == *"would reformat"* ]]
+}
+
+# ── Markdownlint ──────────────────────────────────────────────────────────────
+
+@test "--skip-md-lint bypasses markdownlint step" {
+  MOCK_MDLINT_EXIT=0 install_mock_markdownlint
+  echo "content" > "${TEST_REPO_DIR}/md_test.md"
+  git -C "${TEST_REPO_DIR}" add md_test.md
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD='markdownlint-cli2'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --skip-md-lint 'docs: md test'
+  "
+  [ "${status}" -eq 0 ]
+  [ ! -f "${MOCK_BIN_DIR}/mdlint.log" ] || \
+    ! grep -q "markdownlint" "${MOCK_BIN_DIR}/mdlint.log" 2>/dev/null
+}
+
+@test "markdownlint failure exits 1 in non-interactive mode" {
+  MOCK_MDLINT_EXIT=1 install_mock_markdownlint
+  echo "content" > "${TEST_REPO_DIR}/bad_md.md"
+  git -C "${TEST_REPO_DIR}" add bad_md.md
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD='markdownlint-cli2'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'docs: bad md'
+  "
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Markdown lint"* ]] || [[ "${output}" == *"markdown"* ]] || \
+    [[ "${output}" == *"MARKDOWN"* ]]
+}
+
+# ── --no-venv flag ────────────────────────────────────────────────────────────
+
+@test "--no-venv uses system lint binary and exits 0" {
+  echo "content" > "${TEST_REPO_DIR}/novenv.txt"
+  git -C "${TEST_REPO_DIR}" add novenv.txt
+  run _run_commit "--no-venv \"feat: no-venv commit\""
+  [ "${status}" -eq 0 ]
+}
+
+# ── Non-interactive bad prefix (strict) ──────────────────────────────────────
+
+@test "non-interactive bad prefix exits 1 with conventional-format error" {
+  echo "content" > "${TEST_REPO_DIR}/prefix_test.txt"
+  git -C "${TEST_REPO_DIR}" add prefix_test.txt
+  run _run_commit "\"wip: not-a-valid-prefix\""
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"conventional format"* ]] || [[ "${output}" == *"conventional"* ]]
 }

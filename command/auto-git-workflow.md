@@ -1,10 +1,16 @@
 # Automated Git Workflow
 
-Execute automated commit→push→merge→push workflow using project scripts (token-efficient).
+Execute the full commit → push → merge → push promotion using project scripts. Token-efficient.
 
 **Invocation**: `/auto-git-workflow`
 
-**Key**: Suppress all output except errors. Show brief summary at end.
+**Skill rules apply.** This command runs the workflow defined in
+[`.claude/skills/auto-git-workflow/SKILL.md`](../skills/auto-git-workflow/SKILL.md)
+(installed alongside this command). Read SKILL.md first if not already loaded —
+its Core Rules (no raw `git commit`, no committing local-only files, lint-on-commit)
+govern every step below. This file is the *runner*, not the rule book.
+
+**Output policy**: Suppress all output except errors. Show brief summary at end.
 
 ---
 
@@ -241,22 +247,21 @@ Target branch: [hash] merged & pushed
 
 ---
 
-## Section B: Windows cmd.exe (Fallback)
+## Section B: Windows cmd.exe (Bash-mediated)
 
-CGW scripts require Git Bash. Use raw git commands only when Git Bash is unavailable:
+cmd.exe cannot run `.sh` files directly, but Git for Windows ships `bash.exe`
+alongside `git.exe`. **Always invoke the wrappers via bash** — do not fall back
+to raw git:
 
 ```batch
-git checkout development
-git add .
-git commit -m "feat: descriptive commit message"
-git push origin development
-git checkout main
-git merge development --no-ff -m "Merge development into main"
-git push origin main
-git checkout development
+bash scripts/git/commit_enhanced.sh --non-interactive "feat: descriptive commit message"
+bash scripts/git/push_validated.sh --non-interactive --skip-lint
+bash scripts/git/merge_with_validation.sh --non-interactive
+bash scripts/git/push_validated.sh --non-interactive --skip-lint
 ```
 
-**Caution**: Raw `git commit` bypasses lint validation and local-only file protection. Use Section A (Git Bash) whenever possible.
+If `bash.exe` is unavailable (rare), STOP and ask the user to run from Git Bash
+instead of bypassing the wrappers — the Core Rules in SKILL.md are mandatory.
 
 ---
 

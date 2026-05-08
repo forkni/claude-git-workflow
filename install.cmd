@@ -120,18 +120,20 @@ set "CHECKS_PASSED=0"
 
 rem PI-04: CGW source files complete
 set "SOURCE_OK=1"
-if not exist "!CGW_DIR!\scripts\git\configure.sh"    set "SOURCE_OK=0"
-if not exist "!CGW_DIR!\hooks\pre-commit"             set "SOURCE_OK=0"
-if not exist "!CGW_DIR!\hooks\pre-push"               set "SOURCE_OK=0"
-if not exist "!CGW_DIR!\skill\SKILL.md"               set "SOURCE_OK=0"
-if not exist "!CGW_DIR!\command\auto-git-workflow.md" set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\scripts\git\configure.sh"             set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\hooks\pre-commit"                      set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\hooks\pre-push"                        set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\hooks\cc-block-dangerous-git.sh"       set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\skill\SKILL.md"                        set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\command\auto-git-workflow.md"          set "SOURCE_OK=0"
 if not "!SOURCE_OK!"=="1" goto :pi04_fail
 echo   [PASS] PI-04  CGW source files complete
 goto :pi04_done
 :pi04_fail
 echo   [FAIL] PI-04  CGW source missing required files
 echo          Expected: scripts\git\configure.sh, hooks\pre-commit, hooks\pre-push,
-echo                    skill\SKILL.md, command\auto-git-workflow.md
+echo                    hooks\cc-block-dangerous-git.sh, skill\SKILL.md,
+echo                    command\auto-git-workflow.md
 set "CHECKS_PASSED=0"
 :pi04_done
 
@@ -236,7 +238,9 @@ copy /y "!CGW_DIR!\hooks\pre-commit" "!TARGET_DIR!\hooks\pre-commit" >nul
 if errorlevel 1 goto :cp_hooks_fail
 copy /y "!CGW_DIR!\hooks\pre-push" "!TARGET_DIR!\hooks\pre-push" >nul
 if errorlevel 1 goto :cp_hooks_fail
-echo   [OK] Copied hooks\pre-commit + hooks\pre-push templates
+copy /y "!CGW_DIR!\hooks\cc-block-dangerous-git.sh" "!TARGET_DIR!\hooks\cc-block-dangerous-git.sh" >nul
+if errorlevel 1 goto :cp_hooks_fail
+echo   [OK] Copied hooks\ templates (pre-commit, pre-push, cc-block-dangerous-git.sh)
 goto :cp_hooks_done
 :cp_hooks_fail
 echo   [ERR] Failed to copy hook templates from hooks\

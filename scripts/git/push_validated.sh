@@ -27,6 +27,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
 
 init_logging "push_validated"
+ensure_no_stale_index_lock || exit 1
 
 main() {
   local non_interactive=0
@@ -67,7 +68,7 @@ main() {
         echo "  (Also: CLAUDE_GIT_NON_INTERACTIVE, CLAUDE_GIT_NO_VENV)"
         exit 0
         ;;
-      --non-interactive) non_interactive=1 ;;
+      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
       --dry-run) dry_run=1 ;;
       --skip-lint) skip_lint=1 ;;
       --skip-md-lint) skip_md_lint=1 ;;
@@ -139,15 +140,8 @@ main() {
   if [[ ${is_protected} -eq 1 ]] && [[ ${force_push} -eq 1 ]]; then
     echo "[!] WARNING: Force-push to protected branch '${target_branch}' requested!" | tee -a "$logfile"
     echo "  This rewrites remote history and affects all collaborators." | tee -a "$logfile"
-    if [[ ${non_interactive} -eq 0 ]]; then
-      read -r -p "  Type 'FORCE' to confirm force-push to ${target_branch}: " force_confirm
-      if [[ "${force_confirm}" != "FORCE" ]]; then
-        echo "  Aborted" | tee -a "$logfile"
-        log_section_end "BRANCH CHECK" "$logfile" "1"
-        exit 1
-      fi
-    else
-      echo "  [Non-interactive] Aborting -- force-push to protected branch requires manual confirmation" | tee -a "$logfile"
+    if ! cgw_confirm "Type 'FORCE' to confirm force-push to ${target_branch}" --literal-token FORCE --non-interactive abort; then
+      echo "  Aborted" | tee -a "$logfile"
       log_section_end "BRANCH CHECK" "$logfile" "1"
       exit 1
     fi
@@ -177,9 +171,8 @@ main() {
     echo "[!] WARNING: Local branch is ${behind} commit(s) behind ${CGW_REMOTE}/${target_branch}" | tee -a "$logfile"
     echo "  A normal push may fail or overwrite remote changes." | tee -a "$logfile"
     echo "  Consider: ./scripts/git/sync_branches.sh" | tee -a "$logfile"
-    if [[ ${non_interactive} -eq 0 ]] && [[ ${force_push} -eq 0 ]]; then
-      read -r -p "  Continue push anyway? (yes/no): " behind_choice
-      if [[ "${behind_choice}" != "yes" ]]; then
+    if [[ ${force_push} -eq 0 ]]; then
+      if ! cgw_confirm "Continue push anyway?" --non-interactive abort; then
         echo "  Aborted" | tee -a "$logfile"
         log_section_end "REMOTE CHECK" "$logfile" "1"
         exit 1
@@ -204,13 +197,7 @@ main() {
       echo "[!] Lint check failed" | tee -a "$logfile"
       log_section_end "PRE-PUSH LINT CHECK" "$logfile" "1"
       echo "  Run ./scripts/git/fix_lint.sh to fix issues, or use --skip-lint to bypass" | tee -a "$logfile"
-      if [[ ${non_interactive} -eq 0 ]]; then
-        read -r -p "  Push anyway despite lint errors? (yes/no): " lint_choice
-        if [[ "${lint_choice}" != "yes" ]]; then
-          exit 1
-        fi
-      else
-        echo "  [Non-interactive] Aborting due to lint errors" | tee -a "$logfile"
+      if ! cgw_confirm "Push anyway despite lint errors?" --non-interactive abort; then
         exit 1
       fi
     fi

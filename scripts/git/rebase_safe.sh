@@ -33,6 +33,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
 
 init_logging "rebase_safe"
+ensure_no_stale_index_lock || exit 1
 
 _rebase_original_branch=""
 _rebase_stash_created=0
@@ -134,7 +135,7 @@ main() {
       --abort) do_abort=1 ;;
       --continue) do_continue=1 ;;
       --skip) do_skip=1 ;;
-      --non-interactive) non_interactive=1 ;;
+      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
       --dry-run) dry_run=1 ;;
       *)
         err "Unknown flag: $1"
@@ -211,22 +212,6 @@ main() {
 }
 
 # ---------------------------------------------------------------------------
-# Shared: create backup tag before any destructive operation
-# ---------------------------------------------------------------------------
-_create_backup_tag() {
-  get_timestamp
-  local backup_tag="pre-rebase-${timestamp}-$$"
-  if git tag "${backup_tag}" 2>/dev/null; then
-    echo "[OK] Backup tag: ${backup_tag}" | tee -a "$logfile"
-    echo "  To restore: git checkout ${backup_tag}" | tee -a "$logfile"
-  else
-    echo "[!] Could not create backup tag (continuing)" | tee -a "$logfile"
-  fi
-  echo "" | tee -a "$logfile"
-  echo "${backup_tag}"
-}
-
-# ---------------------------------------------------------------------------
 # Shared: warn if current branch has commits already pushed to origin
 # ---------------------------------------------------------------------------
 _check_pushed_commits() {
@@ -238,13 +223,7 @@ _check_pushed_commits() {
     echo "  Rebasing will rewrite history -- you will need to force-push after rebase." | tee -a "$logfile"
     echo "  This is SAFE only on personal/feature branches, NEVER on shared branches." | tee -a "$logfile"
     echo "" | tee -a "$logfile"
-    if [[ "${non_interactive}" -eq 1 ]]; then
-      err "Refusing to rebase pushed commits in non-interactive mode (history-safety)"
-      err "Use interactive mode or acknowledge the risk with --non-interactive after force-push consent"
-      exit 1
-    fi
-    read -r -p "  Rebase anyway? (yes/no): " pushed_confirm
-    if [[ "${pushed_confirm}" != "yes" ]]; then
+    if ! cgw_confirm "Rebase anyway?" --non-interactive abort; then
       echo "Cancelled"
       exit 0
     fi
@@ -358,17 +337,16 @@ _cmd_rebase_onto() {
   _handle_dirty_tree "${autostash}"
 
   # Confirmation
-  if [[ "${non_interactive}" -eq 0 ]]; then
-    read -r -p "  Rebase ${current_branch} onto ${onto_ref}? (yes/no): " rebase_confirm
-    if [[ "${rebase_confirm}" != "yes" ]]; then
-      echo "Cancelled"
-      _restore_stash_if_needed
-      exit 0
-    fi
+  if ! cgw_confirm "Rebase ${current_branch} onto ${onto_ref}?" --non-interactive accept; then
+    echo "Cancelled"
+    _restore_stash_if_needed
+    exit 0
   fi
 
   # Create backup
-  _create_backup_tag
+  cgw_create_backup_tag rebase
+  echo "  To restore: git checkout ${CGW_BACKUP_TAG}" | tee -a "$logfile"
+  echo "" | tee -a "$logfile"
 
   log_section_start "GIT REBASE ONTO" "$logfile"
 
@@ -383,8 +361,8 @@ _cmd_rebase_onto() {
     echo "" | tee -a "$logfile"
     err_tee "[FAIL] REBASE HIT CONFLICTS"
     echo "" | tee -a "$logfile"
-    echo "  Conflicting files:"
-    git diff --name-only --diff-filter=U 2>/dev/null | sed 's/^/    /' || true
+    cgw_classify_conflicts || true
+    cgw_print_conflict_summary
     echo ""
     echo "  Resolve conflicts, then:"
     echo "    git add <resolved-files>"
@@ -479,24 +457,21 @@ _cmd_squash_last() {
   # Handle dirty tree
   _handle_dirty_tree "${autostash}"
 
-  if [[ "${non_interactive}" -eq 0 ]] && [[ "${autosquash}" -eq 0 ]]; then
+  if [[ "${autosquash}" -eq 0 ]]; then
     echo "  An editor will open for you to mark commits (squash, fixup, reword, etc.)"
     echo "  Change 'pick' to 'squash' (or 's') to fold a commit into the one above it."
     echo ""
-    read -r -p "  Open interactive rebase for last ${squash_n} commits? (yes/no): " squash_confirm
-    if [[ "${squash_confirm}" != "yes" ]]; then
+    if ! cgw_confirm "Open interactive rebase for last ${squash_n} commits?" --non-interactive abort; then
       echo "Cancelled"
       _restore_stash_if_needed
       exit 0
     fi
-  elif [[ "${non_interactive}" -eq 1 ]] && [[ "${autosquash}" -eq 0 ]]; then
-    err "Interactive squash requires an editor -- use --autosquash for non-interactive squash"
-    err "(commits must be prefixed with 'squash!' or 'fixup!' for --autosquash to work)"
-    exit 1
   fi
 
   # Create backup
-  _create_backup_tag
+  cgw_create_backup_tag rebase
+  echo "  To restore: git checkout ${CGW_BACKUP_TAG}" | tee -a "$logfile"
+  echo "" | tee -a "$logfile"
 
   log_section_start "GIT REBASE INTERACTIVE" "$logfile"
 
@@ -515,6 +490,9 @@ _cmd_squash_last() {
     echo "" | tee -a "$logfile"
     err_tee "[FAIL] INTERACTIVE REBASE HIT CONFLICTS"
     echo "" | tee -a "$logfile"
+    cgw_classify_conflicts || true
+    cgw_print_conflict_summary
+    echo ""
     echo "  Resolve conflicts, then:"
     echo "    git add <resolved-files>"
     echo "    ./scripts/git/rebase_safe.sh --continue"
@@ -583,12 +561,10 @@ _cmd_continue() {
   fi
 
   # Check for unresolved conflicts
-  local unresolved
-  unresolved=$(git diff --name-only --diff-filter=U 2>/dev/null || true)
-  if [[ -n "${unresolved}" ]]; then
+  cgw_classify_conflicts || true
+  if [[ "${CGW_CONFLICT_TOTAL}" -gt 0 ]]; then
     err "Unresolved conflicts still present -- resolve and 'git add' them first:"
-    # shellcheck disable=SC2001  # sed needed for per-line prefix on multi-line string
-    echo "${unresolved}" | sed 's/^/  /'
+    cgw_print_conflict_summary
     exit 1
   fi
 
@@ -606,8 +582,8 @@ _cmd_continue() {
   else
     err "rebase --continue failed -- check for remaining conflicts"
     echo ""
-    echo "  Conflicting files:"
-    git diff --name-only --diff-filter=U 2>/dev/null | sed 's/^/    /' || true
+    cgw_classify_conflicts || true
+    cgw_print_conflict_summary
     echo ""
     echo "  To abort: ./scripts/git/rebase_safe.sh --abort"
     exit 1

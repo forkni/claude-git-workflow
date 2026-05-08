@@ -18,31 +18,7 @@ jobs:
           fetch-depth: 0
 
       - name: Check for local-only files
-        run: |
-          echo "Checking for accidentally committed local files..."
-          FOUND_ISSUES=0
-
-          for file in CLAUDE.md MEMORY.md; do
-            if git ls-files | grep -q "^${file}$"; then
-              echo "ERROR: ${file} is tracked in git (should be local-only)"
-              FOUND_ISSUES=1
-            fi
-          done
-
-          for dir in .claude logs; do
-            if git ls-files | grep -q "^${dir}/"; then
-              echo "ERROR: ${dir}/ is tracked in git (should be local-only)"
-              FOUND_ISSUES=1
-            fi
-          done
-
-          if [ "${FOUND_ISSUES}" -eq 0 ]; then
-            echo "No local-only files detected"
-          else
-            echo ""
-            echo "Fix: git rm --cached <file>"
-            exit 1
-          fi
+        run: bash scripts/git/check_local_files.sh
 
       - name: Verify .gitattributes exists
         run: |
@@ -97,8 +73,5 @@ jobs:
           git config --global user.email "ci@example.com"
           git config --global user.name "CI Test"
 
-      - name: Run unit tests
-        run: bats tests/unit/
-
-      - name: Run integration tests
-        run: bats tests/integration/
+      - name: Run test suite (parallel)
+        run: CGW_TEST_JOBS=4 bash tests/run.sh

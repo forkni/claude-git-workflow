@@ -47,11 +47,11 @@ _run_merge() {
 
 # ── Backup tag creation ───────────────────────────────────────────────────────
 
-@test "clean merge creates pre-merge-backup tag on target" {
+@test "clean merge creates pre-merge tag on target" {
   git -C "${TEST_REPO_DIR}" checkout development
   _run_merge "--non-interactive" || true
   # Check for any backup tag
-  tags=$(git -C "${TEST_REPO_DIR}" tag -l "pre-merge-backup-*")
+  tags=$(git -C "${TEST_REPO_DIR}" tag -l "pre-merge-*")
   [ -n "${tags}" ]
 }
 
@@ -177,10 +177,10 @@ _run_merge() {
   git -C "${TEST_REPO_DIR}" checkout development
   _run_merge "--non-interactive" || true
   local tags
-  tags=$(git -C "${TEST_REPO_DIR}" tag -l "pre-merge-backup-*")
+  tags=$(git -C "${TEST_REPO_DIR}" tag -l "pre-merge-*")
   # PID suffix means tag name has at least two hyphen-separated segments after the timestamp
-  # e.g. pre-merge-backup-20260417_120000-12345
-  echo "${tags}" | grep -qE "pre-merge-backup-[0-9]{8}_[0-9]{6}-[0-9]+"
+  # e.g. pre-merge-20260417_120000-12345
+  echo "${tags}" | grep -qE "pre-merge-[0-9]{8}_[0-9]{6}-[0-9]+"
 }
 
 # ── CGW_CLEANUP_TESTS ─────────────────────────────────────────────────────────
@@ -207,4 +207,108 @@ _run_merge() {
 
   # tests/ should remain on main if CGW_CLEANUP_TESTS=0
   [ -d "${TEST_REPO_DIR}/tests" ] || true  # may not be merged yet, but tests/ not forcibly removed
+}
+
+# ── Conflict resolution: DU (auto-resolve) ────────────────────────────────────
+
+@test "DU conflict: merge auto-resolves deleted-by-us file and exits 0" {
+  # shared.txt on both branches; main deletes it (us), development modifies it (theirs)
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'shared content\n' > "${TEST_REPO_DIR}/shared.txt"
+  git -C "${TEST_REPO_DIR}" add shared.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add shared.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff -m "chore: sync shared.txt"
+  printf 'shared content\nmodified by dev\n' > "${TEST_REPO_DIR}/shared.txt"
+  git -C "${TEST_REPO_DIR}" add shared.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev modifies shared.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout main
+  git -C "${TEST_REPO_DIR}" rm shared.txt --quiet
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: main deletes shared.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  run _run_merge "--non-interactive"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Auto-resolved"* ]] || [[ "${output}" == *"auto-resolved"* ]]
+}
+
+# ── Conflict resolution: UU (manual halt) ────────────────────────────────────
+
+@test "UU conflict: merge exits 1 with content-conflict message" {
+  # Both branches modify the same line of conflict.txt
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add conflict.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff -m "chore: sync conflict.txt"
+  printf 'dev-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev edits line1"
+
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'main-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "fix: main edits line1"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Content conflicts require manual resolution"* ]]
+}
+
+# ── Conflict resolution: UD (deleted-by-them halt) ───────────────────────────
+
+@test "UD conflict: merge exits 1 with deleted-by-them message" {
+  # todelete.txt on both branches; development deletes it (theirs), main modifies it (us)
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'original content\n' > "${TEST_REPO_DIR}/todelete.txt"
+  git -C "${TEST_REPO_DIR}" add todelete.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add todelete.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff -m "chore: sync todelete.txt"
+  git -C "${TEST_REPO_DIR}" rm todelete.txt --quiet
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: dev deletes todelete.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'original content\nmodified by main\n' > "${TEST_REPO_DIR}/todelete.txt"
+  git -C "${TEST_REPO_DIR}" add todelete.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "fix: main modifies todelete.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Deleted-by-them conflicts require manual resolution"* ]]
+}
+
+# ── Conflict resolution: mixed DU+UU ─────────────────────────────────────────
+
+@test "mixed DU+UU: DU auto-resolved then halts on UU" {
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'shared\n' > "${TEST_REPO_DIR}/shared.txt"
+  printf 'line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add shared.txt conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add both files"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff -m "chore: sync"
+  printf 'dev-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev modifies conflict.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout main
+  git -C "${TEST_REPO_DIR}" rm shared.txt --quiet
+  printf 'main-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "fix: main removes shared, edits conflict"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+  # DU auto-resolved first, then halted on UU
+  [[ "${output}" == *"Content conflicts require manual resolution"* ]]
 }

@@ -217,3 +217,22 @@ CGW_CLEANUP_TESTS="0"
 #
 CGW_MERGE_MODE="direct"
 # CGW_MERGE_MODE="pr"
+
+# ── Stale index.lock auto-recovery ────────────────────────────────────────────
+# CGW scripts detect and remove abandoned .git/index.lock files left by crashed
+# or killed git processes (the most common Claude Code failure mode).
+#
+# Auto-remove is refused when a rebase/merge/cherry-pick/revert/bisect operation
+# is currently in progress (detected via state dirs/sentinels in .git/).
+#
+# Set to 0 to disable auto-removal; the script will warn and exit instead.
+# CGW_AUTO_REMOVE_INDEX_LOCK=1
+#
+# Locks older than this many seconds are treated as stale and removed.
+# Increase (e.g. 300) if you regularly pause git rebase -i in an editor for
+# more than the default 30 seconds.
+# CGW_INDEX_LOCK_MAX_AGE_SECONDS=30
+#
+# When a fresh lock is present, poll up to this many seconds for it to clear
+# before escalating. Set to 0 to skip waiting.
+# CGW_INDEX_LOCK_WAIT_SECONDS=10

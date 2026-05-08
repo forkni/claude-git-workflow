@@ -27,6 +27,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
 
 init_logging "cherry_pick_commits"
+ensure_no_stale_index_lock || exit 1
 
 _cp_original_branch=""
 _cp_did_checkout_target=0
@@ -78,7 +79,7 @@ main() {
         echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
         exit 0
         ;;
-      --non-interactive) non_interactive=1 ;;
+      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
       --dry-run) dry_run=1 ;;
       --commit)
         commit_hash_flag="${2:-}"
@@ -209,13 +210,7 @@ main() {
   # Validate commit is on source branch
   if ! git merge-base --is-ancestor "${commit_hash}" "${src_branch}" 2>/dev/null; then
     echo "[!] WARNING: ${commit_hash} is not an ancestor of ${src_branch}" | tee -a "$logfile"
-    if [[ ${non_interactive} -eq 1 ]]; then
-      err_tee "[FAIL] [Non-interactive] Aborting -- commit not on ${src_branch} branch"
-      git checkout "${original_branch}"
-      exit 1
-    fi
-    read -r -p "Continue anyway? (yes/no): " branch_check_choice
-    if [[ "${branch_check_choice}" != "yes" ]]; then
+    if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
       log_message "Cherry-pick cancelled" "${logfile}"
       git checkout "${original_branch}"
       exit 0
@@ -254,13 +249,7 @@ main() {
         git show "${commit_hash}" --name-only --format="" | grep "^${dev_file}" || true
       done
       echo ""
-      if [[ ${non_interactive} -eq 1 ]]; then
-        err_tee "[FAIL] [Non-interactive] Aborting -- commit touches dev-only files"
-        git checkout "${original_branch}"
-        exit 1
-      fi
-      read -r -p "Continue anyway? (yes/no): " continue_choice
-      if [[ "${continue_choice}" != "yes" ]]; then
+      if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
         echo ""
         log_message "Cherry-pick cancelled" "${logfile}"
         git checkout "${original_branch}"
@@ -272,16 +261,9 @@ main() {
   # [5/6] Create backup tag
   log_section_start "CREATE BACKUP TAG" "$logfile"
 
-  if [[ -z "${timestamp:-}" ]]; then get_timestamp; fi
-  local backup_tag="pre-cherry-pick-${timestamp}-$$"
-
-  if git tag "${backup_tag}" >>"$logfile" 2>&1; then
-    echo "[OK] Created backup tag: ${backup_tag}" | tee -a "$logfile"
-    log_section_end "CREATE BACKUP TAG" "$logfile" "0"
-  else
-    echo "[!] Warning: Could not create backup tag" | tee -a "$logfile"
-    log_section_end "CREATE BACKUP TAG" "$logfile" "1"
-  fi
+  cgw_create_backup_tag cherry-pick
+  local backup_tag="${CGW_BACKUP_TAG}"
+  log_section_end "CREATE BACKUP TAG" "$logfile" "0"
   echo "" | tee -a "$logfile"
 
   # [6/6] Cherry-pick
@@ -318,56 +300,11 @@ main() {
     echo "" | tee -a "$logfile"
     echo "[!] Cherry-pick conflicts detected - analyzing..." | tee -a "$logfile"
 
-    local conflict_status
-    conflict_status=$(git status --short)
-
-    # Auto-resolve DU (modify/delete) conflicts
-    if printf '%s\n' "${conflict_status}" | grep -q "^DU "; then
-      echo "  Found modify/delete conflicts -- auto-resolving..."
-      local resolution_failed=0
-      while read -r conflict_file; do
-        if git rm "${conflict_file}" >/dev/null 2>&1; then
-          echo "  [OK] Removed: ${conflict_file}"
-        else
-          echo "  [FAIL] Failed to remove ${conflict_file}"
-          resolution_failed=1
-        fi
-      done < <(printf '%s\n' "${conflict_status}" | grep "^DU " | cut -c 4-)
-      if [[ ${resolution_failed} -eq 0 ]]; then
-        echo "[OK] Auto-resolved modify/delete conflicts" | tee -a "$logfile"
-        conflict_status=$(git status --short)
-      else
-        err_tee "[FAIL] Auto-resolution failed for some files"
-        exit 1
-      fi
-    fi
-
-    # DD (both deleted): auto-resolve by accepting deletion
-    if printf '%s\n' "${conflict_status}" | grep -q "^DD "; then
-      echo "  Found both-deleted conflicts -- auto-resolving..." | tee -a "$logfile"
-      while read -r conflict_file; do
-        git rm "${conflict_file}" >/dev/null 2>&1 || true
-        echo "  [OK] Removed (both deleted): ${conflict_file}" | tee -a "$logfile"
-      done < <(printf '%s\n' "${conflict_status}" | grep "^DD " | cut -c 4-)
-      conflict_status=$(git status --short)
-    fi
-
-    # Remaining conflicts require manual resolution
-    if printf '%s\n' "${conflict_status}" | grep -qE "^(UU|AU|AA|UD|AD|DA) "; then
-      echo "" | tee -a "$logfile"
-      printf '%s\n' "${conflict_status}" | grep -E "^(UU|AU|AA|UD|AD|DA) " | tee -a "$logfile"
-      echo ""
-      echo "Please resolve conflicts manually:"
-      echo "  1. Edit conflicted files"
-      echo "  2. git add <resolved files>"
-      echo "  3. git cherry-pick --continue"
-      echo ""
-      echo "Or abort: git cherry-pick --abort && git checkout ${original_branch}"
-      echo "Backup available: git reset --hard ${backup_tag}"
+    if ! cgw_resolve_safe_conflicts cherry-pick "${original_branch}"; then
       exit 1
     fi
 
-    # If only DU/DD were present and auto-resolved, prompt user to continue
+    # All conflicts auto-resolved; cherry-pick is still paused — user must --continue.
     echo "" | tee -a "$logfile"
     echo "[OK] All conflicts auto-resolved. To complete the cherry-pick:" | tee -a "$logfile"
     echo "  git cherry-pick --continue" | tee -a "$logfile"

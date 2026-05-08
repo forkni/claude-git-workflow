@@ -86,3 +86,27 @@ If it's missing:
 1. Check that `.claude/skills/auto-git-workflow/SKILL.md` (or `~/.claude/skills/auto-git-workflow/SKILL.md`) exists
 2. Restart Claude Code to reload skills
 3. Re-run `./scripts/git/configure.sh` if the files are missing
+
+---
+
+## How Claude decides to invoke the skill
+
+Claude Code reads the `description:` field in `SKILL.md` and matches it against
+the user's request. CGW's description names every wrapper-backed verb explicitly
+(`commit`, `push`, `pull`, `fetch`, `merge`, `rebase`, `cherry-pick`, `rollback`,
+`revert`, `sync`, `stash`, `tag`, `release`, `branch`, `bisect`, `undo`, `amend`).
+Saying any of these in a request to Claude in a CGW-installed project should
+auto-load the skill — no explicit `/auto-git-workflow` invocation needed.
+
+If you suspect the skill isn't loading:
+
+1. Ask Claude to run `/skills` and confirm `auto-git-workflow` is listed.
+2. If listed but not auto-loading, mention the wrapper script by name in your
+   request (e.g. "use commit_enhanced.sh to commit this") — that always pulls
+   the skill in.
+3. As a last resort, type `/auto-git-workflow` to force the runner; it links
+   back to SKILL.md so the rules load even if auto-invocation missed.
+
+The skill's `description` is intentionally broad. To narrow it (e.g. exclude
+read-only verbs), edit `description:` in the source `skill/SKILL.md` and
+re-run `./scripts/git/configure.sh --skip-hooks` to redeploy.

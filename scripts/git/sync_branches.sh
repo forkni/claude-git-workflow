@@ -26,6 +26,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
 
 init_logging "sync_branches"
+ensure_no_stale_index_lock || exit 1
 
 # ============================================================================
 # CLEANUP TRAP
@@ -184,7 +185,7 @@ main() {
         ;;
       --dry-run) dry_run=1 ;;
       --prune) prune=1 ;;
-      --non-interactive) non_interactive=1 ;;
+      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2
         exit 1
@@ -227,14 +228,9 @@ main() {
     echo "[!] Uncommitted changes detected -- will auto-stash during rebase" | tee -a "$logfile"
     git status --short | tee -a "$logfile"
     echo "" | tee -a "$logfile"
-    if [[ ${non_interactive} -eq 1 ]]; then
-      echo "[Non-interactive] Auto-stash enabled (--autostash)" | tee -a "$logfile"
-    else
-      read -r -p "Auto-stash changes and sync? (yes/no): " uncommitted_choice
-      if [[ "${uncommitted_choice}" != "yes" ]]; then
-        echo "Aborted -- commit or stash manually before syncing" | tee -a "$logfile"
-        exit 0
-      fi
+    if ! cgw_confirm "Auto-stash changes and sync?" --non-interactive accept; then
+      echo "Aborted -- commit or stash manually before syncing" | tee -a "$logfile"
+      exit 0
     fi
     _SYNC_AUTOSTASH=1
   else

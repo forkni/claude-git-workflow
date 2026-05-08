@@ -197,3 +197,23 @@ _push_remote_commit() {
   run _run_sync "--unknown-flag"
   [ "${status}" -ne 0 ]
 }
+
+# ── Branch-relative ahead/behind reporting ────────────────────────────────────
+
+@test "behind count is branch-relative when syncing from a different branch" {
+  # development is 1 ahead of main (from create_test_repo_with_remote).
+  # Push 1 more commit to origin/development -- making local development 1 behind.
+  _push_remote_commit "development" "remote_only.txt"
+
+  # Start on main (different from development).
+  git -C "${TEST_REPO_DIR}" checkout main
+
+  # Sync development from main -- output should say "1 behind" (dev-relative count),
+  # not count commits from HEAD=main all the way to origin/development (which would be 2
+  # if the behind/ahead were computed relative to HEAD=main instead of the target branch).
+  run _run_sync "--branch development"
+  [ "${status}" -eq 0 ]
+
+  # The behind count reported should be 1 (the one remote commit on development).
+  [[ "${output}" == *"1 behind"* ]]
+}

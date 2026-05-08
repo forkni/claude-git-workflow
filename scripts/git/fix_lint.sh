@@ -73,22 +73,10 @@ main() {
 
   get_lint_exclusions
 
-  # Determine lint binary (venv or PATH)
-  local lint_cmd="${CGW_LINT_CMD}"
-  if [[ "${CGW_LINT_CMD}" == "ruff" ]]; then
-    get_python_path 2>/dev/null || true
-    if [[ -n "${PYTHON_BIN:-}" ]] && [[ -f "${PYTHON_BIN}/ruff${PYTHON_EXT:-}" ]]; then
-      lint_cmd="${PYTHON_BIN}/ruff${PYTHON_EXT:-}"
-    fi
-  fi
-
-  # Handle --modified-only mode
+  # Handle --modified-only mode (direct output, no section logging)
   if [[ "${modified_only}" -eq 1 ]]; then
     local modified_files
-    # CGW_LINT_EXTENSIONS controls which files are considered (default: *.py)
-    local -a lint_exts
-    read -r -a lint_exts <<<"${CGW_LINT_EXTENSIONS:-*.py}"
-    modified_files=$(git diff --name-only --diff-filter=ACMR HEAD -- "${lint_exts[@]}")
+    modified_files=$(cgw_modified_files_for_lint)
     if [[ -z "$modified_files" ]]; then
       echo "[OK] No modified files to fix"
       exit 0
@@ -98,19 +86,23 @@ main() {
     echo "Files: $modified_files"
     echo ""
 
+    get_python_path 2>/dev/null || true
+    local lint_bin
+    lint_bin=$(cgw_resolve_lint_binary "${CGW_LINT_CMD}")
+
     local EXIT_CODE=0
 
     echo "[LINT FIX]"
-    # Build fix args: strip trailing path token (.) and append specific files
-    local lint_fix_cmd_args="${CGW_LINT_FIX_ARGS% *}"
+    local lint_fix_cmd_args
+    lint_fix_cmd_args=$(cgw_strip_path_arg "${CGW_LINT_FIX_ARGS}")
     # shellcheck disable=SC2086
-    "${lint_cmd}" ${lint_fix_cmd_args} $modified_files || EXIT_CODE=1
+    "${lint_bin}" ${lint_fix_cmd_args} $modified_files || EXIT_CODE=1
 
     if [[ -n "${CGW_FORMAT_CMD}" ]]; then
       echo ""
       echo "[FORMAT FIX]"
-      # Build format fix args: strip trailing path token (.) and append specific files
-      local fmt_fix_cmd_args="${CGW_FORMAT_FIX_ARGS% *}"
+      local fmt_fix_cmd_args
+      fmt_fix_cmd_args=$(cgw_strip_path_arg "${CGW_FORMAT_FIX_ARGS}")
       # shellcheck disable=SC2086
       "${CGW_FORMAT_CMD}" ${fmt_fix_cmd_args} $modified_files || EXIT_CODE=1
     fi
@@ -136,23 +128,7 @@ main() {
 
   local fix_failed=0
 
-  # LINT FIX
-  # shellcheck disable=SC2086
-  if ! run_tool_with_logging "LINT AUTO-FIX" "$logfile" \
-    "${lint_cmd}" ${CGW_LINT_FIX_ARGS} ${CGW_LINT_EXCLUDES}; then
-    echo "[!] Lint tool: some issues may not be auto-fixable" | tee -a "$logfile"
-    fix_failed=1
-  fi
-
-  # FORMAT FIX
-  if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-    # shellcheck disable=SC2086
-    if ! run_tool_with_logging "FORMAT FIX" "$logfile" \
-      "${CGW_FORMAT_CMD}" ${CGW_FORMAT_FIX_ARGS} ${CGW_FORMAT_EXCLUDES}; then
-      err "Formatting failed"
-      fix_failed=1
-    fi
-  fi
+  cgw_run_lint_fix || { echo "[!] Lint tool: some issues may not be auto-fixable" | tee -a "$logfile"; fix_failed=1; }
 
   {
     echo ""

@@ -26,6 +26,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
 
 init_logging "merge_with_validation"
+ensure_no_stale_index_lock || exit 1
 
 # ============================================================================
 # CLEANUP TRAP
@@ -189,7 +190,7 @@ main() {
         echo "  CGW_DOCS_PATTERN=<regex>     Override docs allowlist pattern"
         exit 0
         ;;
-      --non-interactive) non_interactive=1 ;;
+      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
       --dry-run) dry_run=1 ;;
       --source)
         src_branch="${2:-}"
@@ -286,15 +287,8 @@ main() {
     echo "[!] WARNING: Not on ${src_branch} branch" | tee -a "$logfile"
     echo "  Current: ${original_branch}" | tee -a "$logfile"
 
-    if [[ ${non_interactive} -eq 0 ]]; then
-      read -p "  Continue anyway? [y/N] " -n 1 -r
-      echo
-      if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "  Aborted" | tee -a "$logfile"
-        exit 1
-      fi
-    else
-      echo "  Non-interactive: aborting for safety" | tee -a "$logfile"
+    if ! cgw_confirm "Continue anyway?" --default no --non-interactive abort; then
+      echo "  Aborted" | tee -a "$logfile"
       exit 1
     fi
   fi
@@ -311,16 +305,9 @@ main() {
   # [3/7] Create pre-merge backup tag
   log_section_start "CREATE BACKUP TAG" "$logfile"
 
-  if [[ -z "${timestamp:-}" ]]; then get_timestamp; fi
-  local backup_tag="pre-merge-backup-${timestamp}-$$"
-
-  if git tag "${backup_tag}" >>"$logfile" 2>&1; then
-    echo "[OK] Created backup tag: ${backup_tag}" | tee -a "$logfile"
-    log_section_end "CREATE BACKUP TAG" "$logfile" "0"
-  else
-    echo "[!] Warning: Could not create backup tag" | tee -a "$logfile"
-    log_section_end "CREATE BACKUP TAG" "$logfile" "1"
-  fi
+  cgw_create_backup_tag merge
+  local backup_tag="${CGW_BACKUP_TAG}"
+  log_section_end "CREATE BACKUP TAG" "$logfile" "0"
   echo "" | tee -a "$logfile"
 
   # [4/7] Perform merge
@@ -349,101 +336,7 @@ main() {
     echo "[!] Merge conflicts detected - analyzing..." | tee -a "$logfile"
     log_section_end "GIT MERGE" "$logfile" "${merge_exit_code}"
 
-    local conflict_status
-    conflict_status=$(git status --short)
-
-    # Auto-resolve DU (modify/delete) conflicts
-    if printf '%s\n' "${conflict_status}" | grep -q "^DU "; then
-      echo "  Found modify/delete conflicts -- auto-resolving..."
-      echo ""
-
-      local resolution_failed=0
-
-      while read -r conflict_file; do
-        echo "  Resolving: ${conflict_file}"
-        if git rm "${conflict_file}" >/dev/null 2>&1; then
-          echo "  [OK] Removed: ${conflict_file}"
-        else
-          echo "  [FAIL] ERROR: Failed to remove ${conflict_file}"
-          resolution_failed=1
-        fi
-      done < <(printf '%s\n' "${conflict_status}" | grep "^DU " | cut -c 4-)
-
-      if [[ ${resolution_failed} -eq 1 ]]; then
-        echo "" | tee -a "$logfile"
-        err_tee "[FAIL] Auto-resolution failed for some files"
-        printf '%s\n' "${conflict_status}" | tee -a "$logfile"
-        exit 1
-      fi
-
-      echo "" | tee -a "$logfile"
-      echo "[OK] Auto-resolved modify/delete conflicts" | tee -a "$logfile"
-    fi
-
-    # AU/AA conflicts require manual resolution
-    if printf '%s\n' "${conflict_status}" | grep -qE "^(AU|AA) "; then
-      echo "" | tee -a "$logfile"
-      err_tee "[FAIL] Add/add or add/unmerged conflicts require manual resolution:"
-      printf '%s\n' "${conflict_status}" | grep -E "^(AU|AA) " | tee -a "$logfile"
-      echo ""
-      echo "Please resolve manually:"
-      echo "  1. Edit conflicted files"
-      echo "  2. git add <resolved files>"
-      echo "  3. git commit"
-      echo ""
-      echo "Or abort: git merge --abort && git checkout ${original_branch}"
-      exit 1
-    fi
-
-    # DD (both deleted): auto-resolve by accepting deletion
-    if printf '%s\n' "${conflict_status}" | grep -q "^DD "; then
-      echo "  Found both-deleted conflicts -- auto-resolving..." | tee -a "$logfile"
-      while read -r conflict_file; do
-        git rm "${conflict_file}" >/dev/null 2>&1 || true
-        echo "  [OK] Removed (both deleted): ${conflict_file}" | tee -a "$logfile"
-      done < <(printf '%s\n' "${conflict_status}" | grep "^DD " | cut -c 4-)
-    fi
-
-    # UU (both modified): requires manual resolution
-    if printf '%s\n' "${conflict_status}" | grep -q "^UU "; then
-      echo "" | tee -a "$logfile"
-      err_tee "[FAIL] Content conflicts require manual resolution:"
-      printf '%s\n' "${conflict_status}" | grep "^UU "
-      echo ""
-      echo "Please resolve manually:"
-      echo "  1. Edit conflicted files"
-      echo "  2. git add <resolved files>"
-      echo "  3. git commit"
-      echo ""
-      echo "Or abort: git merge --abort && git checkout ${original_branch}"
-      exit 1
-    fi
-
-    # UD (deleted by us, modified by theirs): requires manual resolution
-    if printf '%s\n' "${conflict_status}" | grep -q "^UD "; then
-      echo "" | tee -a "$logfile"
-      err_tee "[FAIL] Deleted-by-us conflicts require manual resolution:"
-      printf '%s\n' "${conflict_status}" | grep "^UD " | tee -a "$logfile"
-      echo ""
-      echo "Please resolve manually (for each file):"
-      echo "  Keep deletion: git rm <file>"
-      echo "  Keep theirs:   git checkout --theirs <file> && git add <file>"
-      echo ""
-      echo "Or abort: git merge --abort && git checkout ${original_branch}"
-      exit 1
-    fi
-
-    # AD/DA (added differently on each side): requires manual resolution
-    if printf '%s\n' "${conflict_status}" | grep -qE "^(AD|DA) "; then
-      echo "" | tee -a "$logfile"
-      err_tee "[FAIL] Add/delete conflicts require manual resolution:"
-      printf '%s\n' "${conflict_status}" | grep -E "^(AD|DA) " | tee -a "$logfile"
-      echo ""
-      echo "Please resolve manually (for each file):"
-      echo "  Keep ours:   git checkout --ours <file> && git add <file>"
-      echo "  Keep theirs: git checkout --theirs <file> && git add <file>"
-      echo ""
-      echo "Or abort: git merge --abort && git checkout ${original_branch}"
+    if ! cgw_resolve_safe_conflicts merge "${original_branch}"; then
       exit 1
     fi
 

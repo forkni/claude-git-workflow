@@ -20,8 +20,8 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# For configure.sh, we detect PROJECT_ROOT ourselves (can't source _common.sh yet
-# because _config.sh requires PROJECT_ROOT to already exist for .cgw.conf loading)
+# Detect PROJECT_ROOT before sourcing _common.sh so _config.sh's auto-detection
+# sees it preset and skips its own walk (safe; _config.sh checks [[ -z "${PROJECT_ROOT:-}" ]]).
 _find_project_root() {
   local dir
   dir="$(cd "${SCRIPT_DIR}" && pwd)"
@@ -42,6 +42,19 @@ if [[ -z "${PROJECT_ROOT:-}" ]]; then
     echo "  Are you inside a git repository? Run 'git init' first, or cd into one." >&2
     exit 1
   }
+fi
+
+# Source shared helpers (cgw_confirm, err, etc.).
+# Safe here: _config.sh detects PROJECT_ROOT only if unset (it's set above);
+# it also tolerates a missing .cgw.conf by applying defaults.
+# shellcheck source=scripts/git/_common.sh
+source "${SCRIPT_DIR}/_common.sh"
+
+# Hard-fail if sourcing didn't expose cgw_confirm — prevents silent skips.
+if ! command -v cgw_confirm >/dev/null 2>&1; then
+  echo "[ERROR] cgw_confirm not loaded — _common.sh source failed." >&2
+  echo "  Re-install CGW or report this as a bug." >&2
+  exit 1
 fi
 
 # ============================================================================
@@ -288,7 +301,6 @@ _build_lint_config() {
 }
 
 _install_hook() {
-  local local_files="$1"
   local hooks_template_dir="${SCRIPT_DIR}/../../hooks"
 
   # Try staging area first (present during install.cmd), then fall back to already-installed hook
@@ -310,63 +322,14 @@ _install_hook() {
     return 1
   fi
 
-  # Build regex pattern from local files list
-  local files_pattern=""
-  for f in ${local_files}; do
-    local escaped="${f%/}"      # strip trailing slash
-    escaped="${escaped//./\\.}" # escape dots
-    [[ -n "${files_pattern}" ]] && files_pattern="${files_pattern}|"
-    files_pattern="${files_pattern}${escaped}"
-  done
-
-  # Build regex pattern from exempt files list (exact paths, no trailing-slash stripping)
-  local exempt_files
-  exempt_files=$(grep -m1 '^CGW_LOCAL_FILES_EXEMPT=' "${PROJECT_ROOT}/.cgw.conf" \
-    | sed 's/CGW_LOCAL_FILES_EXEMPT=//;s/"//g' || true)
-  local exempt_pattern=""
-  for f in ${exempt_files}; do
-    local escaped_ex="${f//./\\.}"
-    [[ -n "${exempt_pattern}" ]] && exempt_pattern="${exempt_pattern}|"
-    exempt_pattern="${exempt_pattern}${escaped_ex}"
-  done
-
-  # Create .githooks/ and write patched pre-commit hook
-  # Escape backslashes first, then & (sed replacement special char), then | (sed delimiter)
-  local sed_files_pattern="${files_pattern//\\/\\\\}"
-  sed_files_pattern="${sed_files_pattern//&/\\&}"
-  sed_files_pattern="${sed_files_pattern//|/\\|}"
-  local sed_exempt_pattern="${exempt_pattern//\\/\\\\}"
-  sed_exempt_pattern="${sed_exempt_pattern//&/\\&}"
-  sed_exempt_pattern="${sed_exempt_pattern//|/\\|}"
+  # Hooks read CGW_LOCAL_FILES from .cgw.conf at run time — no pattern substitution needed.
   mkdir -p "${PROJECT_ROOT}/.githooks"
-  sed -e "s|__CGW_LOCAL_FILES_PATTERN__|${sed_files_pattern}|g" \
-      -e "s|__CGW_EXEMPT_PATTERN__|${sed_exempt_pattern}|g" \
-    "${hook_template}" >"${PROJECT_ROOT}/.githooks/pre-commit"
+  cp "${hook_template}" "${PROJECT_ROOT}/.githooks/pre-commit"
   chmod +x "${PROJECT_ROOT}/.githooks/pre-commit"
 
-  # Also install pre-push hook if template exists alongside pre-commit
   local pre_push_template="${hooks_template_dir}/pre-push"
   if [[ -f "${pre_push_template}" ]]; then
-    # Build CGW_ALL_PREFIXES for substitution into pre-push template.
-    # Can't source _config.sh here (see top-of-file comment), so compute locally
-    # by reading CGW_EXTRA_PREFIXES from the just-written .cgw.conf.
-    local _base_prefixes="feat|fix|docs|chore|test|refactor|style|perf"
-    local _extra_prefixes
-    _extra_prefixes=$(grep -m1 '^CGW_EXTRA_PREFIXES=' "${PROJECT_ROOT}/.cgw.conf" |
-      sed 's/CGW_EXTRA_PREFIXES=//;s/"//g' || true)
-    local _all_prefixes
-    if [[ -n "${_extra_prefixes}" ]]; then
-      _all_prefixes="${_base_prefixes}|${_extra_prefixes}"
-    else
-      _all_prefixes="${_base_prefixes}"
-    fi
-    local all_prefixes_escaped="${_all_prefixes//\\/\\\\}"
-    all_prefixes_escaped="${all_prefixes_escaped//&/\\&}"
-    all_prefixes_escaped="${all_prefixes_escaped//|/\\|}"
-    sed -e "s|__CGW_LOCAL_FILES_PATTERN__|${sed_files_pattern}|g" \
-      -e "s|__CGW_ALL_PREFIXES__|${all_prefixes_escaped}|g" \
-      -e "s|__CGW_EXEMPT_PATTERN__|${sed_exempt_pattern}|g" \
-      "${pre_push_template}" >"${PROJECT_ROOT}/.githooks/pre-push"
+    cp "${pre_push_template}" "${PROJECT_ROOT}/.githooks/pre-push"
     chmod +x "${PROJECT_ROOT}/.githooks/pre-push"
   fi
 
@@ -423,6 +386,137 @@ _install_skill() {
   fi
 }
 
+_install_cc_guardrail() {
+  local install_mode="${1:-local}" # "local" or "global"
+
+  # Find source script (staging area during install.cmd, or already-installed copy)
+  local guardrail_src
+  guardrail_src="$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)/cc-block-dangerous-git.sh" 2>/dev/null || true
+
+  if [[ ! -f "${guardrail_src:-}" ]]; then
+    # Fallback: accept the already-installed copy so reconfigure works after
+    # the staging hooks/ directory has been cleaned up.
+    if [[ -f "${PROJECT_ROOT}/.claude/hooks/cc-block-dangerous-git.sh" ]]; then
+      guardrail_src="${PROJECT_ROOT}/.claude/hooks/cc-block-dangerous-git.sh"
+    else
+      echo "  [!] hooks/cc-block-dangerous-git.sh not found." >&2
+      echo "      Re-copy hooks/ from the CGW source directory, then re-run: ./scripts/git/configure.sh" >&2
+      return 1
+    fi
+  fi
+
+  # Determine destination paths
+  local hook_dst settings_json hook_cmd
+  if [[ "${install_mode}" == "global" ]]; then
+    hook_dst="${HOME}/.claude/hooks/cc-block-dangerous-git.sh"
+    settings_json="${HOME}/.claude/settings.json"
+    hook_cmd="~/.claude/hooks/cc-block-dangerous-git.sh"
+  else
+    hook_dst="${PROJECT_ROOT}/.claude/hooks/cc-block-dangerous-git.sh"
+    settings_json="${PROJECT_ROOT}/.claude/settings.json"
+    # Literal double-quotes around $CLAUDE_PROJECT_DIR are intentional:
+    # they become JSON-escaped \" in settings.json and are expanded by the shell
+    # when Claude Code executes the hook command at runtime.
+    hook_cmd='"$CLAUDE_PROJECT_DIR"/.claude/hooks/cc-block-dangerous-git.sh'
+  fi
+
+  # Copy guardrail script to .claude/hooks/ (skip if source and destination are the same)
+  mkdir -p "$(dirname "${hook_dst}")"
+  if [[ "${guardrail_src}" != "${hook_dst}" ]]; then
+    cp "${guardrail_src}" "${hook_dst}"
+  fi
+  chmod +x "${hook_dst}"
+
+  # Merge into settings.json — requires jq
+  if ! command -v jq &>/dev/null; then
+    echo "  [!] jq not found — cannot auto-merge ${settings_json}" >&2
+    echo "      Manually add the following to ${settings_json}:" >&2
+    printf '      {"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"%s"}]}]}}\n' \
+      "${hook_cmd}" >&2
+    return 1
+  fi
+
+  # Initialize settings.json if it does not exist
+  if [[ ! -f "${settings_json}" ]]; then
+    echo '{}' > "${settings_json}"
+  fi
+
+  # Idempotency: skip if a valid guardrail command is already registered.
+  # "Valid" means it contains "cc-block-dangerous-git" but does NOT contain a
+  # known-bad MSYS-converted substring (Program Files/Git).  A corrupted entry
+  # falls through so it gets replaced below.
+  if jq -e '
+      [.hooks.PreToolUse[]?.hooks[]?.command
+        | select(contains("cc-block-dangerous-git"))
+        | select(contains("Program Files/Git") | not)
+      ] | length > 0' \
+       "${settings_json}" >/dev/null 2>&1; then
+    echo "  [OK] PreToolUse guardrail already registered in ${settings_json}"
+    return 0
+  fi
+
+  # Remove any corrupted/stale guardrail entries before re-registering
+  local clean_settings
+  clean_settings="$(mktemp)"
+  jq '
+    .hooks.PreToolUse |= if . then
+      map(select(
+        .hooks | map(.command | contains("cc-block-dangerous-git")) | any | not
+      ))
+    else . end' \
+    "${settings_json}" > "${clean_settings}" && mv "${clean_settings}" "${settings_json}"
+
+  # Merge: append a new PreToolUse Bash-matcher entry without overwriting existing hooks
+  # Split hook_cmd at the first "/" and reconstruct inside jq, so neither
+  # argument fragment starts with "/" and MSYS2 has nothing to path-convert
+  # when the value crosses into jq.exe on Git Bash (Windows).
+  # e.g. '"$CLAUDE_PROJECT_DIR"/.claude/hooks/...' →
+  #        pfx='"$CLAUDE_PROJECT_DIR"'  sfx='.claude/hooks/...'
+  # This is a no-op on macOS / Linux / WSL where MSYS is not in play.
+  local tmp_settings hook_pfx hook_sfx
+  tmp_settings="$(mktemp)"
+  hook_pfx="${hook_cmd%%/*}"
+  hook_sfx="${hook_cmd#*/}"
+  jq --arg pfx "${hook_pfx}" --arg sfx "${hook_sfx}" \
+    '.hooks.PreToolUse |= (. // []) + [{"matcher":"Bash","hooks":[{"type":"command","command":($pfx + "/" + $sfx)}]}]' \
+    "${settings_json}" > "${tmp_settings}" && mv "${tmp_settings}" "${settings_json}"
+  echo "  [OK] PreToolUse guardrail registered in ${settings_json}"
+
+  # Smoke test: read the registered command back out of settings.json, substitute
+  # $CLAUDE_PROJECT_DIR with the actual project root, verify the file exists, and
+  # then confirm it blocks a raw git commit.  This catches path-corruption bugs
+  # (e.g. MSYS converting /.claude/... to C:/Program Files/Git/.claude/...) that
+  # direct script invocation cannot detect.
+  local registered_cmd resolved_cmd
+  registered_cmd="$(jq -r \
+    '[.hooks.PreToolUse[]?.hooks[]? | select(.command | contains("cc-block-dangerous-git")) | .command][0] // empty' \
+    "${settings_json}")"
+  resolved_cmd="${registered_cmd//\"\$CLAUDE_PROJECT_DIR\"/${PROJECT_ROOT}}"
+  resolved_cmd="${resolved_cmd//\$CLAUDE_PROJECT_DIR/${PROJECT_ROOT}}"
+  resolved_cmd="${resolved_cmd#\"}"
+  resolved_cmd="${resolved_cmd%\"}"
+
+  if [[ -z "${registered_cmd}" ]]; then
+    echo "  [WARN] Smoke test: no guardrail entry found in ${settings_json}" >&2
+  elif [[ ! -f "${resolved_cmd}" ]]; then
+    echo "  [FAIL] Smoke test: registered command does not resolve to a file." >&2
+    echo "         Registered: ${registered_cmd}" >&2
+    echo "         Resolved:   ${resolved_cmd}" >&2
+    echo "         Guardrail will silently fail at runtime — re-run configure.sh." >&2
+    return 1
+  else
+    local test_input='{"tool_input":{"command":"git commit -m \"smoke-test\""}}'
+    local exit_code=0
+    echo "${test_input}" | CLAUDE_PROJECT_DIR="${PROJECT_ROOT}" \
+      bash -c "${registered_cmd}" >/dev/null 2>&1 || exit_code=$?
+    if [[ "${exit_code}" -eq 2 ]]; then
+      echo "  [OK] Smoke test passed: registered command blocks raw git commit"
+    else
+      echo "  [WARN] Smoke test: registered command did not block (exit=${exit_code})" >&2
+    fi
+  fi
+}
+
 _update_gitignore() {
   local gitignore="${PROJECT_ROOT}/.gitignore"
   local entries=("logs/" ".cgw.conf")
@@ -442,6 +536,19 @@ _update_gitignore() {
   fi
 }
 
+_cleanup_legacy_artifacts() {
+  # Remove files that older CGW versions installed but the current version does
+  # not produce.  Safe to call on fresh installs (both checks are no-ops).
+  if [[ -d "${PROJECT_ROOT}/scripts/git/batch" ]]; then
+    rm -rf "${PROJECT_ROOT}/scripts/git/batch"
+    echo "  [OK] Removed legacy scripts/git/batch/ (.bat wrappers from pre-v0.3 CGW)"
+  fi
+  if [[ -f "${PROJECT_ROOT}/scripts/git/README.md" ]]; then
+    rm -f "${PROJECT_ROOT}/scripts/git/README.md"
+    echo "  [OK] Removed legacy scripts/git/README.md"
+  fi
+}
+
 # ============================================================================
 # MAIN
 # ============================================================================
@@ -451,6 +558,7 @@ main() {
   local reconfigure=0
   local skip_hooks=0
   local skip_skill=0
+  local skip_cc_guardrail=0
   local global_skill=0
 
   while [[ $# -gt 0 ]]; do
@@ -463,20 +571,22 @@ main() {
         echo "and optionally installs the Claude Code skill."
         echo ""
         echo "Options:"
-        echo "  --non-interactive   Accept all auto-detected defaults"
-        echo "  --reconfigure       Overwrite existing .cgw.conf"
-        echo "  --skip-hooks        Don't install git pre-commit hook"
-        echo "  --skip-skill        Don't install Claude Code skill"
-        echo "  --global            Install Claude Code skill to ~/.claude/ (available in all projects)"
-        echo "  -h, --help          Show this help"
+        echo "  --non-interactive    Accept all auto-detected defaults"
+        echo "  --reconfigure        Overwrite existing .cgw.conf"
+        echo "  --skip-hooks         Don't install git pre-commit hook"
+        echo "  --skip-skill         Don't install Claude Code skill"
+        echo "  --skip-cc-guardrail  Don't install PreToolUse harness guardrail"
+        echo "  --global             Install Claude Code skill to ~/.claude/ (available in all projects)"
+        echo "  -h, --help           Show this help"
         echo ""
         echo "After running, edit .cgw.conf to customize any detected values."
         exit 0
         ;;
-      --non-interactive) non_interactive=1 ;;
+      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
       --reconfigure) reconfigure=1 ;;
       --skip-hooks) skip_hooks=1 ;;
       --skip-skill) skip_skill=1 ;;
+      --skip-cc-guardrail) skip_cc_guardrail=1 ;;
       --global) global_skill=1 ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2
@@ -491,6 +601,8 @@ main() {
     exit 1
   }
 
+  _cleanup_legacy_artifacts
+
   echo ""
   echo "=== claude-git-workflow: Auto-Configuration ==="
   echo ""
@@ -504,18 +616,13 @@ main() {
   # Check if .cgw.conf already exists
   if [[ -f ".cgw.conf" ]] && [[ ${reconfigure} -eq 0 ]]; then
     echo "[OK] .cgw.conf already exists."
-    if [[ ${non_interactive} -eq 0 ]]; then
-      read -r -p "  Reconfigure? (yes/no) [no]: " answer
-      if [[ "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" =~ ^y(es)?$ ]]; then
-        reconfigure=1
-      else
-        echo ""
-        echo "Using existing configuration. Use --reconfigure to overwrite."
-        echo ""
-        # Still run hook + skill install
-      fi
+    if cgw_confirm "Reconfigure?" --default no --non-interactive deny; then
+      reconfigure=1
     else
-      echo "  Use --reconfigure to overwrite."
+      echo ""
+      echo "Using existing configuration. Use --reconfigure to overwrite."
+      echo ""
+      # Still run hook + skill install
     fi
   fi
 
@@ -631,18 +738,16 @@ main() {
     echo ""
     echo "Git hooks enforce lint checks and local-file protection on every commit"
     echo "and push, catching issues before they reach the remote."
-    local install_hook="yes"
-    if [[ ${non_interactive} -eq 0 ]]; then
-      read -r -p "Install pre-commit hook? (yes/no) [yes]: " answer
-      case "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" in
-        y | yes) install_hook="yes" ;;
-        n | no) install_hook="no" ;;
-      esac
+    local install_hook
+    if cgw_confirm "Install pre-commit hook?" --default yes --non-interactive accept; then
+      install_hook="yes"
+    else
+      install_hook="no"
     fi
 
     if [[ "${install_hook}" == "yes" ]]; then
       echo "Installing pre-commit hook..."
-      _install_hook "${local_files}"
+      _install_hook
     fi
   fi
 
@@ -653,12 +758,11 @@ main() {
   echo ""
   echo "git rerere remembers how you resolved conflicts so it can auto-replay"
   echo "the same resolution next time the same conflict reappears."
-  local enable_rerere="yes"
-  if [[ ${non_interactive} -eq 0 ]]; then
-    read -r -p "Enable git rerere (auto-replay conflict resolutions)? (yes/no) [yes]: " answer
-    case "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" in
-      n | no) enable_rerere="no" ;;
-    esac
+  local enable_rerere
+  if cgw_confirm "Enable git rerere (auto-replay conflict resolutions)?" --default yes --non-interactive accept; then
+    enable_rerere="yes"
+  else
+    enable_rerere="no"
   fi
 
   if [[ "${enable_rerere}" == "yes" ]]; then
@@ -685,14 +789,12 @@ main() {
       install_skill="yes"
     fi
 
-    if [[ ${non_interactive} -eq 0 ]]; then
-      local skill_dest_hint="project .claude/"
-      [[ ${global_skill} -eq 1 ]] && skill_dest_hint="global ~/.claude/"
-      read -r -p "Install Claude Code skill to ${skill_dest_hint}? (yes/no) [${install_skill}]: " answer
-      case "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" in
-        y | yes) install_skill="yes" ;;
-        n | no) install_skill="no" ;;
-      esac
+    local skill_dest_hint="project .claude/"
+    [[ ${global_skill} -eq 1 ]] && skill_dest_hint="global ~/.claude/"
+    if cgw_confirm "Install Claude Code skill to ${skill_dest_hint}?" --default "${install_skill}" --non-interactive accept; then
+      install_skill="yes"
+    else
+      install_skill="no"
     fi
 
     if [[ "${install_skill}" == "yes" ]]; then
@@ -701,6 +803,33 @@ main() {
         _install_skill "global"
       else
         _install_skill "local"
+      fi
+    fi
+  fi
+
+  # -- Install PreToolUse harness guardrail ----------------------------------
+
+  if [[ ${skip_cc_guardrail} -eq 0 ]]; then
+    echo ""
+    echo "The PreToolUse guardrail is a Claude Code hook that blocks dangerous git"
+    echo "commands (raw 'git commit', '--no-verify', 'git reset --hard', etc.) at the"
+    echo "harness layer, before they execute. This is defense-in-depth on top of the"
+    echo "repo-side git hooks — the model cannot bypass it by being asked to skip CGW."
+    local install_guardrail
+    local guardrail_dest_hint=".claude/settings.json"
+    [[ ${global_skill} -eq 1 ]] && guardrail_dest_hint="~/.claude/settings.json"
+    if cgw_confirm "Install PreToolUse guardrail to ${guardrail_dest_hint}?" --default yes --non-interactive accept; then
+      install_guardrail="yes"
+    else
+      install_guardrail="no"
+    fi
+
+    if [[ "${install_guardrail}" == "yes" ]]; then
+      echo "Installing PreToolUse guardrail..."
+      if [[ ${global_skill} -eq 1 ]]; then
+        _install_cc_guardrail "global"
+      else
+        _install_cc_guardrail "local"
       fi
     fi
   fi

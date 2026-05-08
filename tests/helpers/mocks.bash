@@ -89,6 +89,36 @@ EOF
   chmod +x "${MOCK_BIN_DIR}/${cmd_name}"
 }
 
+# install_mock_lint_fixable
+# Creates a ruff mock that exits 1 on the first call, then exits 0.
+# Use to test the NI auto-fix path where the fix succeeds.
+install_mock_lint_fixable() {
+  cat > "${MOCK_BIN_DIR}/ruff" << 'MOCK_EOF'
+#!/usr/bin/env bash
+calls_file="${0%/*}/ruff.calls"
+n=$(cat "$calls_file" 2>/dev/null || echo 0)
+n=$((n + 1))
+echo "$n" > "$calls_file"
+echo "mock ruff $*" >> "${0%/*}/ruff.log"
+[[ $n -eq 1 ]] && { echo "src/foo.py:10:5: E501 line too long"; exit 1; }
+exit 0
+MOCK_EOF
+  chmod +x "${MOCK_BIN_DIR}/ruff"
+}
+
+# install_mock_format_with_errors
+# Creates a ruff mock that always outputs "would reformat" and exits 1.
+# Use to exercise the FORMAT ERRORS branch in commit_enhanced.sh.
+install_mock_format_with_errors() {
+  cat > "${MOCK_BIN_DIR}/ruff" << 'MOCK_EOF'
+#!/usr/bin/env bash
+echo "mock ruff $*" >> "${0%/*}/ruff.log"
+echo "1 file would reformat"
+exit 1
+MOCK_EOF
+  chmod +x "${MOCK_BIN_DIR}/ruff"
+}
+
 # ── gh CLI absence helper ──────────────────────────────────────────────────────
 
 # hide_gh

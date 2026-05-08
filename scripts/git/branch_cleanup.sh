@@ -15,7 +15,7 @@
 #   --dry-run          Preview changes without deleting anything (default)
 #   --execute          Actually delete branches and prune refs
 #   --remote           Also prune stale remote-tracking refs (git remote prune)
-#   --tags             Also clean up old CGW backup tags (pre-merge-backup-*, pre-cherry-pick-*, pre-docs-merge-*, pre-bisect-*, pre-rebase-*, pre-undo-commit-*)
+#   --tags             Also clean up old CGW backup tags (pre-merge-*, pre-cherry-pick-*, pre-docs-merge-*, pre-bisect-*, pre-rebase-*, pre-undo-commit-*)
 #   --older-than <N>   Only delete backup tags older than N days (default: 30)
 #   --non-interactive  Skip confirmation prompts
 #   -h, --help         Show help
@@ -27,6 +27,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/git/_common.sh
 source "${SCRIPT_DIR}/_common.sh"
+ensure_no_stale_index_lock || exit 1
 
 main() {
   local execute=0
@@ -48,7 +49,7 @@ main() {
         echo "Options:"
         echo "  --execute          Delete merged branches and prune (without this, only previews)"
         echo "  --remote           Prune stale remote-tracking refs (git remote prune \${CGW_REMOTE})"
-        echo "  --tags             Clean up old CGW backup tags (pre-merge-backup-*, pre-cherry-pick-*, pre-docs-merge-*, pre-bisect-*, pre-rebase-*, pre-undo-commit-*)"
+        echo "  --tags             Clean up old CGW backup tags (pre-merge-*, pre-cherry-pick-*, pre-docs-merge-*, pre-bisect-*, pre-rebase-*, pre-undo-commit-*)"
         echo "  --older-than <N>   Only delete backup tags older than N days (default: 30)"
         echo "  --non-interactive  Skip confirmation prompts"
         echo "  -h, --help         Show this help"
@@ -74,7 +75,7 @@ main() {
         older_than_days="${2:-30}"
         shift
         ;;
-      --non-interactive) non_interactive=1 ;;
+      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2
         exit 1
@@ -137,15 +138,10 @@ main() {
     echo ""
 
     if [[ ${execute} -eq 1 ]]; then
-      if [[ ${non_interactive} -eq 0 ]]; then
-        read -r -p "  Delete ${#merged_branches[@]} merged branch(es)? (yes/no): " confirm
-        if [[ "${confirm}" != "yes" ]]; then
-          echo "  Skipped local branch deletion"
-        else
-          _delete_local_branches "${merged_branches[@]}"
-        fi
-      else
+      if cgw_confirm "Delete ${#merged_branches[@]} merged branch(es)?" --non-interactive accept; then
         _delete_local_branches "${merged_branches[@]}"
+      else
+        echo "  Skipped local branch deletion"
       fi
     else
       echo "  Would delete: ${#merged_branches[@]} branch(es)"
@@ -192,14 +188,14 @@ main() {
       if [[ ${tag_epoch} -le ${cutoff_epoch} ]]; then
         old_tags+=("${tag}")
       fi
-    done < <(git tag -l "pre-merge-backup-*" "pre-cherry-pick-*" "pre-docs-merge-*" "pre-bisect-*" "pre-rebase-*" "pre-undo-commit-*" 2>/dev/null | sort)
+    done < <(cgw_list_backup_tags 2>/dev/null | sort)
 
     if [[ ${#old_tags[@]} -eq 0 ]]; then
       echo "  [OK] No backup tags older than ${older_than_days} days"
     else
       echo "  Old backup tags:"
       local total_all
-      total_all=$(git tag -l "pre-merge-backup-*" "pre-cherry-pick-*" "pre-docs-merge-*" "pre-bisect-*" "pre-rebase-*" "pre-undo-commit-*" 2>/dev/null | wc -l | tr -d ' ')
+      total_all=$(cgw_list_backup_tags 2>/dev/null | wc -l | tr -d ' ')
       for tag in "${old_tags[@]}"; do
         local tag_date
         tag_date=$(git log -1 --format="%ar" "${tag}" 2>/dev/null || echo "unknown")
@@ -209,15 +205,10 @@ main() {
       echo "  (${#old_tags[@]} old / ${total_all} total backup tags)"
 
       if [[ ${execute} -eq 1 ]]; then
-        if [[ ${non_interactive} -eq 0 ]]; then
-          read -r -p "  Delete ${#old_tags[@]} old backup tag(s)? (yes/no): " confirm_tags
-          if [[ "${confirm_tags}" != "yes" ]]; then
-            echo "  Skipped backup tag deletion"
-          else
-            _delete_tags "${old_tags[@]}"
-          fi
-        else
+        if cgw_confirm "Delete ${#old_tags[@]} old backup tag(s)?" --non-interactive accept; then
           _delete_tags "${old_tags[@]}"
+        else
+          echo "  Skipped backup tag deletion"
         fi
       else
         echo "  Would delete: ${#old_tags[@]} backup tag(s)"

@@ -24,6 +24,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/git/_common.sh
 source "${SCRIPT_DIR}/_common.sh"
+ensure_no_stale_index_lock || exit 1
 
 usage() {
   echo "Usage: ./scripts/git/stash_work.sh <command> [OPTIONS]"
@@ -193,15 +194,11 @@ main() {
       fi
 
       echo "Dropping: $(git stash list | grep "^${ref}" || echo "${ref}")"
-      read -r -p "Confirm drop? (yes/no): " answer
-      case "$(echo "${answer}" | tr '[:upper:]' '[:lower:]')" in
-        y | yes)
-          git stash drop "${ref}" && echo "[OK] Stash dropped"
-          ;;
-        *)
-          echo "Cancelled"
-          ;;
-      esac
+      if cgw_confirm "Confirm drop?" --non-interactive abort; then
+        git stash drop "${ref}" && echo "[OK] Stash dropped"
+      else
+        echo "Cancelled"
+      fi
       ;;
 
     show)
@@ -224,9 +221,7 @@ main() {
       git stash list
       echo ""
       echo "[!] WARNING: This permanently removes ALL stashes listed above."
-      read -r -p "Type 'CLEAR' to confirm: " confirm
-
-      if [[ "${confirm}" == "CLEAR" ]]; then
+      if cgw_confirm "Type 'CLEAR' to confirm" --literal-token CLEAR --non-interactive abort; then
         git stash clear && echo "[OK] All stashes cleared"
       else
         echo "Cancelled"

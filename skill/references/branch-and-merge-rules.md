@@ -30,7 +30,7 @@ The overrides are validated (branch must exist locally, names must be valid, sou
 
 Receives merges from the source branch. Typically contains production-ready code.
 
-`commit_enhanced.sh` auto-unstages local-only files (configured via `CGW_LOCAL_FILES`) before any commit.
+`commit_enhanced.sh` auto-unstages local-only files (configured via `CGW_LOCAL_FILES`) before any commit. The pre-commit and pre-push hooks read `CGW_LOCAL_FILES` from `.cgw.conf` at run time — editing the config takes effect on the next invocation, no `configure.sh` re-run required.
 
 ### Source Branch (default: `development`)
 
@@ -113,7 +113,7 @@ Never auto-resolve content conflicts — they require human review.
 `merge_with_validation.sh --non-interactive` steps:
 1. Run `validate_branches.sh` (checks branch state, warns on untracked files)
 2. Checkout target branch
-3. Create backup tag `pre-merge-backup-<timestamp>-<pid>` (PID suffix prevents collision on fast CI)
+3. Create backup tag `pre-merge-<timestamp>-<pid>` via `cgw_create_backup_tag merge` (PID suffix prevents collision on fast CI)
 4. Perform `git merge ${CGW_SOURCE_BRANCH} --no-ff`
 5. Auto-resolve `DU` (modify/delete) conflicts
 6. Stop on `AU`/`AA` conflicts — requires manual resolution

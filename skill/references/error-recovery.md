@@ -1,5 +1,33 @@
 # Error Recovery
 
+## PreToolUse Guardrail
+
+If Claude Code blocks a command with `BLOCKED: ...`, the CGW harness guardrail is active. The block message includes a redirect to the correct CGW wrapper script.
+
+**Block message format:**
+```
+BLOCKED: Command matched dangerous pattern "<pattern>".
+<redirect — the CGW wrapper to use instead>
+The user has prevented you from doing this.
+```
+
+**Normal response:** follow the redirect. For example, replace `git commit -m "..."` with `./scripts/git/commit_enhanced.sh "..."`.
+
+**Temporary disable** (current shell session only):
+```bash
+export SKIP_CGW_GUARDRAIL=1
+# Run your command
+unset SKIP_CGW_GUARDRAIL
+```
+
+**Permanent uninstall:**
+1. Remove the PreToolUse entry from `.claude/settings.json` (delete the object whose `command` contains `cc-block-dangerous-git`)
+2. Delete `.claude/hooks/cc-block-dangerous-git.sh`
+
+**Reinstall:** re-run `./scripts/git/configure.sh` and answer yes to the guardrail prompt.
+
+---
+
 ## Lint Failures
 
 **Auto-fix and retry:**
@@ -51,11 +79,11 @@ When you need to undo a merge to the target branch:
 ./scripts/git/rollback_merge.sh --dry-run
 
 # Specific target:
-./scripts/git/rollback_merge.sh --non-interactive --target pre-merge-backup-20260101_120000-12345
+./scripts/git/rollback_merge.sh --non-interactive --target pre-merge-20260101_120000-12345
 ```
 
 Interactive mode prompts for rollback target:
-1. Latest `pre-merge-backup-*` tag (recommended)
+1. Latest `pre-merge-*` tag (recommended)
 2. `HEAD~1` (commit before merge)
 3. Specific commit hash
 
@@ -73,7 +101,7 @@ Requires typing `ROLLBACK` to confirm (interactive mode). Force-push warning sho
 **Manual rollback** (if script unavailable):
 ```bash
 git checkout main
-git reset --hard pre-merge-backup-<timestamp>-<pid>
+git reset --hard pre-merge-<timestamp>-<pid>
 git checkout development
 ```
 
@@ -160,12 +188,46 @@ git diff --quiet && git diff --cached --quiet && echo "No changes"
 
 ---
 
-## Lock File Race Conditions
+## Lock File Auto-Recovery
 
-If `.git/index.lock` exists unexpectedly:
+CGW scripts automatically detect and remove stale `.git/index.lock` files left by crashed git processes. When auto-recovery fires you will see `[cgw-lock] Removing stale index.lock (age Xs)` in the script's output.
+
+### How auto-recovery decides
+
+| Step | Logic |
+|---|---|
+| 1. No lock file | Returns 0 immediately (common path). |
+| 2. Op-state guard | Refuses if `.git/rebase-merge/`, `.git/rebase-apply/`, `MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, or `BISECT_LOG` exists — an interactive git operation is in progress, removing the lock would corrupt it. |
+| 3. Age check | Computes mtime. If `age >= CGW_INDEX_LOCK_MAX_AGE_SECONDS` (default 30s) → stale. |
+| 4. Wait window | If fresh, polls for up to `CGW_INDEX_LOCK_WAIT_SECONDS` (default 10s). If lock clears → done. If lock ages past threshold during wait → remove. If still fresh → refuse (exit 1). |
+| 5. Remove or refuse | If `CGW_AUTO_REMOVE_INDEX_LOCK=1` (default) → remove and log. If `0` → warn and exit 1. |
+
+### Config variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CGW_AUTO_REMOVE_INDEX_LOCK` | `1` | `0` = warn-only; `1` = auto-remove stale locks |
+| `CGW_INDEX_LOCK_MAX_AGE_SECONDS` | `30` | Seconds after which a lock is considered stale |
+| `CGW_INDEX_LOCK_WAIT_SECONDS` | `10` | Max seconds to poll for a fresh lock to clear |
+
+### Known edge case: long-paused interactive rebase
+
+If you run `git rebase -i` in a separate terminal and leave the editor open for more than `CGW_INDEX_LOCK_MAX_AGE_SECONDS` seconds **before** git has written the rebase-merge state directory (i.e. before the editor even appears), the lock might age past the threshold. To prevent any risk of interruption for long editing sessions:
+
 ```bash
-rm -f .git/index.lock && git add src/file.py && ./scripts/git/commit_enhanced.sh "feat: message"
+# In .cgw.conf or environment — give up to 5 minutes
+CGW_INDEX_LOCK_MAX_AGE_SECONDS=300
 ```
+
+### Manual removal (when auto-recovery refuses)
+
+Use the worktree-aware path — `.git/index.lock` is not always the correct path in git worktrees:
+
+```bash
+rm -f "$(git rev-parse --git-dir)/index.lock"
+```
+
+If the script still reports "lock held by another process", find and stop the other git session or wait for it to complete.
 
 ---
 

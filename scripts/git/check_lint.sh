@@ -87,28 +87,14 @@ main() {
     exit 1
   }
 
-  get_lint_exclusions
-
-  # Determine lint binary (venv or PATH)
-  local lint_cmd="${CGW_LINT_CMD}"
-  if [[ "${CGW_LINT_CMD}" == "ruff" ]]; then
-    get_python_path 2>/dev/null || true
-    if [[ -n "${PYTHON_BIN:-}" ]] && [[ -f "${PYTHON_BIN}/ruff${PYTHON_EXT:-}" ]]; then
-      lint_cmd="${PYTHON_BIN}/ruff${PYTHON_EXT:-}"
-    fi
-  fi
-
-  # Handle --modified-only mode (code lint only, requires CGW_LINT_CMD)
+  # Handle --modified-only mode (direct output, no section logging)
   if [[ "${modified_only}" -eq 1 ]]; then
     if [[ -z "${CGW_LINT_CMD}" ]]; then
       echo "[OK] No code lint tool configured for --modified-only (CGW_LINT_CMD not set)"
       exit 0
     fi
     local modified_files
-    # CGW_LINT_EXTENSIONS controls which files are considered (default: *.py)
-    local -a lint_exts
-    read -r -a lint_exts <<<"${CGW_LINT_EXTENSIONS:-*.py}"
-    modified_files=$(git diff --name-only --diff-filter=ACMR HEAD -- "${lint_exts[@]}")
+    modified_files=$(cgw_modified_files_for_lint)
     if [[ -z "$modified_files" ]]; then
       echo "[OK] No modified files to check"
       exit 0
@@ -118,19 +104,23 @@ main() {
     echo "Files: $modified_files"
     echo ""
 
+    get_python_path 2>/dev/null || true
+    local lint_bin
+    lint_bin=$(cgw_resolve_lint_binary "${CGW_LINT_CMD}")
+
     local EXIT_CODE=0
 
     echo "[LINT CHECK]"
-    # Build check args: strip trailing path token (.) and append specific files
-    local lint_check_cmd_args="${CGW_LINT_CHECK_ARGS% *}"
+    local lint_check_cmd_args
+    lint_check_cmd_args=$(cgw_strip_path_arg "${CGW_LINT_CHECK_ARGS}")
     # shellcheck disable=SC2086
-    "${lint_cmd}" ${lint_check_cmd_args} $modified_files || EXIT_CODE=1
+    "${lint_bin}" ${lint_check_cmd_args} $modified_files || EXIT_CODE=1
 
     if [[ -n "${CGW_FORMAT_CMD}" ]]; then
       echo ""
       echo "[FORMAT CHECK]"
-      # Build format check args: strip trailing path token (.) and append specific files
-      local fmt_check_cmd_args="${CGW_FORMAT_CHECK_ARGS% *}"
+      local fmt_check_cmd_args
+      fmt_check_cmd_args=$(cgw_strip_path_arg "${CGW_FORMAT_CHECK_ARGS}")
       # shellcheck disable=SC2086
       "${CGW_FORMAT_CMD}" ${fmt_check_cmd_args} $modified_files || EXIT_CODE=1
     fi
@@ -156,56 +146,44 @@ main() {
   local -a results=()
   local lint_status=0 format_status=0 md_lint_status=0
 
-  # LINT CHECK (skipped when CGW_LINT_CMD is not set)
+  # LINT CHECK
+  local lint_start lint_end lint_duration lint_status_str
+  lint_start=$(date +%s)
+  cgw_run_lint_check || lint_status=1
+  lint_end=$(date +%s)
+  lint_duration=$((lint_end - lint_start))
   if [[ -n "${CGW_LINT_CMD}" ]]; then
-    local lint_start lint_end lint_duration lint_status_str
-    lint_start=$(date +%s)
-    # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_CHECK_ARGS contains multiple flags
-    if ! run_tool_with_logging "LINT CHECK" "$logfile" \
-      "${lint_cmd}" ${CGW_LINT_CHECK_ARGS} ${CGW_LINT_EXCLUDES}; then
-      lint_status=1
-    fi
-    lint_end=$(date +%s)
-    lint_duration=$((lint_end - lint_start))
     lint_status_str="PASSED"
     [[ ${lint_status} -ne 0 ]] && lint_status_str="FAILED"
     results+=("Lint:${lint_status_str}:${TOOL_ERROR_COUNT}:${lint_duration}")
-  else
-    echo "  (code lint skipped -- CGW_LINT_CMD not set)" | tee -a "$logfile"
   fi
 
-  # FORMAT CHECK (independent of lint check -- runs even when CGW_LINT_CMD is unset)
+  # FORMAT CHECK
+  local format_start format_end format_duration format_status_str
+  format_start=$(date +%s)
+  cgw_run_format_check || format_status=1
+  format_end=$(date +%s)
+  format_duration=$((format_end - format_start))
   if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-    local format_start format_end format_duration format_status_str
-    format_start=$(date +%s)
-    # shellcheck disable=SC2086  # Word splitting intentional: CGW_FORMAT_CHECK_ARGS contains multiple flags
-    if ! run_tool_with_logging "FORMAT CHECK" "$logfile" \
-      "${CGW_FORMAT_CMD}" ${CGW_FORMAT_CHECK_ARGS} ${CGW_FORMAT_EXCLUDES}; then
-      format_status=1
-    fi
-    format_end=$(date +%s)
-    format_duration=$((format_end - format_start))
     format_status_str="PASSED"
     [[ ${format_status} -ne 0 ]] && format_status_str="FAILED"
     results+=("Format:${format_status_str}:${TOOL_ERROR_COUNT}:${format_duration}")
   fi
 
   # MARKDOWN LINT
-  if [[ ${skip_md_lint} -eq 0 ]] && [[ -n "${CGW_MARKDOWNLINT_CMD}" ]]; then
+  if [[ ${skip_md_lint} -eq 1 ]]; then
+    echo "  (markdown lint skipped -- --skip-md-lint)" | tee -a "$logfile"
+  else
     local md_start md_end md_duration md_status_str
     md_start=$(date +%s)
-    # shellcheck disable=SC2086  # Word splitting intentional: CGW_MARKDOWNLINT_ARGS contains multiple flags/patterns
-    if ! run_tool_with_logging "MARKDOWN LINT" "$logfile" \
-      "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS}; then
-      md_lint_status=1
-    fi
+    cgw_run_markdownlint_check || md_lint_status=1
     md_end=$(date +%s)
     md_duration=$((md_end - md_start))
-    md_status_str="PASSED"
-    [[ ${md_lint_status} -ne 0 ]] && md_status_str="FAILED"
-    results+=("Markdown:${md_status_str}:${TOOL_ERROR_COUNT}:${md_duration}")
-  elif [[ ${skip_md_lint} -eq 1 ]]; then
-    echo "  (markdown lint skipped -- --skip-md-lint)" | tee -a "$logfile"
+    if [[ -n "${CGW_MARKDOWNLINT_CMD}" ]]; then
+      md_status_str="PASSED"
+      [[ ${md_lint_status} -ne 0 ]] && md_status_str="FAILED"
+      results+=("Markdown:${md_status_str}:${TOOL_ERROR_COUNT}:${md_duration}")
+    fi
   fi
 
   log_summary_table "$logfile" "${results[@]}"

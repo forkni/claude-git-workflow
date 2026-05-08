@@ -23,6 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
 
 init_logging "rollback_merge"
+ensure_no_stale_index_lock || exit 1
 
 _rollback_done=0
 
@@ -65,7 +66,7 @@ main() {
         echo "         With --revert, history is preserved -- no force-push needed."
         exit 0
         ;;
-      --non-interactive) non_interactive=1 ;;
+      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
       --dry-run) dry_run=1 ;;
       --revert) use_revert=1 ;;
       --target)
@@ -131,13 +132,7 @@ main() {
     echo "" | tee -a "$logfile"
     echo "These changes will be LOST during rollback!" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
-    if [[ ${non_interactive} -eq 1 ]]; then
-      echo "[Non-interactive] Aborting -- commit or stash changes first" | tee -a "$logfile"
-      log_section_end "UNCOMMITTED CHANGES CHECK" "$logfile" "1"
-      exit 1
-    fi
-    read -r -p "Continue anyway? (yes/no): " continue_choice
-    if [[ "${continue_choice}" != "yes" ]]; then
+    if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
       echo "" | tee -a "$logfile"
       echo "Rollback cancelled" | tee -a "$logfile"
       echo "Please commit or stash changes first"
@@ -154,13 +149,13 @@ main() {
   log_section_start "FIND ROLLBACK TARGET" "$logfile"
 
   local backup_tags
-  backup_tags=$(git tag -l "pre-merge-backup-*" | sort -r | head -5)
+  backup_tags=$(cgw_list_backup_tags merge | sort -r | head -5)
   if [[ -n "${backup_tags}" ]]; then
     echo "Available backup tags:" | tee -a "$logfile"
     echo "${backup_tags}" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
   else
-    echo "No backup tags found (pre-merge-backup-*)" | tee -a "$logfile"
+    echo "No backup tags found (pre-merge-*)" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
   fi
 
@@ -189,7 +184,7 @@ main() {
     echo "Rollback target (from --target): ${rollback_target}" | tee -a "$logfile"
   elif [[ ${non_interactive} -eq 1 ]]; then
     local latest_tag
-    latest_tag=$(git tag -l "pre-merge-backup-*" | sort -r | head -1)
+    latest_tag=$(cgw_list_backup_tags merge | sort -r | head -1)
     if [[ -n "${latest_tag}" ]]; then
       rollback_target="${latest_tag}"
       echo "[Non-interactive] Using latest backup tag: ${rollback_target}" | tee -a "$logfile"
@@ -211,7 +206,7 @@ main() {
 
     case "${rollback_choice}" in
       1)
-        rollback_target=$(git tag -l "pre-merge-backup-*" | sort -r | head -1)
+        rollback_target=$(cgw_list_backup_tags merge | sort -r | head -1)
         if [[ -z "${rollback_target}" ]]; then
           err "No backup tags found"
           echo "Please use option 2 or 3"
@@ -261,14 +256,7 @@ main() {
     exit 0
   fi
 
-  local confirm
-  if [[ ${non_interactive} -eq 0 ]]; then
-    read -r -p "Type 'ROLLBACK' to confirm: " confirm
-  else
-    confirm="ROLLBACK"
-  fi
-
-  if [[ "${confirm}" != "ROLLBACK" ]]; then
+  if ! cgw_confirm "Type 'ROLLBACK' to confirm" --literal-token ROLLBACK --non-interactive accept; then
     echo "" | tee -a "$logfile"
     echo "Rollback cancelled" | tee -a "$logfile"
     _rollback_done=1

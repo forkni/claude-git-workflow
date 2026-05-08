@@ -1,6 +1,6 @@
 ---
 name: auto-git-workflow
-description: "Enforces project git workflow using scripts/git/*.sh instead of raw git commands. Protects local-only files from accidental commits. Triggers on any git commit, push, merge, sync, branch, or conflict resolution operation."
+description: "Use whenever the user asks for a git operation in this project — commit, push, pull, fetch, merge, rebase, cherry-pick, rollback, revert, sync, stash, tag, release, branch (create/rename/delete/cleanup), bisect, undo, amend, or conflict resolution. Routes work through scripts/git/*.sh wrappers (commit_enhanced.sh, push_validated.sh, merge_with_validation.sh, rollback_merge.sh, cherry_pick_commits.sh, rebase_safe.sh, stash_work.sh, branch_cleanup.sh, bisect_helper.sh, changelog_generate.sh, create_release.sh, create_pr.sh, sync_branches.sh, undo_last.sh) instead of raw git, so lint validation, local-only file protection, backup tags, and force-push guards are never bypassed."
 user-invocable: true
 allowed-tools: "Bash, Read, Grep"
 ---
@@ -16,6 +16,10 @@ Ensures all git operations follow established patterns:
 For script flags and environment variables, see [references/script-reference.md](references/script-reference.md).
 For error recovery procedures, see [references/error-recovery.md](references/error-recovery.md).
 For branch rules and merge workflow, see [references/branch-and-merge-rules.md](references/branch-and-merge-rules.md).
+
+## When to use this skill
+
+Invoke this skill **before** running any git command in this project. If the answer to *"am I about to run `git <verb>`?"* is yes — even for `git commit -m`, `git push`, `git merge`, `git rebase`, `git cherry-pick`, `git stash`, `git tag`, `git revert`, `git reset`, or any branch/remote mutation — load these rules first and reach for the matching `scripts/git/*.sh` wrapper. Read-only operations (`git status`, `git log`, `git diff`, `git show`) do not require the skill, but using it does no harm.
 
 ---
 
@@ -34,6 +38,8 @@ git commit -m "message"  # WRONG — bypasses lint, protection, logging
 ```
 
 `commit_enhanced.sh` provides: lint validation, local-only file protection, branch verification, commit message format checking, and comprehensive logging.
+
+> **Optional defense-in-depth:** If the CGW PreToolUse guardrail was installed (offered during `configure.sh`), this rule is also enforced at the Claude Code harness layer — even if asked to run `git commit` directly, the hook blocks it before it reaches the shell. See `references/error-recovery.md` → *PreToolUse Guardrail* for disable instructions.
 
 ### Rule 2: Use `--no-venv` When No Virtual Environment
 
@@ -59,21 +65,34 @@ Before any commit, verify:
 git diff --cached --name-only | grep -E "(CLAUDE\.md|MEMORY\.md|\.claude/|logs/)"
 ```
 
-`commit_enhanced.sh` automatically unstages all configured local-only files before committing.
+`commit_enhanced.sh` automatically unstages all configured local-only files before committing. The pre-commit and pre-push hooks read `CGW_LOCAL_FILES` from `.cgw.conf` at run time, so editing the config takes effect immediately — no need to re-run `configure.sh`.
 
-### Rule 4: Chain Git Commands to Prevent Lock Files
+### Rule 4: Stale Lock Auto-Recovery
 
-```bash
-# Correct — single chained call
-git add src/file.py && ./scripts/git/commit_enhanced.sh "feat: add feature"
+CGW scripts automatically detect and remove stale `.git/index.lock` files left by crashed or killed git processes (the most common Claude Code failure mode). When this happens you will see:
 
-# Wrong — separate calls risk .git/index.lock race conditions
+```
+[cgw-lock] Removing stale index.lock (age 47s): /path/to/.git/index.lock
 ```
 
-If `.git/index.lock` exists, remove it first:
+**Safety guards — the helper refuses to remove the lock when:**
+- A `rebase`, `merge`, `cherry-pick`, `revert`, or `bisect` is in progress (detected by state dirs/sentinels in `.git/`). This protects you if a `git rebase -i` editor is open in another terminal.
+- `CGW_AUTO_REMOVE_INDEX_LOCK=0` is set (warn-only mode).
+
+**Manual removal** is only needed if the auto-recovery refuses. Use the worktree-aware path (not always literally `.git/index.lock`):
 ```bash
-rm -f .git/index.lock && git add src/file.py && ./scripts/git/commit_enhanced.sh "feat: add feature"
+rm -f "$(git rev-parse --git-dir)/index.lock"
 ```
+
+**Tuning** (via env or `.cgw.conf`):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CGW_AUTO_REMOVE_INDEX_LOCK` | `1` | `0` = warn-only, `1` = auto-remove |
+| `CGW_INDEX_LOCK_MAX_AGE_SECONDS` | `30` | Locks older than this are stale |
+| `CGW_INDEX_LOCK_WAIT_SECONDS` | `10` | Poll window for fresh locks |
+
+If you regularly run `git rebase -i` and pause in the editor for minutes, set `CGW_INDEX_LOCK_MAX_AGE_SECONDS=300` to avoid interruption.
 
 ### Rule 5: Selective Commits — Staging Intent Is Respected
 
@@ -216,7 +235,7 @@ Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login
 ./scripts/git/rollback_merge.sh                          # interactive (hard reset)
 ./scripts/git/rollback_merge.sh --revert                 # safe revert (preserves history, no force-push)
 ./scripts/git/rollback_merge.sh --dry-run
-./scripts/git/rollback_merge.sh --non-interactive --target pre-merge-backup-20260101_120000-12345
+./scripts/git/rollback_merge.sh --non-interactive --target pre-merge-20260101_120000-12345
 ```
 
 **Cherry-picking a commit:**
