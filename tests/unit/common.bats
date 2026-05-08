@@ -900,11 +900,83 @@ UU b.py
   [ "${status}" -eq 1 ]
 }
 
-@test "cgw_confirm: arbitrary input returns 1" {
+@test "cgw_confirm: 'y' returns 0 (abbreviated yes)" {
   run bash -c "
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
     echo 'y' | cgw_confirm 'Continue?'
+  "
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_confirm: 'Y' returns 0 (uppercase abbreviated yes)" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    echo 'Y' | cgw_confirm 'Continue?'
+  "
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_confirm: 'YES' returns 0 (uppercase yes)" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    echo 'YES' | cgw_confirm 'Continue?'
+  "
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_confirm: 'Yes' returns 0 (mixed-case yes)" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    echo 'Yes' | cgw_confirm 'Continue?'
+  "
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_confirm: 'n' returns 1 (abbreviated no)" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    echo 'n' | cgw_confirm 'Continue?'
+  "
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_confirm: 'N' returns 1 (uppercase abbreviated no)" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    echo 'N' | cgw_confirm 'Continue?'
+  "
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_confirm: 'NO' returns 1 (uppercase no)" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    echo 'NO' | cgw_confirm 'Continue?'
+  "
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_confirm: unknown input with --default yes returns 0 (falls back to default)" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    echo 'maybe' | cgw_confirm 'Continue?' --default yes
+  "
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_confirm: unknown input with --default no returns 1 (falls back to default)" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    echo 'maybe' | cgw_confirm 'Continue?' --default no
   "
   [ "${status}" -eq 1 ]
 }

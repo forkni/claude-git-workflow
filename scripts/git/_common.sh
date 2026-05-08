@@ -862,13 +862,16 @@ cgw_validate_commit_message() {
 #   Returns 0 = confirmed (proceed), 1 = denied (skip).
 #   Exits 1  = non-interactive + abort policy (fatal — terminates the script).
 #
-#   --default yes|no         Empty input maps to yes/no; omit for no default.
-#   --literal-token TOKEN    Require exact uppercase token (e.g. FORCE, ROLLBACK).
+#   --default yes|no         Empty or unrecognized input maps to yes/no; omit for no default.
+#   --literal-token TOKEN    Require exact uppercase token (e.g. FORCE, ROLLBACK). Case-sensitive.
 #   --non-interactive <pol>  Policy when CGW_NON_INTERACTIVE=1 (callers set from --non-interactive flag
 #                            or [[ ! -t 0 ]] check):
 #                              abort  (default) — exit 1 with error message
 #                              accept            — return 0 silently
 #                              deny              — return 1 silently
+#
+#   Standard mode accepts case-insensitive y/yes (→ 0) and n/no (→ 1).
+#   Unrecognized input falls back to --default (deny if no default set).
 
 cgw_confirm() {
   local prompt="$1"
@@ -913,6 +916,11 @@ cgw_confirm() {
     if [[ -z "${response}" ]]; then
       [[ "${default}" == "yes" ]] && return 0 || return 1
     fi
-    [[ "${response}" == "yes" ]] && return 0 || return 1
+    case "${response}" in
+      [Yy]|[Yy][Ee][Ss]) return 0 ;;
+      [Nn]|[Nn][Oo])     return 1 ;;
+      # Unrecognized input falls back to default (deny if no default set).
+      *) [[ "${default}" == "yes" ]] && return 0 || return 1 ;;
+    esac
   fi
 }
