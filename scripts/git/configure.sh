@@ -20,8 +20,8 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# For configure.sh, we detect PROJECT_ROOT ourselves (can't source _common.sh yet
-# because _config.sh requires PROJECT_ROOT to already exist for .cgw.conf loading)
+# Detect PROJECT_ROOT before sourcing _common.sh so _config.sh's auto-detection
+# sees it preset and skips its own walk (safe; _config.sh checks [[ -z "${PROJECT_ROOT:-}" ]]).
 _find_project_root() {
   local dir
   dir="$(cd "${SCRIPT_DIR}" && pwd)"
@@ -42,6 +42,19 @@ if [[ -z "${PROJECT_ROOT:-}" ]]; then
     echo "  Are you inside a git repository? Run 'git init' first, or cd into one." >&2
     exit 1
   }
+fi
+
+# Source shared helpers (cgw_confirm, err, etc.).
+# Safe here: _config.sh detects PROJECT_ROOT only if unset (it's set above);
+# it also tolerates a missing .cgw.conf by applying defaults.
+# shellcheck source=scripts/git/_common.sh
+source "${SCRIPT_DIR}/_common.sh"
+
+# Hard-fail if sourcing didn't expose cgw_confirm — prevents silent skips.
+if ! command -v cgw_confirm >/dev/null 2>&1; then
+  echo "[ERROR] cgw_confirm not loaded — _common.sh source failed." >&2
+  echo "  Re-install CGW or report this as a bug." >&2
+  exit 1
 fi
 
 # ============================================================================

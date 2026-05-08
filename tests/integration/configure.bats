@@ -135,3 +135,24 @@ EOF
   run _run_configure "--non-interactive"
   [ "${status}" -eq 0 ]
 }
+
+# ── Regression: cgw_confirm must be resolvable from configure.sh ─────────────
+# Commit 21170db added cgw_confirm calls to configure.sh, but configure.sh did
+# not source _common.sh (where cgw_confirm lives). This caused silent no-ops
+# in interactive mode: each call returned exit 127 and the install step was
+# skipped. This test catches that class of regression even in non-interactive
+# mode, because CGW_NON_INTERACTIVE=1 is set and cgw_confirm must be available
+# to evaluate it.
+
+@test "cgw_confirm is resolvable from configure.sh (regression guard)" {
+  run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  # "command not found" means cgw_confirm was missing from scope
+  [[ "${output}" != *"cgw_confirm: command not found"* ]]
+}
+
+@test "--non-interactive via CGW_NON_INTERACTIVE installs pre-commit hook" {
+  # CGW_NON_INTERACTIVE=1 is set by _run_configure; cgw_confirm must resolve it.
+  _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.githooks/pre-commit" ]
+}
