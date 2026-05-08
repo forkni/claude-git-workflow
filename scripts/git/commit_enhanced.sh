@@ -105,6 +105,7 @@ main() {
   # Auto-detect non-interactive mode when no TTY
   if [[ ! -t 0 ]]; then
     non_interactive=1
+    CGW_NON_INTERACTIVE=1
   fi
 
   # CGW_* environment variable overrides

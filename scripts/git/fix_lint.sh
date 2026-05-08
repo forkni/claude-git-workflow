@@ -41,6 +41,7 @@ main() {
         ;;
       --non-interactive)
         non_interactive=1
+        CGW_NON_INTERACTIVE=1
         shift
         ;;
       --no-venv)
