@@ -323,6 +323,7 @@ _install_hook() {
   fi
 
   # Hooks read CGW_LOCAL_FILES from .cgw.conf at run time — no pattern substitution needed.
+  echo "Installing pre-commit hook..."
   mkdir -p "${PROJECT_ROOT}/.githooks"
   cp "${hook_template}" "${PROJECT_ROOT}/.githooks/pre-commit"
   chmod +x "${PROJECT_ROOT}/.githooks/pre-commit"
@@ -353,7 +354,6 @@ _install_skill() {
   if [[ "${install_mode}" == "global" ]]; then
     skill_dst="${HOME}/.claude/skills/auto-git-workflow"
     cmd_dst="${HOME}/.claude/commands"
-    echo "  Installing skill globally to ${HOME}/.claude/"
   else
     skill_dst="${PROJECT_ROOT}/.claude/skills/auto-git-workflow"
     cmd_dst="${PROJECT_ROOT}/.claude/commands"
@@ -372,6 +372,7 @@ _install_skill() {
     return 1
   fi
 
+  echo "Installing Claude Code skill (${install_mode})..."
   mkdir -p "${skill_dst}/references"
 
   cp "${skill_src}/SKILL.md" "${skill_dst}/SKILL.md" 2>/dev/null || true
@@ -455,6 +456,7 @@ _install_cc_guardrail() {
     return 0
   fi
 
+  echo "Installing PreToolUse guardrail..."
   # Remove any corrupted/stale guardrail entries before re-registering
   local clean_settings
   clean_settings="$(mktemp)"
@@ -746,7 +748,6 @@ main() {
     fi
 
     if [[ "${install_hook}" == "yes" ]]; then
-      echo "Installing pre-commit hook..."
       _install_hook
     fi
   fi
@@ -798,7 +799,6 @@ main() {
     fi
 
     if [[ "${install_skill}" == "yes" ]]; then
-      echo "Installing Claude Code skill..."
       if [[ ${global_skill} -eq 1 ]]; then
         _install_skill "global"
       else
@@ -825,7 +825,6 @@ main() {
     fi
 
     if [[ "${install_guardrail}" == "yes" ]]; then
-      echo "Installing PreToolUse guardrail..."
       if [[ ${global_skill} -eq 1 ]]; then
         _install_cc_guardrail "global"
       else

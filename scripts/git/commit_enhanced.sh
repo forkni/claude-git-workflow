@@ -69,9 +69,12 @@ EOF
 
 unstage_local_only_files() {
   local f
+  # Only target add/modify entries — staged deletions of local-only files are the
+  # documented `git rm --cached` untrack workflow and must not be unstaged.
+  # Matches the --diff-filter=AM contract in hooks/pre-commit.
   while read -r f; do
     git reset HEAD "${f}" 2>/dev/null || true
-  done < <(git diff --cached --name-only | cgw_filter_local_files)
+  done < <(git diff --cached --name-only --diff-filter=AM | cgw_filter_local_files)
 }
 
 # Re-stage files after lint auto-fix, then remove any local-only files that
@@ -322,10 +325,10 @@ main() {
   echo "[2/6] Validating staged files..."
   unstage_local_only_files
 
-  # Post-unstage check: verify nothing slipped through
+  # Post-unstage check: verify nothing slipped through (add/modify only — deletions are allowed)
   local found_local_files=0
   local staged_files
-  staged_files=$(git diff --cached --name-only)
+  staged_files=$(git diff --cached --name-only --diff-filter=AM)
 
   local f
   while read -r f; do

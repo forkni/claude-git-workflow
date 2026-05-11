@@ -111,6 +111,23 @@ _run_commit() {
   [ -n "${tracked}" ]
 }
 
+@test "allows git rm --cached of a tracked local-only file (bug #7 regression)" {
+  # Reproduce: user adds a dir to CGW_LOCAL_FILES, then does `git rm --cached` to untrack it.
+  # commit_enhanced.sh was calling `git reset HEAD <file>` on every staged path that matched
+  # CGW_LOCAL_FILES — including deletions — thereby silently undoing the git rm.
+  # Contract (matches hooks/pre-commit --diff-filter=AM): only add/modify entries are blocked;
+  # staged deletions must pass through so users can untrack files.
+  echo "# Claude" > "${TEST_REPO_DIR}/CLAUDE.md"
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null add CLAUDE.md
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: leak CLAUDE.md"
+  git -C "${TEST_REPO_DIR}" rm --cached CLAUDE.md
+  run _run_commit "--skip-lint \"chore: untrack CLAUDE.md (local-only)\""
+  [ "${status}" -eq 0 ]
+  tracked=$(git -C "${TEST_REPO_DIR}" ls-files CLAUDE.md)
+  [ -z "${tracked}" ]
+  [ -f "${TEST_REPO_DIR}/CLAUDE.md" ]
+}
+
 @test "anchored matching: logs.md is not blocked when CGW_LOCAL_FILES is 'logs/' (bug #6 regression)" {
   # Bug #6: prefix match without "$" anchor blocked anything starting with the
   # entry, so "logs/" wrongly blocked logs.md. Anchored match now permits it.

@@ -45,7 +45,7 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   # ── [1] Local-only file check ──────────────────────────────────────────
   for COMMIT in ${COMMITS}; do
     mapfile -t PROBLEM < <(
-      git diff-tree --no-commit-id -r --name-only "${COMMIT}" 2>/dev/null \
+      git diff-tree --no-commit-id -r --name-only --diff-filter=AM "${COMMIT}" 2>/dev/null \
         | cgw_filter_local_files || true
     )
     if (( ${#PROBLEM[@]} > 0 )); then
