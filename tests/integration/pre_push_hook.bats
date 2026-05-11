@@ -81,6 +81,22 @@ _bypass_commit() {
   [[ "${output}" == *"non-conventional"* ]] || [[ "${output}" == *"format"* ]]
 }
 
+@test "pre-push allows pushing a commit that only deletes a tracked local-only file (bug #7 regression)" {
+  # Reproduce: user adds file to CGW_LOCAL_FILES, git rm --cached, commits via core.hooksPath=/dev/null,
+  # then pushes. pre-push was using git diff-tree --name-only with no --diff-filter, so it saw the
+  # deletion as "CLAUDE.md present in commit" and blocked the push.
+  echo "# Claude" > "${TEST_REPO_DIR}/CLAUDE.md"
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null add CLAUDE.md
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: leak CLAUDE.md"
+  # Bypass hook to seed remote with the leak commit (testing push of the *removal*, not the add)
+  git -C "${TEST_REPO_DIR}" push --no-verify --quiet origin development
+  git -C "${TEST_REPO_DIR}" rm --cached CLAUDE.md
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: untrack CLAUDE.md"
+
+  run git -C "${TEST_REPO_DIR}" push origin development
+  [ "${status}" -eq 0 ]
+}
+
 @test "pre-push CGW_EXTRA_PREFIXES from .cgw.conf is honored at runtime" {
   echo 'CGW_EXTRA_PREFIXES="cuda"' > "${TEST_REPO_DIR}/.cgw.conf"
   echo "feature" > "${TEST_REPO_DIR}/cuda_feat.txt"
