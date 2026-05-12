@@ -1,7 +1,6 @@
 ---
 name: auto-git-workflow
 description: "Use whenever the user asks for a git operation in this project — commit, push, pull, fetch, merge, rebase, cherry-pick, rollback, revert, sync, stash, tag, release, branch (create/rename/delete/cleanup), bisect, undo, amend, or conflict resolution. Routes work through scripts/git/*.sh wrappers (commit_enhanced.sh, push_validated.sh, merge_with_validation.sh, rollback_merge.sh, cherry_pick_commits.sh, rebase_safe.sh, stash_work.sh, branch_cleanup.sh, bisect_helper.sh, changelog_generate.sh, create_release.sh, create_pr.sh, sync_branches.sh, undo_last.sh) instead of raw git, so lint validation, local-only file protection, backup tags, and force-push guards are never bypassed."
-user-invocable: true
 allowed-tools: "Bash, Read, Grep"
 ---
 
@@ -20,6 +19,8 @@ For branch rules and merge workflow, see [references/branch-and-merge-rules.md](
 ## When to use this skill
 
 Invoke this skill **before** running any git command in this project. If the answer to *"am I about to run `git <verb>`?"* is yes — even for `git commit -m`, `git push`, `git merge`, `git rebase`, `git cherry-pick`, `git stash`, `git tag`, `git revert`, `git reset`, or any branch/remote mutation — load these rules first and reach for the matching `scripts/git/*.sh` wrapper. Read-only operations (`git status`, `git log`, `git diff`, `git show`) do not require the skill, but using it does no harm.
+
+**Tool-use note.** When using `AskUserQuestion` to clarify a git operation, emit the tool call promptly — keep the prose preamble to one short sentence. Long narrative lead-ins before a structured tool call have, in past sessions, correlated with empty `input: {}` emissions that the harness rejects as "Invalid tool parameters". If you see that error, simply re-issue the same question.
 
 ---
 

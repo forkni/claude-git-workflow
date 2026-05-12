@@ -9,10 +9,10 @@
 git clone https://github.com/forkni/claude-git-workflow.git
 
 :: 2. Run the installer — prompts for your project path
-claude-git-workflow\install.cmd
+claude-git-workflow\cgw-install.cmd
 ```
 
-`install.cmd` validates prerequisites, copies scripts into your project, runs `configure.sh` interactively, and offers to clean up temporary files.
+`cgw-install.cmd` validates prerequisites, copies scripts into your project, runs `configure.sh` interactively, and offers to clean up temporary files.
 
 ### Unix / manual
 
@@ -37,7 +37,7 @@ cd your-project && ./scripts/git/configure.sh
 - **gh CLI** (optional) — only required for `create_pr.sh` (`gh auth login`)
 - **Claude Code CLI** (optional) — only required for Claude Code integration
 
-**Windows:** [Git for Windows](https://git-scm.com/download/win) provides both `bash` and `git`. The installer (`install.cmd`) validates this automatically.
+**Windows:** [Git for Windows](https://git-scm.com/download/win) provides both `bash` and `git`. The installer (`cgw-install.cmd`) validates this automatically.
 
 ---
 
@@ -83,7 +83,7 @@ cd your-project && ./scripts/git/configure.sh
 
 ### "bash not found" (Windows)
 
-`install.cmd` prepends `C:\Program Files\Git\bin` to `%PATH%` automatically, but if that path doesn't exist, bash won't be found.
+`cgw-install.cmd` prepends `C:\Program Files\Git\bin` to `%PATH%` automatically, but if that path doesn't exist, bash won't be found.
 
 **Fix:** Install [Git for Windows](https://git-scm.com/download/win), then restart your terminal and re-run the installer.
 

@@ -10,7 +10,7 @@ It also includes a `/auto-git-workflow` **slash command** that runs the full com
 
 ## Automatic Installation
 
-`install.cmd` (Windows) and `configure.sh` (Unix) install the skill and slash command automatically during project setup.
+`cgw-install.cmd` (Windows) and `configure.sh` (Unix) install the skill and slash command automatically during project setup.
 
 After installation, Claude Code will automatically enforce the workflow rules — no `/auto-git-workflow` invocation needed for individual operations.
 

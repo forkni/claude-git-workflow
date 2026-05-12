@@ -11,13 +11,13 @@ Drop-in git automation for any project. Enhanced commits, safe merges, validated
 git clone https://github.com/forkni/claude-git-workflow.git
 
 :: 2. Run the installer — prompts for your project path
-claude-git-workflow\install.cmd
+claude-git-workflow\cgw-install.cmd
 
 :: 3. Done — use it (from your project, in Git Bash)
 ./scripts/git/commit_enhanced.sh "feat: your feature"
 ```
 
-`install.cmd` runs pre-install checks, copies scripts, runs `configure.sh` interactively, and cleans up temporary files.
+`cgw-install.cmd` runs pre-install checks, copies scripts, runs `configure.sh` interactively, and cleans up temporary files.
 
 ### Unix / manual
 
@@ -113,7 +113,7 @@ See [docs/configuration.md](docs/configuration.md) for all options and language-
 
 Compatible with: Linux, macOS, Windows (Git Bash / WSL)
 
-**Windows installer** (`install.cmd`) requires only [Git for Windows](https://git-scm.com/download/win) — it validates bash availability as part of its pre-install checks.
+**Windows installer** (`cgw-install.cmd`) requires only [Git for Windows](https://git-scm.com/download/win) — it validates bash availability as part of its pre-install checks.
 
 ---
 
