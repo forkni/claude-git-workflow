@@ -173,6 +173,39 @@ _detect_format_tool() {
   esac
 }
 
+_detect_typecheck_tool() {
+  # Python project: prefer [tool.*] declarations in pyproject.toml over command availability.
+  if [[ -f "pyproject.toml" ]] || [[ -f "setup.py" ]] || [[ -f "setup.cfg" ]] || [[ -f "requirements.txt" ]]; then
+    if grep -q '^\[tool\.pyrefly\]' "pyproject.toml" 2>/dev/null; then
+      echo "pyrefly"; return 0
+    fi
+    if grep -q '^\[tool\.pyright\]' "pyproject.toml" 2>/dev/null; then
+      echo "pyright"; return 0
+    fi
+    if grep -q '^\[tool\.mypy\]' "pyproject.toml" 2>/dev/null; then
+      echo "mypy"; return 0
+    fi
+    if command -v pyrefly &>/dev/null; then
+      echo "pyrefly"; return 0
+    fi
+    if command -v pyright &>/dev/null; then
+      echo "pyright"; return 0
+    fi
+    if command -v mypy &>/dev/null; then
+      echo "mypy"; return 0
+    fi
+    # Python project but no typechecker found — use sentinel so config can include the hint.
+    echo "none-python"; return 0
+  fi
+  # JavaScript/TypeScript project
+  if [[ -f "tsconfig.json" ]] || [[ -f "package.json" ]]; then
+    if command -v tsc &>/dev/null; then
+      echo "tsc"; return 0
+    fi
+  fi
+  echo ""
+}
+
 _detect_local_files() {
   # Scan for files that exist on disk but are not tracked by git
   local files=()
@@ -296,6 +329,43 @@ _build_lint_config() {
       echo "CGW_FORMAT_CHECK_ARGS=\"\""
       echo "CGW_FORMAT_FIX_ARGS=\"\""
       echo "CGW_FORMAT_EXCLUDES=\"\""
+      ;;
+  esac
+}
+
+_build_typecheck_config() {
+  local tc_tool="$1"
+
+  case "${tc_tool}" in
+    pyrefly)
+      echo "CGW_TYPECHECK_CMD=\"pyrefly\""
+      echo "CGW_TYPECHECK_CHECK_ARGS=\"check\""
+      echo "CGW_TYPECHECK_EXCLUDES=\"\""
+      ;;
+    pyright)
+      echo "CGW_TYPECHECK_CMD=\"pyright\""
+      echo "CGW_TYPECHECK_CHECK_ARGS=\"\""
+      echo "CGW_TYPECHECK_EXCLUDES=\"\""
+      ;;
+    mypy)
+      echo "CGW_TYPECHECK_CMD=\"mypy\""
+      echo "CGW_TYPECHECK_CHECK_ARGS=\".\""
+      echo "CGW_TYPECHECK_EXCLUDES=\"\""
+      ;;
+    tsc)
+      echo "CGW_TYPECHECK_CMD=\"tsc\""
+      echo "CGW_TYPECHECK_CHECK_ARGS=\"--noEmit\""
+      echo "CGW_TYPECHECK_EXCLUDES=\"\""
+      ;;
+    none-python)
+      echo "CGW_TYPECHECK_CMD=\"\"  # install pyrefly to enable: pip install pyrefly"
+      echo "CGW_TYPECHECK_CHECK_ARGS=\"check\""
+      echo "CGW_TYPECHECK_EXCLUDES=\"\""
+      ;;
+    *)
+      echo "CGW_TYPECHECK_CMD=\"\""
+      echo "CGW_TYPECHECK_CHECK_ARGS=\"\""
+      echo "CGW_TYPECHECK_EXCLUDES=\"\""
       ;;
   esac
 }
@@ -631,7 +701,7 @@ main() {
   # -- Detection phase ------------------------------------------------------
 
   echo "Scanning project..."
-  echo "  Detecting branch names, lint tools, virtual environment, and local-only files..."
+  echo "  Detecting branch names, lint tools, typecheck tool, virtual environment, and local-only files..."
   echo ""
 
   local detected_target
@@ -649,9 +719,16 @@ main() {
   local detected_local_files
   detected_local_files="$(_detect_local_files)"
 
+  local detected_typecheck
+  detected_typecheck="$(_detect_typecheck_tool)"
+
+  local _tc_display="${detected_typecheck}"
+  [[ "${_tc_display}" == "none-python" ]] && _tc_display="none detected (Tip: pip install pyrefly to enable)"
+
   echo "  Target branch (stable):  ${detected_target}"
   echo "  Source branch (dev):     ${detected_source}"
   echo "  Lint tool:               ${detected_lint:-none detected}"
+  echo "  Typecheck tool:          ${_tc_display:-none detected}"
   echo "  Venv directory:          ${detected_venv:-none found}"
   echo "  Local-only files:        ${detected_local_files:-none found}"
   echo ""
@@ -707,6 +784,9 @@ main() {
       echo ""
       echo "# Lint configuration (auto-detected)"
       _build_lint_config "${detected_lint}" "${detected_venv}"
+      echo ""
+      echo "# Typecheck configuration (auto-detected)"
+      _build_typecheck_config "${detected_typecheck}"
       echo ""
       echo "# Commit message prefix extras (pipe-separated, e.g. \"cuda|tensorrt\")"
       echo "CGW_EXTRA_PREFIXES=\"\""

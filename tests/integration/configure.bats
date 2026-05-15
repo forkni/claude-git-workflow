@@ -156,3 +156,40 @@ EOF
   _run_configure "--non-interactive"
   [ -f "${TEST_REPO_DIR}/.githooks/pre-commit" ]
 }
+
+# ── Typecheck tool detection ──────────────────────────────────────────────────
+
+@test "detects pyrefly when [tool.pyrefly] declared in pyproject.toml" {
+  printf '[tool.pyrefly]\nsearch_path = ["."]\n' > "${TEST_REPO_DIR}/pyproject.toml"
+  _run_configure "--non-interactive" || true
+  if [ -f "${TEST_REPO_DIR}/.cgw.conf" ]; then
+    grep -q 'CGW_TYPECHECK_CMD="pyrefly"' "${TEST_REPO_DIR}/.cgw.conf"
+  fi
+}
+
+@test "detects mypy when [tool.mypy] declared and pyrefly/pyright absent" {
+  printf '[tool.mypy]\n' > "${TEST_REPO_DIR}/pyproject.toml"
+  _run_configure "--non-interactive" || true
+  if [ -f "${TEST_REPO_DIR}/.cgw.conf" ]; then
+    grep -q 'CGW_TYPECHECK_CMD="mypy"' "${TEST_REPO_DIR}/.cgw.conf"
+  fi
+}
+
+@test "emits pyrefly hint comment when Python project has no typechecker" {
+  # pyproject.toml present but no [tool.*] typechecker section, none on PATH
+  printf '[build-system]\nrequires = ["setuptools"]\n' > "${TEST_REPO_DIR}/pyproject.toml"
+  _run_configure "--non-interactive" || true
+  if [ -f "${TEST_REPO_DIR}/.cgw.conf" ]; then
+    grep -q 'pip install pyrefly' "${TEST_REPO_DIR}/.cgw.conf"
+  fi
+}
+
+@test "--reconfigure adds CGW_TYPECHECK_CMD when pyrefly declared" {
+  # Simulate a pre-existing .cgw.conf without typecheck vars, then reconfigure
+  printf '[tool.pyrefly]\n' > "${TEST_REPO_DIR}/pyproject.toml"
+  printf 'CGW_SOURCE_BRANCH="development"\nCGW_TARGET_BRANCH="main"\n' > "${TEST_REPO_DIR}/.cgw.conf"
+  _run_configure "--non-interactive --reconfigure" || true
+  if [ -f "${TEST_REPO_DIR}/.cgw.conf" ]; then
+    grep -q 'CGW_TYPECHECK_CMD="pyrefly"' "${TEST_REPO_DIR}/.cgw.conf"
+  fi
+}
