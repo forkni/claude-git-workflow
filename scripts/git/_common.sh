@@ -693,7 +693,7 @@ cgw_print_conflict_summary() {
 
 # ── lint pipeline module ───────────────────────────────────────────────────────
 # Shared helpers for venv-aware binary resolution, file-list selection, lint
-# check, format check, lint/format fix, and markdownlint. Callers:
+# check, format check, lint/format fix, markdownlint, and typecheck. Callers:
 # commit_enhanced.sh, check_lint.sh, fix_lint.sh, .githooks/pre-commit.
 #
 # cgw_resolve_lint_binary <cmd>
@@ -837,6 +837,35 @@ cgw_run_markdownlint_check() {
   else
     # shellcheck disable=SC2086
     run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS:-}
+  fi
+}
+
+# cgw_run_typecheck [files...]
+#   Runs ${CGW_TYPECHECK_CMD} against the project (no files) or a given file
+#   list (strips trailing path token from CGW_TYPECHECK_CHECK_ARGS when files
+#   given). Honors CGW_SKIP_TYPECHECK=1 and empty CGW_TYPECHECK_CMD (returns 0,
+#   emits skip line). Reads ${logfile} from caller scope. Returns 0 = clean,
+#   1 = errors found.
+cgw_run_typecheck() {
+  if [[ "${CGW_SKIP_TYPECHECK:-0}" == "1" ]]; then
+    echo "  (typecheck skipped -- CGW_SKIP_TYPECHECK=1)"
+    return 0
+  fi
+  if [[ -z "${CGW_TYPECHECK_CMD:-}" ]]; then
+    echo "  (typecheck skipped -- CGW_TYPECHECK_CMD not set)"
+    return 0
+  fi
+  get_python_path 2>/dev/null || true
+  local tc_bin
+  tc_bin=$(cgw_resolve_lint_binary "${CGW_TYPECHECK_CMD}")
+  if [[ $# -gt 0 ]]; then
+    local stripped_args
+    stripped_args=$(cgw_strip_path_arg "${CGW_TYPECHECK_CHECK_ARGS:-check}")
+    # shellcheck disable=SC2086  # Word splitting intentional: stripped_args contains multiple flags
+    run_tool_with_logging "TYPECHECK" "${logfile}" "${tc_bin}" ${stripped_args} "$@"
+  else
+    # shellcheck disable=SC2086  # Word splitting intentional: CGW_TYPECHECK_CHECK_ARGS/CGW_TYPECHECK_EXCLUDES contain multiple flags
+    run_tool_with_logging "TYPECHECK" "${logfile}" "${tc_bin}" ${CGW_TYPECHECK_CHECK_ARGS:-check} ${CGW_TYPECHECK_EXCLUDES:-}
   fi
 }
 
