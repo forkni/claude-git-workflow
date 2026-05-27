@@ -882,12 +882,12 @@ cgw_run_typecheck() {
   tc_bin=$(cgw_resolve_lint_binary "${CGW_TYPECHECK_CMD}")
   if [[ $# -gt 0 ]]; then
     local stripped_args
-    stripped_args=$(cgw_strip_path_arg "${CGW_TYPECHECK_CHECK_ARGS:-check}")
+    stripped_args=$(cgw_strip_path_arg "${CGW_TYPECHECK_CHECK_ARGS-check}")
     # shellcheck disable=SC2086  # Word splitting intentional: stripped_args contains multiple flags
     run_tool_with_logging "TYPECHECK" "${logfile}" "${tc_bin}" ${stripped_args} "$@"
   else
     # shellcheck disable=SC2086  # Word splitting intentional: CGW_TYPECHECK_CHECK_ARGS/CGW_TYPECHECK_EXCLUDES contain multiple flags
-    run_tool_with_logging "TYPECHECK" "${logfile}" "${tc_bin}" ${CGW_TYPECHECK_CHECK_ARGS:-check} ${CGW_TYPECHECK_EXCLUDES:-}
+    run_tool_with_logging "TYPECHECK" "${logfile}" "${tc_bin}" ${CGW_TYPECHECK_CHECK_ARGS-check} ${CGW_TYPECHECK_EXCLUDES:-}
   fi
 }
 
