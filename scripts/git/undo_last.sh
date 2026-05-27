@@ -147,7 +147,7 @@ _cmd_undo_commit() {
   upstream_ref="refs/remotes/${CGW_REMOTE}/${current_branch}"
   if git show-ref --verify --quiet "${upstream_ref}" 2>/dev/null; then
     local ahead
-    ahead=$(git rev-list --count "${CGW_REMOTE}/${current_branch}..HEAD" 2>/dev/null || echo "0")
+    ahead=$(cgw_rev_count "${CGW_REMOTE}/${current_branch}" "HEAD" || echo "0")
     if [[ "${ahead}" -eq 0 ]]; then
       echo "[!] WARNING: The last commit appears to have been pushed to ${CGW_REMOTE}."
       echo "  Undoing it locally will create a diverged state requiring force-push."
@@ -358,7 +358,7 @@ _cmd_amend_message() {
   upstream_ref="refs/remotes/${CGW_REMOTE}/${current_branch}"
   if git show-ref --verify --quiet "${upstream_ref}" 2>/dev/null; then
     local ahead
-    ahead=$(git rev-list --count "${CGW_REMOTE}/${current_branch}..HEAD" 2>/dev/null || echo "0")
+    ahead=$(cgw_rev_count "${CGW_REMOTE}/${current_branch}" "HEAD" || echo "0")
     if [[ "${ahead}" -eq 0 ]]; then
       echo "  [!] WARNING: This commit appears to have been pushed. Amending will require force-push."
       if ! cgw_confirm "Amend anyway?" --non-interactive abort; then

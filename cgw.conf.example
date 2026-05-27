@@ -116,6 +116,38 @@ CGW_FORMAT_EXCLUDES="--exclude logs --exclude .venv"
 # CGW_FORMAT_CMD=""
 
 # ============================================================================
+# TYPECHECK CONFIGURATION
+# ============================================================================
+# Optional non-blocking typecheck step run by the pre-commit hook.
+# Set CGW_TYPECHECK_CMD="" to disable (default).
+#
+# ── Python / pyrefly (recommended for new Python projects) ───────────────────
+# CGW_TYPECHECK_CMD="pyrefly"
+# CGW_TYPECHECK_CHECK_ARGS="check"
+# CGW_TYPECHECK_EXCLUDES=""
+#
+# ── Python / pyright ─────────────────────────────────────────────────────────
+# CGW_TYPECHECK_CMD="pyright"
+# CGW_TYPECHECK_CHECK_ARGS=""
+# CGW_TYPECHECK_EXCLUDES=""
+#
+# ── Python / mypy ────────────────────────────────────────────────────────────
+# CGW_TYPECHECK_CMD="mypy"
+# CGW_TYPECHECK_CHECK_ARGS="."
+# CGW_TYPECHECK_EXCLUDES=""
+#
+# ── TypeScript / tsc ─────────────────────────────────────────────────────────
+# CGW_TYPECHECK_CMD="tsc"
+# CGW_TYPECHECK_CHECK_ARGS="--noEmit"
+# CGW_TYPECHECK_EXCLUDES=""
+#
+# Skip at runtime with CGW_SKIP_TYPECHECK=1.
+
+CGW_TYPECHECK_CMD=""
+CGW_TYPECHECK_CHECK_ARGS="check"
+CGW_TYPECHECK_EXCLUDES=""
+
+# ============================================================================
 # MODIFIED-ONLY LINT FILE EXTENSIONS (check_lint.sh, fix_lint.sh)
 # ============================================================================
 # Space-separated glob patterns controlling which files are matched in

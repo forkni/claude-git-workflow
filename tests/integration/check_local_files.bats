@@ -69,7 +69,7 @@ _run_check() {
 @test "tracked file inside .claude/ is caught when CGW_LOCAL_FILES='.claude/'" {
   mkdir -p "${TEST_REPO_DIR}/.claude"
   echo "settings" > "${TEST_REPO_DIR}/.claude/settings.local.json"
-  git -C "${TEST_REPO_DIR}" add .claude/settings.local.json
+  git -C "${TEST_REPO_DIR}" add -f .claude/settings.local.json
   git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: leak .claude/"
 
   run _run_check 'export CGW_LOCAL_FILES=".claude/"'

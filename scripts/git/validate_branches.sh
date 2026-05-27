@@ -117,8 +117,8 @@ main() {
   log_section_start "BRANCH RELATIONSHIP CHECK" "$logfile"
 
   local source_ahead target_ahead
-  source_ahead=$(git rev-list --count "${CGW_TARGET_BRANCH}..${CGW_SOURCE_BRANCH}" 2>/dev/null || echo "unknown")
-  target_ahead=$(git rev-list --count "${CGW_SOURCE_BRANCH}..${CGW_TARGET_BRANCH}" 2>/dev/null || echo "unknown")
+  source_ahead=$(cgw_rev_count "${CGW_TARGET_BRANCH}" "${CGW_SOURCE_BRANCH}" || echo "unknown")
+  target_ahead=$(cgw_rev_count "${CGW_SOURCE_BRANCH}" "${CGW_TARGET_BRANCH}" || echo "unknown")
 
   echo "${CGW_SOURCE_BRANCH} ahead of ${CGW_TARGET_BRANCH}: $source_ahead commits" | tee -a "$logfile"
   echo "${CGW_TARGET_BRANCH} ahead of ${CGW_SOURCE_BRANCH}: $target_ahead commits" | tee -a "$logfile"

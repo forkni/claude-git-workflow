@@ -55,5 +55,19 @@ if [[ -n "${STAGED_FILES}" ]] && [[ -n "${CGW_LINT_CMD:-}" ]]; then
   fi
 fi
 
+# Optional: typecheck using CGW_TYPECHECK_CMD (non-blocking)
+if [[ -n "${STAGED_FILES}" ]] && [[ -n "${CGW_TYPECHECK_CMD:-}" ]]; then
+  echo ""
+  echo "Checking types (non-blocking)..."
+  logfile=/dev/null
+  if cgw_run_typecheck >/dev/null 2>&1; then
+    echo "  [PASS] Typecheck passed"
+  else
+    echo "  [WARN] Type errors found"
+    echo "  Run '${CGW_TYPECHECK_CMD} ${CGW_TYPECHECK_CHECK_ARGS:-check}' to see details"
+    echo "  (Commit proceeds — fix types before pushing)"
+  fi
+fi
+
 echo ""
 exit 0

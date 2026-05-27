@@ -70,6 +70,10 @@ cp cgw.conf.example .cgw.conf
 | `CGW_MARKDOWNLINT_ARGS` | `**/*.md !CLAUDE.md !MEMORY.md` | Arguments passed to markdown lint tool |
 | `CGW_SKIP_LINT` | `(unset)` | Set to `1` to skip all lint checks at runtime |
 | `CGW_SKIP_MD_LINT` | `(unset)` | Set to `1` to skip only the markdown lint step |
+| `CGW_TYPECHECK_CMD` | `` | Typecheck tool; set to e.g. `pyrefly` to enable (`""` to disable) |
+| `CGW_TYPECHECK_CHECK_ARGS` | `check` | Arguments passed to the typecheck tool |
+| `CGW_TYPECHECK_EXCLUDES` | `` | Exclusion flags appended to the typecheck command |
+| `CGW_SKIP_TYPECHECK` | `(unset)` | Set to `1` to skip the typecheck step at runtime |
 | `CGW_STAGED_ONLY` | `0` | Set to `1` to commit only pre-staged files (`commit_enhanced.sh`) |
 | `CGW_ALL` | `(unset)` | Set to `1` to force-stage all tracked changes, overriding pre-staged-only logic (`commit_enhanced.sh`) |
 | `CGW_EXTRA_PREFIXES` | `` | Extra commit prefixes (pipe-separated, e.g. `cuda\|tensorrt`) |
@@ -159,4 +163,44 @@ CGW_FORMAT_FIX_ARGS="-i -r ."
 ```bash
 CGW_LINT_CMD=""
 CGW_FORMAT_CMD=""
+```
+
+---
+
+## Typecheck
+
+The pre-commit hook runs a non-blocking typecheck step when `CGW_TYPECHECK_CMD` is set. Like the lint step, it surfaces warnings but never blocks the commit. Set `CGW_SKIP_TYPECHECK=1` to skip it at runtime (e.g. in CI where a dedicated type-check job runs separately).
+
+### Python / pyrefly (recommended)
+
+```bash
+CGW_TYPECHECK_CMD="pyrefly"
+CGW_TYPECHECK_CHECK_ARGS="check"
+```
+
+### Python / pyright
+
+```bash
+CGW_TYPECHECK_CMD="pyright"
+CGW_TYPECHECK_CHECK_ARGS=""
+```
+
+### Python / mypy
+
+```bash
+CGW_TYPECHECK_CMD="mypy"
+CGW_TYPECHECK_CHECK_ARGS="."
+```
+
+### TypeScript / tsc
+
+```bash
+CGW_TYPECHECK_CMD="tsc"
+CGW_TYPECHECK_CHECK_ARGS="--noEmit"
+```
+
+### Disable typecheck
+
+```bash
+CGW_TYPECHECK_CMD=""
 ```

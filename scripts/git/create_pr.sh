@@ -177,7 +177,7 @@ main() {
     exit 1
   fi
 
-  if ! git ls-remote --exit-code "${CGW_REMOTE}" "refs/heads/${src_branch}" >/dev/null 2>&1; then
+  if ! cgw_remote_branch_exists "${CGW_REMOTE}" "${src_branch}"; then
     err "Source branch '${src_branch}' not pushed to ${CGW_REMOTE}"
     echo "  Push it with: ./scripts/git/push_validated.sh" >&2
     log_section_end "BRANCH VALIDATION" "$logfile" "1"
@@ -185,7 +185,7 @@ main() {
   fi
 
   # Verify target branch exists on remote
-  if ! git ls-remote --exit-code "${CGW_REMOTE}" "refs/heads/${tgt_branch}" >/dev/null 2>&1; then
+  if ! cgw_remote_branch_exists "${CGW_REMOTE}" "${tgt_branch}"; then
     err "Target branch '${tgt_branch}' does not exist on ${CGW_REMOTE}"
     echo "  Create it with: ./scripts/git/push_validated.sh --branch ${tgt_branch}" >&2
     log_section_end "BRANCH VALIDATION" "$logfile" "1"
@@ -208,7 +208,7 @@ main() {
 
   # Check for commits ahead of target
   local commits_ahead
-  if ! commits_ahead=$(git rev-list --count "${CGW_REMOTE}/${tgt_branch}..${CGW_REMOTE}/${src_branch}" 2>/dev/null); then
+  if ! commits_ahead=$(cgw_rev_count "${CGW_REMOTE}/${tgt_branch}" "${CGW_REMOTE}/${src_branch}"); then
     err "Cannot determine commit distance between ${CGW_REMOTE}/${tgt_branch} and ${CGW_REMOTE}/${src_branch}"
     log_section_end "BRANCH VALIDATION" "$logfile" "1"
     exit 1

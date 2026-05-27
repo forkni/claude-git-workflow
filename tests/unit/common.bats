@@ -1043,3 +1043,194 @@ UU b.py
   " 2>/dev/null
   [ "${status}" -eq 1 ]
 }
+
+# ── cgw_rev_count() ────────────────────────────────────────────────────────────
+# Each test spins up its own throwaway repo so results are independent of
+# commits accumulated by earlier tests in the shared file-scope repo.
+
+@test "cgw_rev_count: tip 1 ahead of base returns 1" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    echo x > \"\${tmp}/f\" && git -C \"\${tmp}\" add f
+    git -C \"\${tmp}\" commit --quiet -m 'init'
+    git -C \"\${tmp}\" checkout --quiet -b main 2>/dev/null || \
+      git -C \"\${tmp}\" branch -m main 2>/dev/null || true
+    git -C \"\${tmp}\" checkout --quiet -b dev
+    echo y >> \"\${tmp}/f\" && git -C \"\${tmp}\" add f
+    git -C \"\${tmp}\" commit --quiet -m 'dev'
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    out=\$(cgw_rev_count main dev); ec=\$?
+    rm -rf \"\${tmp}\"
+    echo \"\${out}\"; exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "1" ]
+}
+
+@test "cgw_rev_count: base not ahead of tip returns 0" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    echo x > \"\${tmp}/f\" && git -C \"\${tmp}\" add f
+    git -C \"\${tmp}\" commit --quiet -m 'init'
+    git -C \"\${tmp}\" checkout --quiet -b main 2>/dev/null || \
+      git -C \"\${tmp}\" branch -m main 2>/dev/null || true
+    git -C \"\${tmp}\" checkout --quiet -b dev
+    echo y >> \"\${tmp}/f\" && git -C \"\${tmp}\" add f
+    git -C \"\${tmp}\" commit --quiet -m 'dev'
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    out=\$(cgw_rev_count dev main); ec=\$?
+    rm -rf \"\${tmp}\"
+    echo \"\${out}\"; exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "0" ]
+}
+
+@test "cgw_rev_count: same ref returns 0" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    echo x > \"\${tmp}/f\" && git -C \"\${tmp}\" add f
+    git -C \"\${tmp}\" commit --quiet -m 'init'
+    git -C \"\${tmp}\" checkout --quiet -b main 2>/dev/null || \
+      git -C \"\${tmp}\" branch -m main 2>/dev/null || true
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    out=\$(cgw_rev_count main main); ec=\$?
+    rm -rf \"\${tmp}\"
+    echo \"\${out}\"; exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "0" ]
+}
+
+@test "cgw_rev_count: bad base ref exits non-zero" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    echo x > \"\${tmp}/f\" && git -C \"\${tmp}\" add f
+    git -C \"\${tmp}\" commit --quiet -m 'init'
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_rev_count nonexistent HEAD 2>/dev/null; ec=\$?
+    rm -rf \"\${tmp}\"; exit \${ec}
+  "
+  [ "${status}" -ne 0 ]
+}
+
+@test "cgw_rev_count: bad tip ref exits non-zero" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    echo x > \"\${tmp}/f\" && git -C \"\${tmp}\" add f
+    git -C \"\${tmp}\" commit --quiet -m 'init'
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_rev_count HEAD nonexistent 2>/dev/null; ec=\$?
+    rm -rf \"\${tmp}\"; exit \${ec}
+  "
+  [ "${status}" -ne 0 ]
+}
+
+# ── cgw_remote_reachable() and cgw_remote_branch_exists() ─────────────────────
+
+@test "cgw_remote_reachable: reachable remote returns 0" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    bare=\"\${tmp}/remote.git\"
+    repo=\"\${tmp}/repo\"
+    git init --bare --quiet \"\${bare}\"
+    git init --quiet \"\${repo}\"
+    git -C \"\${repo}\" config user.email t@t.com
+    git -C \"\${repo}\" config user.name T
+    echo x > \"\${repo}/f\"
+    git -C \"\${repo}\" add f
+    git -C \"\${repo}\" commit --quiet -m 'init'
+    git -C \"\${repo}\" remote add origin \"\${bare}\"
+    git -C \"\${repo}\" push --quiet origin HEAD:main
+    cd \"\${repo}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_remote_reachable origin; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_remote_reachable: unknown remote exits non-zero" {
+  run cgw_remote_reachable "no-such-remote"
+  [ "${status}" -ne 0 ]
+}
+
+@test "cgw_remote_branch_exists: existing branch returns 0" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    bare=\"\${tmp}/remote.git\"
+    repo=\"\${tmp}/repo\"
+    git init --bare --quiet \"\${bare}\"
+    git init --quiet \"\${repo}\"
+    git -C \"\${repo}\" config user.email t@t.com
+    git -C \"\${repo}\" config user.name T
+    echo x > \"\${repo}/f\"
+    git -C \"\${repo}\" add f
+    git -C \"\${repo}\" commit --quiet -m 'init'
+    git -C \"\${repo}\" remote add origin \"\${bare}\"
+    git -C \"\${repo}\" push --quiet origin HEAD:main
+    cd \"\${repo}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_remote_branch_exists origin main; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_remote_branch_exists: missing branch exits non-zero" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    bare=\"\${tmp}/remote.git\"
+    repo=\"\${tmp}/repo\"
+    git init --bare --quiet \"\${bare}\"
+    git init --quiet \"\${repo}\"
+    git -C \"\${repo}\" config user.email t@t.com
+    git -C \"\${repo}\" config user.name T
+    echo x > \"\${repo}/f\"
+    git -C \"\${repo}\" add f
+    git -C \"\${repo}\" commit --quiet -m 'init'
+    git -C \"\${repo}\" remote add origin \"\${bare}\"
+    git -C \"\${repo}\" push --quiet origin HEAD:main
+    cd \"\${repo}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_remote_branch_exists origin nonexistent-branch; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -ne 0 ]
+}

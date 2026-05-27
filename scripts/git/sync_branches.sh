@@ -77,16 +77,16 @@ sync_one_branch() {
   fi
 
   local behind ahead
-  behind=$(git rev-list --count "HEAD..${CGW_REMOTE}/${branch}" 2>/dev/null || echo "0")
-  ahead=$(git rev-list --count "${CGW_REMOTE}/${branch}..HEAD" 2>/dev/null || echo "0")
+  behind=$(cgw_rev_count "HEAD" "${CGW_REMOTE}/${branch}" || echo "0")
+  ahead=$(cgw_rev_count "${CGW_REMOTE}/${branch}" "HEAD" || echo "0")
 
   # In dry-run mode, report status and skip the actual sync
   if [[ ${_sync_dry_run} -eq 1 ]]; then
     if [[ "${current_branch}" != "${branch}" ]]; then
       # Use remote ref directly for accurate counts when not on this branch
       local remote_behind remote_ahead
-      remote_behind=$(git rev-list --count "refs/heads/${branch}..${CGW_REMOTE}/${branch}" 2>/dev/null || echo "0")
-      remote_ahead=$(git rev-list --count "${CGW_REMOTE}/${branch}..refs/heads/${branch}" 2>/dev/null || echo "0")
+      remote_behind=$(cgw_rev_count "refs/heads/${branch}" "${CGW_REMOTE}/${branch}" || echo "0")
+      remote_ahead=$(cgw_rev_count "${CGW_REMOTE}/${branch}" "refs/heads/${branch}" || echo "0")
       behind="${remote_behind}"
       ahead="${remote_ahead}"
     fi
@@ -107,8 +107,8 @@ sync_one_branch() {
     echo "  Switched to ${branch}" | tee -a "$logfile"
     _sync_did_checkout=1
     # Recompute ahead/behind from this branch's perspective
-    behind=$(git rev-list --count "HEAD..${CGW_REMOTE}/${branch}" 2>/dev/null || echo "0")
-    ahead=$(git rev-list --count "${CGW_REMOTE}/${branch}..HEAD" 2>/dev/null || echo "0")
+    behind=$(cgw_rev_count "HEAD" "${CGW_REMOTE}/${branch}" || echo "0")
+    ahead=$(cgw_rev_count "${CGW_REMOTE}/${branch}" "HEAD" || echo "0")
   fi
 
   echo "  Local: ${ahead} ahead, ${behind} behind ${CGW_REMOTE}/${branch}" | tee -a "$logfile"
