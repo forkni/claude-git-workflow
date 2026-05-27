@@ -156,7 +156,7 @@ main() {
   log_section_start "REMOTE CHECK" "$logfile"
 
   echo "Checking remote ${CGW_REMOTE}..." | tee -a "$logfile"
-  if ! git ls-remote --exit-code "${CGW_REMOTE}" HEAD >/dev/null 2>&1; then
+  if ! cgw_remote_reachable "${CGW_REMOTE}"; then
     err "Remote '${CGW_REMOTE}' is not reachable. Check network/auth."
     log_section_end "REMOTE CHECK" "$logfile" "1"
     exit 1
@@ -166,7 +166,7 @@ main() {
   # Check if local is behind remote
   git fetch "${CGW_REMOTE}" "${target_branch}" >>"$logfile" 2>&1 || true
   local behind
-  behind=$(git rev-list --count "HEAD..${CGW_REMOTE}/${target_branch}" 2>/dev/null || echo "0")
+  behind=$(cgw_rev_count "HEAD" "${CGW_REMOTE}/${target_branch}" || echo "0")
   if [[ "${behind}" -gt 0 ]]; then
     echo "[!] WARNING: Local branch is ${behind} commit(s) behind ${CGW_REMOTE}/${target_branch}" | tee -a "$logfile"
     echo "  A normal push may fail or overwrite remote changes." | tee -a "$logfile"
@@ -207,7 +207,7 @@ main() {
   # [4/5] Show what will be pushed
   echo "[4/5] Commits to be pushed:" | tee -a "$logfile"
   local ahead
-  ahead=$(git rev-list --count "${CGW_REMOTE}/${target_branch}..HEAD" 2>/dev/null || echo "unknown")
+  ahead=$(cgw_rev_count "${CGW_REMOTE}/${target_branch}" "HEAD" || echo "unknown")
   echo "  Local ahead of ${CGW_REMOTE}/${target_branch}: ${ahead} commit(s)" | tee -a "$logfile"
   if [[ "${ahead}" != "0" ]] && [[ "${ahead}" != "unknown" ]]; then
     git log "${CGW_REMOTE}/${target_branch}..HEAD" --oneline 2>/dev/null | tee -a "$logfile" || true

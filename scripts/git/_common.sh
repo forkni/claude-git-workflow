@@ -272,6 +272,28 @@ validate_branch_pair() {
   fi
 }
 
+# cgw_rev_count <base> <tip>
+# Outputs the number of commits reachable from <tip> but not from <base>.
+# Accepts any git ref (branch names, remote-tracking refs, SHAs).
+# Exits non-zero on git failure; callers own their fallback (e.g. || echo "0").
+cgw_rev_count() {
+  git rev-list --count "${1}..${2}" 2>/dev/null
+}
+
+# cgw_remote_reachable <remote>
+# Exits 0 when <remote> is reachable, non-zero otherwise. Silent.
+# Uses git ls-remote with no ref pattern — exits non-zero on any connection failure.
+cgw_remote_reachable() {
+  git ls-remote "${1}" >/dev/null 2>&1
+}
+
+# cgw_remote_branch_exists <remote> <branch>
+# Exits 0 when <branch> exists on <remote>, non-zero otherwise. Silent.
+# Accepts a plain branch name; builds refs/heads/ internally.
+cgw_remote_branch_exists() {
+  git ls-remote --exit-code "${1}" "refs/heads/${2}" >/dev/null 2>&1
+}
+
 # ensure_no_stale_index_lock - Detect and auto-remove abandoned .git/index.lock files.
 #
 # Stale locks (left by crashed/killed git processes) cause:

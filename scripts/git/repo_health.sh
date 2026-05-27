@@ -179,10 +179,9 @@ main() {
 
   for branch in "${CGW_SOURCE_BRANCH}" "${CGW_TARGET_BRANCH}"; do
     if git show-ref --verify --quiet "refs/heads/${branch}" 2>/dev/null; then
-      local ahead behind remote_ref="refs/remotes/${CGW_REMOTE}/${branch}"
-      if git show-ref --verify --quiet "${remote_ref}" 2>/dev/null; then
-        ahead=$(git rev-list --count "${CGW_REMOTE}/${branch}..${branch}" 2>/dev/null || echo "?")
-        behind=$(git rev-list --count "${branch}..${CGW_REMOTE}/${branch}" 2>/dev/null || echo "?")
+      local ahead behind
+      if ahead=$(cgw_rev_count "${CGW_REMOTE}/${branch}" "${branch}") && \
+         behind=$(cgw_rev_count "${branch}" "${CGW_REMOTE}/${branch}"); then
         echo "  ${branch}: ${ahead} ahead, ${behind} behind ${CGW_REMOTE}"
       else
         echo "  ${branch}: (no remote tracking branch)"

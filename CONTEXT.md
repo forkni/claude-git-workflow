@@ -82,3 +82,18 @@ The shared module for all binary yes/no confirmation prompts in CGW scripts. Con
 - `--non-interactive abort|accept|deny`: explicit non-interactive policy declared at the call site. When `CGW_NON_INTERACTIVE=1`: `abort` prints a message and exits 1; `accept` returns 0 silently; `deny` returns 1 silently. Callers own the `CGW_NON_INTERACTIVE=1` assignment from their `[[ ! -t 0 ]]` check — `cgw_confirm` does not test TTY internally.
 
 **Callers**: every binary confirmation prompt in `bisect_helper.sh`, `branch_cleanup.sh`, `cherry_pick_commits.sh`, `commit_enhanced.sh`, `configure.sh`, `create_release.sh`, `merge_docs.sh`, `merge_with_validation.sh`, `push_validated.sh`, `rebase_safe.sh`, `rollback_merge.sh`, `setup_attributes.sh`, `stash_work.sh`, `sync_branches.sh`, `undo_last.sh`. The 3-way `(yes/no/skip)` prompt in `commit_enhanced.sh` stays inline — the helper is binary only.
+
+---
+
+## remote status
+
+The shared module for querying remote reachability, remote branch existence, and commit distance between two refs. Concentrates a seam previously scattered across ~10 inline `git rev-list --count` and `git ls-remote` call sites in 6+ scripts, several of which were untested (notably `repo_health.sh`).
+
+**Implementation seam** — three silent helpers in `scripts/git/_common.sh`:
+- `cgw_rev_count <base> <tip>` — outputs `git rev-list --count "base..tip"` to stdout; exits non-zero on error (bad refs, git failure). No fallback — callers own their own `|| count=0` or `|| exit 1`. Accepts any git ref (branch names, remote tracking refs, SHAs).
+- `cgw_remote_reachable <remote>` — exits 0 if the remote is reachable (probes via `git ls-remote HEAD`), non-zero otherwise.
+- `cgw_remote_branch_exists <remote> <branch>` — exits 0 if `<branch>` exists on `<remote>`; builds `refs/heads/<branch>` internally so callers pass plain branch names.
+
+All three helpers are silent: no stdout/stderr beyond `cgw_rev_count`'s count. Callers own all user-facing error messages.
+
+**Callers**: `push_validated.sh` (remote reachability + ahead/behind), `sync_branches.sh` (ahead/behind), `create_pr.sh` (remote branch existence + commit distance), `validate_branches.sh` (ahead/behind), `repo_health.sh` (bidirectional ahead/behind per branch), `rebase_safe.sh` (ahead/behind), `undo_last.sh` (ahead/behind).

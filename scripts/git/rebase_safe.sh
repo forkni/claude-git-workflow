@@ -302,12 +302,12 @@ _cmd_rebase_onto() {
   # Count pushed commits (commits on current branch not on origin/current_branch)
   local pushed_count=0
   if git rev-parse "${CGW_REMOTE}/${current_branch}" >/dev/null 2>&1; then
-    pushed_count=$(git rev-list --count "${CGW_REMOTE}/${current_branch}..HEAD" 2>/dev/null || echo "0")
+    pushed_count=$(cgw_rev_count "${CGW_REMOTE}/${current_branch}" "HEAD" || echo "0")
   fi
 
   # Count commits that would be rebased
   local rebase_commit_count
-  rebase_commit_count=$(git rev-list --count "${onto_ref}..HEAD" 2>/dev/null || echo "?")
+  rebase_commit_count=$(cgw_rev_count "${onto_ref}" "HEAD" || echo "?")
 
   # Show plan
   echo "  Current branch: ${current_branch}" | tee -a "$logfile"
@@ -427,7 +427,7 @@ _cmd_squash_last() {
   local pushed_count=0
   if git rev-parse "${CGW_REMOTE}/${current_branch}" >/dev/null 2>&1; then
     # Count how many of the last N commits exist on origin
-    pushed_count=$(git rev-list --count "${CGW_REMOTE}/${current_branch}..HEAD" 2>/dev/null || echo "0")
+    pushed_count=$(cgw_rev_count "${CGW_REMOTE}/${current_branch}" "HEAD" || echo "0")
     # Clamp to squash range
     if [[ "${pushed_count}" -gt "${squash_n}" ]]; then
       pushed_count="${squash_n}"
