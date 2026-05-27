@@ -86,7 +86,7 @@ git diff --quiet && git diff --cached --quiet
 ./scripts/git/check_lint.sh
 ```
 
-- Ignore errors in local-only files (CLAUDE.md, MEMORY.md, etc.) — never committed
+- Lint failures in local-only files (CLAUDE.md, MEMORY.md, etc.) are safe to ignore — see SKILL.md Rule 3.
 - If still fails: Stop workflow
 - If passes: Continue to Phase 2
 
@@ -123,12 +123,7 @@ git add .
 ```
 
 Replace message with appropriate conventional commit (feat:, fix:, docs:, chore:, test:).
-
-`commit_enhanced.sh` automatically:
-- Unstages local-only files (configured via `CGW_LOCAL_FILES`)
-- Validates commit message format
-- Runs lint check
-- Respects pre-staged files: if you staged specific files and have other unstaged changes, commits pre-staged only (use `--all` to override)
+For staging intent and local-file protection behavior, see SKILL.md Rules 3 and 5.
 
 **Step 2.3: Capture commit info for final report**
 
@@ -173,14 +168,8 @@ echo "${CGW_MERGE_MODE:-direct}"
 ./scripts/git/merge_with_validation.sh --non-interactive
 ```
 
-`merge_with_validation.sh` automatically:
-- Creates backup tag
-- Handles modify/delete conflicts (auto-resolved)
-- Stops on content conflicts (requires manual resolution)
-- Validates docs CI policy (if configured)
-
 - If exit code 0: Continue to Phase 5
-- If exit code ≠ 0: Check output for conflict type, stop workflow
+- If exit code ≠ 0: Check output for conflict type, stop workflow and see `references/error-recovery.md`
 
 ---
 
@@ -265,45 +254,11 @@ instead of bypassing the wrappers — the Core Rules in SKILL.md are mandatory.
 
 ---
 
-## Error Handling
+## Error Recovery
 
-### Lint Failures
-
-```bash
-./scripts/git/fix_lint.sh
-./scripts/git/check_lint.sh
-```
-
-### Local-Only Files Staged
-
-`commit_enhanced.sh` auto-unstages these. If using raw git:
-```bash
-git reset HEAD CLAUDE.md MEMORY.md
-```
-
-### Modify/Delete Conflicts
-
-**Status**: EXPECTED — auto-resolved by `merge_with_validation.sh`
-
-### Content Conflicts (UU)
-
-Manual resolution required:
-```bash
-# Edit files to resolve
-git add <resolved-files>
-git commit
-
-# Or abort
-git merge --abort
-git checkout "${CGW_SOURCE_BRANCH:-development}"
-```
-
-### Push Failures
-
-```bash
-./scripts/git/sync_branches.sh    # sync with remote first
-./scripts/git/push_validated.sh   # retry push
-```
+For lint failures, conflict types (modify/delete vs content), push errors, and
+lock-file issues — see
+[`references/error-recovery.md`](../skills/auto-git-workflow/references/error-recovery.md).
 
 ---
 

@@ -67,6 +67,12 @@ Auto-detects project type (Python, TouchDesigner, GLSL, images/assets). Safe to 
 | `--glsl` | Limit to GLSL/shader artifacts (`.spv`, compiled shaders) |
 | `--all` | All project types |
 
+**`check_local_files.sh`** — Verify no local-only files are tracked *(CI helper)*
+```bash
+./scripts/git/check_local_files.sh
+```
+Exits 1 if any `CGW_LOCAL_FILES` entry is tracked in git. Used by `branch-protection.yml`; safe to run locally before a merge or release.
+
 ---
 
 ## Commit Workflow
