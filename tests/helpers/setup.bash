@@ -132,6 +132,26 @@ setup_file_create_test_repo_with_remote() {
   git -C "${TEST_REPO_DIR}" push --quiet --set-upstream origin development
 }
 
+# ── Environment requirement guards ───────────────────────────────────────────
+# Call at the top of a @test body; issues bats `skip` when a prerequisite is absent.
+
+# _require_jq — skip when jq is not on PATH.
+# Use for tests that exercise jq-dependent behaviour (guardrail parsing,
+# configure.sh settings-merge). Without jq the code under test fails open
+# by design, so the test cannot assert the blocking/merge outcome.
+_require_jq() { command -v jq >/dev/null 2>&1 || skip "requires jq"; }
+
+# _require_no_typechecker — skip when any Python typechecker is on PATH.
+# Use for tests whose precondition is "no typechecker detected". configure.sh
+# probes command -v pyrefly/pyright/mypy; if one is present it detects it
+# correctly and suppresses the "pip install pyrefly" hint, defeating the test.
+_require_no_typechecker() {
+  local tc
+  for tc in pyrefly pyright mypy; do
+    command -v "${tc}" >/dev/null 2>&1 && skip "typechecker '${tc}' on PATH — cannot simulate 'none'"
+  done
+}
+
 # ── Script path helpers ────────────────────────────────────────────────────────
 
 # script_path <name>  — returns absolute path to scripts/git/<name>

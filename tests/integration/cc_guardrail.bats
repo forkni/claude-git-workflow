@@ -40,6 +40,7 @@ _run_configure() {
 # ── Guardrail script: blocked commands ───────────────────────────────────────
 
 @test "blocks raw git commit" {
+  _require_jq
   run _run_guardrail "git commit -m 'test'"
   [ "${status}" -eq 2 ]
   [[ "${output}" == *"BLOCKED"* ]]
@@ -47,54 +48,64 @@ _run_configure() {
 }
 
 @test "blocks git commit with no args" {
+  _require_jq
   run _run_guardrail "git commit"
   [ "${status}" -eq 2 ]
 }
 
 @test "blocks --no-verify flag" {
+  _require_jq
   run _run_guardrail "git push --no-verify origin main"
   [ "${status}" -eq 2 ]
   [[ "${output}" == *"BLOCKED"* ]]
 }
 
 @test "blocks --no-verify on commit" {
+  _require_jq
   run _run_guardrail "git commit --no-verify -m 'skip hooks'"
   [ "${status}" -eq 2 ]
 }
 
 @test "blocks git push --force" {
+  _require_jq
   run _run_guardrail "git push --force origin main"
   [ "${status}" -eq 2 ]
   [[ "${output}" == *"push_validated.sh"* ]]
 }
 
 @test "blocks git reset --hard" {
+  _require_jq
   run _run_guardrail "git reset --hard HEAD~1"
   [ "${status}" -eq 2 ]
 }
 
 @test "blocks git clean -f" {
+  _require_jq
   run _run_guardrail "git clean -fd"
   [ "${status}" -eq 2 ]
 }
 
 @test "blocks git branch -D" {
+  _require_jq
   run _run_guardrail "git branch -D old-feature"
   [ "${status}" -eq 2 ]
   [[ "${output}" == *"branch_cleanup.sh"* ]]
 }
 
 @test "blocks rm -rf .git" {
+  _require_jq
   run _run_guardrail "rm -rf .git"
   [ "${status}" -eq 2 ]
 }
 
 @test "blocks rm -rf path/to/.git/" {
+  _require_jq
   run _run_guardrail "rm -rf /tmp/repo/.git/"
   [ "${status}" -eq 2 ]
 }
 
 @test "blocks git filter-branch" {
+  _require_jq
   run _run_guardrail "git filter-branch --tree-filter 'rm -f secrets.txt'"
   [ "${status}" -eq 2 ]
 }
@@ -195,6 +206,7 @@ EOF
 }
 
 @test "settings.json merge preserves existing entries" {
+  _require_jq
   mkdir -p "${TEST_REPO_DIR}/.claude"
   # Pre-populate settings.json with an existing entry
   cat > "${TEST_REPO_DIR}/.claude/settings.json" << 'EOF'

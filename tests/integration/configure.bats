@@ -177,6 +177,7 @@ EOF
 
 @test "emits pyrefly hint comment when Python project has no typechecker" {
   # pyproject.toml present but no [tool.*] typechecker section, none on PATH
+  _require_no_typechecker
   printf '[build-system]\nrequires = ["setuptools"]\n' > "${TEST_REPO_DIR}/pyproject.toml"
   _run_configure "--non-interactive" || true
   if [ -f "${TEST_REPO_DIR}/.cgw.conf" ]; then
