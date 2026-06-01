@@ -75,7 +75,10 @@ main() {
         older_than_days="${2:-30}"
         shift
         ;;
-      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
+      --non-interactive)
+        non_interactive=1
+        CGW_NON_INTERACTIVE=1
+        ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2
         exit 1
@@ -98,7 +101,9 @@ main() {
 
   # Build set of protected branches
   local -a protected=("${CGW_TARGET_BRANCH}" "${CGW_SOURCE_BRANCH}")
-  for pb in ${CGW_PROTECTED_BRANCHES:-}; do
+  local -a _pb_arr=()
+  read -r -a _pb_arr <<<"${CGW_PROTECTED_BRANCHES:-}" || true
+  for pb in "${_pb_arr[@]+"${_pb_arr[@]}"}"; do
     protected+=("${pb}")
   done
 

@@ -71,11 +71,10 @@ validate_docs_ci_policy() {
   echo "[6/7] Validating documentation files against CI policy..."
 
   local docs_validation_failed=0
-  local doc_files
 
   if [[ "${check_mode}" == "committed" ]]; then
-    doc_files=$(git diff --name-only HEAD~1 HEAD | grep "^docs/" || true)
-    for doc_file in ${doc_files}; do
+    while IFS= read -r doc_file; do
+      [[ -z "${doc_file}" ]] && continue
       local doc_name
       doc_name=$(basename "${doc_file}")
       if ! [[ "${doc_name}" =~ ${CGW_DOCS_PATTERN} ]]; then
@@ -85,10 +84,10 @@ validate_docs_ci_policy() {
           docs_validation_failed=1
         fi
       fi
-    done
+    done < <(git diff --name-only HEAD~1 HEAD | grep "^docs/" || true)
   else
-    doc_files=$(git diff --cached --name-only --diff-filter=A | grep "^docs/" || true)
-    for doc_file in ${doc_files}; do
+    while IFS= read -r doc_file; do
+      [[ -z "${doc_file}" ]] && continue
       local doc_name
       doc_name=$(basename "${doc_file}")
       if ! [[ "${doc_name}" =~ ${CGW_DOCS_PATTERN} ]]; then
@@ -96,7 +95,7 @@ validate_docs_ci_policy() {
         echo "   Not in CGW_DOCS_PATTERN allowlist" | tee -a "$logfile"
         docs_validation_failed=1
       fi
-    done
+    done < <(git diff --cached --name-only --diff-filter=A | grep "^docs/" || true)
   fi
 
   if [[ ${docs_validation_failed} -eq 1 ]]; then
@@ -190,7 +189,10 @@ main() {
         echo "  CGW_DOCS_PATTERN=<regex>     Override docs allowlist pattern"
         exit 0
         ;;
-      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
+      --non-interactive)
+        non_interactive=1
+        CGW_NON_INTERACTIVE=1
+        ;;
       --dry-run) dry_run=1 ;;
       --source)
         src_branch="${2:-}"
