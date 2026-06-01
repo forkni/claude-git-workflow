@@ -251,7 +251,7 @@ _handle_dirty_tree() {
       fi
     else
       err "Working tree has uncommitted changes. Use --autostash or commit/stash first."
-      git diff --stat | head -10 | sed 's/^/  /'
+      git diff --stat | head -10 | while IFS= read -r line; do printf '  %s\n' "${line}"; done
       exit 1
     fi
   fi
@@ -439,7 +439,7 @@ _cmd_squash_last() {
 
   # Show commits to be squashed
   echo "  Commits to squash:" | tee -a "$logfile"
-  git log --oneline -"${squash_n}" 2>/dev/null | sed 's/^/    /' | tee -a "$logfile"
+  git log --oneline -"${squash_n}" 2>/dev/null | while IFS= read -r line; do printf '    %s\n' "${line}"; done | tee -a "$logfile"
   echo "" | tee -a "$logfile"
 
   if [[ "${dry_run}" -eq 1 ]]; then
@@ -607,7 +607,7 @@ _cmd_skip() {
 
   echo "  [!] Skipping current commit -- its changes will be dropped."
   echo "  Current patch:"
-  git log ORIG_HEAD -1 --oneline 2>/dev/null | sed 's/^/    /' || true
+  git log ORIG_HEAD -1 --oneline 2>/dev/null | while IFS= read -r line; do printf '    %s\n' "${line}"; done || true
   echo ""
 
   if git rebase --skip 2>&1 | tee -a "$logfile"; then

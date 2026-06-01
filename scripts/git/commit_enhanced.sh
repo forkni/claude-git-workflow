@@ -303,7 +303,7 @@ main() {
     echo "Committing pre-staged files ONLY. The following unstaged changes"
     echo "will NOT be included in this commit:"
     echo ""
-    git diff --name-status | sed 's/^/  /'
+    git diff --name-status | while IFS= read -r line; do printf '  %s\n' "${line}"; done
     echo ""
     echo "To include everything, re-run with --all (or CGW_ALL=1)."
     echo "===================================================================="

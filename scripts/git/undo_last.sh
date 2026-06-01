@@ -214,8 +214,7 @@ _cmd_unstage() {
       exit 0
     fi
     echo "  Staged files:"
-    # shellcheck disable=SC2001  # sed needed for per-line prefix on multi-line string
-    echo "${staged}" | sed 's/^/    /'
+    while IFS= read -r line; do printf '    %s\n' "${line}"; done <<<"${staged}"
     echo ""
     err "Specify file(s) to unstage. Example: ./scripts/git/undo_last.sh unstage <file>"
     exit 1
@@ -303,7 +302,7 @@ _cmd_discard() {
 
   echo "  Files to discard changes in:"
   for f in "${to_discard[@]}"; do
-    git diff --stat -- "${f}" | head -3 | sed 's/^/    /'
+    git diff --stat -- "${f}" | head -3 | while IFS= read -r line; do printf '    %s\n' "${line}"; done
   done
   echo ""
 
