@@ -22,13 +22,15 @@ claude-git-workflow\cgw-install.cmd
 ### Unix / manual
 
 ```bash
-# 1. Copy scripts, hook templates, and Claude Code integration into your project
+# 1. Copy scripts and staging directories into your project
 cp -r claude-git-workflow/scripts/git/ your-project/scripts/git/
 cp -r claude-git-workflow/hooks/ your-project/hooks/
-cp -r claude-git-workflow/skill/ your-project/.claude/skills/auto-git-workflow/
-cp claude-git-workflow/command/auto-git-workflow.md your-project/.claude/commands/
+cp -r claude-git-workflow/skill/ your-project/skill/
+cp -r claude-git-workflow/command/ your-project/command/
 
 # 2. Auto-configure (scans project, generates config, installs hooks + skill)
+#    configure.sh installs hooks to .githooks/ + .git/hooks/ and copies
+#    the skill/command into .claude/ — then you can remove hooks/, skill/, command/
 cd your-project && ./scripts/git/configure.sh
 
 # 3. Done — use it
@@ -44,7 +46,7 @@ No manual config editing required for common setups. `configure.sh` auto-detects
 | Script | Purpose |
 |--------|---------|
 | `configure.sh` | One-time setup — scans project, generates `.cgw.conf`, installs hooks |
-| `commit_enhanced.sh` | Lint validation + local-only file protection + commit message format check |
+| `commit_enhanced.sh` | Lint validation + local-only file protection + commit message format check; `--sign` for GPG/SSH-signed commits |
 | `merge_with_validation.sh` | Safe merge source→target: backup tag, auto-resolve DU/DD conflicts, stop on UU. `--source`/`--target` override the configured branch pair per-invocation. |
 | `rollback_merge.sh` | Emergency rollback to pre-merge backup tag; `--revert` for safe history-preserving mode |
 | `cherry_pick_commits.sh` | Cherry-pick with source branch validation and backup tag |
@@ -55,10 +57,10 @@ No manual config editing required for common setups. `configure.sh` auto-detects
 | `check_lint.sh` | Read-only lint validation |
 | `fix_lint.sh` | Auto-fix lint issues |
 | `create_pr.sh` | Create GitHub PR from source → target (triggers Charlie CI + GitHub Actions) |
-| `install_hooks.sh` | Install git hooks (pre-commit + pre-push) |
+| `install_hooks.sh` | Install git hooks (pre-commit, pre-push, pre-rebase) |
 | `setup_attributes.sh` | Generate `.gitattributes` for binary and text files (Python, TouchDesigner, GLSL, assets) |
 | `clean_build.sh` | Safe cleanup of build artifacts with dry-run default (Python, TouchDesigner, GLSL) |
-| `create_release.sh` | Create annotated version tags to trigger the GitHub Release workflow |
+| `create_release.sh` | Create annotated version tags to trigger the GitHub Release workflow; `--sign` for GPG/SSH-signed tags |
 | `stash_work.sh` | Safe stash wrapper with untracked file support, named stashes, and logging |
 | `repo_health.sh` | Repository health: integrity check, size report, large file detection, gc |
 | `bisect_helper.sh` | Guided git bisect with backup tag, auto-detect good ref, automated test support |
@@ -66,6 +68,9 @@ No manual config editing required for common setups. `configure.sh` auto-detects
 | `branch_cleanup.sh` | Prune merged branches, stale remote-tracking refs, and old backup tags |
 | `changelog_generate.sh` | Generate categorized markdown/text changelog from conventional commits |
 | `undo_last.sh` | Undo last commit (keep staged), unstage files, discard changes, amend message |
+| `recover.sh` | Reflog browsing, dangling-commit discovery (`git fsck`), and safe branch restore from any SHA |
+| `worktree_manage.sh` | Linked worktree management: list, add, remove (with dry-run default), prune stale admin files |
+| `check_local_files.sh` | Verify no local-only files are tracked in git (used by CI branch-protection workflow) |
 
 Internal modules (not user-facing): `_common.sh` (shared utilities, sourced by every script), `_config.sh` (three-tier config resolution, sourced by `_common.sh`).
 
@@ -84,6 +89,9 @@ Scripts use a three-tier resolution system — environment variables override `.
 | `CGW_LOCAL_FILES_EXEMPT` | `""` | Files exempted from local-only protection (exact paths) |
 | `CGW_LINT_CMD` | `ruff` | Lint tool (`""` to disable) |
 | `CGW_MERGE_MODE` | `direct` | `direct` (local merge) or `pr` (create GitHub PR) |
+| `CGW_SIGN_COMMITS` | `0` | `1` to GPG/SSH-sign commits (passes `-S` to `git commit`; respects `gpg.format`) |
+| `CGW_SIGN_TAGS` | `0` | `1` to GPG/SSH-sign release tags (passes `-s` to `git tag`) |
+| `CGW_ALLOW_REBASE_PUBLISHED` | `0` | `1` to allow rebasing commits already pushed to remote (pre-rebase hook will otherwise abort) |
 
 See [docs/configuration.md](docs/configuration.md) for all options and language-specific lint examples (Python, JS, Go, Rust, C++).
 
@@ -110,6 +118,7 @@ See [docs/configuration.md](docs/configuration.md) for all options and language-
 - For lint: ruff / flake8 / eslint / golangci-lint / clang-tidy / cppcheck / cargo (or none — set `CGW_LINT_CMD=""`)
 - For Claude Code integration: Claude Code CLI
 - For PR creation (`create_pr.sh`): [gh CLI](https://cli.github.com/) + `gh auth login`
+- `jq` (optional): used by `configure.sh` to install the Claude Code guardrail into `.claude/settings.json`; a Python fallback runs automatically if absent. Install on Windows: `winget install jqlang.jq`
 
 Compatible with: Linux, macOS, Windows (Git Bash / WSL)
 

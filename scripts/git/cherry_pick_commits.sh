@@ -238,10 +238,12 @@ main() {
   # Check if commit modifies dev-only files (configurable warning)
   if [[ -n "${CGW_DEV_ONLY_FILES}" ]]; then
     local has_excluded_files=0
+    local -a _dev_arr=()
+    read -r -a _dev_arr <<<"${CGW_DEV_ONLY_FILES}" || true
     # Use grep -xF (exact, fixed-string, full-line match) so filenames with
     # regex metacharacters (dots, brackets, plus signs) are not misinterpreted,
     # and 'tests/' does not match 'more_tests/'.
-    for dev_file in ${CGW_DEV_ONLY_FILES}; do
+    for dev_file in "${_dev_arr[@]+"${_dev_arr[@]}"}"; do
       if git show "${commit_hash}" --name-only --format="" | grep -qxF "${dev_file}"; then
         has_excluded_files=1
         break
@@ -251,7 +253,7 @@ main() {
     if [[ ${has_excluded_files} -eq 1 ]]; then
       echo "[!] WARNING: This commit modifies configured dev-only files"
       echo "Dev-only files (CGW_DEV_ONLY_FILES):"
-      for dev_file in ${CGW_DEV_ONLY_FILES}; do
+      for dev_file in "${_dev_arr[@]+"${_dev_arr[@]}"}"; do
         git show "${commit_hash}" --name-only --format="" | grep -xF "${dev_file}" || true
       done
       echo ""

@@ -68,7 +68,10 @@ main() {
         echo "  (Also: CLAUDE_GIT_NON_INTERACTIVE, CLAUDE_GIT_NO_VENV)"
         exit 0
         ;;
-      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
+      --non-interactive)
+        non_interactive=1
+        CGW_NON_INTERACTIVE=1
+        ;;
       --dry-run) dry_run=1 ;;
       --skip-lint) skip_lint=1 ;;
       --skip-md-lint) skip_md_lint=1 ;;
@@ -130,7 +133,9 @@ main() {
 
   # Check force-push protection against configured protected branches
   local is_protected=0
-  for protected in ${CGW_PROTECTED_BRANCHES}; do
+  local -a _pb_arr=()
+  read -r -a _pb_arr <<<"${CGW_PROTECTED_BRANCHES:-}" || true
+  for protected in "${_pb_arr[@]+"${_pb_arr[@]}"}"; do
     if [[ "${target_branch}" == "${protected}" ]]; then
       is_protected=1
       break

@@ -473,10 +473,13 @@ cgw_list_backup_tags() {
 # Returns 0 (match) / 1 (no match).
 cgw_is_local_file() {
   local path="$1" entry
-  for entry in ${CGW_LOCAL_FILES_EXEMPT:-}; do
+  local -a _exempt_arr=() _local_arr=()
+  read -r -a _exempt_arr <<<"${CGW_LOCAL_FILES_EXEMPT:-}" || true
+  read -r -a _local_arr <<<"${CGW_LOCAL_FILES:-}" || true
+  for entry in "${_exempt_arr[@]+"${_exempt_arr[@]}"}"; do
     [[ "${path}" == "${entry}" ]] && return 1
   done
-  for entry in ${CGW_LOCAL_FILES:-}; do
+  for entry in "${_local_arr[@]+"${_local_arr[@]}"}"; do
     if [[ "${entry}" == */ ]]; then
       local dir="${entry%/}"
       [[ "${path}" == "${dir}" || "${path}" == "${dir}"/* ]] && return 0

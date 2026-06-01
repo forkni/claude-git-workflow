@@ -814,7 +814,9 @@ main() {
   # for hook generation so manually-configured extras survive re-runs.
   if [[ -f ".cgw.conf" ]] && [[ ${reconfigure} -eq 0 ]]; then
     local conf_local_files
-    conf_local_files=$(grep -m1 '^CGW_LOCAL_FILES=' ".cgw.conf" | sed 's/CGW_LOCAL_FILES=//;s/"//g' || true)
+    conf_local_files=$(grep -m1 '^CGW_LOCAL_FILES=' ".cgw.conf" || true)
+    conf_local_files="${conf_local_files#*=}"
+    conf_local_files="${conf_local_files//\"/}"
     [[ -n "${conf_local_files}" ]] && local_files="${conf_local_files}"
   fi
 
@@ -992,8 +994,12 @@ main() {
   # When not reconfiguring, show values from existing .cgw.conf rather than detected values
   if [[ -f ".cgw.conf" ]] && [[ ${reconfigure} -eq 0 ]]; then
     local conf_source conf_target
-    conf_source=$(grep -m1 '^CGW_SOURCE_BRANCH=' .cgw.conf | sed 's/CGW_SOURCE_BRANCH=//;s/"//g')
-    conf_target=$(grep -m1 '^CGW_TARGET_BRANCH=' .cgw.conf | sed 's/CGW_TARGET_BRANCH=//;s/"//g')
+    conf_source=$(grep -m1 '^CGW_SOURCE_BRANCH=' .cgw.conf || true)
+    conf_source="${conf_source#*=}"
+    conf_source="${conf_source//\"/}"
+    conf_target=$(grep -m1 '^CGW_TARGET_BRANCH=' .cgw.conf || true)
+    conf_target="${conf_target#*=}"
+    conf_target="${conf_target//\"/}"
     echo "  Source branch:  ${conf_source:-${source_branch}}"
     echo "  Target branch:  ${conf_target:-${target_branch}}"
   else

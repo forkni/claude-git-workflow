@@ -185,7 +185,10 @@ main() {
         ;;
       --dry-run) dry_run=1 ;;
       --prune) prune=1 ;;
-      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
+      --non-interactive)
+        non_interactive=1
+        CGW_NON_INTERACTIVE=1
+        ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2
         exit 1

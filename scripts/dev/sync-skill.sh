@@ -13,8 +13,8 @@ echo "Syncing skill/ and command/ → .claude/ ..."
 mkdir -p "$REPO_ROOT/.claude/skills/auto-git-workflow/references"
 mkdir -p "$REPO_ROOT/.claude/commands"
 
-cp "$REPO_ROOT/skill/SKILL.md"               "$REPO_ROOT/.claude/skills/auto-git-workflow/SKILL.md"
-cp "$REPO_ROOT/skill/references/"*.md        "$REPO_ROOT/.claude/skills/auto-git-workflow/references/"
+cp "$REPO_ROOT/skill/SKILL.md" "$REPO_ROOT/.claude/skills/auto-git-workflow/SKILL.md"
+cp "$REPO_ROOT/skill/references/"*.md "$REPO_ROOT/.claude/skills/auto-git-workflow/references/"
 cp "$REPO_ROOT/command/auto-git-workflow.md" "$REPO_ROOT/.claude/commands/auto-git-workflow.md"
 
 echo "Done. Local install matches source."
