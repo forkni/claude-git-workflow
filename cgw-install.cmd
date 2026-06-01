@@ -158,6 +158,31 @@ goto :pi06_done
 echo   [INFO] PI-06  No existing .githooks\pre-commit
 :pi06_done
 
+rem PI-07: jq (optional — used for guardrail settings.json install; Python fallback available)
+where jq >nul 2>nul
+if not errorlevel 1 (
+    echo   [PASS] PI-07  jq available
+    goto :pi07_done
+)
+echo   [INFO] PI-07  jq not found ^(optional; configure.sh will use Python fallback if absent^)
+where winget >nul 2>nul
+if errorlevel 1 goto :pi07_done
+set /p "INSTALL_JQ=          Install jq now via winget? [Y/n]: "
+if /i "!INSTALL_JQ!"=="n"  goto :pi07_done
+if /i "!INSTALL_JQ!"=="no" goto :pi07_done
+winget install jqlang.jq
+rem Refresh user PATH in this session so jq is visible to configure.sh
+for /f "tokens=*" %%p in ('powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable('PATH','User')"') do (
+    if not "%%p"=="" set "PATH=%%p;!PATH!"
+)
+where jq >nul 2>nul
+if not errorlevel 1 (
+    echo   [OK] jq installed and available
+) else (
+    echo   [INFO] jq installed ^(will be active in new terminals^)
+)
+:pi07_done
+
 echo.
 
 :: Abort if hard checks failed
