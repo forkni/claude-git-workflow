@@ -106,6 +106,28 @@ Never auto-resolve content conflicts — they require human review.
 
 **Action:** STOP workflow, require manual resolution. Same process as UU conflicts.
 
+### Deleted/Add-Delete Conflicts (UNEXPECTED — Manual Required)
+
+**Status codes:** `UD` (updated by us, deleted by them), `AD` (added by us, deleted by them), `DA` (deleted by us, added by them)
+
+**When:** One side modified or added a file while the other side deleted it. Unlike `DU`/`DD`, the intent is ambiguous and requires a human decision.
+
+**Action:** STOP workflow, require manual resolution:
+```bash
+# Accept deletion:
+git rm <file>
+
+# Keep our version:
+git checkout --ours <file> && git add <file>
+
+# Keep their version:
+git checkout --theirs <file> && git add <file>
+
+# Then complete or abort the merge:
+git commit    # if resolved
+git merge --abort  # if abandoning
+```
+
 ---
 
 ## Merge Workflow Detail
@@ -118,7 +140,7 @@ Never auto-resolve content conflicts — they require human review.
 5. Auto-resolve `DU` (modify/delete) conflicts
 6. Stop on `AU`/`AA` conflicts — requires manual resolution
 7. Auto-resolve `DD` (both deleted) conflicts
-8. Stop on `UU` (content) conflicts — requires manual resolution
+8. Stop on `UU` (content), `UD`/`AD`/`DA` (delete/add-delete) conflicts — requires manual resolution
 9. Validate `docs/` files against CI policy (if `CGW_DOCS_PATTERN` is set)
 10. Clean up `tests/` if `CGW_CLEANUP_TESTS=1` and tests/ is gitignored on target
 11. Complete merge commit

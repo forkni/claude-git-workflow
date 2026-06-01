@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # install_hooks.sh - Install git hooks from .githooks/ to .git/hooks/
-# Purpose: Install pre-commit hook that blocks local-only files
+# Purpose: Install pre-commit, pre-push, and pre-rebase hooks
 # Usage: ./scripts/git/install_hooks.sh [OPTIONS]
 #
 # Globals:
@@ -22,16 +22,19 @@ main() {
     echo "Usage: ./scripts/git/install_hooks.sh"
     echo ""
     echo "Install git hooks from .githooks/ to .git/hooks/."
-    echo "Installs: pre-commit (blocks local-only files, optional lint check)"
+    echo "Installs:"
+    echo "  pre-commit  — blocks local-only files, optional lint/typecheck"
+    echo "  pre-push    — validates conventional commit format on unpushed commits"
+    echo "  pre-rebase  — refuses rebasing commits already pushed to remote"
     echo ""
-    echo "The hook file must exist at: \$PROJECT_ROOT/.githooks/pre-commit"
-    echo "Run configure.sh first to generate this file from the template."
+    echo "The hook files must exist at: \$PROJECT_ROOT/.githooks/"
+    echo "Run configure.sh first to generate them from the templates."
     echo ""
     echo "Options:"
     echo "  -h, --help   Show this help"
     echo ""
-    echo "To uninstall: rm .git/hooks/pre-commit"
-    echo "To bypass temporarily (not recommended): git commit --no-verify"
+    echo "To uninstall: rm .git/hooks/pre-commit .git/hooks/pre-push .git/hooks/pre-rebase"
+    echo "To bypass temporarily (not recommended): git commit --no-verify / git push --no-verify"
     exit 0
   fi
 
