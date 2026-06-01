@@ -148,7 +148,7 @@ main() {
   # unlike '|' which users legitimately put in messages.
   # shellcheck disable=SC2086  # merge_flag intentionally word-splits when empty
   local raw_commits
-  raw_commits=$(git log ${merge_flag} --format="%H%x1f%s%x1f%b%x1e" "${log_range}" 2>/dev/null || true)
+  raw_commits=$(git log ${merge_flag} --format="%H%x1f%s%x1e" "${log_range}" 2>/dev/null || true)
 
   if [[ -z "${raw_commits}" ]]; then
     echo "No commits found in range: ${log_range}" >&2
@@ -158,8 +158,7 @@ main() {
   local record hash subject
   while IFS=$'\x1e' read -r record; do
     [[ -z "${record}" ]] && continue
-    # Split on ASCII unit separator; body (_body) is captured but unused here.
-    IFS=$'\x1f' read -r hash subject _body <<<"${record}"
+    IFS=$'\x1f' read -r hash subject <<<"${record}"
     [[ -z "${hash}" ]] && continue
 
     local prefix rest
