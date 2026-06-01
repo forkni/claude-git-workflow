@@ -104,6 +104,8 @@ main() {
   local all_flag=0
   local only_paths=()
   local commit_msg_param=""
+  # Signing: -1 = unset (use CGW_SIGN_COMMITS), 0 = off, 1 = on
+  local sign_flag=-1
 
   # Auto-detect non-interactive mode when no TTY
   if [[ ! -t 0 ]]; then
@@ -135,6 +137,8 @@ main() {
         echo "  --no-venv           Use system ruff instead of .venv ruff"
         echo "  --skip-lint         Skip all lint checks (code + markdown)"
         echo "  --skip-md-lint      Skip markdown lint only (CGW_MARKDOWNLINT_CMD step)"
+        echo "  --sign              GPG/SSH-sign the commit (git commit -S)"
+        echo "  --no-sign           Disable signing even if CGW_SIGN_COMMITS=1"
         echo "  -h, --help          Show this help"
         echo ""
         echo "Staging defaults (non-interactive):"
@@ -154,6 +158,7 @@ main() {
         echo "  CGW_NO_VENV=1           Same as --no-venv"
         echo "  CGW_SKIP_LINT=1         Same as --skip-lint"
         echo "  CGW_SKIP_MD_LINT=1      Same as --skip-md-lint"
+        echo "  CGW_SIGN_COMMITS=1      Same as --sign (sign all commits by default)"
         echo "  (Also: CLAUDE_GIT_NON_INTERACTIVE, CLAUDE_GIT_STAGED_ONLY, CLAUDE_GIT_NO_VENV)"
         echo ""
         echo "Protected files (never committed): configured via CGW_LOCAL_FILES in .cgw.conf"
@@ -197,6 +202,14 @@ main() {
       --no-venv)
         SKIP_VENV=1
         CGW_NO_VENV=1
+        shift
+        ;;
+      --sign)
+        sign_flag=1
+        shift
+        ;;
+      --no-sign)
+        sign_flag=0
         shift
         ;;
       --*)
@@ -451,6 +464,15 @@ main() {
     fi
   fi
 
+  # Advisory: Pro Git recommends ≤50 chars for the summary line after the prefix
+  # (§"Commit Guidelines").  This is non-blocking — just a style nudge.
+  local _summary_part="${commit_msg#*: }"
+  if [[ ${#_summary_part} -gt 50 ]]; then
+    echo "[!] Tip: summary after prefix is ${#_summary_part} chars (Pro Git recommends ≤50)"
+    echo "  Consider: ${commit_msg:0:72}..."
+  fi
+  unset _summary_part
+
   echo "Commit message: ${commit_msg}"
   echo ""
 
@@ -467,7 +489,19 @@ main() {
     exit 0
   fi
 
-  if git commit -m "${commit_msg}"; then
+  # Resolve signing: --sign/--no-sign override; else fall back to CGW_SIGN_COMMITS.
+  # We only ADD -S; we never pass --no-gpg-sign (respect git's commit.gpgsign config).
+  local _do_sign=0
+  if [[ "${sign_flag}" -eq 1 ]]; then
+    _do_sign=1
+  elif [[ "${sign_flag}" -lt 0 ]] && [[ "${CGW_SIGN_COMMITS:-0}" == "1" ]]; then
+    _do_sign=1
+  fi
+
+  local -a _commit_cmd=(git commit -m "${commit_msg}")
+  [[ "${_do_sign}" -eq 1 ]] && _commit_cmd=(git commit -S -m "${commit_msg}")
+
+  if "${_commit_cmd[@]}"; then
     echo ""
     echo "===================================="
     echo "[OK] COMMIT SUCCESSFUL"

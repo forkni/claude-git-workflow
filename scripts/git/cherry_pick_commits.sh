@@ -79,7 +79,10 @@ main() {
         echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
         exit 0
         ;;
-      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
+      --non-interactive)
+        non_interactive=1
+        CGW_NON_INTERACTIVE=1
+        ;;
       --dry-run) dry_run=1 ;;
       --commit)
         commit_hash_flag="${2:-}"
@@ -235,8 +238,11 @@ main() {
   # Check if commit modifies dev-only files (configurable warning)
   if [[ -n "${CGW_DEV_ONLY_FILES}" ]]; then
     local has_excluded_files=0
+    # Use grep -xF (exact, fixed-string, full-line match) so filenames with
+    # regex metacharacters (dots, brackets, plus signs) are not misinterpreted,
+    # and 'tests/' does not match 'more_tests/'.
     for dev_file in ${CGW_DEV_ONLY_FILES}; do
-      if git show "${commit_hash}" --name-only --format="" | grep -q "^${dev_file}"; then
+      if git show "${commit_hash}" --name-only --format="" | grep -qxF "${dev_file}"; then
         has_excluded_files=1
         break
       fi
@@ -246,7 +252,7 @@ main() {
       echo "[!] WARNING: This commit modifies configured dev-only files"
       echo "Dev-only files (CGW_DEV_ONLY_FILES):"
       for dev_file in ${CGW_DEV_ONLY_FILES}; do
-        git show "${commit_hash}" --name-only --format="" | grep "^${dev_file}" || true
+        git show "${commit_hash}" --name-only --format="" | grep -xF "${dev_file}" || true
       done
       echo ""
       if ! cgw_confirm "Continue anyway?" --non-interactive abort; then

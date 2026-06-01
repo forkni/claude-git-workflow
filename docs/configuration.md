@@ -84,6 +84,9 @@ cp cgw.conf.example .cgw.conf
 | `CGW_PROTECTED_BRANCHES` | `main` | Branches requiring `--force` for force-push |
 | `CGW_MERGE_CONFLICT_STYLE` | `` | Set to `diff3` to show base version in conflict markers |
 | `CGW_MERGE_IGNORE_WHITESPACE` | `0` | Set to `1` to ignore whitespace differences during merge |
+| `CGW_SIGN_COMMITS` | `0` | Set to `1` to GPG/SSH-sign all commits (`git commit -S`). Overridable per-call with `--sign`/`--no-sign`. |
+| `CGW_SIGN_TAGS` | `0` | Set to `1` to create signed annotated tags (`git tag -s`). Overridable per-call with `--sign`/`--no-sign`. |
+| `CGW_ALLOW_REBASE_PUBLISHED` | `0` | Set to `1` to allow rebasing commits already pushed (disables `pre-rebase` hook guard) |
 | `CGW_NON_INTERACTIVE` | `0` | Set to `1` to suppress all prompts (CI mode) |
 | `CGW_NO_VENV` | `0` | Set to `1` to skip virtual environment detection |
 

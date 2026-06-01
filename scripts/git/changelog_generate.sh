@@ -138,21 +138,28 @@ main() {
   local merge_flag="--no-merges"
   [[ ${include_merges} -eq 1 ]] && merge_flag=""
 
-  # shellcheck disable=SC2086  # merge_flag intentionally word-splits when empty
-  local commits
-  commits=$(git log ${merge_flag} --format="%H|%s|%b" "${log_range}" 2>/dev/null || true)
-
-  if [[ -z "${commits}" ]]; then
-    echo "No commits found in range: ${log_range}" >&2
-    exit 0
-  fi
-
   # Categorize commits by conventional type
   # Categories: feat, fix, docs, perf, refactor, style, test, chore, other
   local -a cat_feat=() cat_fix=() cat_docs=() cat_perf=()
   local -a cat_refactor=() cat_style=() cat_test=() cat_chore=() cat_other=()
 
-  while IFS='|' read -r hash subject _body; do
+  # Use ASCII unit separator (0x1F) between fields and record separator (0x1E)
+  # between commits.  These characters never appear in commit subjects or bodies,
+  # unlike '|' which users legitimately put in messages.
+  # shellcheck disable=SC2086  # merge_flag intentionally word-splits when empty
+  local raw_commits
+  raw_commits=$(git log ${merge_flag} --format="%H%x1f%s%x1f%b%x1e" "${log_range}" 2>/dev/null || true)
+
+  if [[ -z "${raw_commits}" ]]; then
+    echo "No commits found in range: ${log_range}" >&2
+    exit 0
+  fi
+
+  local record hash subject
+  while IFS=$'\x1e' read -r record; do
+    [[ -z "${record}" ]] && continue
+    # Split on ASCII unit separator; body (_body) is captured but unused here.
+    IFS=$'\x1f' read -r hash subject _body <<<"${record}"
     [[ -z "${hash}" ]] && continue
 
     local prefix rest
@@ -181,7 +188,7 @@ main() {
       chore) cat_chore+=("${entry}") ;;
       *) cat_other+=("${entry}") ;;
     esac
-  done <<<"${commits}"
+  done <<<"${raw_commits}"
 
   # Build output directly from the already-categorized arrays
   # (Using individual vars instead of declare -A for Bash 3.2 compat)

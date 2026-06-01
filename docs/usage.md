@@ -161,10 +161,13 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use PRs by default.
 ### Create a release
 
 ```bash
-./scripts/git/create_release.sh v1.2.3            # tag only
+./scripts/git/create_release.sh v1.2.3            # annotated tag only
 ./scripts/git/create_release.sh v1.2.3 --push     # tag + push (triggers release.yml)
+./scripts/git/create_release.sh v1.2.3 --sign --push  # GPG/SSH-signed tag + push
 ./scripts/git/create_release.sh v1.2.3 --dry-run  # preview
 ```
+
+Enable signing globally in `.cgw.conf`: `CGW_SIGN_TAGS=1`. Requires a GPG or SSH signing key configured in git (`gpg.signingKey` / `gpg.format=ssh`). Verify a tag with: `git tag -v v1.2.3`.
 
 ### Configure .gitattributes (Python, TouchDesigner, GLSL)
 
@@ -219,7 +222,7 @@ Creates a backup tag before any destructive operation.
 ./scripts/git/rebase_safe.sh --continue               # continue after resolving conflicts
 ```
 
-Creates a backup tag (`pre-rebase-<timestamp>-<pid>`) before rebasing. Warns if commits already pushed.
+Creates a backup tag (`pre-rebase-<timestamp>-<pid>`) before rebasing. The installed `pre-rebase` hook also enforces this at the git level — if commits are already pushed, the rebase is refused unless `CGW_ALLOW_REBASE_PUBLISHED=1` is set (for controlled force-push workflows).
 
 ### Bisect a bug
 
@@ -242,6 +245,35 @@ Creates a backup tag (`pre-rebase-<timestamp>-<pid>`) before rebasing. Warns if 
 ./scripts/git/changelog_generate.sh --from v1.0.0 --output CHANGELOG.md
 ./scripts/git/changelog_generate.sh --from v1.0.0 --format text  # plain text
 ```
+
+### Recover lost commits
+
+Git's reflog records every time a ref moves; `git fsck` surfaces unreachable objects when the reflog is gone. `recover.sh` wraps both:
+
+```bash
+./scripts/git/recover.sh reflog                              # show HEAD reflog with restore hints
+./scripts/git/recover.sh reflog --limit 50 --ref main       # different ref
+./scripts/git/recover.sh show HEAD@{3}                      # inspect a specific entry or SHA
+./scripts/git/recover.sh dangling                           # git fsck --full: find unreachable commits
+./scripts/git/recover.sh restore abc1234 --branch recovered/lost-work  # restore as a new branch
+```
+
+`restore` creates a `pre-recover-<timestamp>-<pid>` backup tag before touching any ref. All other subcommands are read-only.
+
+### Manage linked worktrees
+
+Linked worktrees let you check out multiple branches simultaneously in separate directories — useful for hot-fixes without stashing:
+
+```bash
+./scripts/git/worktree_manage.sh list                            # show all worktrees
+./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent     # add linked worktree (creates branch)
+./scripts/git/worktree_manage.sh add ../review existing-branch   # check out existing branch
+./scripts/git/worktree_manage.sh remove --execute ../hotfix      # remove worktree link
+./scripts/git/worktree_manage.sh prune                           # dry-run: show stale admin files
+./scripts/git/worktree_manage.sh prune --execute                 # remove stale admin files
+```
+
+`remove` and `prune` default to dry-run; pass `--execute` to apply.
 
 ---
 

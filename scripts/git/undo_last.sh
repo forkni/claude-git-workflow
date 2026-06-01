@@ -75,7 +75,10 @@ main() {
   local -a positional=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
+      --non-interactive)
+        non_interactive=1
+        CGW_NON_INTERACTIVE=1
+        ;;
       --dry-run) dry_run=1 ;;
       --help | -h)
         _show_help
@@ -218,10 +221,12 @@ _cmd_unstage() {
     exit 1
   fi
 
-  # Validate each file is actually staged
+  # Validate each file is actually staged.
+  # Use pathspec-scoped diff to get an exact match rather than grepping the full
+  # list (grep -F would match 'src/app' inside 'src/app.bak' — substring bug).
   local -a to_unstage=()
   for f in "${files[@]}"; do
-    if git diff --cached --name-only | grep -qF "${f}"; then
+    if [[ -n "$(git diff --cached --name-only -- "${f}" 2>/dev/null)" ]]; then
       to_unstage+=("${f}")
     else
       echo "  [!] Not staged: ${f} (skipping)"
@@ -283,7 +288,8 @@ _cmd_discard() {
       echo "  [!] Not found: ${f} (skipping)"
       continue
     fi
-    if git diff --name-only -- "${f}" | grep -qF "${f}"; then
+    # Pathspec-scoped diff gives an exact match; no risk of 'src/app' matching 'src/app.bak'.
+    if [[ -n "$(git diff --name-only -- "${f}" 2>/dev/null)" ]]; then
       to_discard+=("${f}")
     else
       echo "  [!] No unstaged changes: ${f} (skipping)"

@@ -48,7 +48,7 @@ cd your-project && ./scripts/git/configure.sh
 1. **Detection** — Scans the project for branch names, lint tools, virtual environments, and files that exist on disk but aren't tracked by git.
 2. **Confirmation** — In interactive mode, shows detected values and lets you override each one. Press Enter to accept defaults.
 3. **Config generation** — Writes `.cgw.conf` (git-ignored), which tells all CGW scripts about your branches, lint tool, and local-only files.
-4. **Hook installation** — Patches the pre-commit and pre-push hook templates with your local-files list and commit prefixes, writes them to `.githooks/`, and copies them into `.git/hooks/`.
+4. **Hook installation** — Copies the pre-commit, pre-push, and pre-rebase hook templates into `.githooks/`, then into `.git/hooks/`. Hooks read configuration from `.cgw.conf` at run time, so any changes to `CGW_LOCAL_FILES`, `CGW_EXTRA_PREFIXES`, or `CGW_ALLOW_REBASE_PUBLISHED` take effect immediately without re-running this step.
 5. **Skill installation** — Copies the Claude Code skill and slash command definition into `.claude/` (project-local) or `~/.claude/` (global, with `--global`).
 
 ---
@@ -145,7 +145,7 @@ To remove CGW from a project:
 rm -rf scripts/git/
 
 # Remove hooks
-rm -f .git/hooks/pre-commit .git/hooks/pre-push
+rm -f .git/hooks/pre-commit .git/hooks/pre-push .git/hooks/pre-rebase
 rm -rf .githooks/
 
 # Remove config
