@@ -140,9 +140,12 @@ log_message() {
   echo "$msg" >>"$log_path"
 }
 
+# log_section_start — print a section header with timestamp and record start time.
+# Globals:   _SECTION_START_TIMES (write — records start epoch keyed by section name)
+# Arguments: $1 section_name — display label for the section
+#            $2 log_path     — file path to append output to
+# Returns:   0 always
 log_section_start() {
-  # Globals: _SECTION_START_TIMES (associative array, keyed by section name)
-  # Arguments: section_name, log_path
   local section_name="$1"
   local log_path="$2"
   local time_str
@@ -157,9 +160,14 @@ log_section_start() {
   } | tee -a "${log_path}"
 }
 
+# log_section_end — print a section footer with elapsed time and PASSED/FAILED status.
+# Globals:   _SECTION_START_TIMES (read — looks up start epoch by section name)
+# Arguments: $1 section_name — must match a prior log_section_start call
+#            $2 log_path     — file path to append output to
+#            $3 exit_code    — 0 = PASSED, non-zero = FAILED
+#            $4 error_count  — optional; reserved for future display (default 0)
+# Returns:   0 always
 log_section_end() {
-  # Globals: _SECTION_START_TIMES (associative array, keyed by section name)
-  # Arguments: section_name, log_path, exit_code, [error_count]
   local section_name="$1"
   local log_path="$2"
   local exit_code="$3"
@@ -182,6 +190,13 @@ log_section_end() {
   echo "[${section_name}] Ended: ${time_str} (${duration}s) - ${status}" | tee -a "${log_path}"
 }
 
+# run_tool_with_logging — run a command, capture output, log it under a named section.
+# Globals:   TOOL_OUTPUT (write — captured stdout+stderr of the command)
+#            TOOL_ERROR_COUNT (write — count of lines matching file:line:col: pattern)
+# Arguments: $1 tool_name — section label shown in log headers
+#            $2 log_path  — file path to append output to
+#            $@ command   — command and its arguments to execute
+# Returns:   exit code of the command
 run_tool_with_logging() {
   local tool_name="$1"
   local log_path="$2"
@@ -203,6 +218,11 @@ run_tool_with_logging() {
   return $exit_code
 }
 
+# log_summary_table — print a formatted summary table for all lint/format sections.
+# Globals:   none
+# Arguments: $1 log_path — file path to append output to
+#            $@ results  — variadic; each element is "name:status:errors:duration"
+# Returns:   0 always
 log_summary_table() {
   local log_path="$1"
   shift
@@ -227,6 +247,13 @@ log_summary_table() {
   } | tee -a "$log_path"
 }
 
+# run_git_with_logging — run a git subcommand, capture output, and log it under a named section.
+# Globals:   GIT_OUTPUT (write — captured stdout+stderr of git)
+#            GIT_EXIT_CODE (write — exit code of git)
+# Arguments: $1 section_name — section label shown in log headers
+#            $2 log_path     — file path to append output to
+#            $@ git args     — passed directly to git
+# Returns:   exit code of git
 run_git_with_logging() {
   local section_name="$1"
   local log_path="$2"

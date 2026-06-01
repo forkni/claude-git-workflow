@@ -274,7 +274,13 @@ _restore_stash_if_needed() {
 }
 
 # ---------------------------------------------------------------------------
-# Operation: --onto <branch>
+# _cmd_rebase_onto — rebase the current branch onto a target ref.
+# Globals:   logfile, _rebase_stash_created (write)
+# Arguments: $1 onto_ref        — branch or ref to rebase onto
+#            $2 autostash       — 1 to auto-stash dirty tree before rebase
+#            $3 non_interactive — 1 to suppress confirmation prompts
+#            $4 dry_run         — 1 to preview without rebasing
+# Returns:   exits 0 on success, 1 on failure
 # ---------------------------------------------------------------------------
 _cmd_rebase_onto() {
   local onto_ref="$1" autostash="$2" non_interactive="$3" dry_run="$4"
@@ -397,7 +403,14 @@ _cmd_rebase_onto() {
 }
 
 # ---------------------------------------------------------------------------
-# Operation: --squash-last <N>
+# _cmd_squash_last — interactively squash the last N commits on the current branch.
+# Globals:   logfile, _rebase_stash_created (write)
+# Arguments: $1 squash_n        — number of commits to squash
+#            $2 autosquash      — 1 to apply fixup!/squash! prefixes automatically
+#            $3 autostash       — 1 to auto-stash dirty tree before rebase
+#            $4 non_interactive — 1 to suppress confirmation prompts
+#            $5 dry_run         — 1 to preview without rebasing
+# Returns:   exits 0 on success, 1 on failure
 # ---------------------------------------------------------------------------
 _cmd_squash_last() {
   local squash_n="$1" autosquash="$2" autostash="$3" non_interactive="$4" dry_run="$5"
@@ -525,7 +538,10 @@ _cmd_squash_last() {
 }
 
 # ---------------------------------------------------------------------------
-# Operation: --abort
+# _cmd_abort — abort an in-progress rebase and restore the pre-rebase state.
+# Globals:   logfile, _rebase_stash_created (read)
+# Arguments: none
+# Returns:   exits 0 on success, 1 on failure
 # ---------------------------------------------------------------------------
 _cmd_abort() {
   echo "=== Abort Rebase ===" | tee -a "$logfile"
@@ -552,7 +568,10 @@ _cmd_abort() {
 }
 
 # ---------------------------------------------------------------------------
-# Operation: --continue
+# _cmd_continue — continue a paused rebase after conflicts have been resolved.
+# Globals:   logfile, CGW_CONFLICT_TOTAL (read via cgw_classify_conflicts)
+# Arguments: none
+# Returns:   exits 0 on success, 1 on failure
 # ---------------------------------------------------------------------------
 _cmd_continue() {
   echo "=== Continue Rebase ===" | tee -a "$logfile"
@@ -594,7 +613,10 @@ _cmd_continue() {
 }
 
 # ---------------------------------------------------------------------------
-# Operation: --skip
+# _cmd_skip — skip the current conflicting commit and resume the rebase.
+# Globals:   logfile
+# Arguments: none
+# Returns:   exits 0 on success, 1 on failure
 # ---------------------------------------------------------------------------
 _cmd_skip() {
   echo "=== Skip Rebase Commit ===" | tee -a "$logfile"
