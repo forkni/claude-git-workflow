@@ -23,6 +23,8 @@ Scans project, generates `.cgw.conf`, installs pre-commit + pre-push hooks, opti
 | `--reconfigure` | Overwrite existing `.cgw.conf` |
 | `--skip-hooks` | Don't install git hooks |
 | `--skip-skill` | Don't install Claude Code skill |
+| `--skip-cc-guardrail` | Don't install the Claude Code PreToolUse hook |
+| `--global` | Install skill and slash command to `~/.claude/` (all projects) |
 
 **`install_hooks.sh`** — Install git hooks (pre-commit + pre-push + pre-rebase)
 ```bash
@@ -155,7 +157,7 @@ Checks: current branch is source/target (warning if not), no uncommitted changes
 | `--source <branch>` | Override source branch for this invocation (ephemeral, doesn't mutate config) |
 | `--target <branch>` | Override target branch for this invocation |
 
-Workflow: validate → backup tag (`pre-merge-<timestamp>-<pid>`, created via `cgw_create_backup_tag merge` in `_common.sh`) → merge → auto-resolve DU/DD/UD/AD/DA conflicts → stop on UU/AU/AA → docs CI check → tests cleanup → commit.
+Workflow: validate → backup tag (`pre-merge-<timestamp>-<pid>`, created via `cgw_create_backup_tag merge` in `_common.sh`) → merge → auto-resolve DU/DD conflicts → stop on UU/AU/AA/UD/AD/DA → docs CI check → tests cleanup → commit.
 
 **`rollback_merge.sh`** — Emergency rollback
 ```bash
@@ -454,6 +456,7 @@ Runs `git fetch ${CGW_REMOTE}` then `git pull --rebase` on each target.
 | `CGW_FORMAT_CMD=<tool>` | Override format tool (default: `ruff`; `""` = disable format) |
 | `CGW_EXTRA_PREFIXES=<list>` | Pipe-separated extra commit prefixes (e.g. `"cuda\|tensorrt"`) |
 | `CGW_LOCAL_FILES=<paths>` | Space-separated files never committed (default: `CLAUDE.md MEMORY.md .claude/ logs/`) |
+| `CGW_LOCAL_FILES_EXEMPT=<paths>` | Space-separated paths exempt from the block (e.g. `.claude/settings.json` inside the blocked `.claude/`) |
 | `CGW_PROTECTED_BRANCHES=<list>` | Space-separated branches requiring `--force` confirmation for force-push |
 | `CGW_MERGE_MODE=<mode>` | `"direct"` (default, use `merge_with_validation.sh`) or `"pr"` (use `create_pr.sh`) |
 | `CGW_DOCS_PATTERN=<regex>` | Extended regex for allowed doc filenames in `merge_with_validation.sh` |
@@ -477,6 +480,18 @@ Runs `git fetch ${CGW_REMOTE}` then `git pull --rebase` on each target.
 | `CGW_FORMAT_CHECK_ARGS=<args>` | Arguments for format check (default: `"format --check ."` for ruff) |
 | `CGW_FORMAT_FIX_ARGS=<args>` | Arguments for format auto-fix (default: `"format ."` for ruff) |
 | `CGW_FORMAT_EXCLUDES=<flags>` | Exclusion flags appended to format commands |
+| `CGW_LINT_EXTENSIONS=<glob>` | File glob for `--modified-only` lint mode (default: `*.py`) |
+
+### Advanced typecheck arguments
+
+| Variable | Effect |
+|----------|--------|
+| `CGW_TYPECHECK_CMD=<tool>` | Typecheck tool (`pyrefly`, `pyright`, `mypy`, `tsc`; default: `""` = disabled) |
+| `CGW_TYPECHECK_CHECK_ARGS=<args>` | Arguments for typecheck command (default: `check`) |
+| `CGW_TYPECHECK_EXCLUDES=<flags>` | Exclusion flags appended to typecheck command |
+| `CGW_SKIP_TYPECHECK=1` | Skip typecheck step even when `CGW_TYPECHECK_CMD` is set |
+
+Typecheck runs **non-blocking** in the pre-commit hook when `CGW_TYPECHECK_CMD` is set (failures are reported but do not block the commit). Configured automatically by `configure.sh` based on detected project type (pyrefly for Python, tsc for TypeScript).
 
 ### CLAUDE_GIT_* (legacy, still supported)
 
