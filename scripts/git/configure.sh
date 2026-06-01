@@ -177,30 +177,38 @@ _detect_typecheck_tool() {
   # Python project: prefer [tool.*] declarations in pyproject.toml over command availability.
   if [[ -f "pyproject.toml" ]] || [[ -f "setup.py" ]] || [[ -f "setup.cfg" ]] || [[ -f "requirements.txt" ]]; then
     if grep -q '^\[tool\.pyrefly\]' "pyproject.toml" 2>/dev/null; then
-      echo "pyrefly"; return 0
+      echo "pyrefly"
+      return 0
     fi
     if grep -q '^\[tool\.pyright\]' "pyproject.toml" 2>/dev/null; then
-      echo "pyright"; return 0
+      echo "pyright"
+      return 0
     fi
     if grep -q '^\[tool\.mypy\]' "pyproject.toml" 2>/dev/null; then
-      echo "mypy"; return 0
+      echo "mypy"
+      return 0
     fi
     if command -v pyrefly &>/dev/null; then
-      echo "pyrefly"; return 0
+      echo "pyrefly"
+      return 0
     fi
     if command -v pyright &>/dev/null; then
-      echo "pyright"; return 0
+      echo "pyright"
+      return 0
     fi
     if command -v mypy &>/dev/null; then
-      echo "mypy"; return 0
+      echo "mypy"
+      return 0
     fi
     # Python project but no typechecker found — use sentinel so config can include the hint.
-    echo "none-python"; return 0
+    echo "none-python"
+    return 0
   fi
   # JavaScript/TypeScript project
   if [[ -f "tsconfig.json" ]] || [[ -f "package.json" ]]; then
     if command -v tsc &>/dev/null; then
-      echo "tsc"; return 0
+      echo "tsc"
+      return 0
     fi
   fi
   echo ""
@@ -404,9 +412,15 @@ _install_hook() {
     chmod +x "${PROJECT_ROOT}/.githooks/pre-push"
   fi
 
+  local pre_rebase_template="${hooks_template_dir}/pre-rebase"
+  if [[ -f "${pre_rebase_template}" ]]; then
+    cp "${pre_rebase_template}" "${PROJECT_ROOT}/.githooks/pre-rebase"
+    chmod +x "${PROJECT_ROOT}/.githooks/pre-rebase"
+  fi
+
   # Run install_hooks.sh to copy to .git/hooks/
   if bash "${SCRIPT_DIR}/install_hooks.sh" >/dev/null 2>&1; then
-    echo "  [OK] Git hooks installed (pre-commit + pre-push)"
+    echo "  [OK] Git hooks installed (pre-commit + pre-push + pre-rebase)"
   else
     echo "  [!] Hooks written to .githooks/ but failed to copy to .git/hooks/" >&2
     echo "      Fix: run manually: ./scripts/git/install_hooks.sh" >&2
@@ -509,7 +523,7 @@ _install_cc_guardrail() {
 
   # Initialize settings.json if it does not exist
   if [[ ! -f "${settings_json}" ]]; then
-    echo '{}' > "${settings_json}"
+    echo '{}' >"${settings_json}"
   fi
 
   # Idempotency: skip if a valid guardrail command is already registered.
@@ -521,7 +535,7 @@ _install_cc_guardrail() {
         | select(contains("cc-block-dangerous-git"))
         | select(contains("Program Files/Git") | not)
       ] | length > 0' \
-       "${settings_json}" >/dev/null 2>&1; then
+    "${settings_json}" >/dev/null 2>&1; then
     echo "  [OK] PreToolUse guardrail already registered in ${settings_json}"
     return 0
   fi
@@ -536,7 +550,7 @@ _install_cc_guardrail() {
         .hooks | map(.command | contains("cc-block-dangerous-git")) | any | not
       ))
     else . end' \
-    "${settings_json}" > "${clean_settings}" && mv "${clean_settings}" "${settings_json}"
+    "${settings_json}" >"${clean_settings}" && mv "${clean_settings}" "${settings_json}"
 
   # Merge: append a new PreToolUse Bash-matcher entry without overwriting existing hooks
   # Split hook_cmd at the first "/" and reconstruct inside jq, so neither
@@ -551,7 +565,7 @@ _install_cc_guardrail() {
   hook_sfx="${hook_cmd#*/}"
   jq --arg pfx "${hook_pfx}" --arg sfx "${hook_sfx}" \
     '.hooks.PreToolUse |= (. // []) + [{"matcher":"Bash","hooks":[{"type":"command","command":($pfx + "/" + $sfx)}]}]' \
-    "${settings_json}" > "${tmp_settings}" && mv "${tmp_settings}" "${settings_json}"
+    "${settings_json}" >"${tmp_settings}" && mv "${tmp_settings}" "${settings_json}"
   echo "  [OK] PreToolUse guardrail registered in ${settings_json}"
 
   # Smoke test: read the registered command back out of settings.json, substitute
@@ -654,7 +668,10 @@ main() {
         echo "After running, edit .cgw.conf to customize any detected values."
         exit 0
         ;;
-      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
+      --non-interactive)
+        non_interactive=1
+        CGW_NON_INTERACTIVE=1
+        ;;
       --reconfigure) reconfigure=1 ;;
       --skip-hooks) skip_hooks=1 ;;
       --skip-skill) skip_skill=1 ;;

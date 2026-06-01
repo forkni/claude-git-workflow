@@ -38,11 +38,10 @@ validate_semver() {
 main() {
   local version=""
   local tag_message=""
-  local non_interactive=0
   local dry_run=0
   local push_tag=0
-
-  [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
+  # Signing: -1 = unset (use CGW_SIGN_TAGS), 0 = off, 1 = on
+  local sign_flag=-1
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -58,6 +57,8 @@ main() {
         echo "Options:"
         echo "  --message <msg>     Annotation message (default: 'Release <version>')"
         echo "  --push              Push tag to origin after creation"
+        echo "  --sign              Create a GPG/SSH-signed tag (git tag -s)"
+        echo "  --no-sign           Create an annotated tag only, even if CGW_SIGN_TAGS=1"
         echo "  --non-interactive   Skip confirmation prompt"
         echo "  --dry-run           Preview without creating tag"
         echo "  -h, --help          Show this help"
@@ -79,7 +80,9 @@ main() {
         shift
         ;;
       --push) push_tag=1 ;;
-      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
+      --sign) sign_flag=1 ;;
+      --no-sign) sign_flag=0 ;;
+      --non-interactive) CGW_NON_INTERACTIVE=1 ;;
       --dry-run) dry_run=1 ;;
       -*)
         echo "[ERROR] Unknown flag: $1" >&2
@@ -147,6 +150,18 @@ main() {
     tag_message="Release ${version}"
   fi
 
+  # Resolve signing: --sign/--no-sign override; else fall back to CGW_SIGN_TAGS.
+  # -s creates a signed annotated tag; -a creates an unsigned annotated tag.
+  # Pro Git recommends signed tags for releases (§"Signing Your Work").
+  local _do_sign=0
+  if [[ "${sign_flag}" -eq 1 ]]; then
+    _do_sign=1
+  elif [[ "${sign_flag}" -lt 0 ]] && [[ "${CGW_SIGN_TAGS:-0}" == "1" ]]; then
+    _do_sign=1
+  fi
+  local _tag_type_flag="-a"
+  [[ "${_do_sign}" -eq 1 ]] && _tag_type_flag="-s"
+
   # Show preview
   echo "=== Create Release Tag ==="
   echo ""
@@ -157,24 +172,31 @@ main() {
   local push_label="no (manual push required)"
   [[ ${push_tag} -eq 1 ]] && push_label="yes (after creation)"
   echo "  Push:     ${push_label}"
+  local sign_label="annotated (unsigned)"
+  [[ "${_do_sign}" -eq 1 ]] && sign_label="signed annotated (-s)"
+  echo "  Signing:  ${sign_label}"
   echo ""
 
   if [[ ${dry_run} -eq 1 ]]; then
     echo "--- Dry run: no tag created ---"
-    echo "Command would be: git tag -a '${version}' -m '${tag_message}'"
+    echo "Command would be: git tag ${_tag_type_flag} '${version}' -m '${tag_message}'"
     [[ ${push_tag} -eq 1 ]] && echo "Followed by:       git push ${CGW_REMOTE} '${version}'"
     exit 0
   fi
 
   # Confirm
-  if ! cgw_confirm "Create annotated tag '${version}'?" --non-interactive accept; then
+  local _confirm_label="Create ${sign_label} tag '${version}'?"
+  if ! cgw_confirm "${_confirm_label}" --non-interactive accept; then
     echo "Cancelled"
     exit 0
   fi
 
-  # Create annotated tag
-  if git tag -a "${version}" -m "${tag_message}"; then
-    echo "[OK] Created annotated tag: ${version}"
+  # Create annotated (or signed annotated) tag
+  if git tag "${_tag_type_flag}" "${version}" -m "${tag_message}"; then
+    echo "[OK] Created ${sign_label}: ${version}"
+    if [[ "${_do_sign}" -eq 1 ]]; then
+      echo "  Verify with: git tag -v ${version}"
+    fi
   else
     echo "[ERROR] Failed to create tag" >&2
     exit 1

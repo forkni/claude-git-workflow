@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Pre-rebase hook — refuse to rebase commits already published on the remote.
+# Part of claude-git-workflow. Sources _common.sh at run time so CGW_REMOTE
+# and CGW_ALLOW_REBASE_PUBLISHED in .cgw.conf take effect without reinstall.
+#
+# Pro Git explicitly documents this hook to "disallow rebasing any commits
+# that have already been pushed" (§"Customizing Git — Hook Examples").
+# rebase_safe.sh warns about this condition; this hook enforces it at the
+# git level and therefore also catches raw 'git rebase' calls made outside
+# the wrapper.
+#
+# Set CGW_ALLOW_REBASE_PUBLISHED=1 in .cgw.conf (or env) to disable this
+# guard — useful in controlled workflows where force-push is permitted.
+#
+# Called by git as:  pre-rebase <upstream> [<branch>]
+#   <upstream>  — the base the branch is being rebased onto
+#   <branch>    — the branch being rebased (empty in detached HEAD)
+# Returns:
+#   0 — allow the rebase
+#   1 — block the rebase
+
+set -uo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+# shellcheck source=scripts/git/_common.sh
+source "${REPO_ROOT}/scripts/git/_common.sh"
+
+# Bypass: CGW_ALLOW_REBASE_PUBLISHED=1 disables this check.
+if [[ "${CGW_ALLOW_REBASE_PUBLISHED:-0}" == "1" ]]; then
+  exit 0
+fi
+
+UPSTREAM="${1:-}"
+# BRANCH is the second positional; empty when rebasing in detached HEAD.
+BRANCH="${2:-}"
+
+# If the upstream ref cannot be resolved, we cannot determine what has been
+# published — fail open rather than blocking every rebase.
+if ! git rev-parse --verify "${UPSTREAM}" >/dev/null 2>&1; then
+  exit 0
+fi
+
+# Determine the commits that would be rebased (upstream..HEAD or upstream..BRANCH).
+TARGET_REF="${BRANCH:-HEAD}"
+if ! REBASE_COMMITS="$(git rev-list "${UPSTREAM}..${TARGET_REF}" 2>/dev/null)"; then
+  exit 0
+fi
+
+if [[ -z "${REBASE_COMMITS}" ]]; then
+  # Nothing to rebase.
+  exit 0
+fi
+
+# Check each commit that would be rebased: if it is reachable from any remote
+# tracking ref, it has already been published.
+PUBLISHED=""
+while IFS= read -r commit; do
+  if git branch -r --contains "${commit}" 2>/dev/null | grep -q "^[[:space:]]*${CGW_REMOTE}/"; then
+    PUBLISHED="${commit}"
+    break
+  fi
+done <<<"${REBASE_COMMITS}"
+
+if [[ -n "${PUBLISHED}" ]]; then
+  echo "" >&2
+  echo "ERROR [pre-rebase]: Refusing to rebase commits already pushed to ${CGW_REMOTE}." >&2
+  echo "" >&2
+  echo "  The first published commit that would be rewritten:" >&2
+  echo "    $(git log -1 --oneline "${PUBLISHED}" 2>/dev/null || echo "${PUBLISHED}")" >&2
+  echo "" >&2
+  echo "  Rebasing published commits rewrites history and forces collaborators to" >&2
+  echo "  reconcile diverged branches (Pro Git §'The Perils of Rebasing')." >&2
+  echo "" >&2
+  echo "  Safe alternatives:" >&2
+  echo "    git revert <commit>          — create an undo commit (preserves history)" >&2
+  echo "    ./scripts/git/rollback_merge.sh --revert  — for merge rollbacks" >&2
+  echo "" >&2
+  echo "  To override for a controlled force-push workflow, set in .cgw.conf:" >&2
+  echo "    CGW_ALLOW_REBASE_PUBLISHED=1" >&2
+  echo "" >&2
+  exit 1
+fi
+
+exit 0

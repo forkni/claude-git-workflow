@@ -111,6 +111,19 @@ main() {
     fi
   fi
 
+  if [[ -f ".githooks/pre-rebase" ]]; then
+    echo "Installing pre-rebase hook..." | tee -a "$logfile"
+    if [[ "${hooks_dir_abs}" == "${githooks_abs}" ]]; then
+      chmod +x ".githooks/pre-rebase" >>"$logfile" 2>&1
+      echo "  [OK] core.hooksPath=${hooks_dir} — pre-rebase already in place" | tee -a "$logfile"
+    elif cp ".githooks/pre-rebase" "${hooks_dir}/pre-rebase" >>"$logfile" 2>&1; then
+      chmod +x "${hooks_dir}/pre-rebase" >>"$logfile" 2>&1
+      echo "  [OK] pre-rebase installed at ${hooks_dir}/pre-rebase" | tee -a "$logfile"
+    else
+      echo "  [!] Failed to install pre-rebase hook (non-fatal)" | tee -a "$logfile"
+    fi
+  fi
+
   log_section_end "INSTALL HOOKS" "$logfile" "${hooks_ok}"
   [[ ${hooks_ok} -ne 0 ]] && exit 1
 
@@ -124,14 +137,18 @@ main() {
   echo "" | tee -a "$logfile"
 
   echo "Active hooks:"
-  echo "  - pre-commit: Blocks local-only files, optional lint check"
-  echo "  - pre-push:   Validates conventional commit format on unpushed commits"
+  echo "  - pre-commit:  Blocks local-only files, optional lint check"
+  echo "  - pre-push:    Validates conventional commit format on unpushed commits"
+  echo "  - pre-rebase:  Refuses rebasing commits already pushed to remote"
   echo ""
   echo "To bypass temporarily (not recommended):"
-  echo "  git commit --no-verify / git push --no-verify"
+  echo "  git commit --no-verify / git push --no-verify / git rebase --no-verify"
+  echo ""
+  echo "To override the pre-rebase guard (controlled force-push workflows):"
+  echo "  CGW_ALLOW_REBASE_PUBLISHED=1 in .cgw.conf"
   echo ""
   echo "To uninstall:"
-  echo "  rm ${hooks_dir}/pre-commit ${hooks_dir}/pre-push"
+  echo "  rm ${hooks_dir}/pre-commit ${hooks_dir}/pre-push ${hooks_dir}/pre-rebase"
   echo ""
 
   {
