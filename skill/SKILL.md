@@ -185,7 +185,7 @@ Did lint checks fail?
 Optional flags: --skip-lint (skip all lint), --skip-md-lint (skip markdown lint only),
                 --sign (GPG/SSH-sign the commit), --no-sign (override CGW_SIGN_COMMITS)
 
-Typecheck: runs non-blocking in the pre-commit hook when CGW_TYPECHECK_CMD is set — see script-reference.md.
+Typecheck: runs non-blocking in the pre-commit hook when CGW_TYPECHECK_CMD is set (pyrefly is the configured default for this project's Python code) — see script-reference.md.
 
 After commit: verify with git log --oneline -1
 ```
