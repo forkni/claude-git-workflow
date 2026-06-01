@@ -72,7 +72,10 @@ main() {
         echo "         Any docs-only changes on target not in source will be lost."
         exit 0
         ;;
-      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
+      --non-interactive)
+        non_interactive=1
+        CGW_NON_INTERACTIVE=1
+        ;;
       --source)
         src_branch="${2:-}"
         if [[ -z "${src_branch}" ]]; then

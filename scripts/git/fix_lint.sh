@@ -129,7 +129,10 @@ main() {
 
   local fix_failed=0
 
-  cgw_run_lint_fix || { echo "[!] Lint tool: some issues may not be auto-fixable" | tee -a "$logfile"; fix_failed=1; }
+  cgw_run_lint_fix || {
+    echo "[!] Lint tool: some issues may not be auto-fixable" | tee -a "$logfile"
+    fix_failed=1
+  }
 
   {
     echo ""

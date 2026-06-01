@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
 
 mapfile -t hits < <(git ls-files | cgw_filter_local_files || true)
-if (( ${#hits[@]} > 0 )); then
+if ((${#hits[@]} > 0)); then
   err "Local-only files are tracked in git:"
   printf '  - %s\n' "${hits[@]}" >&2
   echo "" >&2
