@@ -152,7 +152,7 @@ _cmd_dangling() {
   fsck_out="$(git fsck --full --no-reflogs 2>&1 || true)"
 
   local dangling
-  dangling="$(echo "${fsck_out}" | grep "^dangling commit" | awk '{print $3}' || true)"
+  dangling="$(grep "^dangling commit" <<<"${fsck_out}" | while IFS= read -r line; do printf '%s\n' "${line##* }"; done || true)"
 
   if [[ -z "${dangling}" ]]; then
     echo "  No dangling commits found."
