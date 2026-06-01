@@ -41,7 +41,7 @@ _rebase_stash_created=0
 _cleanup_rebase() {
   # Only restore stash if rebase was aborted mid-way and we created one
   if [[ ${_rebase_stash_created} -eq 1 ]]; then
-    if git rebase --show-current-patch >/dev/null 2>&1 || [[ -d "${PROJECT_ROOT}/.git/rebase-merge" ]] || [[ -d "${PROJECT_ROOT}/.git/rebase-apply" ]]; then
+    if git rebase --show-current-patch >/dev/null 2>&1 || cgw_rebase_in_progress; then
       # Rebase still in progress -- don't auto-pop stash, user needs to resolve
       echo "" >&2
       echo "[!] Rebase was interrupted with uncommitted changes stashed." >&2
@@ -135,7 +135,10 @@ main() {
       --abort) do_abort=1 ;;
       --continue) do_continue=1 ;;
       --skip) do_skip=1 ;;
-      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
+      --non-interactive)
+        non_interactive=1
+        CGW_NON_INTERACTIVE=1
+        ;;
       --dry-run) dry_run=1 ;;
       *)
         err "Unknown flag: $1"
@@ -190,7 +193,7 @@ main() {
   fi
 
   # -- Check for already-active rebase ---------------------------------------
-  if [[ -d "${PROJECT_ROOT}/.git/rebase-merge" ]] || [[ -d "${PROJECT_ROOT}/.git/rebase-apply" ]]; then
+  if cgw_rebase_in_progress; then
     echo "[!] A rebase is already in progress." >&2
     echo "  Resolve conflicts then:" >&2
     echo "    ./scripts/git/rebase_safe.sh --continue" >&2
@@ -528,7 +531,7 @@ _cmd_abort() {
   echo "=== Abort Rebase ===" | tee -a "$logfile"
   echo ""
 
-  if [[ ! -d "${PROJECT_ROOT}/.git/rebase-merge" ]] && [[ ! -d "${PROJECT_ROOT}/.git/rebase-apply" ]]; then
+  if ! cgw_rebase_in_progress; then
     echo "  No rebase in progress."
     exit 0
   fi
@@ -555,7 +558,7 @@ _cmd_continue() {
   echo "=== Continue Rebase ===" | tee -a "$logfile"
   echo ""
 
-  if [[ ! -d "${PROJECT_ROOT}/.git/rebase-merge" ]] && [[ ! -d "${PROJECT_ROOT}/.git/rebase-apply" ]]; then
+  if ! cgw_rebase_in_progress; then
     echo "  No rebase in progress."
     exit 0
   fi
@@ -573,7 +576,7 @@ _cmd_continue() {
     echo ""
     echo "[OK] Rebase continued"
     # Check if rebase is now complete
-    if [[ ! -d "${PROJECT_ROOT}/.git/rebase-merge" ]] && [[ ! -d "${PROJECT_ROOT}/.git/rebase-apply" ]]; then
+    if ! cgw_rebase_in_progress; then
       echo "  Rebase complete!"
       _restore_stash_if_needed
     else
@@ -597,7 +600,7 @@ _cmd_skip() {
   echo "=== Skip Rebase Commit ===" | tee -a "$logfile"
   echo ""
 
-  if [[ ! -d "${PROJECT_ROOT}/.git/rebase-merge" ]] && [[ ! -d "${PROJECT_ROOT}/.git/rebase-apply" ]]; then
+  if ! cgw_rebase_in_progress; then
     echo "  No rebase in progress."
     exit 0
   fi
@@ -610,7 +613,7 @@ _cmd_skip() {
   if git rebase --skip 2>&1 | tee -a "$logfile"; then
     echo ""
     echo "[OK] Commit skipped"
-    if [[ ! -d "${PROJECT_ROOT}/.git/rebase-merge" ]] && [[ ! -d "${PROJECT_ROOT}/.git/rebase-apply" ]]; then
+    if ! cgw_rebase_in_progress; then
       echo "  Rebase complete!"
       _restore_stash_if_needed
     fi

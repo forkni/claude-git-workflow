@@ -122,7 +122,10 @@ main() {
         ;;
       --abort) do_abort=1 ;;
       --continue) do_continue=1 ;;
-      --non-interactive) non_interactive=1; CGW_NON_INTERACTIVE=1 ;;
+      --non-interactive)
+        non_interactive=1
+        CGW_NON_INTERACTIVE=1
+        ;;
       --dry-run) dry_run=1 ;;
       *)
         err "Unknown flag: $1"
@@ -297,9 +300,11 @@ main() {
     fi
     log_section_end "GIT BISECT" "$logfile" "${bisect_result}"
 
-    # Capture the identified commit before reset
+    # Capture the identified commit before reset.
+    # refs/bisect/bad is the stable plumbing ref updated by git bisect when it
+    # converges — more reliable than grepping human-readable log output.
     local first_bad
-    first_bad=$(git bisect log 2>/dev/null | grep "^# first bad commit:" | tail -1 | sed 's/^# first bad commit: \[//' | sed 's/\].*//' || true)
+    first_bad=$(git rev-parse refs/bisect/bad 2>/dev/null || true)
 
     # Reset bisect (returns to original branch)
     git bisect reset 2>/dev/null || true

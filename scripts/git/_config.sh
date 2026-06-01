@@ -54,7 +54,7 @@ if [[ -f "${_CGW_CONF}" ]]; then
   # This ensures env vars take priority AND derived values (e.g. CGW_PROTECTED_BRANCHES
   # referencing CGW_TARGET_BRANCH) stay consistent with the values actually used.
   while IFS= read -r _line || [[ -n "${_line}" ]]; do
-    _line="${_line%$'\r'}" # tolerate CRLF .cgw.conf (e.g., touched by a Windows editor)
+    _line="${_line%$'\r'}"                         # tolerate CRLF .cgw.conf (e.g., touched by a Windows editor)
     [[ "${_line}" =~ ^[[:space:]]*# ]] && continue # skip comments
     [[ "${_line}" =~ ^[[:space:]]*$ ]] && continue # skip blank lines
     # Only accept CGW_* assignment lines (optionally prefixed with export).
@@ -72,7 +72,7 @@ if [[ -f "${_CGW_CONF}" ]]; then
         elif [[ "${_cgw_val}" =~ ^\'([^\']*)\' ]]; then
           _cgw_val="${BASH_REMATCH[1]}"
         else
-          _cgw_val="${_cgw_val%%[[:space:]]#*}"   # strip ` #comment`
+          _cgw_val="${_cgw_val%%[[:space:]]#*}"               # strip ` #comment`
           _cgw_val="${_cgw_val%"${_cgw_val##*[![:space:]]}"}" # rtrim
         fi
         printf -v "${_cgw_var}" '%s' "${_cgw_val}"
@@ -173,6 +173,21 @@ CGW_PROTECTED_BRANCHES="${CGW_PROTECTED_BRANCHES:-${CGW_TARGET_BRANCH}}"
 # "direct": merge locally via merge_with_validation.sh (default, no PR required)
 # "pr":     create a GitHub PR via create_pr.sh (triggers Charlie CI + GitHub Actions)
 CGW_MERGE_MODE="${CGW_MERGE_MODE:-direct}"
+
+# --- Commit and tag signing ---
+# GPG/SSH signing of commits and tags, matching Pro Git §"Signing Your Work".
+# CGW_SIGN_COMMITS: 0 = off (default), 1 = pass -S to git commit.
+# CGW_SIGN_TAGS:    0 = off (default), 1 = use git tag -s instead of -a.
+# Both settings are additive: they never disable git's native commit.gpgsign/
+# tag.gpgsign config. Override per-invocation via --sign / --no-sign flags.
+# The signing key is whatever git is configured with (gpg.format, user.signingkey).
+CGW_SIGN_COMMITS="${CGW_SIGN_COMMITS:-0}"
+CGW_SIGN_TAGS="${CGW_SIGN_TAGS:-0}"
+
+# --- Published-commit rebase guard ---
+# CGW_ALLOW_REBASE_PUBLISHED: 0 = enforce (default), 1 = allow rebasing commits
+# already pushed to CGW_REMOTE.  Override in CI if you control a shared force-push workflow.
+CGW_ALLOW_REBASE_PUBLISHED="${CGW_ALLOW_REBASE_PUBLISHED:-0}"
 
 # --- Stale index.lock auto-recovery ---
 # CGW scripts detect and remove abandoned .git/index.lock files left by

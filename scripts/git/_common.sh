@@ -322,7 +322,7 @@ ensure_no_stale_index_lock() {
   [[ "${git_dir}" != /* ]] && git_dir="${PROJECT_ROOT:-.}/${git_dir}"
 
   local lock_file="${git_dir}/index.lock"
-  [[ -f "${lock_file}" ]] || return 0  # fast path: nothing to do
+  [[ -f "${lock_file}" ]] || return 0 # fast path: nothing to do
 
   # Refuse if a git operation is actively in progress — removing the lock
   # while rebase/merge/cherry-pick is paused (e.g. editor open) would corrupt it.
@@ -349,28 +349,28 @@ ensure_no_stale_index_lock() {
     err_tee "[cgw-lock] Could not stat ${lock_file}"
     return 1
   }
-  age=$(( now - mtime ))
-  (( age < 0 )) && age=0
+  age=$((now - mtime))
+  ((age < 0)) && age=0
 
   local max_age="${CGW_INDEX_LOCK_MAX_AGE_SECONDS:-30}"
   local wait_sec="${CGW_INDEX_LOCK_WAIT_SECONDS:-10}"
   local auto_remove="${CGW_AUTO_REMOVE_INDEX_LOCK:-1}"
 
-  if (( age < max_age )); then
+  if ((age < max_age)); then
     # Lock is fresh — may belong to a concurrent git process. Poll briefly.
     err_tee "[cgw-lock] index.lock is ${age}s old (threshold ${max_age}s); waiting up to ${wait_sec}s..."
     local waited=0
-    while (( waited < wait_sec )); do
-      sleep 0.5 2>/dev/null || sleep 1  # busybox sleep may not support fractions
-      (( waited++ ))
-      [[ ! -f "${lock_file}" ]] && return 0  # lock cleared itself — done
+    while ((waited < wait_sec)); do
+      sleep 0.5 2>/dev/null || sleep 1 # busybox sleep may not support fractions
+      ((waited++))
+      [[ ! -f "${lock_file}" ]] && return 0 # lock cleared itself — done
     done
     # Re-compute age after waiting
     now="$(date +%s)"
     mtime="$(stat -c %Y "${lock_file}" 2>/dev/null || stat -f %m "${lock_file}" 2>/dev/null)" || mtime="${now}"
-    age=$(( now - mtime ))
-    (( age < 0 )) && age=0
-    if (( age < max_age )); then
+    age=$((now - mtime))
+    ((age < 0)) && age=0
+    if ((age < max_age)); then
       err_tee "[cgw-lock] Lock still present after ${wait_sec}s wait and age ${age}s < ${max_age}s threshold. Another git process may be active. Stopping."
       return 1
     fi
@@ -391,10 +391,25 @@ ensure_no_stale_index_lock() {
   return 0
 }
 
+# cgw_rebase_in_progress — git-dir/worktree-safe rebase-in-progress check.
+#
+# Uses `git rev-parse --git-path` to resolve the actual state-dir paths,
+# so this works with linked worktrees (where .git is a file, not a dir),
+# submodules, and relocated GIT_DIR.  Callers must NOT hardcode
+# "${PROJECT_ROOT}/.git/rebase-merge" — use this function instead.
+#
+# Returns 0 if a rebase is in progress, 1 if none.
+cgw_rebase_in_progress() {
+  local d
+  d="$(git rev-parse --git-path rebase-merge 2>/dev/null)" && [[ -d "${d}" ]] && return 0
+  d="$(git rev-parse --git-path rebase-apply 2>/dev/null)" && [[ -d "${d}" ]] && return 0
+  return 1
+}
+
 # ── backup-tag module ──────────────────────────────────────────────────────────
 # Closed registry of CGW ops that create a backup tag before mutating state.
 # To add an op: edit this array AND add a cgw_create_backup_tag call to the script.
-declare -gra CGW_BACKUP_OPS=(merge cherry-pick docs-merge bisect rebase undo-commit) 2>/dev/null || true
+declare -gra CGW_BACKUP_OPS=(merge cherry-pick docs-merge bisect rebase undo-commit recover) 2>/dev/null || true
 
 # Create a lightweight tag pre-<op>-<timestamp>-<pid> at HEAD.
 # Sets global CGW_BACKUP_TAG. Warns but always proceeds on git tag failure.
@@ -403,9 +418,12 @@ cgw_create_backup_tag() {
   local op="$1"
   local _found=0 _known
   for _known in "${CGW_BACKUP_OPS[@]}"; do
-    [[ "${op}" == "${_known}" ]] && { _found=1; break; }
+    [[ "${op}" == "${_known}" ]] && {
+      _found=1
+      break
+    }
   done
-  if (( _found == 0 )); then
+  if ((_found == 0)); then
     err "cgw_create_backup_tag: unknown op '${op}' (must be one of: ${CGW_BACKUP_OPS[*]})"
     return 1
   fi
@@ -473,13 +491,19 @@ cgw_is_local_file() {
 # Echoes only matching paths to stdout; returns 0 if any matched, 1 if none.
 cgw_filter_local_files() {
   local p any=1
-  if (( $# > 0 )); then
+  if (($# > 0)); then
     for p in "$@"; do
-      cgw_is_local_file "${p}" && { echo "${p}"; any=0; }
+      cgw_is_local_file "${p}" && {
+        echo "${p}"
+        any=0
+      }
     done
   else
     while IFS= read -r p; do
-      cgw_is_local_file "${p}" && { echo "${p}"; any=0; }
+      cgw_is_local_file "${p}" && {
+        echo "${p}"
+        any=0
+      }
     done
   fi
   return ${any}
@@ -499,17 +523,17 @@ cgw_filter_local_files() {
 #   action needed, 1 if caller should exit 1.
 
 # Conflict-category arrays — reset on every cgw_classify_conflicts call.
-declare -g CGW_CONFLICT_DU_FILES=()   # modify/delete   (auto-resolvable: git rm)
-declare -g CGW_CONFLICT_DD_FILES=()   # both deleted    (auto-resolvable: git rm)
-declare -g CGW_CONFLICT_UU_FILES=()   # both modified   (halt: content conflict)
-declare -g CGW_CONFLICT_AU_FILES=()   # add/unmerged    (halt: add-side)
-declare -g CGW_CONFLICT_AA_FILES=()   # both added      (halt: add-side)
-declare -g CGW_CONFLICT_UD_FILES=()   # deleted by them (halt: accept deletion vs keep ours)
-declare -g CGW_CONFLICT_AD_FILES=()   # added by us, deleted by theirs  (halt: keep-ours vs keep-theirs)
-declare -g CGW_CONFLICT_DA_FILES=()   # deleted by us, added by theirs  (halt: keep-ours vs keep-theirs)
+declare -g CGW_CONFLICT_DU_FILES=() # modify/delete   (auto-resolvable: git rm)
+declare -g CGW_CONFLICT_DD_FILES=() # both deleted    (auto-resolvable: git rm)
+declare -g CGW_CONFLICT_UU_FILES=() # both modified   (halt: content conflict)
+declare -g CGW_CONFLICT_AU_FILES=() # add/unmerged    (halt: add-side)
+declare -g CGW_CONFLICT_AA_FILES=() # both added      (halt: add-side)
+declare -g CGW_CONFLICT_UD_FILES=() # deleted by them (halt: accept deletion vs keep ours)
+declare -g CGW_CONFLICT_AD_FILES=() # added by us, deleted by theirs  (halt: keep-ours vs keep-theirs)
+declare -g CGW_CONFLICT_DA_FILES=() # deleted by us, added by theirs  (halt: keep-ours vs keep-theirs)
 declare -g CGW_CONFLICT_TOTAL=0
 # shellcheck disable=SC2034  # CGW_CONFLICT_STATE is read by callers outside _common.sh
-declare -g CGW_CONFLICT_STATE="none"  # none | resolved | unresolved
+declare -g CGW_CONFLICT_STATE="none" # none | resolved | unresolved
 
 # shellcheck disable=SC2120  # optional arg used by unit tests; callers inside file omit it
 cgw_classify_conflicts() {
@@ -523,30 +547,67 @@ cgw_classify_conflicts() {
   CGW_CONFLICT_DA_FILES=()
   CGW_CONFLICT_TOTAL=0
 
-  local porcelain
+  # Inner classifier shared by both paths.  Receives XY<space>path per call.
+  _cgw_classify_one() {
+    local code="${1:0:2}"
+    local path="${1:3}"
+    [[ -z "${path}" ]] && return
+    case "${code}" in
+      DU)
+        CGW_CONFLICT_DU_FILES+=("${path}")
+        CGW_CONFLICT_TOTAL=$((CGW_CONFLICT_TOTAL + 1))
+        ;;
+      DD)
+        CGW_CONFLICT_DD_FILES+=("${path}")
+        CGW_CONFLICT_TOTAL=$((CGW_CONFLICT_TOTAL + 1))
+        ;;
+      UU)
+        CGW_CONFLICT_UU_FILES+=("${path}")
+        CGW_CONFLICT_TOTAL=$((CGW_CONFLICT_TOTAL + 1))
+        ;;
+      AU)
+        CGW_CONFLICT_AU_FILES+=("${path}")
+        CGW_CONFLICT_TOTAL=$((CGW_CONFLICT_TOTAL + 1))
+        ;;
+      AA)
+        CGW_CONFLICT_AA_FILES+=("${path}")
+        CGW_CONFLICT_TOTAL=$((CGW_CONFLICT_TOTAL + 1))
+        ;;
+      UD)
+        CGW_CONFLICT_UD_FILES+=("${path}")
+        CGW_CONFLICT_TOTAL=$((CGW_CONFLICT_TOTAL + 1))
+        ;;
+      AD)
+        CGW_CONFLICT_AD_FILES+=("${path}")
+        CGW_CONFLICT_TOTAL=$((CGW_CONFLICT_TOTAL + 1))
+        ;;
+      DA)
+        CGW_CONFLICT_DA_FILES+=("${path}")
+        CGW_CONFLICT_TOTAL=$((CGW_CONFLICT_TOTAL + 1))
+        ;;
+    esac
+  }
+
   if [[ $# -gt 0 ]]; then
-    porcelain="$1"
+    # Test-injection path: caller passes newline-delimited porcelain text.
+    # Kept for unit-test compatibility (tests/unit/common.bats injects text directly).
+    local line
+    while IFS= read -r line; do
+      [[ -z "${line}" ]] && continue
+      _cgw_classify_one "${line}"
+    done <<<"$1"
   else
-    porcelain="$(git status --short 2>/dev/null)" || true
+    # Production path: NUL-delimited --porcelain -z never C-quotes paths,
+    # so paths with spaces, Unicode, and special characters are preserved exactly.
+    # This is the documented-stable format contract (unlike --short which is human output).
+    local record
+    while IFS= read -r -d $'\0' record; do
+      [[ -z "${record}" ]] && continue
+      _cgw_classify_one "${record}"
+    done < <(git status --porcelain -z 2>/dev/null || true)
   fi
 
-  local line code path
-  while IFS= read -r line; do
-    [[ -z "${line}" ]] && continue
-    code="${line:0:2}"
-    path="${line:3}"
-    case "${code}" in
-      DU) CGW_CONFLICT_DU_FILES+=("${path}"); CGW_CONFLICT_TOTAL=$(( CGW_CONFLICT_TOTAL + 1 )) ;;
-      DD) CGW_CONFLICT_DD_FILES+=("${path}"); CGW_CONFLICT_TOTAL=$(( CGW_CONFLICT_TOTAL + 1 )) ;;
-      UU) CGW_CONFLICT_UU_FILES+=("${path}"); CGW_CONFLICT_TOTAL=$(( CGW_CONFLICT_TOTAL + 1 )) ;;
-      AU) CGW_CONFLICT_AU_FILES+=("${path}"); CGW_CONFLICT_TOTAL=$(( CGW_CONFLICT_TOTAL + 1 )) ;;
-      AA) CGW_CONFLICT_AA_FILES+=("${path}"); CGW_CONFLICT_TOTAL=$(( CGW_CONFLICT_TOTAL + 1 )) ;;
-      UD) CGW_CONFLICT_UD_FILES+=("${path}"); CGW_CONFLICT_TOTAL=$(( CGW_CONFLICT_TOTAL + 1 )) ;;
-      AD) CGW_CONFLICT_AD_FILES+=("${path}"); CGW_CONFLICT_TOTAL=$(( CGW_CONFLICT_TOTAL + 1 )) ;;
-      DA) CGW_CONFLICT_DA_FILES+=("${path}"); CGW_CONFLICT_TOTAL=$(( CGW_CONFLICT_TOTAL + 1 )) ;;
-    esac
-  done <<< "${porcelain}"
-
+  unset -f _cgw_classify_one
   [[ "${CGW_CONFLICT_TOTAL}" -gt 0 ]]
 }
 
@@ -591,7 +652,7 @@ cgw_resolve_safe_conflicts() {
   fi
 
   # Capture auto-resolve count before re-classify resets the arrays.
-  local auto_resolved=$(( ${#CGW_CONFLICT_DU_FILES[@]} + ${#CGW_CONFLICT_DD_FILES[@]} ))
+  local auto_resolved=$((${#CGW_CONFLICT_DU_FILES[@]} + ${#CGW_CONFLICT_DD_FILES[@]}))
 
   # Re-classify so halt checks see the post-rm state (fixes stale-snapshot bug).
   cgw_classify_conflicts
@@ -614,16 +675,19 @@ cgw_resolve_safe_conflicts() {
       continue_hint="  1. Edit conflicted files
   2. git add <resolved files>
   3. git commit"
-      abort_hint="Or abort: git merge --abort && git checkout ${original_branch}" ;;
+      abort_hint="Or abort: git merge --abort && git checkout ${original_branch}"
+      ;;
     cherry-pick)
       continue_hint="  1. Edit conflicted files
   2. git add <resolved files>
   3. git cherry-pick --continue"
-      abort_hint="Or abort: git cherry-pick --abort && git checkout ${original_branch}" ;;
+      abort_hint="Or abort: git cherry-pick --abort && git checkout ${original_branch}"
+      ;;
     *)
       continue_hint="  1. Edit conflicted files
   2. git add <resolved files>"
-      abort_hint="Or restore: git checkout ${original_branch}" ;;
+      abort_hint="Or restore: git checkout ${original_branch}"
+      ;;
   esac
 
   local any_halt=0
@@ -642,12 +706,12 @@ cgw_resolve_safe_conflicts() {
   fi
 
   # AU/AA — add-side conflicts
-  if [[ $(( ${#CGW_CONFLICT_AU_FILES[@]} + ${#CGW_CONFLICT_AA_FILES[@]} )) -gt 0 ]]; then
+  if [[ $((${#CGW_CONFLICT_AU_FILES[@]} + ${#CGW_CONFLICT_AA_FILES[@]})) -gt 0 ]]; then
     echo "" | tee -a "${_log}"
     err_tee "[FAIL] Add/add or add/unmerged conflicts require manual resolution:"
-    [[ "${#CGW_CONFLICT_AU_FILES[@]}" -gt 0 ]] && \
+    [[ "${#CGW_CONFLICT_AU_FILES[@]}" -gt 0 ]] &&
       printf '  %s\n' "${CGW_CONFLICT_AU_FILES[@]}" | tee -a "${_log}"
-    [[ "${#CGW_CONFLICT_AA_FILES[@]}" -gt 0 ]] && \
+    [[ "${#CGW_CONFLICT_AA_FILES[@]}" -gt 0 ]] &&
       printf '  %s\n' "${CGW_CONFLICT_AA_FILES[@]}" | tee -a "${_log}"
     echo ""
     echo "Please resolve manually:"
@@ -672,12 +736,12 @@ cgw_resolve_safe_conflicts() {
   fi
 
   # AD/DA — add/delete conflicts
-  if [[ $(( ${#CGW_CONFLICT_AD_FILES[@]} + ${#CGW_CONFLICT_DA_FILES[@]} )) -gt 0 ]]; then
+  if [[ $((${#CGW_CONFLICT_AD_FILES[@]} + ${#CGW_CONFLICT_DA_FILES[@]})) -gt 0 ]]; then
     echo "" | tee -a "${_log}"
     err_tee "[FAIL] Add/delete conflicts require manual resolution:"
-    [[ "${#CGW_CONFLICT_AD_FILES[@]}" -gt 0 ]] && \
+    [[ "${#CGW_CONFLICT_AD_FILES[@]}" -gt 0 ]] &&
       printf '  %s\n' "${CGW_CONFLICT_AD_FILES[@]}" | tee -a "${_log}"
-    [[ "${#CGW_CONFLICT_DA_FILES[@]}" -gt 0 ]] && \
+    [[ "${#CGW_CONFLICT_DA_FILES[@]}" -gt 0 ]] &&
       printf '  %s\n' "${CGW_CONFLICT_DA_FILES[@]}" | tee -a "${_log}"
     echo ""
     echo "Please resolve manually (for each file):"
@@ -933,10 +997,22 @@ cgw_confirm() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --default)          default="$2";        shift 2 ;;
-      --literal-token)    literal_token="$2";  shift 2 ;;
-      --non-interactive)  ni_policy="$2";      shift 2 ;;
-      *) err "cgw_confirm: unknown option: $1"; return 1 ;;
+      --default)
+        default="$2"
+        shift 2
+        ;;
+      --literal-token)
+        literal_token="$2"
+        shift 2
+        ;;
+      --non-interactive)
+        ni_policy="$2"
+        shift 2
+        ;;
+      *)
+        err "cgw_confirm: unknown option: $1"
+        return 1
+        ;;
     esac
   done
 
@@ -944,7 +1020,7 @@ cgw_confirm() {
   if [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]]; then
     case "${ni_policy}" in
       accept) return 0 ;;
-      deny)   return 1 ;;
+      deny) return 1 ;;
       abort)
         echo "[!] non-interactive: '${prompt}' requires confirmation — aborting" >&2
         exit 1
@@ -960,16 +1036,16 @@ cgw_confirm() {
     local hint
     case "${default}" in
       yes) hint=" [yes]" ;;
-      no)  hint=" [no]" ;;
-      *)   hint="" ;;
+      no) hint=" [no]" ;;
+      *) hint="" ;;
     esac
     read -r -p "${prompt} (yes/no)${hint}: " response
     if [[ -z "${response}" ]]; then
       [[ "${default}" == "yes" ]] && return 0 || return 1
     fi
     case "${response}" in
-      [Yy]|[Yy][Ee][Ss]) return 0 ;;
-      [Nn]|[Nn][Oo])     return 1 ;;
+      [Yy] | [Yy][Ee][Ss]) return 0 ;;
+      [Nn] | [Nn][Oo]) return 1 ;;
       # Unrecognized input falls back to default (deny if no default set).
       *) [[ "${default}" == "yes" ]] && return 0 || return 1 ;;
     esac
