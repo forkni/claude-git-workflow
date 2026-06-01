@@ -471,6 +471,62 @@ _install_skill() {
   fi
 }
 
+_install_guardrail_nojq() {
+  local settings_json="${1}"
+  local hook_cmd="${2}"
+
+  # Already registered? (grep is enough without jq)
+  if [[ -f "${settings_json}" ]] && grep -qF "cc-block-dangerous-git" "${settings_json}" 2>/dev/null; then
+    echo "  [OK] PreToolUse guardrail already registered in ${settings_json}"
+    return 0
+  fi
+
+  # Simple case: no file yet, or just bare {}  — write from scratch
+  local existing_stripped=""
+  if [[ -f "${settings_json}" ]]; then
+    existing_stripped="$(tr -d '[:space:]' <"${settings_json}" 2>/dev/null)"
+  fi
+  if [[ -z "${existing_stripped}" ]] || [[ "${existing_stripped}" == "{}" ]]; then
+    printf '{\n  "hooks": {\n    "PreToolUse": [\n      {\n        "matcher": "Bash",\n        "hooks": [{"type": "command", "command": "%s"}]\n      }\n    ]\n  }\n}\n' \
+      "${hook_cmd}" >"${settings_json}"
+    echo "  [OK] PreToolUse guardrail registered in ${settings_json}"
+    return 0
+  fi
+
+  # Complex case: try Python to merge into existing settings
+  local py_cmd
+  for py_cmd in python3 python; do
+    if command -v "${py_cmd}" &>/dev/null; then
+      if "${py_cmd}" - "${settings_json}" "${hook_cmd}" 2>/dev/null <<'PYEOF'; then
+import json, sys
+path, cmd = sys.argv[1], sys.argv[2]
+try:
+    with open(path) as f:
+        data = json.load(f)
+except Exception:
+    data = {}
+ptu = data.setdefault('hooks', {}).setdefault('PreToolUse', [])
+ptu[:] = [e for e in ptu
+          if not any('cc-block-dangerous-git' in h.get('command', '')
+                     for h in e.get('hooks', []))]
+ptu.append({'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': cmd}]})
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2)
+PYEOF
+        echo "  [OK] PreToolUse guardrail registered in ${settings_json} (via python)"
+        return 0
+      fi
+    fi
+  done
+
+  # Nothing available — manual instructions
+  echo "  [!] jq and python not found — cannot auto-merge ${settings_json}" >&2
+  echo "      Manually add the following hook entry to ${settings_json}:" >&2
+  printf '      {"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"%s"}]}]}}\n' \
+    "${hook_cmd}" >&2
+  return 1
+}
+
 _install_cc_guardrail() {
   local install_mode="${1:-local}" # "local" or "global"
 
@@ -512,13 +568,10 @@ _install_cc_guardrail() {
   fi
   chmod +x "${hook_dst}"
 
-  # Merge into settings.json — requires jq
+  # Merge into settings.json — jq preferred; Python fallback; manual instructions as last resort
   if ! command -v jq &>/dev/null; then
-    echo "  [!] jq not found — cannot auto-merge ${settings_json}" >&2
-    echo "      Manually add the following to ${settings_json}:" >&2
-    printf '      {"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"%s"}]}]}}\n' \
-      "${hook_cmd}" >&2
-    return 1
+    _install_guardrail_nojq "${settings_json}" "${hook_cmd}"
+    return $?
   fi
 
   # Initialize settings.json if it does not exist
