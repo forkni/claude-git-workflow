@@ -182,7 +182,8 @@ Did lint checks fail?
 ├─ Yes → Run ./scripts/git/fix_lint.sh then retry commit
 └─ No  → Commit proceeds
 
-Optional flags: --skip-lint (skip all lint), --skip-md-lint (skip markdown lint only)
+Optional flags: --skip-lint (skip all lint), --skip-md-lint (skip markdown lint only),
+                --sign (GPG/SSH-sign the commit), --no-sign (override CGW_SIGN_COMMITS)
 
 After commit: verify with git log --oneline -1
 ```
@@ -332,8 +333,35 @@ Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login
 
 **Creating a release:**
 ```bash
-./scripts/git/create_release.sh v1.2.3 --push   # tag + push (triggers GitHub Release)
+./scripts/git/create_release.sh v1.2.3 --push             # tag + push (triggers GitHub Release)
+./scripts/git/create_release.sh v1.2.3 --push --sign      # GPG/SSH-signed annotated tag
 ./scripts/git/create_release.sh v1.2.3 --dry-run
+```
+
+**Recovering lost commits (reflog + fsck):**
+```bash
+# Show reflog with restore hints (read-only):
+./scripts/git/recover.sh reflog
+./scripts/git/recover.sh reflog --limit 50
+./scripts/git/recover.sh reflog --ref origin/main
+
+# Inspect a commit by SHA or reflog entry:
+./scripts/git/recover.sh show HEAD@{3}
+
+# Find unreachable commits via git fsck (when reflog is gone):
+./scripts/git/recover.sh dangling
+
+# Restore a lost commit as a new branch (creates backup tag first):
+./scripts/git/recover.sh restore abc1234 --branch recovered/lost-work
+```
+
+**Worktree management (parallel branch checkouts):**
+```bash
+./scripts/git/worktree_manage.sh list                          # show all worktrees
+./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent   # add linked worktree
+./scripts/git/worktree_manage.sh remove --execute ../hotfix    # remove worktree
+./scripts/git/worktree_manage.sh prune                         # dry-run: show stale admin files
+./scripts/git/worktree_manage.sh prune --execute               # remove stale admin files
 ```
 
 **Project setup & hygiene:**
