@@ -85,16 +85,23 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use GitHub PRs instead of direct loc
 
 **When:** Same file modified differently on both branches.
 
-**Action:** STOP workflow, require manual resolution:
+**Action:** STOP workflow, require manual resolution. Follow the full procedure
+in [resolving-merge-conflicts.md](resolving-merge-conflicts.md) — investigate each
+side's intent, preserve both where compatible, re-run lint/tests, then conclude:
 ```bash
-# Edit files to resolve conflicts
+# Resolve each hunk (see resolving-merge-conflicts.md), then:
 git add <resolved-files>
-git commit
+./scripts/git/commit_enhanced.sh "fix: resolve merge conflict in <file>"
 
-# Or abort merge
+# Or abort the merge (only to deliberately abandon it):
 git merge --abort
 git checkout "${CGW_SOURCE_BRANCH}"
 ```
+
+> Conclude with `commit_enhanced.sh`, not raw `git commit`: the PreToolUse
+> guardrail blocks `git commit`, and the wrapper still finalizes the merge
+> (`MERGE_HEAD` is set) while keeping lint and local-file protection. Do not pass
+> `--only` when concluding a merge — it resets the index and breaks merge state.
 
 Never auto-resolve content conflicts — they require human review.
 

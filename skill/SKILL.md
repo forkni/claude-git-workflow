@@ -15,6 +15,7 @@ Ensures all git operations follow established patterns:
 For script flags and environment variables, see [references/script-reference.md](references/script-reference.md).
 For error recovery procedures, see [references/error-recovery.md](references/error-recovery.md).
 For branch rules and merge workflow, see [references/branch-and-merge-rules.md](references/branch-and-merge-rules.md).
+When a merge or rebase **stops on a conflict that needs manual resolution** (`UU`, `AA`, `AU`, `UD`, `AD`, `DA`), follow the step-by-step procedure in [references/resolving-merge-conflicts.md](references/resolving-merge-conflicts.md) — investigate both sides' intent, preserve both where compatible, re-run checks, then conclude through the wrapper.
 
 ## When to use this skill
 
