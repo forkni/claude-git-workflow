@@ -15,7 +15,7 @@ Ensures all git operations follow established patterns:
 For script flags and environment variables, see [references/script-reference.md](references/script-reference.md).
 For error recovery procedures, see [references/error-recovery.md](references/error-recovery.md).
 For branch rules and merge workflow, see [references/branch-and-merge-rules.md](references/branch-and-merge-rules.md).
-When a merge or rebase **stops on a conflict that needs manual resolution** (`UU`, `AA`, `AU`, `UD`, `AD`, `DA`), follow the step-by-step procedure in [references/resolving-merge-conflicts.md](references/resolving-merge-conflicts.md) — investigate both sides' intent, preserve both where compatible, re-run checks, then conclude through the wrapper.
+When a merge or rebase **stops on a conflict that needs manual resolution** (`UU`, `AA`, `AU`, `UD`, `AD`, `DA`), follow the step-by-step procedure in [references/resolving-merge-conflicts.md](references/resolving-merge-conflicts.md) — investigate both sides' intent, preserve both where compatible, re-run checks, then conclude through the wrapper. **Before touching a hunk:** run `git log --merge -p -- <file>` and `git log --oneline --left-right --merge` to understand which commits on each side caused the conflict. Never blindly `git checkout --ours/--theirs`; resolve by default — abort only to deliberately abandon the operation, not to dodge a difficult conflict.
 
 ## When to use this skill
 
@@ -204,6 +204,8 @@ After commit: verify with git log --oneline -1
 ```
 Handles: pre-merge validation, backup tag, modify/delete/both-deleted conflict auto-resolution, content conflict detection (stops for manual review).
 
+**After manual conflict resolution:** when the script pauses for a content conflict (`UU`/`AA`/`AU`), resolve the markers, run `git add <file>`, then conclude the merge with `commit_enhanced.sh` — Rule 1 applies to merge-conclusion commits too. Do NOT re-run `merge_with_validation.sh`; there is no `--continue` flag.
+
 Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Creating a PR below).
 
 **Pushing to remote:**
@@ -308,6 +310,9 @@ Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login
 # Skip the current conflicting commit:
 ./scripts/git/rebase_safe.sh --skip
 ```
+
+**Published-branch guard:** if the branch was already pushed to a remote, the `pre-rebase` hook **blocks** the rebase to protect shared history (`rebase_safe.sh` warns; the hook hard-blocks). Override only when you are certain no one else has pulled the rewritten commits:
+`CGW_ALLOW_REBASE_PUBLISHED=1 ./scripts/git/rebase_safe.sh --onto main`
 
 **Bisecting a bug:**
 ```bash
