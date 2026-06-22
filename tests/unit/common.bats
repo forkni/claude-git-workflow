@@ -325,12 +325,16 @@ _make_fresh_lock() {
   cd "${TEST_REPO_DIR}"
   PROJECT_ROOT="${TEST_REPO_DIR}"
   _make_fresh_lock
-  # Bump mtime 120s into the future to simulate clock skew
-  local future_epoch
-  future_epoch=$(( $(date +%s) + 120 ))
-  touch -t "$(date -u -d "@${future_epoch}" +%Y%m%d%H%M.%S 2>/dev/null \
-            || date -u -r "${future_epoch}" +%Y%m%d%H%M.%S)" \
-    "${TEST_REPO_DIR}/.git/index.lock" 2>/dev/null || true
+  # Bump mtime 120s into the future to simulate clock skew.
+  # Use touch -d (GNU) to stay in local time; fall back to epoch arithmetic for BSD/macOS.
+  # touch -t with date -u produces UTC timestamps that touch interprets as local time,
+  # creating a timezone offset bug on non-UTC systems (e.g. JST = UTC+9 → 9h in the past).
+  if ! touch -d "2 minutes" "${TEST_REPO_DIR}/.git/index.lock" 2>/dev/null; then
+    local future_epoch
+    future_epoch=$(( $(date +%s) + 120 ))
+    touch -t "$(date -r "${future_epoch}" +%Y%m%d%H%M.%S)" \
+      "${TEST_REPO_DIR}/.git/index.lock"
+  fi
   # age=-120 clamped to 0 → treated as fresh → refuses even with wait=0
   CGW_AUTO_REMOVE_INDEX_LOCK=1 CGW_INDEX_LOCK_MAX_AGE_SECONDS=30 \
     CGW_INDEX_LOCK_WAIT_SECONDS=0 run ensure_no_stale_index_lock
