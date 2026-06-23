@@ -288,13 +288,23 @@ _make_fresh_lock() {
 }
 
 @test "ensure_no_stale_index_lock: returns 1 when fresh lock persists past wait" {
-  cd "${TEST_REPO_DIR}"
-  PROJECT_ROOT="${TEST_REPO_DIR}"
-  _make_fresh_lock
-  CGW_AUTO_REMOVE_INDEX_LOCK=1 CGW_INDEX_LOCK_MAX_AGE_SECONDS=999 \
-    CGW_INDEX_LOCK_WAIT_SECONDS=2 run ensure_no_stale_index_lock
+  # Use a private repo so parallel tests' setup() can't race with our wait loop.
+  # common.bats shares TEST_REPO_DIR across all tests; with bats --jobs the
+  # setup() rm -f can delete our lock mid-wait, producing a false 0 return.
+  local _repo="${BATS_TEST_TMPDIR}/fresh-lock-repo"
+  mkdir -p "${_repo}"
+  git -C "${_repo}" init --quiet
+  git -C "${_repo}" config user.email "t@t.com"
+  git -C "${_repo}" config user.name "T"
+  export PROJECT_ROOT="${_repo}"
+  export CGW_AUTO_REMOVE_INDEX_LOCK=1
+  export CGW_INDEX_LOCK_MAX_AGE_SECONDS=999
+  export CGW_INDEX_LOCK_WAIT_SECONDS=2
+  : >"${_repo}/.git/index.lock"
+  [ -f "${_repo}/.git/index.lock" ]
+  run ensure_no_stale_index_lock
   [ "${status}" -eq 1 ]
-  [ -f "${TEST_REPO_DIR}/.git/index.lock" ]
+  [ -f "${_repo}/.git/index.lock" ]
   [[ "${output}" == *"still present"* ]]
 }
 
