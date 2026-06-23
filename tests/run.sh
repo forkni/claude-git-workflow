@@ -13,7 +13,13 @@ jobs="${CGW_TEST_JOBS:-$(( _cores / 2 ))}"
 (( jobs < 1 )) && jobs=1
 
 # Default target: full suite. Callers can pass specific paths to narrow the run.
-_targets=("${@:-tests/unit/ tests/integration/}")
+# Note: "${@:-fallback}" produces a single string when $@ is empty and fallback
+# contains spaces — use an explicit branch so each path is a separate array element.
+if [[ $# -eq 0 ]]; then
+  _targets=("tests/unit/" "tests/integration/")
+else
+  _targets=("$@")
+fi
 
 # bats --jobs requires flock/shlock, which Git Bash on Windows does not provide.
 # Fall back to per-file parallelism via xargs -P when flock is unavailable.
