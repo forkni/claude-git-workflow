@@ -337,7 +337,16 @@ Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login
 ./scripts/git/stash_work.sh push "wip: description"
 ./scripts/git/stash_work.sh pop
 ./scripts/git/stash_work.sh list
+./scripts/git/stash_work.sh drop stash@{0} --yes   # non-interactive drop; echoes SHA
+./scripts/git/stash_work.sh clear --yes             # non-interactive remove-all
 ```
+
+**Destructive-op fallback rule:** Prefer the wrapper. Fall back to raw `git stash drop`/`git stash
+clear` only when (a) the wrapper genuinely cannot proceed **and** (b) the user has explicitly
+authorized that specific destructive action. Justify the bypass by authorization + reflog-recoverability,
+never by "no safety risk" — `stash_work.sh drop`/`clear`'s purpose *is* the destructive-action
+confirmation. With the `--yes` flag and no-TTY auto-detection now in place, this fallback should never
+be needed.
 
 **Creating a release:**
 ```bash

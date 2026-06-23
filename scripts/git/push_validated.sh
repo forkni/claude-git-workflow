@@ -171,7 +171,7 @@ main() {
   # Check if local is behind remote
   git fetch "${CGW_REMOTE}" "${target_branch}" >>"$logfile" 2>&1 || true
   local behind
-  behind=$(cgw_rev_count "HEAD" "${CGW_REMOTE}/${target_branch}" || echo "0")
+  behind=$(cgw_rev_count "${target_branch}" "${CGW_REMOTE}/${target_branch}" || echo "0")
   if [[ "${behind}" -gt 0 ]]; then
     echo "[!] WARNING: Local branch is ${behind} commit(s) behind ${CGW_REMOTE}/${target_branch}" | tee -a "$logfile"
     echo "  A normal push may fail or overwrite remote changes." | tee -a "$logfile"
@@ -212,10 +212,10 @@ main() {
   # [4/5] Show what will be pushed
   echo "[4/5] Commits to be pushed:" | tee -a "$logfile"
   local ahead
-  ahead=$(cgw_rev_count "${CGW_REMOTE}/${target_branch}" "HEAD" || echo "unknown")
+  ahead=$(cgw_rev_count "${CGW_REMOTE}/${target_branch}" "${target_branch}" || echo "unknown")
   echo "  Local ahead of ${CGW_REMOTE}/${target_branch}: ${ahead} commit(s)" | tee -a "$logfile"
   if [[ "${ahead}" != "0" ]] && [[ "${ahead}" != "unknown" ]]; then
-    git log "${CGW_REMOTE}/${target_branch}..HEAD" --oneline 2>/dev/null | tee -a "$logfile" || true
+    git log "${CGW_REMOTE}/${target_branch}..${target_branch}" --oneline 2>/dev/null | tee -a "$logfile" || true
   fi
   echo "" | tee -a "$logfile"
 
