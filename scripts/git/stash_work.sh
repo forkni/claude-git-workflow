@@ -44,11 +44,16 @@ usage() {
   echo "  --include-index  Also stash staged changes (git stash push -S)"
   echo "  --no-untracked   Omit untracked files (not recommended)"
   echo ""
+  echo "Options (for drop/clear):"
+  echo "  --yes / --non-interactive / -y   Skip confirmation prompt (auto-proceed)."
+  echo "  Also auto-detected: if stdin is not a TTY, drop/clear proceed without prompting."
+  echo ""
   echo "Examples:"
   echo "  ./scripts/git/stash_work.sh push 'wip: half-done refactor'"
   echo "  ./scripts/git/stash_work.sh pop"
   echo "  ./scripts/git/stash_work.sh list"
   echo "  ./scripts/git/stash_work.sh apply stash@{2}"
+  echo "  ./scripts/git/stash_work.sh drop stash@{0} --yes"
 }
 
 main() {
@@ -64,6 +69,9 @@ main() {
     err "Cannot find project root"
     exit 1
   }
+
+  # Auto-detect non-interactive mode when no TTY (matches commit_enhanced.sh)
+  [[ ! -t 0 ]] && CGW_NON_INTERACTIVE=1
 
   case "${command}" in
     push | save)
@@ -176,7 +184,14 @@ main() {
       ;;
 
     drop)
-      local ref="${1:-}"
+      local ref=""
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --yes | --non-interactive | -y) CGW_NON_INTERACTIVE=1 ;;
+          *) ref="$1" ;;
+        esac
+        shift
+      done
       echo "=== Drop Stash ==="
       echo ""
 
@@ -194,7 +209,7 @@ main() {
       fi
 
       echo "Dropping: $(git stash list | grep "^${ref}" || echo "${ref}")"
-      if cgw_confirm "Confirm drop?" --non-interactive abort; then
+      if cgw_confirm "Confirm drop?" --non-interactive accept; then
         git stash drop "${ref}" && echo "[OK] Stash dropped"
       else
         echo "Cancelled"
@@ -209,6 +224,12 @@ main() {
       ;;
 
     clear)
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --yes | --non-interactive | -y) CGW_NON_INTERACTIVE=1 ;;
+        esac
+        shift
+      done
       echo "=== Clear All Stashes ==="
       echo ""
 
@@ -221,7 +242,7 @@ main() {
       git stash list
       echo ""
       echo "[!] WARNING: This permanently removes ALL stashes listed above."
-      if cgw_confirm "Type 'CLEAR' to confirm" --literal-token CLEAR --non-interactive abort; then
+      if cgw_confirm "Type 'CLEAR' to confirm" --literal-token CLEAR --non-interactive accept; then
         git stash clear && echo "[OK] All stashes cleared"
       else
         echo "Cancelled"

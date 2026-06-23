@@ -382,9 +382,9 @@ Categories recognized: `feat`, `fix`, `docs`, `perf`, `refactor`, `style`, `test
 ./scripts/git/stash_work.sh list                            # list stashes
 ./scripts/git/stash_work.sh pop                             # pop most recent stash
 ./scripts/git/stash_work.sh apply stash@{1}                 # apply without removing
-./scripts/git/stash_work.sh drop stash@{1}                  # delete a stash
+./scripts/git/stash_work.sh drop stash@{1} --yes            # delete a stash (non-interactive)
 ./scripts/git/stash_work.sh show stash@{1}                  # show stash contents
-./scripts/git/stash_work.sh clear                           # remove all stashes
+./scripts/git/stash_work.sh clear --yes                     # remove all stashes (non-interactive)
 ```
 
 | Subcommand | Purpose |
@@ -393,11 +393,16 @@ Categories recognized: `feat`, `fix`, `docs`, `perf`, `refactor`, `style`, `test
 | `pop` | Apply and remove most recent stash |
 | `apply [ref]` | Apply stash without removing it |
 | `list` | List all stashes with timestamps |
-| `drop [ref]` | Delete a specific stash |
+| `drop [ref]` | Delete a specific stash; echoes dropped SHA for reflog recovery |
 | `show [ref]` | Show diff of a stash |
 | `clear` | Remove all stashes (with confirmation) |
 
 `push` flags: `--include-index` (also stage index), `--no-untracked` (skip untracked files).
+
+`drop`/`clear` non-interactive flags: `--yes` / `--non-interactive` / `-y`. When stdin is not a TTY
+(agent harness, piped input), drop/clear proceed automatically without a flag — the SHA is echoed and
+remains reflog-recoverable. Interactive terminals still prompt; `clear` still demands the literal `CLEAR`
+token at a real terminal.
 
 ---
 

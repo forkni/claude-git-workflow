@@ -93,3 +93,47 @@ teardown() {
   run run_script stash_work.sh list
   [ "${status}" -eq 0 ]
 }
+
+# ── drop ──────────────────────────────────────────────────────────────────────
+
+@test "drop removes a specific stash non-interactively" {
+  echo "drop-me" > "${TEST_REPO_DIR}/drop.txt"
+  git -C "${TEST_REPO_DIR}" add drop.txt
+  run_script stash_work.sh push "wip: to drop"
+
+  # Verify stash exists
+  stash_ref="$(git -C "${TEST_REPO_DIR}" stash list | head -1 | cut -d: -f1)"
+  run run_script stash_work.sh drop "${stash_ref}" --yes
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"dropped"* ]] || [[ "${output}" == *"Dropped"* ]]
+  # Stash list should now be empty
+  [[ -z "$(git -C "${TEST_REPO_DIR}" stash list)" ]]
+}
+
+@test "drop exits 0 when no stashes" {
+  run run_script stash_work.sh drop "stash@{0}" --yes
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"No stashes"* ]] || [[ "${output}" == *"no stash"* ]]
+}
+
+# ── clear ─────────────────────────────────────────────────────────────────────
+
+@test "clear removes all stashes non-interactively" {
+  # Create two stashes
+  for i in 1 2; do
+    echo "clear-${i}" > "${TEST_REPO_DIR}/clear${i}.txt"
+    git -C "${TEST_REPO_DIR}" add "clear${i}.txt"
+    run_script stash_work.sh push "wip: clear test ${i}"
+  done
+
+  run run_script stash_work.sh clear --yes
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"cleared"* ]] || [[ "${output}" == *"Cleared"* ]]
+  [[ -z "$(git -C "${TEST_REPO_DIR}" stash list)" ]]
+}
+
+@test "clear exits 0 when no stashes" {
+  run run_script stash_work.sh clear --yes
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"No stashes"* ]] || [[ "${output}" == *"no stash"* ]]
+}
