@@ -22,7 +22,7 @@ teardown() {
 }
 
 @test "pre-commit hook: CGW_TYPECHECK_CMD empty skips typecheck silently" {
-  printf 'CGW_TYPECHECK_CMD=""\n' > "${TEST_REPO_DIR}/.cgw.conf"
+  printf 'CGW_TYPECHECK_CMD=""\nCGW_LINT_CMD=""\n' > "${TEST_REPO_DIR}/.cgw.conf"
   echo "x = 1" > "${TEST_REPO_DIR}/foo.py"
   git -C "${TEST_REPO_DIR}" add foo.py
   run git -C "${TEST_REPO_DIR}" commit -m "feat: add foo.py"

@@ -24,6 +24,8 @@ setup() {
   export SCRIPT_DIR="${CGW_PROJECT_ROOT}/scripts/git"
   # shellcheck source=scripts/git/_common.sh
   source "${CGW_PROJECT_ROOT}/scripts/git/_common.sh"
+  # Export PROJECT_ROOT so bats subprocess-based `run` calls can see it.
+  export PROJECT_ROOT
 }
 
 # ── err() ──────────────────────────────────────────────────────────────────────
