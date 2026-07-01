@@ -120,22 +120,36 @@ export CGW_ALL_PREFIXES # consumed by commit_enhanced.sh (cross-file, not detect
 # Set CGW_LINT_CMD="" to disable lint checks entirely (e.g. non-Python projects
 # that haven't configured a linter yet).
 # Use +x (not :-) to distinguish "unset" from "explicitly set to empty string".
+# The "{files}" token marks where a scoped file list is substituted (audit mode
+# expands it to "."); a legacy standalone "." also still works. See _common.sh
+# cgw_strip_path_arg / cgw_fill_path_placeholder.
 [[ -z "${CGW_LINT_CMD+x}" ]] && CGW_LINT_CMD="ruff"
-[[ -z "${CGW_LINT_CHECK_ARGS+x}" ]] && CGW_LINT_CHECK_ARGS="check ."
-[[ -z "${CGW_LINT_FIX_ARGS+x}" ]] && CGW_LINT_FIX_ARGS="check --fix ."
+[[ -z "${CGW_LINT_CHECK_ARGS+x}" ]] && CGW_LINT_CHECK_ARGS="check {files}"
+[[ -z "${CGW_LINT_FIX_ARGS+x}" ]] && CGW_LINT_FIX_ARGS="check --fix {files}"
 [[ -z "${CGW_LINT_EXCLUDES+x}" ]] && CGW_LINT_EXCLUDES="--extend-exclude logs --extend-exclude .venv"
 
 # Set CGW_FORMAT_CMD="" to disable formatting checks.
 # Use +x (not :-) to distinguish "unset" from "explicitly set to empty string".
 [[ -z "${CGW_FORMAT_CMD+x}" ]] && CGW_FORMAT_CMD="ruff"
-[[ -z "${CGW_FORMAT_CHECK_ARGS+x}" ]] && CGW_FORMAT_CHECK_ARGS="format --check ."
-[[ -z "${CGW_FORMAT_FIX_ARGS+x}" ]] && CGW_FORMAT_FIX_ARGS="format ."
+[[ -z "${CGW_FORMAT_CHECK_ARGS+x}" ]] && CGW_FORMAT_CHECK_ARGS="format --check {files}"
+[[ -z "${CGW_FORMAT_FIX_ARGS+x}" ]] && CGW_FORMAT_FIX_ARGS="format {files}"
 [[ -z "${CGW_FORMAT_EXCLUDES+x}" ]] && CGW_FORMAT_EXCLUDES="--exclude logs --exclude .venv"
 
 # Set CGW_MARKDOWNLINT_CMD to enable a dedicated markdown lint step.
 # Empty (default) = markdown lint step skipped. Example: "markdownlint-cli2"
 CGW_MARKDOWNLINT_CMD="${CGW_MARKDOWNLINT_CMD:-}"
-CGW_MARKDOWNLINT_ARGS="${CGW_MARKDOWNLINT_ARGS:-**/*.md !CLAUDE.md !MEMORY.md}"
+# CGW_MARKDOWNLINT_ARGS holds flags/exclusions ONLY — always applied, never
+# replaced by a file list. CGW_MARKDOWNLINT_PATHS is the default scan target,
+# used only in audit/whole-repo mode (no explicit file list). The commit gate
+# passes staged *.md files instead of the PATHS glob, so an unrelated markdown
+# violation elsewhere no longer blocks a code-only commit.
+[[ -z "${CGW_MARKDOWNLINT_ARGS+x}" ]]  && CGW_MARKDOWNLINT_ARGS="!CLAUDE.md !MEMORY.md"
+[[ -z "${CGW_MARKDOWNLINT_PATHS+x}" ]] && CGW_MARKDOWNLINT_PATHS="**/*.md"
+# Migration guard: the old single-var shape conflated the scan glob with
+# exclusions. If a leftover config still carries a path glob in ARGS, warn once.
+if [[ "${CGW_MARKDOWNLINT_ARGS}" == *"*"* ]]; then
+  echo "[cgw-config] WARNING: CGW_MARKDOWNLINT_ARGS contains a path glob ('*'). Move the scan target to CGW_MARKDOWNLINT_PATHS; ARGS is now flags/exclusions only." >&2
+fi
 
 # --- Modified-only lint file extensions ---
 # Space-separated glob patterns used by check_lint.sh / fix_lint.sh --modified-only.
@@ -175,6 +189,11 @@ CGW_DOCS_PATTERN="${CGW_DOCS_PATTERN:-}"
 # --- Dev-only file exclusions for cherry-pick warnings ---
 # Space-separated paths. Empty = no warning. Example: "tests/ pytest.ini"
 CGW_DEV_ONLY_FILES="${CGW_DEV_ONLY_FILES:-}"
+
+# --- Local-only file guard for merge / cherry-pick ---
+# Set to "1" to allow a merge or cherry-pick to carry CGW_LOCAL_FILES into shared
+# history (the guard otherwise aborts in non-interactive mode). Default 0.
+[[ -z "${CGW_ALLOW_LOCAL_FILES_IN_MERGE+x}" ]] && CGW_ALLOW_LOCAL_FILES_IN_MERGE=0
 
 # --- Tests directory cleanup on target branch ---
 # 0 = disabled (default), 1 = remove tests/ from target if gitignored

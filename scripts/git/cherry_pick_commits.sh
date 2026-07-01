@@ -266,6 +266,15 @@ main() {
     fi
   fi
 
+  # Refuse to cherry-pick a commit that carries local-only files onto this
+  # branch (they must not enter shared history). Override with
+  # CGW_ALLOW_LOCAL_FILES_IN_MERGE=1.
+  if ! cgw_guard_incoming_local_files cherry-pick "${commit_hash}"; then
+    log_message "Cherry-pick cancelled (local-only files)" "${logfile}"
+    git checkout "${original_branch}"
+    exit 1
+  fi
+
   # [5/6] Create backup tag
   log_section_start "CREATE BACKUP TAG" "$logfile"
 

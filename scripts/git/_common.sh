@@ -539,6 +539,46 @@ cgw_filter_local_files() {
   return ${any}
 }
 
+# cgw_guard_incoming_local_files <mode> <ref>
+#   Guards commit-producing paths that don't go through commit_enhanced.sh
+#   (which already unstages CGW_LOCAL_FILES) against propagating a local-only
+#   file into shared history. <mode> selects how the incoming change set is
+#   computed; matched paths are reported.
+#     merge        — files changed on <ref> since the merge base (HEAD...<ref>)
+#     cherry-pick  — files touched by commit <ref>
+#     amend        — files in commit <ref> (default HEAD)
+#   Returns 0 = proceed (nothing matched, or override set); 1 = abort.
+#   Non-interactive aborts unless CGW_ALLOW_LOCAL_FILES_IN_MERGE=1; interactive
+#   prompts (default no). Reuses cgw_filter_local_files / cgw_is_local_file.
+cgw_guard_incoming_local_files() {
+  local mode="$1" ref="${2:-HEAD}"
+  local -a incoming=()
+  case "${mode}" in
+    merge)       mapfile -t incoming < <(git diff --name-only "HEAD...${ref}" 2>/dev/null | cgw_filter_local_files) ;;
+    cherry-pick) mapfile -t incoming < <(git show --name-only --format= "${ref}" 2>/dev/null | cgw_filter_local_files) ;;
+    amend)       mapfile -t incoming < <(git show --name-only --format= "${ref}" 2>/dev/null | cgw_filter_local_files) ;;
+    *) err "cgw_guard_incoming_local_files: unknown mode '${mode}'"; return 2 ;;
+  esac
+
+  [[ ${#incoming[@]} -eq 0 ]] && return 0
+
+  err_tee "[!] Incoming ${mode} carries local-only file(s) that must not enter shared history:"
+  local f
+  for f in "${incoming[@]}"; do
+    err_tee "      ${f}"
+  done
+
+  if [[ "${CGW_ALLOW_LOCAL_FILES_IN_MERGE:-0}" == "1" ]]; then
+    err_tee "[!] CGW_ALLOW_LOCAL_FILES_IN_MERGE=1 -- proceeding despite local-only files."
+    return 0
+  fi
+  if [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]]; then
+    err_tee "[!] Aborting. Remove these files from the incoming change, or set CGW_ALLOW_LOCAL_FILES_IN_MERGE=1 to override."
+    return 1
+  fi
+  cgw_confirm "Proceed and include these local-only file(s)?" --default no
+}
+
 # ── conflict-policy module ─────────────────────────────────────────────────────
 # Single source of truth for git conflict classification and safe auto-resolution.
 #
@@ -828,11 +868,40 @@ cgw_resolve_lint_binary() {
 }
 
 # cgw_strip_path_arg <args-string>
-#   Echo args-string minus its trailing whitespace-delimited token (the path
-#   placeholder, typically "."). Used by --modified-only callers to replace the
-#   default path with an explicit file list.
+#   Echo args-string with its file-position placeholder removed, so a scoped
+#   caller can append an explicit file list. Recognizes an explicit "{files}"
+#   token (preferred convention) anywhere in the string; otherwise removes a
+#   standalone "." token (legacy convention). All other tokens — flags and
+#   non-dot paths — are preserved. This is the A3 fix: the old implementation
+#   stripped only the LAST token, so args like "check . --fix" silently kept the
+#   whole-repo "." and reverted to an unscoped scan. Space-safe (read -r -a).
 cgw_strip_path_arg() {
-  echo "${1% *}"
+  local -a toks=() out=()
+  read -r -a toks <<<"${1:-}"
+  local tok has_placeholder=0
+  for tok in "${toks[@]+"${toks[@]}"}"; do
+    [[ "${tok}" == "{files}" ]] && has_placeholder=1
+  done
+  for tok in "${toks[@]+"${toks[@]}"}"; do
+    if [[ ${has_placeholder} -eq 1 ]]; then
+      [[ "${tok}" == "{files}" ]] && continue
+    else
+      [[ "${tok}" == "." ]] && continue
+    fi
+    out+=("${tok}")
+  done
+  echo "${out[*]+"${out[*]}"}"
+}
+
+# cgw_fill_path_placeholder <args-string> [default-path]
+#   Echo args-string with the "{files}" placeholder replaced by <default-path>
+#   (default "."). Used by the whole-repo/audit branch so an args template that
+#   carries "{files}" (e.g. "check {files}") expands to a real path ("check .")
+#   instead of leaking the literal token to the tool. Legacy args without
+#   "{files}" pass through unchanged (they already carry their own path).
+cgw_fill_path_placeholder() {
+  local args="${1:-}" default_path="${2:-.}"
+  echo "${args//\{files\}/${default_path}}"
 }
 
 # cgw_modified_files_for_lint
@@ -869,8 +938,10 @@ cgw_run_lint_check() {
     # shellcheck disable=SC2086  # Word splitting intentional: stripped_args contains multiple flags
     run_tool_with_logging "LINT CHECK" "${logfile}" "${lint_bin}" ${stripped_args} "$@"
   else
-    # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_CHECK_ARGS/CGW_LINT_EXCLUDES contain multiple flags
-    run_tool_with_logging "LINT CHECK" "${logfile}" "${lint_bin}" ${CGW_LINT_CHECK_ARGS:-} ${CGW_LINT_EXCLUDES:-}
+    local filled_args
+    filled_args=$(cgw_fill_path_placeholder "${CGW_LINT_CHECK_ARGS:-}")
+    # shellcheck disable=SC2086  # Word splitting intentional: filled_args/CGW_LINT_EXCLUDES contain multiple flags
+    run_tool_with_logging "LINT CHECK" "${logfile}" "${lint_bin}" ${filled_args} ${CGW_LINT_EXCLUDES:-}
   fi
 }
 
@@ -891,8 +962,10 @@ cgw_run_format_check() {
     # shellcheck disable=SC2086
     run_tool_with_logging "FORMAT CHECK" "${logfile}" "${format_bin}" ${stripped_args} "$@"
   else
+    local filled_args
+    filled_args=$(cgw_fill_path_placeholder "${CGW_FORMAT_CHECK_ARGS:-}")
     # shellcheck disable=SC2086
-    run_tool_with_logging "FORMAT CHECK" "${logfile}" "${format_bin}" ${CGW_FORMAT_CHECK_ARGS:-} ${CGW_FORMAT_EXCLUDES:-}
+    run_tool_with_logging "FORMAT CHECK" "${logfile}" "${format_bin}" ${filled_args} ${CGW_FORMAT_EXCLUDES:-}
   fi
 }
 
@@ -916,8 +989,10 @@ cgw_run_lint_fix() {
       # shellcheck disable=SC2086
       run_tool_with_logging "LINT AUTO-FIX" "${logfile}" "${lint_bin}" ${stripped_args} "$@" || fix_failed=1
     else
+      local filled_args
+      filled_args=$(cgw_fill_path_placeholder "${CGW_LINT_FIX_ARGS:-}")
       # shellcheck disable=SC2086
-      run_tool_with_logging "LINT AUTO-FIX" "${logfile}" "${lint_bin}" ${CGW_LINT_FIX_ARGS:-} ${CGW_LINT_EXCLUDES:-} || fix_failed=1
+      run_tool_with_logging "LINT AUTO-FIX" "${logfile}" "${lint_bin}" ${filled_args} ${CGW_LINT_EXCLUDES:-} || fix_failed=1
     fi
   fi
   if [[ -n "${CGW_FORMAT_CMD:-}" ]]; then
@@ -930,8 +1005,10 @@ cgw_run_lint_fix() {
       # shellcheck disable=SC2086
       run_tool_with_logging "FORMAT FIX" "${logfile}" "${format_bin}" ${stripped_args} "$@" || fix_failed=1
     else
+      local filled_args
+      filled_args=$(cgw_fill_path_placeholder "${CGW_FORMAT_FIX_ARGS:-}")
       # shellcheck disable=SC2086
-      run_tool_with_logging "FORMAT FIX" "${logfile}" "${format_bin}" ${CGW_FORMAT_FIX_ARGS:-} ${CGW_FORMAT_EXCLUDES:-} || fix_failed=1
+      run_tool_with_logging "FORMAT FIX" "${logfile}" "${format_bin}" ${filled_args} ${CGW_FORMAT_EXCLUDES:-} || fix_failed=1
     fi
   fi
   return $fix_failed
@@ -948,12 +1025,22 @@ cgw_run_markdownlint_check() {
   fi
   [[ -z "${CGW_MARKDOWNLINT_CMD:-}" ]] && return 0
   if [[ $# -gt 0 ]]; then
+    # Scoped: flags/exclusions + the explicit file list (NOT the PATHS glob).
     # shellcheck disable=SC2086
     run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS:-} "$@"
   else
+    # Audit/whole-repo: flags/exclusions + the default PATHS glob.
     # shellcheck disable=SC2086
-    run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS:-}
+    run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS:-} ${CGW_MARKDOWNLINT_PATHS:-}
   fi
+}
+
+# cgw_staged_files_for_md
+#   Stdout: newline-separated staged (index) markdown files (added/copied/
+#   modified/renamed). Uses --cached because the commit gate lints what is being
+#   committed. Outputs nothing when no staged *.md files; caller skips the step.
+cgw_staged_files_for_md() {
+  git diff --cached --name-only --diff-filter=ACMR -- '*.md'
 }
 
 # cgw_run_typecheck [files...]
@@ -980,8 +1067,10 @@ cgw_run_typecheck() {
     # shellcheck disable=SC2086  # Word splitting intentional: stripped_args contains multiple flags
     run_tool_with_logging "TYPECHECK" "${logfile}" "${tc_bin}" ${stripped_args} "$@"
   else
-    # shellcheck disable=SC2086  # Word splitting intentional: CGW_TYPECHECK_CHECK_ARGS/CGW_TYPECHECK_EXCLUDES contain multiple flags
-    run_tool_with_logging "TYPECHECK" "${logfile}" "${tc_bin}" ${CGW_TYPECHECK_CHECK_ARGS-check} ${CGW_TYPECHECK_EXCLUDES:-}
+    local filled_args
+    filled_args=$(cgw_fill_path_placeholder "${CGW_TYPECHECK_CHECK_ARGS-check}")
+    # shellcheck disable=SC2086  # Word splitting intentional: filled_args/CGW_TYPECHECK_EXCLUDES contain multiple flags
+    run_tool_with_logging "TYPECHECK" "${logfile}" "${tc_bin}" ${filled_args} ${CGW_TYPECHECK_EXCLUDES:-}
   fi
 }
 

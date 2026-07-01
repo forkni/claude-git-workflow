@@ -59,15 +59,16 @@ cp cgw.conf.example .cgw.conf
 | `CGW_LOCAL_FILES` | `CLAUDE.md MEMORY.md .claude/ logs/` | Files never committed (space-separated) |
 | `CGW_LINT_CMD` | `ruff` | Lint tool (`""` to disable) |
 | `CGW_FORMAT_CMD` | `ruff` | Format tool (`""` to disable) |
-| `CGW_LINT_CHECK_ARGS` | `check .` | Arguments for lint check |
-| `CGW_LINT_FIX_ARGS` | `check --fix .` | Arguments for lint auto-fix |
-| `CGW_FORMAT_CHECK_ARGS` | `format --check .` | Arguments for format check |
-| `CGW_FORMAT_FIX_ARGS` | `format .` | Arguments for format auto-fix |
+| `CGW_LINT_CHECK_ARGS` | `check {files}` | Arguments for lint check (`{files}` = scan target; legacy `.` also works) |
+| `CGW_LINT_FIX_ARGS` | `check --fix {files}` | Arguments for lint auto-fix |
+| `CGW_FORMAT_CHECK_ARGS` | `format --check {files}` | Arguments for format check |
+| `CGW_FORMAT_FIX_ARGS` | `format {files}` | Arguments for format auto-fix |
 | `CGW_LINT_EXCLUDES` | `--extend-exclude logs --extend-exclude .venv` | Exclusion flags appended to lint commands |
 | `CGW_FORMAT_EXCLUDES` | `--exclude logs --exclude .venv` | Exclusion flags appended to format commands |
 | `CGW_LINT_EXTENSIONS` | `*.py` | File globs for `--modified-only` lint mode (e.g. `*.js *.ts`) |
 | `CGW_MARKDOWNLINT_CMD` | `` | Markdown lint tool; set to e.g. `markdownlint-cli2` to enable |
-| `CGW_MARKDOWNLINT_ARGS` | `**/*.md !CLAUDE.md !MEMORY.md` | Arguments passed to markdown lint tool |
+| `CGW_MARKDOWNLINT_ARGS` | `!CLAUDE.md !MEMORY.md` | Flags/exclusions only (never a scan-target glob) |
+| `CGW_MARKDOWNLINT_PATHS` | `**/*.md` | Default scan target for audit mode (`check_lint.sh`/`push_validated.sh`); the commit gate scopes to staged `*.md` instead |
 | `CGW_SKIP_LINT` | `0` | Set to `1` to skip all lint checks at runtime |
 | `CGW_SKIP_MD_LINT` | `0` | Set to `1` to skip only the markdown lint step |
 | `CGW_TYPECHECK_CMD` | `` | Typecheck tool; set to e.g. `pyrefly` to enable (`""` to disable) |
@@ -79,6 +80,7 @@ cp cgw.conf.example .cgw.conf
 | `CGW_EXTRA_PREFIXES` | `` | Extra commit prefixes (pipe-separated, e.g. `cuda\|tensorrt`) |
 | `CGW_DOCS_PATTERN` | `` | Regex for allowed docs filenames (`""` to skip) |
 | `CGW_DEV_ONLY_FILES` | `` | Files to warn about in cherry-pick (space-separated) |
+| `CGW_ALLOW_LOCAL_FILES_IN_MERGE` | `0` | Set to `1` to allow a merge/cherry-pick to carry `CGW_LOCAL_FILES` into shared history (the guard otherwise aborts non-interactively) |
 | `CGW_CLEANUP_TESTS` | `0` | Remove `tests/` from target if gitignored |
 | `CGW_MERGE_MODE` | `direct` | Promotion mode: `direct` (merge locally) or `pr` (create GitHub PR) |
 | `CGW_PROTECTED_BRANCHES` | `main` | Branches requiring `--force` for force-push |

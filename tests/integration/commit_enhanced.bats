@@ -347,6 +347,68 @@ _run_commit() {
     [[ "${output}" == *"MARKDOWN"* ]]
 }
 
+# ── markdown lint scoping (A1) ────────────────────────────────────────────────
+
+@test "markdown lint is scoped to staged .md (unrelated dirty .md does not block)" {
+  install_mock_markdownlint_content_aware
+  # Dirty markdown elsewhere in the tree, but NOT staged for this commit.
+  printf 'MDLINT-BAD\n' > "${TEST_REPO_DIR}/dirty_unrelated.md"
+  # Clean markdown, staged.
+  printf 'clean\n' > "${TEST_REPO_DIR}/clean_doc.md"
+  git -C "${TEST_REPO_DIR}" add clean_doc.md
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD='markdownlint-cli2'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'docs: add clean doc'
+  "
+  [ "${status}" -eq 0 ]
+  # The dirty unrelated file must never have been handed to the linter.
+  ! grep -q "dirty_unrelated.md" "${MOCK_BIN_DIR}/mdlint.log"
+}
+
+@test "markdown lint fails when a staged .md has a violation (content-aware)" {
+  install_mock_markdownlint_content_aware
+  printf 'MDLINT-BAD\n' > "${TEST_REPO_DIR}/bad_doc.md"
+  git -C "${TEST_REPO_DIR}" add bad_doc.md
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD='markdownlint-cli2'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'docs: bad staged md'
+  "
+  [ "${status}" -eq 1 ]
+}
+
+@test "markdown lint step is skipped when no .md files are staged" {
+  install_mock_markdownlint_content_aware
+  printf 'MDLINT-BAD\n' > "${TEST_REPO_DIR}/unstaged.md"  # dirty but unstaged
+  echo "code" > "${TEST_REPO_DIR}/code.txt"
+  git -C "${TEST_REPO_DIR}" add code.txt
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD='markdownlint-cli2'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'feat: code only'
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"no staged .md files"* ]]
+  # Linter never invoked → no log file created.
+  [ ! -f "${MOCK_BIN_DIR}/mdlint.log" ]
+}
+
 # ── --no-venv flag ────────────────────────────────────────────────────────────
 
 @test "--no-venv uses system lint binary and exits 0" {

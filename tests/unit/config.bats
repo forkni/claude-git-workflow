@@ -119,6 +119,56 @@ teardown() {
   [[ "${output}" == *"TC_CMD=pyrefly"* ]]
 }
 
+# ── Markdown-lint config split (A1) ────────────────────────────────────────────
+
+@test "A1: CGW_MARKDOWNLINT_ARGS defaults to exclusions only; PATHS holds the glob" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    unset CGW_MARKDOWNLINT_ARGS CGW_MARKDOWNLINT_PATHS
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"ARGS=[\${CGW_MARKDOWNLINT_ARGS}]\"
+    echo \"PATHS=[\${CGW_MARKDOWNLINT_PATHS}]\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"ARGS=[!CLAUDE.md !MEMORY.md]"* ]]
+  [[ "${output}" == *"PATHS=[**/*.md]"* ]]
+  # ARGS must not carry a scan glob.
+  [[ "${output}" != *"ARGS=[**"* ]]
+}
+
+@test "A1: legacy conflated CGW_MARKDOWNLINT_ARGS (with glob) warns" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    export CGW_MARKDOWNLINT_ARGS='**/*.md !CLAUDE.md !MEMORY.md'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+  " 2>&1
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"WARNING"* ]]
+  [[ "${output}" == *"CGW_MARKDOWNLINT_PATHS"* ]]
+}
+
+# ── {files} placeholder defaults (A2+A3) ───────────────────────────────────────
+
+@test "A3: lint/format arg defaults use the {files} placeholder" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    unset CGW_LINT_CHECK_ARGS CGW_LINT_FIX_ARGS CGW_FORMAT_CHECK_ARGS CGW_FORMAT_FIX_ARGS
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"LC=\${CGW_LINT_CHECK_ARGS}\"
+    echo \"LF=\${CGW_LINT_FIX_ARGS}\"
+    echo \"FC=\${CGW_FORMAT_CHECK_ARGS}\"
+    echo \"FF=\${CGW_FORMAT_FIX_ARGS}\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"LC=check {files}"* ]]
+  [[ "${output}" == *"LF=check --fix {files}"* ]]
+  [[ "${output}" == *"FC=format --check {files}"* ]]
+  [[ "${output}" == *"FF=format {files}"* ]]
+}
+
 # ── CGW_ALL_PREFIXES construction ──────────────────────────────────────────────
 
 @test "CGW_ALL_PREFIXES without extras contains base prefixes" {

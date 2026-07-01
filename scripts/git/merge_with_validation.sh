@@ -324,6 +324,15 @@ main() {
     merge_extra_args+=("-Xignore-space-change")
   fi
 
+  # Refuse to merge a source branch that would carry local-only files into the
+  # target's shared history (commit_enhanced.sh can't unstage from a merge).
+  # The EXIT trap restores the original branch on abort.
+  if ! cgw_guard_incoming_local_files merge "${src_branch}"; then
+    err_tee "[FAIL] Merge aborted: source branch carries local-only files"
+    log_section_end "GIT MERGE" "$logfile" "1"
+    exit 1
+  fi
+
   # shellcheck disable=SC2068  # Intentional: empty array expands to zero words (${arr[@]+...} is Bash 3.x portable)
   if run_git_with_logging "GIT MERGE SOURCE" "$logfile" merge "${src_branch}" --no-ff -m "Merge ${src_branch} into ${tgt_branch}" ${merge_extra_args[@]+"${merge_extra_args[@]}"}; then
     echo "[OK] Merge completed without conflicts" | tee -a "$logfile"

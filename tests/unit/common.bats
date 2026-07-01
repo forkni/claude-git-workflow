@@ -709,6 +709,46 @@ UU b.py
   [ "${output}" = "format --check" ]
 }
 
+@test "cgw_strip_path_arg: removes an explicit {files} token (any position)" {
+  run cgw_strip_path_arg "check {files} --fix"
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "check --fix" ]
+}
+
+@test "cgw_strip_path_arg: removes a non-trailing '.' path (A3 regression)" {
+  # Old impl stripped only the LAST token, leaving '.' → whole-repo scan.
+  run cgw_strip_path_arg "check . --fix"
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "check --fix" ]
+}
+
+@test "cgw_strip_path_arg: {files} takes precedence over a literal '.'" {
+  run cgw_strip_path_arg "check . {files}"
+  [ "${status}" -eq 0 ]
+  # Only {files} is removed; the '.' is a real arg the user chose to keep.
+  [ "${output}" = "check ." ]
+}
+
+# ── cgw_fill_path_placeholder() ───────────────────────────────────────────────
+
+@test "cgw_fill_path_placeholder: substitutes {files} with default path '.'" {
+  run cgw_fill_path_placeholder "check {files}"
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "check ." ]
+}
+
+@test "cgw_fill_path_placeholder: uses an explicit default path" {
+  run cgw_fill_path_placeholder "format --check {files}" "src/"
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "format --check src/" ]
+}
+
+@test "cgw_fill_path_placeholder: legacy args without {files} pass through" {
+  run cgw_fill_path_placeholder "check ."
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "check ." ]
+}
+
 # ── cgw_modified_files_for_lint() ─────────────────────────────────────────────
 
 @test "cgw_modified_files_for_lint: returns empty for clean repo" {

@@ -312,3 +312,37 @@ _run_merge() {
   # DU auto-resolved first, then halted on UU
   [[ "${output}" == *"Content conflicts require manual resolution"* ]]
 }
+
+# ── local-only file guard (C1) ────────────────────────────────────────────────
+
+# Commit a local-only file (default CGW_LOCAL_FILES: .claude/) on development.
+# Leaves the checkout on development — merge_with_validation.sh must be run from
+# the source branch (it checks out the target itself).
+_seed_local_file_on_source() {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  mkdir -p "${TEST_REPO_DIR}/.claude"
+  echo '{}' > "${TEST_REPO_DIR}/.claude/settings.local.json"
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null add .claude/settings.local.json
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: leak local file"
+}
+
+@test "merge aborts when the source branch carries a local-only file" {
+  _seed_local_file_on_source
+  local before
+  before=$(git -C "${TEST_REPO_DIR}" rev-parse main)
+  run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"local-only file"* ]]
+  # main must not have advanced (no merge commit).
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse main)" = "${before}" ]
+}
+
+@test "merge proceeds with CGW_ALLOW_LOCAL_FILES_IN_MERGE=1 despite local-only file" {
+  _seed_local_file_on_source
+  local before
+  before=$(git -C "${TEST_REPO_DIR}" rev-parse main)
+  CGW_ALLOW_LOCAL_FILES_IN_MERGE=1 run _run_merge "--non-interactive"
+  [ "${status}" -eq 0 ]
+  # main advanced (merge happened).
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse main)" != "${before}" ]
+}

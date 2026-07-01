@@ -49,6 +49,10 @@ Where active development occurs. All changes are committed here first, then merg
 2. Test and validate on source branch
 3. Preview merge: `./scripts/git/merge_with_validation.sh --dry-run`
 4. Merge to target: `./scripts/git/merge_with_validation.sh --non-interactive`
+   - **Local-only file guard:** if the source branch carries a `CGW_LOCAL_FILES`
+     entry (`CLAUDE.md`, `MEMORY.md`, `.claude/`, `logs/`, …), the merge aborts in
+     non-interactive mode (cherry-pick too). Remove the file from the incoming
+     change, or override with `CGW_ALLOW_LOCAL_FILES_IN_MERGE=1`.
 5. Push both branches:
    ```bash
    ./scripts/git/push_validated.sh                                           # push target

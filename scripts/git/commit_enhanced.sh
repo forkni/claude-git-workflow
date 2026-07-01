@@ -424,14 +424,27 @@ main() {
       echo "[OK] Code quality checks passed"
     fi
 
-    # Markdown lint step (skipped if --skip-md-lint or CGW_MARKDOWNLINT_CMD not set)
+    # Markdown lint step (skipped if --skip-md-lint or CGW_MARKDOWNLINT_CMD not set).
+    # Scope to staged *.md only — a code-only commit must not be blocked by a
+    # markdown violation in an unrelated file elsewhere in the repo. Local-only
+    # files (CLAUDE.md/MEMORY.md) are already unstaged above, so they won't appear.
     if [[ ${skip_md_lint} -eq 0 ]]; then
-      local md_lint_error=0
-      cgw_run_markdownlint_check || md_lint_error=1
-      if [[ ${md_lint_error} -eq 1 ]]; then
-        echo "[!] Markdown lint errors detected"
-        if ! cgw_confirm "Proceed despite markdown lint errors?" --non-interactive abort; then
-          exit 1
+      local -a staged_md=()
+      local md_f
+      while IFS= read -r md_f; do
+        [[ -n "${md_f}" ]] && staged_md+=("${md_f}")
+      done < <(cgw_staged_files_for_md)
+
+      if [[ ${#staged_md[@]} -eq 0 ]]; then
+        echo "  (markdown lint skipped -- no staged .md files)"
+      else
+        local md_lint_error=0
+        cgw_run_markdownlint_check "${staged_md[@]}" || md_lint_error=1
+        if [[ ${md_lint_error} -eq 1 ]]; then
+          echo "[!] Markdown lint errors detected"
+          if ! cgw_confirm "Proceed despite markdown lint errors?" --non-interactive abort; then
+            exit 1
+          fi
         fi
       fi
     elif [[ ${skip_md_lint} -eq 1 ]]; then
