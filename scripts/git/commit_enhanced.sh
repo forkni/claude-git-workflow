@@ -262,7 +262,16 @@ main() {
   # Apply --only: reset index and stage only the listed paths
   if [[ ${#only_paths[@]} -gt 0 ]]; then
     echo "[--only] Resetting index and staging ${#only_paths[@]} path(s)..."
-    git reset HEAD >/dev/null 2>&1 || true
+    # Reset only when HEAD exists. An unborn HEAD (fresh repo, no commits) has
+    # nothing to reset, so skip. A real reset failure (e.g. stale index.lock)
+    # must abort — swallowing it would let pre-staged extras ride along, breaking
+    # the --only contract of "reset, then stage exactly these paths".
+    if git rev-parse --verify -q HEAD >/dev/null; then
+      if ! git reset HEAD >/dev/null 2>&1; then
+        err "--only: failed to reset index (stale index.lock?); aborting to avoid committing unintended files"
+        exit 1
+      fi
+    fi
     local only_path
     for only_path in "${only_paths[@]}"; do
       if ! git add -- "${only_path}" 2>&1; then

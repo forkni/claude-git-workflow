@@ -436,7 +436,7 @@ cgw_rebase_in_progress() {
 # ── backup-tag module ──────────────────────────────────────────────────────────
 # Closed registry of CGW ops that create a backup tag before mutating state.
 # To add an op: edit this array AND add a cgw_create_backup_tag call to the script.
-declare -gra CGW_BACKUP_OPS=(merge cherry-pick docs-merge bisect rebase undo-commit recover) 2>/dev/null || true
+declare -gra CGW_BACKUP_OPS=(merge cherry-pick docs-merge bisect rebase undo-commit recover rollback) 2>/dev/null || true
 
 # Create a lightweight tag pre-<op>-<timestamp>-<pid> at HEAD.
 # Sets global CGW_BACKUP_TAG. Warns but always proceeds on git tag failure.

@@ -103,3 +103,26 @@ teardown() {
   current_sha=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
   [ "${current_sha}" = "${before_sha}" ]
 }
+
+# ── backup tag before hard reset (E1) ──────────────────────────────────────────
+
+@test "--hard rollback creates a pre-rollback-* backup tag before resetting" {
+  # Two commits so HEAD~1 is a valid rollback target
+  echo "extra" > "${TEST_REPO_DIR}/extra.txt"
+  git -C "${TEST_REPO_DIR}" add extra.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: second commit"
+
+  local discarded_sha
+  discarded_sha=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+
+  run run_script rollback_merge.sh --non-interactive --target HEAD~1
+  [ "${status}" -eq 0 ]
+
+  # A backup tag must now exist and point at the discarded HEAD (recoverable).
+  local tag
+  tag=$(git -C "${TEST_REPO_DIR}" tag -l 'pre-rollback-*' | head -1)
+  [ -n "${tag}" ]
+  local tagged_sha
+  tagged_sha=$(git -C "${TEST_REPO_DIR}" rev-parse "${tag}")
+  [ "${tagged_sha}" = "${discarded_sha}" ]
+}

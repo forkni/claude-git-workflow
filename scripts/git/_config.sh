@@ -142,6 +142,21 @@ CGW_MARKDOWNLINT_ARGS="${CGW_MARKDOWNLINT_ARGS:-**/*.md !CLAUDE.md !MEMORY.md}"
 # Default matches Python files. Override for other languages (e.g. "*.js *.ts" or "*.go").
 [[ -z "${CGW_LINT_EXTENSIONS+x}" ]] && CGW_LINT_EXTENSIONS="*.py"
 
+# --- Runtime gate defaults (single source of truth) ---
+# These were previously only defaulted inline in callers via ${VAR:-...}, with no
+# definition here. Centralized so there is one authoritative default; callers keep
+# their inline fallbacks as defense-in-depth. Use +x to preserve an explicit empty.
+[[ -z "${CGW_SKIP_LINT+x}" ]]            && CGW_SKIP_LINT=0
+[[ -z "${CGW_SKIP_MD_LINT+x}" ]]         && CGW_SKIP_MD_LINT=0
+[[ -z "${CGW_SKIP_TYPECHECK+x}" ]]       && CGW_SKIP_TYPECHECK=0
+[[ -z "${CGW_ALL+x}" ]]                  && CGW_ALL=0
+
+# --- Typecheck step (non-blocking pre-commit hook) ---
+# Empty CGW_TYPECHECK_CMD = typecheck step skipped. Example: "pyrefly".
+[[ -z "${CGW_TYPECHECK_CMD+x}" ]]        && CGW_TYPECHECK_CMD=""
+[[ -z "${CGW_TYPECHECK_CHECK_ARGS+x}" ]] && CGW_TYPECHECK_CHECK_ARGS="check"
+[[ -z "${CGW_TYPECHECK_EXCLUDES+x}" ]]   && CGW_TYPECHECK_EXCLUDES=""
+
 # --- Merge conflict style (merge_with_validation.sh) ---
 # Set to "diff3" to show the base version in conflict markers (Pro Git recommended).
 # Empty = git default (two-way markers).

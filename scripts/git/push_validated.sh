@@ -168,8 +168,12 @@ main() {
   fi
   echo "[OK] Remote '${CGW_REMOTE}' is reachable" | tee -a "$logfile"
 
-  # Check if local is behind remote
-  git fetch "${CGW_REMOTE}" "${target_branch}" >>"$logfile" 2>&1 || true
+  # Check if local is behind remote. If the fetch fails (network/auth), the
+  # behind-check below runs against stale tracking refs and can silently pass —
+  # surface it so the result isn't trusted on stale data.
+  if ! git fetch "${CGW_REMOTE}" "${target_branch}" >>"$logfile" 2>&1; then
+    echo "[!] WARNING: fetch of ${CGW_REMOTE}/${target_branch} failed -- behind-remote check may use stale data" | tee -a "$logfile"
+  fi
   local behind
   behind=$(cgw_rev_count "${target_branch}" "${CGW_REMOTE}/${target_branch}" || echo "0")
   if [[ "${behind}" -gt 0 ]]; then

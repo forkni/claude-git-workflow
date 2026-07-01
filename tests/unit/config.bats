@@ -77,6 +77,48 @@ teardown() {
   "
 }
 
+# ── Centralized runtime-gate defaults (F2) ─────────────────────────────────────
+
+@test "F2: runtime-gate defaults are defined in _config.sh when unset" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    unset CGW_SKIP_LINT CGW_SKIP_MD_LINT CGW_SKIP_TYPECHECK CGW_ALL \
+          CGW_TYPECHECK_CMD CGW_TYPECHECK_CHECK_ARGS CGW_TYPECHECK_EXCLUDES
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"SKIP_LINT=\${CGW_SKIP_LINT}\"
+    echo \"SKIP_MD_LINT=\${CGW_SKIP_MD_LINT}\"
+    echo \"SKIP_TYPECHECK=\${CGW_SKIP_TYPECHECK}\"
+    echo \"ALL=\${CGW_ALL}\"
+    echo \"TC_CMD=[\${CGW_TYPECHECK_CMD}]\"
+    echo \"TC_ARGS=\${CGW_TYPECHECK_CHECK_ARGS}\"
+    echo \"TC_EX=[\${CGW_TYPECHECK_EXCLUDES}]\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"SKIP_LINT=0"* ]]
+  [[ "${output}" == *"SKIP_MD_LINT=0"* ]]
+  [[ "${output}" == *"SKIP_TYPECHECK=0"* ]]
+  [[ "${output}" == *"ALL=0"* ]]
+  [[ "${output}" == *"TC_CMD=[]"* ]]
+  [[ "${output}" == *"TC_ARGS=check"* ]]
+  [[ "${output}" == *"TC_EX=[]"* ]]
+}
+
+@test "F2: an explicitly-set gate value is preserved (+x semantics, not overridden)" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    export CGW_SKIP_LINT=1
+    export CGW_TYPECHECK_CMD=pyrefly
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"SKIP_LINT=\${CGW_SKIP_LINT}\"
+    echo \"TC_CMD=\${CGW_TYPECHECK_CMD}\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"SKIP_LINT=1"* ]]
+  [[ "${output}" == *"TC_CMD=pyrefly"* ]]
+}
+
 # ── CGW_ALL_PREFIXES construction ──────────────────────────────────────────────
 
 @test "CGW_ALL_PREFIXES without extras contains base prefixes" {

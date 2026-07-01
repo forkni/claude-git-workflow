@@ -68,14 +68,14 @@ cp cgw.conf.example .cgw.conf
 | `CGW_LINT_EXTENSIONS` | `*.py` | File globs for `--modified-only` lint mode (e.g. `*.js *.ts`) |
 | `CGW_MARKDOWNLINT_CMD` | `` | Markdown lint tool; set to e.g. `markdownlint-cli2` to enable |
 | `CGW_MARKDOWNLINT_ARGS` | `**/*.md !CLAUDE.md !MEMORY.md` | Arguments passed to markdown lint tool |
-| `CGW_SKIP_LINT` | `(unset)` | Set to `1` to skip all lint checks at runtime |
-| `CGW_SKIP_MD_LINT` | `(unset)` | Set to `1` to skip only the markdown lint step |
+| `CGW_SKIP_LINT` | `0` | Set to `1` to skip all lint checks at runtime |
+| `CGW_SKIP_MD_LINT` | `0` | Set to `1` to skip only the markdown lint step |
 | `CGW_TYPECHECK_CMD` | `` | Typecheck tool; set to e.g. `pyrefly` to enable (`""` to disable) |
 | `CGW_TYPECHECK_CHECK_ARGS` | `check` | Arguments passed to the typecheck tool |
 | `CGW_TYPECHECK_EXCLUDES` | `` | Exclusion flags appended to the typecheck command |
-| `CGW_SKIP_TYPECHECK` | `(unset)` | Set to `1` to skip the typecheck step at runtime |
+| `CGW_SKIP_TYPECHECK` | `0` | Set to `1` to skip the typecheck step at runtime |
 | `CGW_STAGED_ONLY` | `0` | Set to `1` to commit only pre-staged files (`commit_enhanced.sh`) |
-| `CGW_ALL` | `(unset)` | Set to `1` to force-stage all tracked changes, overriding pre-staged-only logic (`commit_enhanced.sh`) |
+| `CGW_ALL` | `0` | Set to `1` to force-stage all tracked changes, overriding pre-staged-only logic (`commit_enhanced.sh`) |
 | `CGW_EXTRA_PREFIXES` | `` | Extra commit prefixes (pipe-separated, e.g. `cuda\|tensorrt`) |
 | `CGW_DOCS_PATTERN` | `` | Regex for allowed docs filenames (`""` to skip) |
 | `CGW_DEV_ONLY_FILES` | `` | Files to warn about in cherry-pick (space-separated) |
