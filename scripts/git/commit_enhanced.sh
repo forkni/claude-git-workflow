@@ -382,9 +382,22 @@ main() {
   if [[ ${skip_lint} -eq 1 ]]; then
     echo "  (all lint checks skipped -- --skip-lint)"
   else
+    # Scope code-quality checks to the staged files being committed. A bare call
+    # scans the whole repo, so an unrelated file's lint error blocks the commit
+    # and (worse) non-interactive auto-fix rewrites files outside the commit.
+    local -a staged_lint=()
+    local lint_f
+    while IFS= read -r lint_f; do
+      [[ -n "${lint_f}" ]] && staged_lint+=("${lint_f}")
+    done < <(cgw_staged_files_for_lint)
+
     local lint_error=0 format_error=0
-    cgw_run_lint_check || lint_error=1
-    cgw_run_format_check || format_error=1
+    if [[ ${#staged_lint[@]} -eq 0 ]]; then
+      echo "  (code quality checks skipped -- no staged files matching ${CGW_LINT_EXTENSIONS:-*.py})"
+    else
+      cgw_run_lint_check "${staged_lint[@]}" || lint_error=1
+      cgw_run_format_check "${staged_lint[@]}" || format_error=1
+    fi
 
     local python_lint_error=$((lint_error | format_error))
 
@@ -392,13 +405,13 @@ main() {
       echo "[!] Code quality errors detected"
       if [[ ${non_interactive} -eq 1 ]]; then
         echo "[Non-interactive] Auto-fixing code quality issues..."
-        cgw_run_lint_fix
+        cgw_run_lint_fix "${staged_lint[@]}"
         _restage_after_fix "${effective_staged_only}" "${originally_staged_files}"
 
-        # Re-check after fix
+        # Re-check after fix (same staged scope)
         python_lint_error=0
-        cgw_run_lint_check || python_lint_error=1
-        cgw_run_format_check || python_lint_error=1
+        cgw_run_lint_check "${staged_lint[@]}" || python_lint_error=1
+        cgw_run_format_check "${staged_lint[@]}" || python_lint_error=1
 
         if [[ ${python_lint_error} -eq 1 ]]; then
           err "Code quality errors remain after auto-fix"
@@ -408,7 +421,7 @@ main() {
         read -rp "Auto-fix code quality issues? (yes/no/skip): " fix_lint
         case "${fix_lint}" in
           yes | y)
-            cgw_run_lint_fix
+            cgw_run_lint_fix "${staged_lint[@]}"
             _restage_after_fix "${effective_staged_only}" "${originally_staged_files}"
             ;;
           skip | s)

@@ -212,6 +212,22 @@ main() {
     exit 1
   fi
 
+  # Exclude local-only files (CGW_LOCAL_FILES) carried in from the source's
+  # docs/ — they must not enter the target's shared history. Each excluded path
+  # is restored to its pre-checkout state: the HEAD version if the target
+  # tracks it, otherwise removed (the checkout above created it).
+  local _local_doc
+  while IFS= read -r _local_doc; do
+    [[ -z "${_local_doc}" ]] && continue
+    echo "[!] Excluding local-only file from docs merge: ${_local_doc}" | tee -a "$logfile"
+    if git cat-file -e "HEAD:${_local_doc}" 2>/dev/null; then
+      git checkout HEAD -- "${_local_doc}" >>"$logfile" 2>&1 || true
+    else
+      git rm --cached --quiet -- "${_local_doc}" >>"$logfile" 2>&1 || true
+      rm -f -- "${_local_doc}"
+    fi
+  done < <(git diff --cached --name-only | cgw_filter_local_files)
+
   if git diff --cached --quiet; then
     echo "" | tee -a "$logfile"
     echo "[!] No documentation changes to merge (docs already in sync)" | tee -a "$logfile"

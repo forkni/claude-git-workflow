@@ -479,11 +479,11 @@ Runs `git fetch ${CGW_REMOTE}` then `git pull --rebase` on each target.
 
 | Variable | Effect |
 |----------|--------|
-| `CGW_LINT_CHECK_ARGS=<args>` | Arguments for lint check (default: `"check ."` for ruff) |
-| `CGW_LINT_FIX_ARGS=<args>` | Arguments for lint auto-fix (default: `"check --fix ."` for ruff) |
+| `CGW_LINT_CHECK_ARGS=<args>` | Arguments for lint check (default: `"check {files}"` for ruff; `{files}` = scan target, legacy `.` also works) |
+| `CGW_LINT_FIX_ARGS=<args>` | Arguments for lint auto-fix (default: `"check --fix {files}"` for ruff) |
 | `CGW_LINT_EXCLUDES=<flags>` | Exclusion flags appended to lint commands |
-| `CGW_FORMAT_CHECK_ARGS=<args>` | Arguments for format check (default: `"format --check ."` for ruff) |
-| `CGW_FORMAT_FIX_ARGS=<args>` | Arguments for format auto-fix (default: `"format ."` for ruff) |
+| `CGW_FORMAT_CHECK_ARGS=<args>` | Arguments for format check (default: `"format --check {files}"` for ruff) |
+| `CGW_FORMAT_FIX_ARGS=<args>` | Arguments for format auto-fix (default: `"format {files}"` for ruff) |
 | `CGW_FORMAT_EXCLUDES=<flags>` | Exclusion flags appended to format commands |
 | `CGW_LINT_EXTENSIONS=<glob>` | File glob for `--modified-only` lint mode (default: `*.py`) |
 

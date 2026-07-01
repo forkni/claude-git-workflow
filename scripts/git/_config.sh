@@ -146,10 +146,21 @@ CGW_MARKDOWNLINT_CMD="${CGW_MARKDOWNLINT_CMD:-}"
 [[ -z "${CGW_MARKDOWNLINT_ARGS+x}" ]]  && CGW_MARKDOWNLINT_ARGS="!CLAUDE.md !MEMORY.md"
 [[ -z "${CGW_MARKDOWNLINT_PATHS+x}" ]] && CGW_MARKDOWNLINT_PATHS="**/*.md"
 # Migration guard: the old single-var shape conflated the scan glob with
-# exclusions. If a leftover config still carries a path glob in ARGS, warn once.
-if [[ "${CGW_MARKDOWNLINT_ARGS}" == *"*"* ]]; then
-  echo "[cgw-config] WARNING: CGW_MARKDOWNLINT_ARGS contains a path glob ('*'). Move the scan target to CGW_MARKDOWNLINT_PATHS; ARGS is now flags/exclusions only." >&2
-fi
+# exclusions. Warn only on a bare glob token (exclusions like "!*.tmp" and
+# flags are legitimate ARGS content and must not trigger this). Tokenize with
+# read (not an unquoted for-loop) so globs are never expanded against the cwd.
+_cgw_md_toks=()
+read -r -a _cgw_md_toks <<<"${CGW_MARKDOWNLINT_ARGS}" || true
+for _cgw_md_tok in "${_cgw_md_toks[@]+"${_cgw_md_toks[@]}"}"; do
+  case "${_cgw_md_tok}" in
+    '!'* | -*) : ;;
+    *'*'*)
+      echo "[cgw-config] WARNING: CGW_MARKDOWNLINT_ARGS contains a path glob ('${_cgw_md_tok}'). Move the scan target to CGW_MARKDOWNLINT_PATHS; ARGS is now flags/exclusions only." >&2
+      break
+      ;;
+  esac
+done
+unset _cgw_md_tok _cgw_md_toks
 
 # --- Modified-only lint file extensions ---
 # Space-separated glob patterns used by check_lint.sh / fix_lint.sh --modified-only.

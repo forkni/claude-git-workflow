@@ -102,11 +102,11 @@ For the complete list of all options with detailed descriptions, see [`cgw.conf.
 
 ```bash
 CGW_LINT_CMD="ruff"
-CGW_LINT_CHECK_ARGS="check ."
-CGW_LINT_FIX_ARGS="check --fix ."
+CGW_LINT_CHECK_ARGS="check {files}"
+CGW_LINT_FIX_ARGS="check --fix {files}"
 CGW_FORMAT_CMD="ruff"
-CGW_FORMAT_CHECK_ARGS="format --check ."
-CGW_FORMAT_FIX_ARGS="format ."
+CGW_FORMAT_CHECK_ARGS="format --check {files}"
+CGW_FORMAT_FIX_ARGS="format {files}"
 ```
 
 ### JavaScript / TypeScript (ESLint + Prettier)

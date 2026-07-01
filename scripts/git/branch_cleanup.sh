@@ -15,7 +15,7 @@
 #   --dry-run          Preview changes without deleting anything (default)
 #   --execute          Actually delete branches and prune refs
 #   --remote           Also prune stale remote-tracking refs (git remote prune)
-#   --tags             Also clean up old CGW backup tags (pre-merge-*, pre-cherry-pick-*, pre-docs-merge-*, pre-bisect-*, pre-rebase-*, pre-undo-commit-*)
+#   --tags             Also clean up old CGW backup tags (all pre-<op>-* families; see CGW_BACKUP_OPS in _common.sh)
 #   --older-than <N>   Only delete backup tags older than N days (default: 30)
 #   --non-interactive  Skip confirmation prompts
 #   -h, --help         Show help
@@ -49,7 +49,7 @@ main() {
         echo "Options:"
         echo "  --execute          Delete merged branches and prune (without this, only previews)"
         echo "  --remote           Prune stale remote-tracking refs (git remote prune \${CGW_REMOTE})"
-        echo "  --tags             Clean up old CGW backup tags (pre-merge-*, pre-cherry-pick-*, pre-docs-merge-*, pre-bisect-*, pre-rebase-*, pre-undo-commit-*)"
+        echo "  --tags             Clean up old CGW backup tags (all pre-<op>-* families; see CGW_BACKUP_OPS in _common.sh)"
         echo "  --older-than <N>   Only delete backup tags older than N days (default: 30)"
         echo "  --non-interactive  Skip confirmation prompts"
         echo "  -h, --help         Show this help"

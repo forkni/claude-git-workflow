@@ -149,6 +149,17 @@ teardown() {
   [[ "${output}" == *"CGW_MARKDOWNLINT_PATHS"* ]]
 }
 
+@test "G5: exclusion-only ARGS with glob chars ('!*.tmp') does NOT warn" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    export CGW_MARKDOWNLINT_ARGS='!*.tmp !CLAUDE.md --config .mdlintrc'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+  " 2>&1
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"WARNING: CGW_MARKDOWNLINT_ARGS"* ]]
+}
+
 # ── {files} placeholder defaults (A2+A3) ───────────────────────────────────────
 
 @test "A3: lint/format arg defaults use the {files} placeholder" {

@@ -729,6 +729,22 @@ UU b.py
   [ "${output}" = "check ." ]
 }
 
+@test "cgw_strip_path_arg: multi-token args without '.' or {files} emit a stderr hint (G3)" {
+  run --separate-stderr cgw_strip_path_arg "check src/"
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "check src/" ]
+  [[ "${stderr}" == *"put {files} where the scan target goes"* ]]
+}
+
+@test "cgw_strip_path_arg: no hint for '.', {files}, or single-token args (G3)" {
+  run --separate-stderr cgw_strip_path_arg "check ."
+  [ -z "${stderr}" ]
+  run --separate-stderr cgw_strip_path_arg "check {files}"
+  [ -z "${stderr}" ]
+  run --separate-stderr cgw_strip_path_arg "check"
+  [ -z "${stderr}" ]
+}
+
 # ── cgw_fill_path_placeholder() ───────────────────────────────────────────────
 
 @test "cgw_fill_path_placeholder: substitutes {files} with default path '.'" {

@@ -552,13 +552,16 @@ cgw_filter_local_files() {
 #   prompts (default no). Reuses cgw_filter_local_files / cgw_is_local_file.
 cgw_guard_incoming_local_files() {
   local mode="$1" ref="${2:-HEAD}"
-  local -a incoming=()
+  local -a incoming=() _src_cmd=()
   case "${mode}" in
-    merge)       mapfile -t incoming < <(git diff --name-only "HEAD...${ref}" 2>/dev/null | cgw_filter_local_files) ;;
-    cherry-pick) mapfile -t incoming < <(git show --name-only --format= "${ref}" 2>/dev/null | cgw_filter_local_files) ;;
-    amend)       mapfile -t incoming < <(git show --name-only --format= "${ref}" 2>/dev/null | cgw_filter_local_files) ;;
+    merge)               _src_cmd=(git diff --name-only "HEAD...${ref}") ;;
+    cherry-pick | amend) _src_cmd=(git show --name-only --format= "${ref}") ;;
     *) err "cgw_guard_incoming_local_files: unknown mode '${mode}'"; return 2 ;;
   esac
+  local _p
+  while IFS= read -r _p; do
+    [[ -n "${_p}" ]] && incoming+=("${_p}")
+  done < <("${_src_cmd[@]}" 2>/dev/null | cgw_filter_local_files)
 
   [[ ${#incoming[@]} -eq 0 ]] && return 0
 
@@ -878,10 +881,18 @@ cgw_resolve_lint_binary() {
 cgw_strip_path_arg() {
   local -a toks=() out=()
   read -r -a toks <<<"${1:-}"
-  local tok has_placeholder=0
+  local tok has_placeholder=0 has_dot=0
   for tok in "${toks[@]+"${toks[@]}"}"; do
     [[ "${tok}" == "{files}" ]] && has_placeholder=1
+    [[ "${tok}" == "." ]] && has_dot=1
   done
+  # No identifiable path token in a multi-token string: we can't know whether a
+  # token like "src/" is a scan target (should be replaced) or a flag argument
+  # (must be kept), so we keep everything and append files. Hint the explicit
+  # convention. Single tokens ("check", "run") are subcommands, not paths.
+  if [[ ${has_placeholder} -eq 0 && ${has_dot} -eq 0 && ${#toks[@]} -gt 1 ]]; then
+    echo "[cgw-lint] cannot identify a path token in '${1}'; appending files -- put {files} where the scan target goes to make scoping explicit" >&2
+  fi
   for tok in "${toks[@]+"${toks[@]}"}"; do
     if [[ ${has_placeholder} -eq 1 ]]; then
       [[ "${tok}" == "{files}" ]] && continue
@@ -1041,6 +1052,17 @@ cgw_run_markdownlint_check() {
 #   committed. Outputs nothing when no staged *.md files; caller skips the step.
 cgw_staged_files_for_md() {
   git diff --cached --name-only --diff-filter=ACMR -- '*.md'
+}
+
+# cgw_staged_files_for_lint
+#   Stdout: newline-separated staged (index) files matching CGW_LINT_EXTENSIONS
+#   (default *.py). The commit gate's code-quality checks must scope to what is
+#   being committed — not the whole repo — so an unrelated file's lint error
+#   can't block the commit and auto-fix can't rewrite files outside the commit.
+cgw_staged_files_for_lint() {
+  local -a lint_exts
+  read -r -a lint_exts <<<"${CGW_LINT_EXTENSIONS:-*.py}"
+  git diff --cached --name-only --diff-filter=ACMR -- "${lint_exts[@]}"
 }
 
 # cgw_run_typecheck [files...]
