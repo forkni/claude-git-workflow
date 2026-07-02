@@ -31,6 +31,9 @@ CGW_SCRIPTS=(
   changelog_generate.sh
   bisect_helper.sh
   rebase_safe.sh
+  branch_diff.sh
+  pr_checkout.sh
+  md_toc.sh
 )
 
 # One repo + one mock-bin shared across all 51 --help tests.
@@ -268,6 +271,21 @@ setup() {
   [ "${status}" -eq 0 ]
 }
 
+@test "branch_diff.sh --help exits 0" {
+  run run_script branch_diff.sh --help
+  [ "${status}" -eq 0 ]
+}
+
+@test "pr_checkout.sh --help exits 0" {
+  run run_script pr_checkout.sh --help
+  [ "${status}" -eq 0 ]
+}
+
+@test "md_toc.sh --help exits 0" {
+  run run_script md_toc.sh --help
+  [ "${status}" -eq 0 ]
+}
+
 # ── Newer scripts: unknown flag exits 1 ───────────────────────────────────────
 
 @test "create_release.sh unknown flag exits 1" {
@@ -317,5 +335,20 @@ setup() {
 
 @test "rebase_safe.sh unknown flag exits 1" {
   run run_script rebase_safe.sh --foobar
+  [ "${status}" -eq 1 ]
+}
+
+@test "branch_diff.sh unknown flag exits 1" {
+  run run_script branch_diff.sh --foobar
+  [ "${status}" -eq 1 ]
+}
+
+@test "pr_checkout.sh unknown flag exits 1" {
+  run run_script pr_checkout.sh --foobar
+  [ "${status}" -eq 1 ]
+}
+
+@test "md_toc.sh unknown flag exits 1" {
+  run run_script md_toc.sh doc.md --foobar
   [ "${status}" -eq 1 ]
 }

@@ -4,6 +4,7 @@
 
 bats_require_minimum_version 1.5.0
 load '../helpers/setup'
+load '../helpers/mocks'
 
 # ── Test setup/teardown ────────────────────────────────────────────────────────
 # One repo shared across all 101 tests in this file. BATS_FILE_TMPDIR is
@@ -1175,6 +1176,7 @@ UU b.py
     repo=\"\${tmp}/repo\"
     git init --bare --quiet \"\${bare}\"
     git init --quiet \"\${repo}\"
+    git -C \"\${repo}\" config core.autocrlf false
     git -C \"\${repo}\" config user.email t@t.com
     git -C \"\${repo}\" config user.name T
     echo x > \"\${repo}/f\"
@@ -1204,6 +1206,7 @@ UU b.py
     repo=\"\${tmp}/repo\"
     git init --bare --quiet \"\${bare}\"
     git init --quiet \"\${repo}\"
+    git -C \"\${repo}\" config core.autocrlf false
     git -C \"\${repo}\" config user.email t@t.com
     git -C \"\${repo}\" config user.name T
     echo x > \"\${repo}/f\"
@@ -1221,6 +1224,143 @@ UU b.py
   [ "${status}" -eq 0 ]
 }
 
+# ── cgw_default_branch() ──────────────────────────────────────────────────────
+# Each test uses its own throwaway repo + real bare remote (matching the
+# cgw_remote_reachable/cgw_remote_branch_exists style below) rather than the
+# shared TEST_REPO_DIR, which has no "origin" remote configured at all
+# (setup_file uses setup_file_create_test_repo, not the _with_remote variant).
+
+@test "cgw_default_branch: falls back to CGW_TARGET_BRANCH when origin/HEAD is unset" {
+  # `remote add` + `push` (unlike `git clone`) never populates origin/HEAD.
+  run bash -c "
+    tmp=\$(mktemp -d)
+    bare=\"\${tmp}/remote.git\"
+    repo=\"\${tmp}/repo\"
+    git init --bare --quiet \"\${bare}\"
+    git init --quiet \"\${repo}\"
+    git -C \"\${repo}\" config core.autocrlf false
+    git -C \"\${repo}\" config user.email t@t.com
+    git -C \"\${repo}\" config user.name T
+    echo x > \"\${repo}/f\" && git -C \"\${repo}\" add f
+    git -C \"\${repo}\" commit --quiet -m init
+    git -C \"\${repo}\" checkout --quiet -b main 2>/dev/null || \
+      git -C \"\${repo}\" branch -m main 2>/dev/null || true
+    git -C \"\${repo}\" remote add origin \"\${bare}\"
+    git -C \"\${repo}\" push --quiet --set-upstream origin main
+    cd \"\${repo}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT=\"\${repo}\"
+    export CGW_TARGET_BRANCH=main
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    out=\$(cgw_default_branch); ec=\$?
+    rm -rf \"\${tmp}\"
+    echo \"\${out}\"; exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "main" ]
+}
+
+@test "cgw_default_branch: uses origin/HEAD when set, ignoring CGW_TARGET_BRANCH" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    bare=\"\${tmp}/remote.git\"
+    repo=\"\${tmp}/repo\"
+    git init --bare --quiet \"\${bare}\"
+    git init --quiet \"\${repo}\"
+    git -C \"\${repo}\" config core.autocrlf false
+    git -C \"\${repo}\" config user.email t@t.com
+    git -C \"\${repo}\" config user.name T
+    echo x > \"\${repo}/f\" && git -C \"\${repo}\" add f
+    git -C \"\${repo}\" commit --quiet -m init
+    git -C \"\${repo}\" checkout --quiet -b main 2>/dev/null || \
+      git -C \"\${repo}\" branch -m main 2>/dev/null || true
+    git -C \"\${repo}\" remote add origin \"\${bare}\"
+    git -C \"\${repo}\" push --quiet --set-upstream origin main
+    git -C \"\${repo}\" remote set-head origin main
+    cd \"\${repo}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT=\"\${repo}\"
+    export CGW_TARGET_BRANCH=bogus-default
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    out=\$(cgw_default_branch); ec=\$?
+    rm -rf \"\${tmp}\"
+    echo \"\${out}\"; exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "main" ]
+}
+
+@test "cgw_default_branch: --refresh resolves via a reachable local bare remote" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    bare=\"\${tmp}/remote.git\"
+    repo=\"\${tmp}/repo\"
+    git init --bare --quiet \"\${bare}\"
+    git init --quiet \"\${repo}\"
+    git -C \"\${repo}\" config core.autocrlf false
+    git -C \"\${repo}\" config user.email t@t.com
+    git -C \"\${repo}\" config user.name T
+    echo x > \"\${repo}/f\" && git -C \"\${repo}\" add f
+    git -C \"\${repo}\" commit --quiet -m init
+    git -C \"\${repo}\" checkout --quiet -b main 2>/dev/null || \
+      git -C \"\${repo}\" branch -m main 2>/dev/null || true
+    git -C \"\${repo}\" remote add origin \"\${bare}\"
+    git -C \"\${repo}\" push --quiet --set-upstream origin main
+    cd \"\${repo}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT=\"\${repo}\"
+    export CGW_TARGET_BRANCH=main
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    out=\$(cgw_default_branch --refresh); ec=\$?
+    rm -rf \"\${tmp}\"
+    echo \"\${out}\"; exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "main" ]
+}
+
+# ── cgw_require_gh() ──────────────────────────────────────────────────────────
+
+@test "cgw_require_gh: returns 1 and prints install hint when gh is not on PATH" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    PATH='/usr/bin:/bin'
+    cgw_require_gh
+  "
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"gh"* ]] || [[ "${output}" == *"install"* ]]
+}
+
+@test "cgw_require_gh: returns 1 when gh is present but not authenticated" {
+  TEST_TMPDIR="$(mktemp -d)"
+  setup_mock_bin
+  install_mock_gh_no_auth
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_require_gh
+  "
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"auth"* ]] || [[ "${output}" == *"login"* ]]
+  rm -rf "${TEST_TMPDIR}"
+}
+
+@test "cgw_require_gh: returns 0 when gh is present and authenticated" {
+  TEST_TMPDIR="$(mktemp -d)"
+  setup_mock_bin
+  install_mock_gh
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_require_gh
+  "
+  [ "${status}" -eq 0 ]
+  rm -rf "${TEST_TMPDIR}"
+}
+
+# ── cgw_remote_branch_exists() ────────────────────────────────────────────────
+
 @test "cgw_remote_branch_exists: missing branch exits non-zero" {
   run bash -c "
     tmp=\$(mktemp -d)
@@ -1228,6 +1368,7 @@ UU b.py
     repo=\"\${tmp}/repo\"
     git init --bare --quiet \"\${bare}\"
     git init --quiet \"\${repo}\"
+    git -C \"\${repo}\" config core.autocrlf false
     git -C \"\${repo}\" config user.email t@t.com
     git -C \"\${repo}\" config user.name T
     echo x > \"\${repo}/f\"
