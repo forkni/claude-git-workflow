@@ -148,7 +148,9 @@ _require_jq() { command -v jq >/dev/null 2>&1 || skip "requires jq"; }
 _require_no_typechecker() {
   local tc
   for tc in pyrefly pyright mypy; do
-    command -v "${tc}" >/dev/null 2>&1 && skip "typechecker '${tc}' on PATH — cannot simulate 'none'"
+    if command -v "${tc}" >/dev/null 2>&1; then
+      skip "typechecker '${tc}' on PATH — cannot simulate 'none'"
+    fi
   done
 }
 

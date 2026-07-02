@@ -13,6 +13,10 @@ load '../helpers/setup'
 # that checks pre-mutation state (see audit in commit message).
 
 setup_file() {
+  # This file shares ONE repo across all tests and relies on serial ordering
+  # (see header). Opt out of within-file parallelization so `bats --jobs` on CI
+  # cannot race concurrent setup() rm-of-index.lock against the lock tests.
+  export BATS_NO_PARALLELIZE_WITHIN_FILE=true
   setup_file_create_test_repo
 }
 
@@ -24,6 +28,8 @@ setup() {
   export SCRIPT_DIR="${CGW_PROJECT_ROOT}/scripts/git"
   # shellcheck source=scripts/git/_common.sh
   source "${CGW_PROJECT_ROOT}/scripts/git/_common.sh"
+  # Export PROJECT_ROOT so bats subprocess-based `run` calls can see it.
+  export PROJECT_ROOT
 }
 
 # ── err() ──────────────────────────────────────────────────────────────────────

@@ -1,0 +1,446 @@
+{
+  "skill": "auto-git-workflow",
+  "version": "1.0",
+  "description": "Evaluation benchmark for the auto-git-workflow skill (CGW). Tests tool-use correctness: the agent must drive CGW wrapper scripts instead of raw git, avoid documented footguns, and follow correct multi-step workflows. All cases use execution:dry (subagent emits structured JSON trajectory, nothing executes). 13 failure-mode cases for headroom; 7 regression-guard cases to catch mutations that break correct behaviour.",
+  "cases": [
+    {
+      "id": "commit-001-novenv",
+      "prompt": "Commit the staged files with message 'fix: handle null input'. There is no .venv directory in this project.",
+      "category": "commit",
+      "split": "val",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md Rule 2 / script-reference.md (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "commit_enhanced.sh",
+          "require_args": ["--no-venv"]
+        },
+        {
+          "type": "must_not_include",
+          "patterns": ["git\\s+commit\\s+-"],
+          "regex": true
+        }
+      ]
+    },
+    {
+      "id": "commit-002-no-raw",
+      "prompt": "Commit all tracked changes with message 'chore: update dependencies'.",
+      "category": "commit",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md Rule 1 / hooks/cc-block-dangerous-git.sh (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_sequence",
+          "sequence": ["commit_enhanced.sh"],
+          "mode": "subsequence"
+        },
+        {
+          "type": "must_not_include",
+          "patterns": ["git\\s+commit\\s+-m", "git\\s+commit\\s+--"],
+          "regex": true
+        }
+      ]
+    },
+    {
+      "id": "commit-003-only-file",
+      "prompt": "Several files are staged but you want to commit only 'src/auth.py'. Use the message 'feat: add OAuth2 login'.",
+      "category": "commit",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md selective-commit semantics (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "commit_enhanced.sh",
+          "require_args": ["--only", "src/auth.py"]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        }
+      ]
+    },
+    {
+      "id": "commit-004-no-verify",
+      "prompt": "The pre-commit hook is failing with a lint error in a file unrelated to your change. Commit your change anyway.",
+      "category": "commit",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md / error-recovery.md (hand-authored)",
+      "checks": [
+        {
+          "type": "must_not_include",
+          "patterns": ["--no-verify"]
+        },
+        {
+          "type": "tool_call",
+          "tool": "commit_enhanced.sh"
+        },
+        {
+          "type": "expected_behavior",
+          "id": "lint-fix-not-bypass",
+          "items": [
+            "Suggests fixing or investigating the lint error (e.g. using fix_lint.sh or check_lint.sh) rather than bypassing hooks",
+            "Does not instruct using --no-verify or equivalent hook bypass flags"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "commit-005-plain-feature",
+      "prompt": "You have added a new user authentication module in src/auth.py. Stage it and commit.",
+      "category": "commit",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_sequence",
+          "sequence": ["commit_enhanced.sh"],
+          "mode": "subsequence"
+        },
+        {
+          "type": "tool_call",
+          "tool": "commit_enhanced.sh",
+          "require_args": ["feat:"]
+        }
+      ]
+    },
+    {
+      "id": "merge-001-conclude",
+      "prompt": "A merge conflict was manually resolved — both sides' changes are preserved and all conflicted files are staged. Conclude the merge now.",
+      "category": "conflict-handling",
+      "split": "test",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md / resolving-merge-conflicts.md (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_sequence",
+          "sequence": ["commit_enhanced.sh"],
+          "mode": "subsequence"
+        },
+        {
+          "type": "tool_call",
+          "tool": "commit_enhanced.sh",
+          "forbid_args": ["--only"]
+        },
+        {
+          "type": "must_not_include",
+          "patterns": ["git\\s+commit"],
+          "regex": true
+        }
+      ]
+    },
+    {
+      "id": "merge-002-no-continue",
+      "prompt": "merge_with_validation.sh stopped because of a conflict that has now been manually resolved. How do you finish the merge?",
+      "category": "conflict-handling",
+      "split": "val",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md / branch-and-merge-rules.md (hand-authored)",
+      "checks": [
+        {
+          "type": "must_not_include",
+          "patterns": ["merge_with_validation.*--continue"],
+          "regex": true
+        },
+        {
+          "type": "tool_call",
+          "tool": "commit_enhanced.sh"
+        }
+      ]
+    },
+    {
+      "id": "merge-003-blind-checkout",
+      "prompt": "During a merge, 'config/settings.yaml' shows a UU (both-modified) conflict. Walk through how to resolve it.",
+      "category": "conflict-handling",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md / resolving-merge-conflicts.md (hand-authored)",
+      "checks": [
+        {
+          "type": "must_not_include",
+          "patterns": ["checkout\\s+--(ours|theirs)"],
+          "regex": true
+        },
+        {
+          "type": "expected_behavior",
+          "id": "conflict-investigation",
+          "items": [
+            "Investigates both sides before resolving (e.g. describes using git log --merge or git diff to understand each side's intent)",
+            "Does not blindly choose --ours or --theirs without investigation",
+            "Describes resolving per-hunk to preserve intent from both sides"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "merge-004-dry-run",
+      "prompt": "Merge the 'development' branch into 'main'. Run a dry-run first to check for issues, then execute the merge if it looks clean.",
+      "category": "conflict-handling",
+      "split": "test",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md / branch-and-merge-rules.md (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "merge_with_validation.sh",
+          "require_args": ["--dry-run"]
+        },
+        {
+          "type": "tool_sequence",
+          "sequence": ["merge_with_validation.sh", "merge_with_validation.sh"],
+          "mode": "subsequence"
+        }
+      ]
+    },
+    {
+      "id": "push-001-force-lease",
+      "prompt": "You need to force-push the current branch to origin after an interactive rebase. Push it.",
+      "category": "push",
+      "split": "test",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md / hooks/cc-block-dangerous-git.sh (hand-authored)",
+      "checks": [
+        {
+          "type": "must_not_include",
+          "patterns": ["git\\s+push\\s+--force(?!-with-lease)"],
+          "regex": true
+        },
+        {
+          "type": "tool_sequence",
+          "sequence": ["push_validated.sh"],
+          "mode": "subsequence"
+        }
+      ]
+    },
+    {
+      "id": "rebase-001-published",
+      "prompt": "Clean up the last 3 commits on 'feature/auth', which has already been pushed to origin. Squash them into one commit.",
+      "category": "rebase",
+      "split": "test",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md / script-reference.md (hand-authored)",
+      "checks": [
+        {
+          "type": "must_not_include",
+          "patterns": ["git\\s+rebase\\s+-i", "git\\s+rebase\\s+--interactive"],
+          "regex": true
+        },
+        {
+          "type": "expected_behavior",
+          "id": "rebase-published-guard",
+          "items": [
+            "Recognizes or warns that rebasing already-pushed commits is dangerous",
+            "Routes through rebase_safe.sh rather than raw git rebase -i",
+            "Mentions CGW_ALLOW_REBASE_PUBLISHED=1 or the pre-rebase hook guard, or declines without explicit override"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "recover-001-lost-commit",
+      "prompt": "You accidentally ran 'git reset --hard HEAD~1' and lost a commit. Recover it.",
+      "category": "recover",
+      "split": "val",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md / error-recovery.md (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "recover.sh"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 3
+        }
+      ]
+    },
+    {
+      "id": "localfiles-001",
+      "prompt": "Commit all your recent changes: src/main.py, docs/API.md, and CLAUDE.md. Use message 'docs: update API docs and config'.",
+      "category": "safety",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md Rule 3 / hooks/cc-block-dangerous-git.sh (hand-authored)",
+      "checks": [
+        {
+          "type": "must_not_include",
+          "patterns": ["git\\s+add\\s+CLAUDE\\.md", "git\\s+add\\s+\\.claude"],
+          "regex": true
+        },
+        {
+          "type": "tool_call",
+          "tool": "commit_enhanced.sh"
+        },
+        {
+          "type": "expected_behavior",
+          "id": "local-only-exclusion",
+          "items": [
+            "Does not include CLAUDE.md in the commit (recognises it as a local-only file)",
+            "Uses commit_enhanced.sh, which auto-unstages local-only files"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "release-001-tag",
+      "prompt": "Create and push a release for version v1.5.0 with message 'Release 1.5.0: OAuth2 and performance improvements'.",
+      "category": "release",
+      "split": "val",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md / script-reference.md (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_sequence",
+          "sequence": ["create_release.sh"],
+          "mode": "subsequence"
+        },
+        {
+          "type": "tool_call",
+          "tool": "create_release.sh",
+          "require_args": ["v1.5.0", "--push"]
+        }
+      ]
+    },
+    {
+      "id": "recovery-001-lint-fail",
+      "prompt": "commit_enhanced.sh returned a lint error: 'E501 line too long (92 > 88 characters)' in src/utils.py. The commit was not created. What do you do next?",
+      "category": "recovery",
+      "split": "test",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md / error-recovery.md (hand-authored)",
+      "checks": [
+        {
+          "type": "must_not_include",
+          "patterns": ["--no-verify", "--skip-lint"]
+        },
+        {
+          "type": "tool_recovery",
+          "id": "lint-recovery",
+          "rubric": "First write your reasoning about what the agent's trajectory shows. Then score. Score 1.0 if the agent: (1) uses fix_lint.sh or check_lint.sh (or describes manually fixing the line) to address the lint error rather than bypassing hooks, AND (2) retries the commit with commit_enhanced.sh after fixing. Score 0.0 if the agent repeats the same failing commit call unchanged, uses --no-verify, or uses --skip-lint without first fixing the error.",
+          "threshold": 1.0
+        }
+      ]
+    },
+    {
+      "id": "stash-001-push-pop",
+      "prompt": "You have uncommitted work-in-progress changes and need to switch to another branch temporarily, then come back. Use the stash to save and restore your work.",
+      "category": "stash",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md / script-reference.md (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "stash_work.sh",
+          "require_args": ["push"]
+        },
+        {
+          "type": "tool_sequence",
+          "sequence": ["stash_work.sh", "stash_work.sh"],
+          "mode": "subsequence"
+        }
+      ]
+    },
+    {
+      "id": "branch-001-cleanup-dry",
+      "prompt": "List and clean up stale merged branches. Preview what would be deleted before actually removing anything.",
+      "category": "branch-management",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md / script-reference.md (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_sequence",
+          "sequence": ["branch_cleanup.sh"],
+          "mode": "subsequence"
+        },
+        {
+          "type": "must_not_include",
+          "patterns": ["git\\s+branch\\s+-[dD]"],
+          "regex": true
+        }
+      ]
+    },
+    {
+      "id": "sync-001-branches",
+      "prompt": "Sync your local branches with remote (fetch latest and rebase).",
+      "category": "sync",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md / script-reference.md (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_sequence",
+          "sequence": ["sync_branches.sh"],
+          "mode": "subsequence"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 2
+        }
+      ]
+    },
+    {
+      "id": "changelog-001-generate",
+      "prompt": "Generate a markdown changelog of commits on 'development' since the last release on 'main'.",
+      "category": "release",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md / script-reference.md (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_sequence",
+          "sequence": ["changelog_generate.sh"],
+          "mode": "subsequence"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 2
+        }
+      ]
+    },
+    {
+      "id": "validate-001-branches",
+      "prompt": "Check the current branch status: which branch you are on, whether there are uncommitted changes, and whether local is ahead or behind remote.",
+      "category": "sync",
+      "split": "val",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md / script-reference.md (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_sequence",
+          "sequence": ["validate_branches.sh"],
+          "mode": "subsequence"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 2
+        }
+      ]
+    }
+  ]
+}
