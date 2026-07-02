@@ -551,6 +551,10 @@ _install_cc_guardrail() {
   if [[ "${install_mode}" == "global" ]]; then
     hook_dst="${HOME}/.claude/hooks/cc-block-dangerous-git.sh"
     settings_json="${HOME}/.claude/settings.json"
+    # Literal tilde is intentional (SC2088): this string is written verbatim
+    # into settings.json as the hook's "command" value, not executed here --
+    # Claude Code expands it via its own shell when it invokes the hook.
+    # shellcheck disable=SC2088
     hook_cmd="~/.claude/hooks/cc-block-dangerous-git.sh"
   else
     hook_dst="${PROJECT_ROOT}/.claude/hooks/cc-block-dangerous-git.sh"
@@ -558,6 +562,7 @@ _install_cc_guardrail() {
     # Literal double-quotes around $CLAUDE_PROJECT_DIR are intentional:
     # they become JSON-escaped \" in settings.json and are expanded by the shell
     # when Claude Code executes the hook command at runtime.
+    # shellcheck disable=SC2016
     hook_cmd='"$CLAUDE_PROJECT_DIR"/.claude/hooks/cc-block-dangerous-git.sh'
   fi
 
@@ -969,6 +974,9 @@ main() {
     echo "repo-side git hooks — the model cannot bypass it by being asked to skip CGW."
     local install_guardrail
     local guardrail_dest_hint=".claude/settings.json"
+    # Literal tilde is intentional (SC2088): purely a display string in the
+    # prompt below, never expanded or executed.
+    # shellcheck disable=SC2088
     [[ ${global_skill} -eq 1 ]] && guardrail_dest_hint="~/.claude/settings.json"
     if cgw_confirm "Install PreToolUse guardrail to ${guardrail_dest_hint}?" --default yes --non-interactive accept; then
       install_guardrail="yes"

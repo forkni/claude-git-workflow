@@ -145,7 +145,6 @@ main() {
   local sync_branch=""
   local dry_run=0
   local prune=0
-  local non_interactive=0
 
   while [[ $# -gt 0 ]]; do
     case "${1}" in
@@ -186,7 +185,6 @@ main() {
       --dry-run) dry_run=1 ;;
       --prune) prune=1 ;;
       --non-interactive)
-        non_interactive=1
         CGW_NON_INTERACTIVE=1
         ;;
       *)
@@ -197,7 +195,6 @@ main() {
     shift
   done
 
-  [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
   _sync_dry_run=${dry_run}
 
   {

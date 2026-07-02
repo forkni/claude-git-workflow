@@ -43,7 +43,6 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 main() {
-  local non_interactive=0
   local src_branch="${CGW_SOURCE_BRANCH}"
   local tgt_branch="${CGW_TARGET_BRANCH}"
 
@@ -73,7 +72,6 @@ main() {
         exit 0
         ;;
       --non-interactive)
-        non_interactive=1
         CGW_NON_INTERACTIVE=1
         ;;
       --source)
@@ -99,8 +97,6 @@ main() {
     esac
     shift
   done
-
-  [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
 
   validate_branch_pair "${src_branch}" "${tgt_branch}"
 
