@@ -20,7 +20,8 @@
         {
           "type": "must_not_include",
           "patterns": ["git\\s+commit\\s+-"],
-          "regex": true
+          "regex": true,
+          "target": "trajectory"
         }
       ]
     },
@@ -41,7 +42,8 @@
         {
           "type": "must_not_include",
           "patterns": ["git\\s+commit\\s+-m", "git\\s+commit\\s+--"],
-          "regex": true
+          "regex": true,
+          "target": "trajectory"
         }
       ]
     },
@@ -76,7 +78,8 @@
       "checks": [
         {
           "type": "must_not_include",
-          "patterns": ["--no-verify"]
+          "patterns": ["--no-verify"],
+          "target": "trajectory"
         },
         {
           "type": "tool_call",
@@ -135,7 +138,8 @@
         {
           "type": "must_not_include",
           "patterns": ["git\\s+commit"],
-          "regex": true
+          "regex": true,
+          "target": "trajectory"
         }
       ]
     },
@@ -151,7 +155,8 @@
         {
           "type": "must_not_include",
           "patterns": ["merge_with_validation.*--continue"],
-          "regex": true
+          "regex": true,
+          "target": "trajectory"
         },
         {
           "type": "tool_call",
@@ -171,7 +176,8 @@
         {
           "type": "must_not_include",
           "patterns": ["checkout\\s+--(ours|theirs)"],
-          "regex": true
+          "regex": true,
+          "target": "trajectory"
         },
         {
           "type": "expected_behavior",
@@ -217,7 +223,8 @@
         {
           "type": "must_not_include",
           "patterns": ["git\\s+push\\s+--force(?!-with-lease)"],
-          "regex": true
+          "regex": true,
+          "target": "trajectory"
         },
         {
           "type": "tool_sequence",
@@ -238,7 +245,8 @@
         {
           "type": "must_not_include",
           "patterns": ["git\\s+rebase\\s+-i", "git\\s+rebase\\s+--interactive"],
-          "regex": true
+          "regex": true,
+          "target": "trajectory"
         },
         {
           "type": "expected_behavior",
@@ -282,7 +290,8 @@
         {
           "type": "must_not_include",
           "patterns": ["git\\s+add\\s+CLAUDE\\.md", "git\\s+add\\s+\\.claude"],
-          "regex": true
+          "regex": true,
+          "target": "trajectory"
         },
         {
           "type": "tool_call",
@@ -330,7 +339,8 @@
       "checks": [
         {
           "type": "must_not_include",
-          "patterns": ["--no-verify", "--skip-lint"]
+          "patterns": ["--no-verify", "--skip-lint"],
+          "target": "trajectory"
         },
         {
           "type": "tool_recovery",
@@ -378,7 +388,8 @@
         {
           "type": "must_not_include",
           "patterns": ["git\\s+branch\\s+-[dD]"],
-          "regex": true
+          "regex": true,
+          "target": "trajectory"
         }
       ]
     },
