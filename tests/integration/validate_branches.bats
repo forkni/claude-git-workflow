@@ -17,10 +17,14 @@ teardown() {
 
 _run_validate() {
   # PATH is already correct from setup_mock_bin; PROJECT_ROOT pins scripts to TEST_REPO_DIR.
+  # SOURCE has no built-in default (an explicit per-invocation choice -- see _config.sh);
+  # create_test_repo_with_remote always produces a real 'development' branch, so default
+  # to it here the same way a real configure.sh run would.
   bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_SOURCE_BRANCH='development'
     export CGW_NON_INTERACTIVE=1
     bash '${CGW_PROJECT_ROOT}/scripts/git/validate_branches.sh' $*
   "

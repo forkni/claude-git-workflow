@@ -117,20 +117,7 @@ main() {
   }
 
   # [1/7] Run validation
-  log_section_start "PRE-MERGE VALIDATION" "$logfile"
-
-  if [[ -f "${SCRIPT_DIR}/validate_branches.sh" ]]; then
-    if ! CGW_SOURCE_BRANCH="${src_branch}" CGW_TARGET_BRANCH="${tgt_branch}" \
-      bash "${SCRIPT_DIR}/validate_branches.sh" >>"$logfile" 2>&1; then
-      err_tee "[FAIL] Validation failed - aborting documentation merge"
-      log_section_end "PRE-MERGE VALIDATION" "$logfile" "1"
-      echo "Please fix validation errors before retrying"
-      exit 1
-    fi
-  fi
-
-  echo "[OK] Pre-merge validation passed" | tee -a "$logfile"
-  log_section_end "PRE-MERGE VALIDATION" "$logfile" "0"
+  cgw_run_pre_op_validation "documentation merge" "${src_branch}" "${tgt_branch}" "$logfile" || exit 1
   echo "" | tee -a "$logfile"
 
   # [2/7] Store current branch and checkout target

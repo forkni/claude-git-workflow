@@ -1055,6 +1055,109 @@ UU b.py
   [ "${status}" -eq 1 ]
 }
 
+# ── validate_branch_pair() ────────────────────────────────────────────────────
+# check-ref-format validates string shape only, not branch existence, so these
+# don't need a throwaway repo.
+
+@test "validate_branch_pair: empty source gives an actionable error, not a cryptic ref-format failure" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    validate_branch_pair '' main
+  " 2>&1
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"No source branch configured"* ]]
+  [[ "${output}" == *"--source"* ]]
+}
+
+@test "validate_branch_pair: same source and target still errors" {
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    validate_branch_pair main main
+  " 2>&1
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Source and target branch are the same"* ]]
+}
+
+# ── cgw_run_pre_op_validation() ───────────────────────────────────────────────
+# Each test spins up its own throwaway repo (PROJECT_ROOT) while SCRIPT_DIR stays
+# pointed at the real scripts/git/ so _common.sh and the real validate_branches.sh
+# are exercised for real, not stubbed.
+
+@test "cgw_run_pre_op_validation: returns 0 and prints the derived pass message on a clean two-branch repo" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    git -C \"\${tmp}\" checkout --quiet -b main
+    git -C \"\${tmp}\" commit --quiet --allow-empty -m init
+    git -C \"\${tmp}\" checkout --quiet -b dev
+    git -C \"\${tmp}\" commit --quiet --allow-empty -m devcommit
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT=\"\${tmp}\"
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    logf=\"\${tmp}/log.txt\"
+    cgw_run_pre_op_validation merge dev main \"\${logf}\"; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"PRE-MERGE VALIDATION"* ]]
+  [[ "${output}" == *"Pre-merge validation passed"* ]]
+}
+
+@test "cgw_run_pre_op_validation: derives section name and messages from op_label" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    git -C \"\${tmp}\" checkout --quiet -b main
+    git -C \"\${tmp}\" commit --quiet --allow-empty -m init
+    git -C \"\${tmp}\" checkout --quiet -b dev
+    git -C \"\${tmp}\" commit --quiet --allow-empty -m devcommit
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT=\"\${tmp}\"
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    logf=\"\${tmp}/log.txt\"
+    cgw_run_pre_op_validation cherry-pick dev main \"\${logf}\"; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"PRE-CHERRY-PICK VALIDATION"* ]]
+  [[ "${output}" == *"Pre-cherry-pick validation passed"* ]]
+}
+
+@test "cgw_run_pre_op_validation: returns 1 and prints abort message when validate_branches.sh fails" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    git -C \"\${tmp}\" checkout --quiet -b main
+    git -C \"\${tmp}\" commit --quiet --allow-empty -m init
+    git -C \"\${tmp}\" checkout --quiet -b dev
+    git -C \"\${tmp}\" commit --quiet --allow-empty -m devcommit
+    echo dirty > \"\${tmp}/dirty.txt\"
+    git -C \"\${tmp}\" add dirty.txt
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT=\"\${tmp}\"
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    logf=\"\${tmp}/log.txt\"
+    cgw_run_pre_op_validation merge dev main \"\${logf}\" 2>&1; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"[FAIL] Validation failed - aborting merge"* ]]
+}
+
 # ── cgw_rev_count() ────────────────────────────────────────────────────────────
 # Each test spins up its own throwaway repo so results are independent of
 # commits accumulated by earlier tests in the shared file-scope repo.
