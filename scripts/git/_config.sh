@@ -90,8 +90,33 @@ fi
 # ============================================================================
 
 # --- Branch names ---
-CGW_SOURCE_BRANCH="${CGW_SOURCE_BRANCH:-development}"
-CGW_TARGET_BRANCH="${CGW_TARGET_BRANCH:-main}"
+# SOURCE has no default -- it's an inherently per-operation choice ("what am I merging"),
+# not a repo-wide fact. Scripts that need a default when no --source flag is given must
+# handle an empty CGW_SOURCE_BRANCH explicitly (see validate_branch_pair in _common.sh,
+# which reports a clear "no source branch configured" error instead of guessing).
+CGW_SOURCE_BRANCH="${CGW_SOURCE_BRANCH:-}"
+
+# TARGET is a repo-wide fact ("which branch is stable") and IS auto-detected here so every
+# script gets a sensible value without requiring .cgw.conf to pin it down.
+# Resolution: ${CGW_REMOTE}/HEAD symbolic ref -> local 'main' -> local 'master' -> 'main'.
+# Uses `git -C` (not bare cwd-relative git) because this runs at source time, before any
+# script's main() has cd'd into PROJECT_ROOT.
+if [[ -z "${CGW_TARGET_BRANCH:-}" ]]; then
+  _cgw_remote_for_detect="${CGW_REMOTE:-origin}"
+  _cgw_detected_target="$(git -C "${PROJECT_ROOT}" symbolic-ref --quiet --short "refs/remotes/${_cgw_remote_for_detect}/HEAD" 2>/dev/null)"
+  _cgw_detected_target="${_cgw_detected_target#"${_cgw_remote_for_detect}"/}"
+  if [[ -z "${_cgw_detected_target}" ]]; then
+    if git -C "${PROJECT_ROOT}" show-ref --verify --quiet refs/heads/main 2>/dev/null; then
+      _cgw_detected_target="main"
+    elif git -C "${PROJECT_ROOT}" show-ref --verify --quiet refs/heads/master 2>/dev/null; then
+      _cgw_detected_target="master"
+    else
+      _cgw_detected_target="main"
+    fi
+  fi
+  CGW_TARGET_BRANCH="${_cgw_detected_target}"
+  unset _cgw_remote_for_detect _cgw_detected_target
+fi
 
 # --- Remote name ---
 # Override with CGW_REMOTE=upstream (or any remote name) for fork-based workflows.

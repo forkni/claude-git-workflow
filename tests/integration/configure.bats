@@ -35,27 +35,24 @@ _run_configure() {
   [ -f "${TEST_REPO_DIR}/.cgw.conf" ]
 }
 
-@test "generated .cgw.conf contains CGW_SOURCE_BRANCH" {
+@test "generated .cgw.conf contains CGW_SOURCE_BRANCH when a dev branch exists" {
+  # create_test_repo has both 'main' and 'development' -- source is confidently detected.
   _run_configure "--non-interactive" || true
-  if [ -f "${TEST_REPO_DIR}/.cgw.conf" ]; then
-    grep -q "CGW_SOURCE_BRANCH" "${TEST_REPO_DIR}/.cgw.conf"
-  fi
+  [ -f "${TEST_REPO_DIR}/.cgw.conf" ]
+  grep -q 'CGW_SOURCE_BRANCH="development"' "${TEST_REPO_DIR}/.cgw.conf"
 }
 
-@test "generated .cgw.conf contains CGW_TARGET_BRANCH" {
+@test "generated .cgw.conf omits CGW_SOURCE_BRANCH on a single-branch repo" {
+  git -C "${TEST_REPO_DIR}" branch -D development
   _run_configure "--non-interactive" || true
-  if [ -f "${TEST_REPO_DIR}/.cgw.conf" ]; then
-    grep -q "CGW_TARGET_BRANCH" "${TEST_REPO_DIR}/.cgw.conf"
-  fi
+  [ -f "${TEST_REPO_DIR}/.cgw.conf" ]
+  ! grep -q "CGW_SOURCE_BRANCH" "${TEST_REPO_DIR}/.cgw.conf"
 }
 
-# ── Branch detection ──────────────────────────────────────────────────────────
-
-@test "detects main as target branch" {
+@test "generated .cgw.conf never contains CGW_TARGET_BRANCH (auto-detected at runtime instead)" {
   _run_configure "--non-interactive" || true
-  if [ -f "${TEST_REPO_DIR}/.cgw.conf" ]; then
-    grep -q "main" "${TEST_REPO_DIR}/.cgw.conf"
-  fi
+  [ -f "${TEST_REPO_DIR}/.cgw.conf" ]
+  ! grep -q "CGW_TARGET_BRANCH" "${TEST_REPO_DIR}/.cgw.conf"
 }
 
 # ── --reconfigure overwrites existing ────────────────────────────────────────
@@ -108,8 +105,8 @@ _run_configure() {
 
 # ── Branch detection on reconfigure ──────────────────────────────────────────
 
-@test "--reconfigure overwrites branch settings with fresh auto-detection" {
-  # Write a config with custom branch names
+@test "--reconfigure re-detects source branch, ignoring stale custom names" {
+  # Write a config with custom, stale branch names.
   cat > "${TEST_REPO_DIR}/.cgw.conf" <<'EOF'
 CGW_SOURCE_BRANCH="my-dev"
 CGW_TARGET_BRANCH="my-stable"
@@ -117,9 +114,22 @@ CGW_LOCAL_FILES=".claude/ logs/"
 EOF
   _run_configure "--non-interactive --reconfigure"
   # 90091fb: --reconfigure re-detects branches instead of preserving stale values.
-  # Test repo has only 'main', so detection yields main/development.
+  # Test repo has both 'main' and 'development' -- fresh detection finds 'development'
+  # as SOURCE. TARGET is never written (auto-detected at runtime instead).
   grep -q 'CGW_SOURCE_BRANCH="development"' "${TEST_REPO_DIR}/.cgw.conf"
-  grep -q 'CGW_TARGET_BRANCH="main"' "${TEST_REPO_DIR}/.cgw.conf"
+  ! grep -q "CGW_TARGET_BRANCH" "${TEST_REPO_DIR}/.cgw.conf"
+}
+
+@test "--reconfigure on a single-branch repo omits both branch lines" {
+  git -C "${TEST_REPO_DIR}" branch -D development
+  cat > "${TEST_REPO_DIR}/.cgw.conf" <<'EOF'
+CGW_SOURCE_BRANCH="my-dev"
+CGW_TARGET_BRANCH="my-stable"
+CGW_LOCAL_FILES=".claude/ logs/"
+EOF
+  _run_configure "--non-interactive --reconfigure"
+  ! grep -q "CGW_SOURCE_BRANCH" "${TEST_REPO_DIR}/.cgw.conf"
+  ! grep -q "CGW_TARGET_BRANCH" "${TEST_REPO_DIR}/.cgw.conf"
 }
 
 @test "--reconfigure does not modify .gitignore" {

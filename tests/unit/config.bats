@@ -41,14 +41,62 @@ teardown() {
 
 # ── Default values ─────────────────────────────────────────────────────────────
 
-@test "CGW_SOURCE_BRANCH defaults to 'development'" {
+@test "CGW_SOURCE_BRANCH has no default (empty when unconfigured)" {
+  # SOURCE is an inherently per-operation choice ("what am I merging"), not a repo-wide
+  # fact -- it must never be silently guessed. Empty is the correct "unconfigured" state;
+  # validate_branch_pair (_common.sh) surfaces a clear error for scripts that need one.
   result=$(_source_config)
-  [[ "${result}" == *"CGW_SOURCE_BRANCH=development"* ]]
+  source_line=$(echo "${result}" | grep "^CGW_SOURCE_BRANCH=")
+  [[ "${source_line}" == "CGW_SOURCE_BRANCH=" ]]
 }
 
-@test "CGW_TARGET_BRANCH defaults to 'main'" {
+@test "CGW_TARGET_BRANCH auto-detects local 'main' when no origin/HEAD is set" {
+  # create_test_repo has a local 'main' branch and no remote -- target is a repo-wide
+  # fact, so it's auto-detected at source time even with no .cgw.conf.
   result=$(_source_config)
   [[ "${result}" == *"CGW_TARGET_BRANCH=main"* ]]
+}
+
+@test "CGW_TARGET_BRANCH falls back to 'master' when no 'main' branch exists" {
+  # Independent minimal repo (not create_test_repo, which always creates 'main').
+  local repo="${TEST_TMPDIR}/master-repo"
+  mkdir -p "${repo}/scripts/git"
+  git -C "${repo}" init --quiet --initial-branch=master
+  git -C "${repo}" config user.email "test@example.com"
+  git -C "${repo}" config user.name "Test User"
+  git -C "${repo}" commit --quiet --allow-empty -m "chore: initial commit"
+
+  result=$(bash -c "
+    cd '${repo}'
+    export SCRIPT_DIR='${repo}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"CGW_TARGET_BRANCH=\${CGW_TARGET_BRANCH}\"
+  ")
+  [[ "${result}" == *"CGW_TARGET_BRANCH=master"* ]]
+}
+
+@test "CGW_TARGET_BRANCH prefers origin/HEAD over local branch names" {
+  local repo="${TEST_TMPDIR}/head-repo"
+  local remote="${TEST_TMPDIR}/head-remote.git"
+  mkdir -p "${repo}/scripts/git"
+  git init --bare --quiet "${remote}"
+  git -C "${repo}" init --quiet
+  git -C "${repo}" config user.email "test@example.com"
+  git -C "${repo}" config user.name "Test User"
+  # Default branch name here is irrelevant -- origin/HEAD should win regardless.
+  git -C "${repo}" checkout --quiet -b release
+  git -C "${repo}" commit --quiet --allow-empty -m "chore: initial commit"
+  git -C "${repo}" remote add origin "${remote}"
+  git -C "${repo}" push --quiet origin release
+  git -C "${repo}" remote set-head origin release
+
+  result=$(bash -c "
+    cd '${repo}'
+    export SCRIPT_DIR='${repo}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"CGW_TARGET_BRANCH=\${CGW_TARGET_BRANCH}\"
+  ")
+  [[ "${result}" == *"CGW_TARGET_BRANCH=release"* ]]
 }
 
 @test "CGW_LINT_CMD defaults to 'ruff'" {

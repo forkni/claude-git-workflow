@@ -176,6 +176,12 @@ run_script() {
     cd "${work_dir}" || exit 1
     export SCRIPT_DIR="${CGW_PROJECT_ROOT}/scripts/git"
     export PROJECT_ROOT="${work_dir}"
+    # SOURCE has no built-in default (it's an explicit per-invocation choice -- see
+    # _config.sh); create_test_repo/create_test_repo_with_remote always produce a real
+    # 'development' branch, so default to it here the same way a real configure.sh run
+    # would (only when the caller hasn't already set/exported a different value or
+    # passed --source), keeping tests that never touch branches unaffected.
+    export CGW_SOURCE_BRANCH="${CGW_SOURCE_BRANCH:-development}"
     bash "${script_file}" "$@"
   )
 }
