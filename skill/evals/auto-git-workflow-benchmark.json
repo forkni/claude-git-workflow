@@ -1,7 +1,7 @@
 {
   "skill": "auto-git-workflow",
-  "version": "1.1",
-  "description": "Benchmark for auto-git-workflow: tests correct use of scripts/git/*.sh wrappers vs raw git, local-only file protection, conflict-handling procedure, and gotchas documented only in references/. Rollouts are DRY -- agent states commands without executing them. Rollout protocol: every rollout answer must also emit a structured trajectory (a JSON list of {tool_name, tool_args} steps mirroring the commands stated in prose), per skill-improvement-pipeline/references/tool-use-benchmarks.md -- must_not_include checks in this benchmark use target:\"trajectory\" so a correct answer that *names* a forbidden command in its explanation is never penalized.",
+  "version": "1.2",
+  "description": "Benchmark for auto-git-workflow: tests correct use of scripts/git/*.sh wrappers vs raw git, local-only file protection, conflict-handling procedure, and gotchas documented only in references/. Rollouts are DRY -- agent states commands without executing them. Rollout protocol: every rollout answer must also emit a structured trajectory (a JSON list of {tool_name, tool_args} steps mirroring the commands stated in prose), per skill-improvement-pipeline/references/tool-use-benchmarks.md -- must_not_include checks in this benchmark use target:\"trajectory\" so a correct answer that *names* a forbidden command in its explanation is never penalized. v1.2 adds a step-efficiency axis (tool_efficiency checks calibrated from SKILL.md's documented minimal-step happy paths, not observed base behaviour) and two read-only \"inspection\" cases exercising the read-only carve-out in \"When to use this skill\" (git status/log/diff/show do not require the skill) -- reconciled from development's independent v1.0 benchmark expansion (c8b20c1) after its wrapper-coverage cases were found redundant with v1.1's existing coverage.",
   "cases": [
     {
       "id": "commit-001-novenv",
@@ -1115,6 +1115,246 @@
             "Correctly states the lint gate only checks the staged file(s) (src/foo.py), not unrelated unstaged files elsewhere in the repo",
             "Does NOT claim the commit will be blocked by lint failures in src/unrelated.py, since it is not staged"
           ]
+        }
+      ]
+    },
+    {
+      "id": "traj-005-commit-efficiency",
+      "prompt": "Commit a bug fix to pyccsl.py with message 'fix: correct token counting'. There is no .venv directory in this repository. Emit a structured trajectory.",
+      "category": "commit",
+      "split": "val",
+      "source": "SKILL.md Quick Decision Tree -- 'After commit: verify with git log --oneline -1 (that single check is enough -- skip any git status/diff scan beforehand)' = 2-step happy path",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "commit_enhanced.sh",
+          "require_args": [
+            "--no-venv"
+          ]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 2
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+commit\\s+-"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "traj-006-push-efficiency",
+      "prompt": "Push the current branch to its remote tracking branch. Emit a structured trajectory.",
+      "category": "push",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree -- push_validated.sh: 'One call is enough on its own -- no pre-check and no post-check needed'",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "push_validated.sh"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+push\\s+[\\w-]"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "traj-007-sync-efficiency",
+      "prompt": "Sync your current branch with its remote counterpart before starting new work. Emit a structured trajectory.",
+      "category": "sync",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree -- Syncing branches with remote / script-reference.md -- sync_branches.sh is a single wrapper call",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "sync_branches.sh"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+pull\\s+--rebase",
+            "git\\s+fetch\\s+&&\\s+git\\s+pull"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "traj-008-cherry-pick-efficiency",
+      "prompt": "Cherry-pick commit abc1234 from feature/hotfix onto release/1.2, running non-interactively. Emit a structured trajectory.",
+      "category": "cherry-pick",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree -- Cherry-picking a commit / script-reference.md -- cherry_pick_commits.sh is a single wrapper call",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "cherry_pick_commits.sh",
+          "require_args": [
+            "--commit",
+            "--non-interactive"
+          ]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+cherry-pick\\s+[\\w-]"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "traj-009-rebase-autostash-efficiency",
+      "prompt": "Rebase your current branch onto main to pick up the latest changes. Your working tree has uncommitted edits you do not want to lose. Emit a structured trajectory.",
+      "category": "rebase",
+      "split": "val",
+      "source": "SKILL.md 'Safe rebase' -- rebase_safe.sh --onto main --autostash is a single wrapper call (stash/restore handled internally)",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "rebase_safe.sh",
+          "require_args": [
+            "--onto",
+            "main",
+            "--autostash"
+          ]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+stash",
+            "git\\s+rebase\\s+[\\w-]"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "traj-010-changelog-efficiency",
+      "prompt": "Generate a markdown changelog of commits since tag v1.0.0. Emit a structured trajectory.",
+      "category": "changelog",
+      "split": "train",
+      "source": "SKILL.md 'Generating a changelog' -- changelog_generate.sh is a single wrapper call, no documented follow-up step",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "changelog_generate.sh",
+          "require_args": [
+            "--from"
+          ]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        }
+      ]
+    },
+    {
+      "id": "traj-011-worktree-add-efficiency",
+      "prompt": "Set up a separate worktree at ../hotfix checked out to a new branch hotfix/urgent, so you can work on an urgent fix without disturbing your current branch. Emit a structured trajectory.",
+      "category": "worktree",
+      "split": "test",
+      "source": "SKILL.md 'Worktree management' -- worktree_manage.sh add is a single wrapper call, no documented follow-up step",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "worktree_manage.sh",
+          "require_args": [
+            "add",
+            "hotfix/urgent"
+          ]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        }
+      ]
+    },
+    {
+      "id": "inspect-001-diff-last-commit",
+      "prompt": "What changed between your working tree and the last commit?",
+      "category": "inspection",
+      "split": "val",
+      "source": "SKILL.md 'When to use this skill' -- read-only carve-out (git status/log/diff/show do not require the skill); negative/over-trigger test reconciled from development's benchmark expansion (c8b20c1)",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "git diff"
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "branch_diff\\.sh"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        }
+      ]
+    },
+    {
+      "id": "inspect-002-uncommitted-check",
+      "prompt": "Do you have any uncommitted changes in your working tree right now?",
+      "category": "inspection",
+      "split": "train",
+      "source": "SKILL.md 'When to use this skill' -- read-only carve-out (git status/log/diff/show do not require the skill); negative/over-trigger test reconciled from development's benchmark expansion (c8b20c1)",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "git status"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
         }
       ]
     }
