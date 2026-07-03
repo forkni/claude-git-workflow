@@ -275,6 +275,40 @@ Linked worktrees let you check out multiple branches simultaneously in separate 
 
 `remove` and `prune` default to dry-run; pass `--execute` to apply.
 
+### Diff your branch against the default branch
+
+`branch_diff.sh` auto-detects the repository's default branch (`main`, `master`, or a custom name) via `${CGW_REMOTE}/HEAD`, falling back to `CGW_TARGET_BRANCH` when that ref is unset:
+
+```bash
+./scripts/git/branch_diff.sh                 # full patch vs default branch
+./scripts/git/branch_diff.sh --files         # changed file names only
+./scripts/git/branch_diff.sh --stat --no-ws  # diffstat, ignoring whitespace
+./scripts/git/branch_diff.sh --base release/1.2  # compare against an explicit ref
+```
+
+Read-only — safe to run with a dirty working tree. Uses triple-dot diff (`<base>...HEAD`), so only changes made on the current branch are shown.
+
+### Review a PR locally
+
+```bash
+./scripts/git/pr_checkout.sh 42                            # check out PR #42
+./scripts/git/pr_checkout.sh --pr 42 --branch review/pr-42  # into a named local branch
+./scripts/git/pr_checkout.sh 42 --dry-run                  # preview the gh command only
+```
+
+Wraps `gh pr checkout`; requires `gh auth login`. Refuses to switch branches over uncommitted tracked changes unless `--force` is passed.
+
+### Generate or update a Markdown Table of Contents
+
+```bash
+./scripts/git/md_toc.sh docs/usage.md              # print TOC to stdout
+./scripts/git/md_toc.sh docs/usage.md --insert      # insert/update the <!--ts-->...<!--te--> block in place
+./scripts/git/md_toc.sh docs/usage.md --check       # CI: exit 1 if the TOC is stale
+./scripts/git/md_toc.sh --all                       # update every tracked *.md file with a <!--ts--> marker
+```
+
+Computes GitHub-compatible anchor slugs offline (no network access or auth token needed).
+
 ---
 
 ## Environment Variables

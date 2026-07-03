@@ -139,14 +139,7 @@ main() {
   # [1/4] Validate prerequisites
   log_section_start "PREREQUISITES" "$logfile"
 
-  if ! command -v gh >/dev/null 2>&1; then
-    err "gh CLI not found. Install from https://cli.github.com/"
-    log_section_end "PREREQUISITES" "$logfile" "1"
-    exit 1
-  fi
-
-  if ! gh auth status >/dev/null 2>&1; then
-    err "gh CLI not authenticated. Run: gh auth login"
+  if ! cgw_require_gh; then
     log_section_end "PREREQUISITES" "$logfile" "1"
     exit 1
   fi
