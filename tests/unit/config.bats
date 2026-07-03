@@ -57,6 +57,23 @@ teardown() {
   [[ "${result}" == *"CGW_TARGET_BRANCH=main"* ]]
 }
 
+@test "_config.sh sourced directly survives a repo with no origin remote (regression)" {
+  # Regression for a bug where "_cgw_detected_target=\"\$(git symbolic-ref ...)\"" let
+  # `git symbolic-ref`'s non-zero exit (no origin/HEAD ref) propagate as the assignment's
+  # own exit status. The test above ("auto-detects local 'main'...") exercises the same
+  # repo shape but goes through _source_config's `bash -c` subshell, which does NOT run
+  # under bats' errexit trap and so never caught this. This test sources _config.sh
+  # directly in the test body -- exactly how _common.sh's callers (e.g. common.bats'
+  # setup()) do it -- so it runs under bats' `set -e` and reproduces the real crash:
+  # sourcing aborted entirely wherever origin/HEAD is unset, which is always true right
+  # after actions/checkout on CI (no local main/master fallback ever ran).
+  cd "${TEST_REPO_DIR}"
+  export SCRIPT_DIR="${TEST_REPO_DIR}/scripts/git"
+  # shellcheck source=scripts/git/_config.sh
+  source "${CGW_PROJECT_ROOT}/scripts/git/_config.sh"
+  [[ "${CGW_TARGET_BRANCH}" == "main" ]]
+}
+
 @test "CGW_TARGET_BRANCH falls back to 'master' when no 'main' branch exists" {
   # Independent minimal repo (not create_test_repo, which always creates 'main').
   local repo="${TEST_TMPDIR}/master-repo"
