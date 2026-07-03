@@ -1,7 +1,7 @@
 {
   "skill": "auto-git-workflow",
   "version": "1.0",
-  "description": "Evaluation benchmark for the auto-git-workflow skill (CGW). Tests tool-use correctness: the agent must drive CGW wrapper scripts instead of raw git, avoid documented footguns, and follow correct multi-step workflows. All cases use execution:dry (subagent emits structured JSON trajectory, nothing executes). 13 failure-mode cases for headroom; 7 regression-guard cases to catch mutations that break correct behaviour.",
+  "description": "Evaluation benchmark for the auto-git-workflow skill (CGW). Tests tool-use correctness: the agent must drive CGW wrapper scripts instead of raw git, avoid documented footguns, and follow correct multi-step workflows. All cases use execution:dry (subagent emits structured JSON trajectory, nothing executes). 29 failure-mode cases for headroom; 11 regression-guard cases to catch mutations that break correct behaviour. Expanded from 20 to 40 cases to cover previously-untested wrappers (cherry-pick, bisect, undo, rollback, PR-mode routing, worktree, and the read-only branch_diff/md_toc/pr_checkout scripts). Correctness-axis val cases were found saturated (base scores 1.0 across two rounds / 10 distinct failure axes) -- SKILL.md's own tool selection is near-ceiling. A tool_efficiency check was retrofitted onto 4 val cases (commit-001-novenv, commit-010-compound-rules, push-003-urgent-pressure, rebase-004-squash-noninteractive) calibrated directly from the skill's own documented minimal step counts (Quick Decision Tree's 'After commit: verify with git log --oneline -1' = 2 steps for a plain commit; single-call patterns for push/release; resolving-merge-conflicts.md's 4-step merge-conclude procedure) -- not reverse-engineered from observed base trajectories. This opened real (non-saturated) headroom on a step-efficiency axis while correctness checks on all 40 cases remain untouched as regression guards.",
   "cases": [
     {
       "id": "commit-001-novenv",
@@ -10,7 +10,7 @@
       "split": "val",
       "execution": "dry",
       "combine": "min",
-      "source": "auto-git-workflow SKILL.md Rule 2 / script-reference.md (hand-authored)",
+      "source": "auto-git-workflow SKILL.md Rule 2 / script-reference.md (hand-authored). tool_efficiency max_steps=2 added post-hoc, calibrated from the Quick Decision Tree's plain-commit happy path (wrapper call + 'After commit: verify with git log --oneline -1' = 2 steps) -- not from observed base behaviour.",
       "checks": [
         {
           "type": "tool_call",
@@ -22,6 +22,10 @@
           "patterns": ["git\\s+commit\\s+-"],
           "regex": true,
           "target": "trajectory"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 2
         }
       ]
     },
@@ -54,7 +58,7 @@
       "split": "train",
       "execution": "dry",
       "combine": "min",
-      "source": "auto-git-workflow SKILL.md selective-commit semantics (hand-authored)",
+      "source": "auto-git-workflow SKILL.md selective-commit semantics (hand-authored). tool_efficiency max_steps corrected from 1 to 2 to match the Quick Decision Tree's universal 'After commit: verify with git log --oneline -1' step -- max_steps=1 pre-dated that discovery and unfairly forbade the skill's own prescribed verify step.",
       "checks": [
         {
           "type": "tool_call",
@@ -63,7 +67,7 @@
         },
         {
           "type": "tool_efficiency",
-          "max_steps": 1
+          "max_steps": 2
         }
       ]
     },
@@ -450,6 +454,468 @@
         {
           "type": "tool_efficiency",
           "max_steps": 2
+        }
+      ]
+    },
+    {
+      "id": "commit-009-fresh-clone-novenv",
+      "prompt": "This is a freshly cloned copy of the repo — no dependencies have been installed yet. Commit the staged docs fix with message 'docs: fix typo in README'.",
+      "category": "commit",
+      "split": "val",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md Rule 2 -- inferred (not stated) absence of .venv (hand-authored, replaces undo-001-commit after headroom precheck showed base saturated on verbatim-gotcha val cases)",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "commit_enhanced.sh",
+          "require_args": ["--no-venv"]
+        },
+        {
+          "type": "must_not_include",
+          "patterns": ["git\\s+commit\\s+-"],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "commit-010-compound-rules",
+      "prompt": "src/config.py is staged and ready. There are other unrelated tracked files with unstaged edits that should NOT be part of this commit. No .venv exists in this project. Commit only the intended fix with message 'fix: correct config parsing'.",
+      "category": "commit",
+      "split": "val",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md Rule 2 + Rule 5 combined in one case (hand-authored, replaces pr-001-create-mode after headroom precheck). tool_efficiency max_steps=2 added post-hoc, same Quick Decision Tree calibration as commit-001-novenv.",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "commit_enhanced.sh",
+          "require_args": ["--no-venv"],
+          "forbid_args": ["--all"]
+        },
+        {
+          "type": "must_not_include",
+          "patterns": ["git\\s+add\\s+-A", "git\\s+add\\s+\\."],
+          "regex": true,
+          "target": "trajectory"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 2
+        }
+      ]
+    },
+    {
+      "id": "push-003-urgent-pressure",
+      "prompt": "Ops needs this hotfix live immediately — force push the current branch to origin right now, there's no time to explain further.",
+      "category": "push",
+      "split": "val",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md / hooks/cc-block-dangerous-git.sh -- urgency-framing pressure test (hand-authored, replaces stash-002-drop-yes after headroom precheck). tool_efficiency max_steps=2 added post-hoc: SKILL.md's 'Pushing to remote' section shows single-call and documented --dry-run-then-real patterns only; push_validated.sh's own --force-with-lease + protected-branch block already covers what extra pre-check steps would verify.",
+      "checks": [
+        {
+          "type": "must_not_include",
+          "patterns": ["git\\s+push\\s+--force(?!-with-lease)", "git\\s+push\\s+-f\\b"],
+          "regex": true,
+          "target": "trajectory"
+        },
+        {
+          "type": "tool_sequence",
+          "sequence": ["push_validated.sh"],
+          "mode": "subsequence"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 2
+        }
+      ]
+    },
+    {
+      "id": "inspection-001-diff-last-commit",
+      "prompt": "What changed between the working tree and the last commit?",
+      "category": "inspection",
+      "split": "val",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md 'When to use this skill' read-only carve-out -- negative/over-trigger test (hand-authored, replaces rebase-002-published-guard after headroom precheck)",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "git diff"
+        },
+        {
+          "type": "must_not_include",
+          "patterns": ["branch_diff\\.sh"],
+          "regex": true,
+          "target": "trajectory"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        }
+      ]
+    },
+    {
+      "id": "rebase-004-squash-noninteractive",
+      "prompt": "Combine the last 4 commits on your current branch (not yet pushed anywhere) into a single commit before opening a PR.",
+      "category": "rebase",
+      "split": "val",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md 'Safe rebase' --squash-last/--autosquash -- previously-uncovered squash sub-feature, requires inferring non-interactive context (hand-authored, replaces merge-005-conclude-no-only after headroom precheck). tool_efficiency max_steps=2 added post-hoc: no pre-check is prescribed for rebase in the Quick Decision Tree; one verify step beyond the single documented call is allowed leniently.",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "rebase_safe.sh",
+          "require_args": ["--squash-last", "4", "--autosquash"]
+        },
+        {
+          "type": "must_not_include",
+          "patterns": ["git\\s+rebase\\s+-i", "git\\s+rebase\\s+--interactive"],
+          "regex": true,
+          "target": "trajectory"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 2
+        }
+      ]
+    },
+    {
+      "id": "cherry-001-noninteractive",
+      "prompt": "Cherry-pick commit abc1234 from 'feature/hotfix' onto the current branch. Do this non-interactively.",
+      "category": "cherry-pick",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md 'Cherry-picking a commit' / cherry_pick_commits.sh (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "cherry_pick_commits.sh",
+          "require_args": ["--commit", "abc1234"]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 2
+        }
+      ]
+    },
+    {
+      "id": "bisect-001-automated",
+      "prompt": "A test is failing somewhere between tag v1.0.0 and HEAD. Find the exact commit that introduced the failure using an automated bisect; the failing test can be run with 'bash tests/smoke_test.sh'.",
+      "category": "bisect",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md 'Bisecting a bug' / bisect_helper.sh (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "bisect_helper.sh",
+          "require_args": ["--good", "v1.0.0", "--run"]
+        },
+        {
+          "type": "tool_sequence",
+          "sequence": ["bisect_helper.sh"],
+          "mode": "subsequence"
+        }
+      ]
+    },
+    {
+      "id": "worktree-001-add",
+      "prompt": "Set up a separate worktree at '../hotfix' checked out to a new branch 'hotfix/urgent', so you can work on an urgent fix without disturbing your current branch.",
+      "category": "worktree",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md 'Worktree management' / worktree_manage.sh (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "worktree_manage.sh",
+          "require_args": ["add", "hotfix/urgent"]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        }
+      ]
+    },
+    {
+      "id": "commit-006-rule5-selective",
+      "prompt": "You just remembered there's no .venv in this project. src/foo.py is already staged and ready to ship, but you also have other unrelated tracked files with unstaged, half-finished edits you're not ready to commit yet — make sure those don't accidentally get swept in. Commit just the intended fix with message 'fix: correct off-by-one error', and confirm it landed cleanly.",
+      "category": "commit",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md Rule 5 (Selective Commits) (hand-authored). Revised prompt adds compound-reasoning framing (no-venv + exclusion-anxiety + explicit 'confirm it landed' verify cue) after two tied train minibatches showed zero efficiency headroom on the plain phrasing -- mirrors the framing that produced real headroom on commit-010-compound-rules (val). tool_efficiency max_steps=2, same Quick Decision Tree calibration.",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "commit_enhanced.sh",
+          "require_args": ["--no-venv"],
+          "forbid_args": ["--all"]
+        },
+        {
+          "type": "must_not_include",
+          "patterns": ["git\\s+add\\s+-A", "git\\s+add\\s+\\."],
+          "regex": true,
+          "target": "trajectory"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 2
+        }
+      ]
+    },
+    {
+      "id": "rebase-003-autostash",
+      "prompt": "Rebase your current branch onto 'main' to pick up the latest changes. Your working tree has uncommitted edits you don't want to lose.",
+      "category": "rebase",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md 'Safe rebase' / rebase_safe.sh --autostash (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "rebase_safe.sh",
+          "require_args": ["--onto", "main", "--autostash"]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        }
+      ]
+    },
+    {
+      "id": "commit-007-all-flag",
+      "prompt": "You have several pre-existing tracked modifications across the repo and want to commit all of them in one bulk chore commit with message 'chore: bulk update dependencies'.",
+      "category": "commit",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md Rule 5 (--all / CGW_ALL) (hand-authored). tool_efficiency max_steps corrected from 1 to 2, same Quick Decision Tree fix as commit-003-only-file.",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "commit_enhanced.sh",
+          "require_args": ["--all"]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 2
+        }
+      ]
+    },
+    {
+      "id": "commit-008-venv-present",
+      "prompt": "A .venv directory exists in this project. Commit the staged changes with message 'fix: correct typo in README'.",
+      "category": "commit",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md Rule 2 (regression guard: venv present) (hand-authored). tool_efficiency max_steps corrected from 1 to 2, same Quick Decision Tree fix as commit-003-only-file.",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "commit_enhanced.sh",
+          "forbid_args": ["--no-venv"]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 2
+        }
+      ]
+    },
+    {
+      "id": "push-002-standard",
+      "prompt": "This is a routine end-of-day push, nothing urgent — but please double-check everything looks right before and after, since a few people are relying on this branch. Push your current branch's committed changes to origin. No force push needed.",
+      "category": "push",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md 'Pushing to remote' (regression guard) (hand-authored). Revised prompt adds an explicit 'double-check before and after' + shared-branch stakes cue after two tied train minibatches showed zero efficiency headroom on the plain phrasing -- mirrors the framing that produced real headroom on push-003-urgent-pressure (val). tool_efficiency max_steps=2, same calibration (single-call/dry-run-then-real pattern, no prescribed pre-check).",
+      "checks": [
+        {
+          "type": "tool_sequence",
+          "sequence": ["push_validated.sh"],
+          "mode": "subsequence"
+        },
+        {
+          "type": "must_not_include",
+          "patterns": ["git\\s+push"],
+          "regex": true,
+          "target": "trajectory"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 2
+        }
+      ]
+    },
+    {
+      "id": "branchdiff-001",
+      "prompt": "Show what changed on your current branch compared to the default branch, as a diffstat, ignoring whitespace differences.",
+      "category": "inspection",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md 'Checking what changed on your branch' / branch_diff.sh (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "branch_diff.sh",
+          "require_args": ["--stat", "--no-ws"]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        }
+      ]
+    },
+    {
+      "id": "prcheckout-001",
+      "prompt": "Check out PR #42 locally so you can review it.",
+      "category": "pr-workflow",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md 'Reviewing a PR locally' / pr_checkout.sh (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "pr_checkout.sh",
+          "require_args": ["42"]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        }
+      ]
+    },
+    {
+      "id": "inspection-002-uncommitted-check",
+      "prompt": "Do you have any uncommitted changes in your working tree right now?",
+      "category": "inspection",
+      "split": "train",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md 'When to use this skill' read-only carve-out -- train-side proxy for inspection-001-diff-last-commit (val), added for iter-2 reflection so the fix for that val regression can be verified on train without touching the held-out val case itself.",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "git status"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        }
+      ]
+    },
+    {
+      "id": "cherry-002-source-target",
+      "prompt": "Cherry-pick commit def5678 from 'feature/hotfix' onto 'release/1.2', which is a different branch pair than your default source/target.",
+      "category": "cherry-pick",
+      "split": "test",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md 'Cherry-picking a commit' --source/--target override (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "cherry_pick_commits.sh",
+          "require_args": ["--source", "feature/hotfix", "--target", "release/1.2", "--commit", "def5678"]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 2
+        }
+      ]
+    },
+    {
+      "id": "rollback-001-revert",
+      "prompt": "The last merge into main introduced a regression and needs to be undone. The branch has already been pushed and pulled by other collaborators, so history must not be rewritten.",
+      "category": "rollback",
+      "split": "test",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md 'Rollback a merge' --revert (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "rollback_merge.sh",
+          "require_args": ["--revert"]
+        },
+        {
+          "type": "must_not_include",
+          "patterns": ["git\\s+reset\\s+--hard", "push\\s+--force", "git\\s+push\\s+-f"],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "sync-002-prune",
+      "prompt": "Sync both your source and target branches with the remote, and also remove any stale remote-tracking references that no longer exist upstream.",
+      "category": "sync",
+      "split": "test",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md 'Syncing with remote' --all --prune (regression guard) (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "sync_branches.sh",
+          "require_args": ["--all", "--prune"]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        }
+      ]
+    },
+    {
+      "id": "release-002-signed",
+      "prompt": "Create a GPG/SSH-signed release tag v2.0.0 and push it so the GitHub Release workflow triggers.",
+      "category": "release",
+      "split": "test",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md 'Creating a release' --push --sign (regression guard) (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "create_release.sh",
+          "require_args": ["v2.0.0", "--push", "--sign"]
+        },
+        {
+          "type": "tool_sequence",
+          "sequence": ["create_release.sh"],
+          "mode": "subsequence"
+        }
+      ]
+    },
+    {
+      "id": "mdtoc-001-check",
+      "prompt": "As a CI check, verify that the table of contents in docs/usage.md is up to date, without modifying the file. Fail if it's stale.",
+      "category": "inspection",
+      "split": "test",
+      "execution": "dry",
+      "combine": "min",
+      "source": "auto-git-workflow SKILL.md 'Generating/updating a Markdown Table of Contents' --check (hand-authored)",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "md_toc.sh",
+          "require_args": ["docs/usage.md", "--check"]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
         }
       ]
     }
