@@ -103,7 +103,7 @@ CGW_SOURCE_BRANCH="${CGW_SOURCE_BRANCH:-}"
 # script's main() has cd'd into PROJECT_ROOT.
 if [[ -z "${CGW_TARGET_BRANCH:-}" ]]; then
   _cgw_remote_for_detect="${CGW_REMOTE:-origin}"
-  _cgw_detected_target="$(git -C "${PROJECT_ROOT}" symbolic-ref --quiet --short "refs/remotes/${_cgw_remote_for_detect}/HEAD" 2>/dev/null)"
+  _cgw_detected_target="$(git -C "${PROJECT_ROOT}" symbolic-ref --quiet --short "refs/remotes/${_cgw_remote_for_detect}/HEAD" 2>/dev/null)" || _cgw_detected_target=""
   _cgw_detected_target="${_cgw_detected_target#"${_cgw_remote_for_detect}"/}"
   if [[ -z "${_cgw_detected_target}" ]]; then
     if git -C "${PROJECT_ROOT}" show-ref --verify --quiet refs/heads/main 2>/dev/null; then

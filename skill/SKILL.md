@@ -190,6 +190,9 @@ Optional flags: --skip-lint (skip all lint), --skip-md-lint (skip markdown lint 
 Typecheck: runs non-blocking in the pre-commit hook when CGW_TYPECHECK_CMD is set (pyrefly is the configured default for this project's Python code) — see script-reference.md.
 
 After commit: verify with git log --oneline -1
+(that single check is enough — skip any git status/diff scan beforehand; commit_enhanced.sh
+already validates lint and protects local-only files internally, regardless of how the request
+is phrased)
 ```
 
 **Merging to target branch** (direct merge, `CGW_MERGE_MODE="direct"`):
@@ -216,6 +219,9 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 ./scripts/git/push_validated.sh --dry-run             # preview
 ./scripts/git/push_validated.sh --skip-lint           # skip lint check entirely
 ./scripts/git/push_validated.sh --no-venv --skip-lint # both
+# One call is enough on its own -- no pre-check and no post-check needed, regardless of
+# urgency or stakes in the request; --force-with-lease + the protected-branch guard already
+# cover what an extra git status/log would verify.
 ```
 
 **Creating a PR** (when `CGW_MERGE_MODE="pr"`):
