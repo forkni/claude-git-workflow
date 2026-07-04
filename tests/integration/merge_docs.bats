@@ -44,6 +44,7 @@ _seed_docs_on_dev() {
 @test "docs-only merge commits docs/ changes to target" {
   _seed_docs_on_dev
   run _run_merge_docs "--non-interactive" ""
+  echo "DEBUG status=${status} output=${output}" >&2
   [ "${status}" -eq 0 ]
   git -C "${TEST_REPO_DIR}" cat-file -e "main:docs/guide.md"
 }
