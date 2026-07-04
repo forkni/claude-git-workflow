@@ -61,14 +61,19 @@ CGW_EXTRA_PREFIXES=""
 # ============================================================================
 # Set CGW_LINT_CMD="" to disable lint checks entirely.
 #
+# PATH CONVENTION: use the "{files}" token where the scan target goes. In
+# scoped/modified-only mode it is replaced by the file list; in whole-repo mode
+# it expands to ".". A legacy standalone "." (as shown in the examples below)
+# still works and is treated as the scan target.
+#
 # ── Python / ruff (default) ──────────────────────────────
 CGW_LINT_CMD="ruff"
-CGW_LINT_CHECK_ARGS="check ."
-CGW_LINT_FIX_ARGS="check --fix ."
+CGW_LINT_CHECK_ARGS="check {files}"
+CGW_LINT_FIX_ARGS="check --fix {files}"
 CGW_LINT_EXCLUDES="--extend-exclude logs --extend-exclude .venv"
 CGW_FORMAT_CMD="ruff"
-CGW_FORMAT_CHECK_ARGS="format --check ."
-CGW_FORMAT_FIX_ARGS="format ."
+CGW_FORMAT_CHECK_ARGS="format --check {files}"
+CGW_FORMAT_FIX_ARGS="format {files}"
 CGW_FORMAT_EXCLUDES="--exclude logs --exclude .venv"
 #
 # ── JavaScript / ESLint + Prettier ──────────────────────
@@ -184,14 +189,25 @@ CGW_MERGE_IGNORE_WHITESPACE="0"
 # Optional markdown linting step run in addition to CGW_LINT_CMD.
 # Set CGW_MARKDOWNLINT_CMD="" to disable (default).
 #
+# CGW_MARKDOWNLINT_ARGS holds flags/exclusions ONLY (never a scan-target glob).
+# CGW_MARKDOWNLINT_PATHS is the default scan target, used only in audit mode
+# (check_lint.sh / push_validated.sh). The commit gate scopes the check to the
+# staged *.md files, so an unrelated markdown violation can't block a code commit.
+#
 # Example (markdownlint-cli2):
 # CGW_MARKDOWNLINT_CMD="markdownlint-cli2"
-# CGW_MARKDOWNLINT_ARGS="**/*.md !CLAUDE.md !MEMORY.md"
+# CGW_MARKDOWNLINT_ARGS="!CLAUDE.md !MEMORY.md"
+# CGW_MARKDOWNLINT_PATHS="**/*.md"
+#
+# MIGRATION: the old single-var shape put the glob in ARGS
+# ("**/*.md !CLAUDE.md !MEMORY.md"). Move the "**/*.md" glob to
+# CGW_MARKDOWNLINT_PATHS and keep only exclusions in CGW_MARKDOWNLINT_ARGS.
 #
 # Skip at runtime with --skip-md-lint flag or CGW_SKIP_MD_LINT=1.
 
 CGW_MARKDOWNLINT_CMD=""
-CGW_MARKDOWNLINT_ARGS="**/*.md !CLAUDE.md !MEMORY.md"
+CGW_MARKDOWNLINT_ARGS="!CLAUDE.md !MEMORY.md"
+CGW_MARKDOWNLINT_PATHS="**/*.md"
 
 # ============================================================================
 # DOCS CI VALIDATION (merge_with_validation.sh)
@@ -216,6 +232,12 @@ CGW_DOCS_PATTERN=""
 # CGW_DEV_ONLY_FILES="tests/ pytest.ini docs/TESTING_GUIDE.md"
 
 CGW_DEV_ONLY_FILES=""
+
+# Local-only file guard for merge / cherry-pick.
+# A merge or cherry-pick that would carry a CGW_LOCAL_FILES entry (CLAUDE.md,
+# MEMORY.md, .claude/, logs/, ...) into shared history is aborted in
+# non-interactive mode (interactive prompts). Set to 1 to allow it.
+CGW_ALLOW_LOCAL_FILES_IN_MERGE=0
 
 # ============================================================================
 # TESTS DIRECTORY CLEANUP (merge_with_validation.sh)

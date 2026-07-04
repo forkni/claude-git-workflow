@@ -126,3 +126,30 @@ teardown() {
   [[ "${output}" == *"--continue"* ]]
   [[ "${output}" == *"Auto-resolved"* ]] || [[ "${output}" == *"auto-resolved"* ]]
 }
+
+# ── local-only file guard (C1) ────────────────────────────────────────────────
+
+# Commit a local-only file (default CGW_LOCAL_FILES: .claude/) on development
+# and echo its hash.
+_commit_local_file_on_dev() {
+  mkdir -p "${TEST_REPO_DIR}/.claude"
+  echo '{}' > "${TEST_REPO_DIR}/.claude/settings.local.json"
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null add .claude/settings.local.json
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: local file commit"
+  git -C "${TEST_REPO_DIR}" rev-parse HEAD
+}
+
+@test "cherry-pick aborts when the commit carries a local-only file" {
+  local bad_commit
+  bad_commit=$(_commit_local_file_on_dev)
+  run run_script cherry_pick_commits.sh --commit "${bad_commit}" --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"local-only file"* ]]
+}
+
+@test "cherry-pick proceeds with CGW_ALLOW_LOCAL_FILES_IN_MERGE=1 despite local-only file" {
+  local bad_commit
+  bad_commit=$(_commit_local_file_on_dev)
+  CGW_ALLOW_LOCAL_FILES_IN_MERGE=1 run run_script cherry_pick_commits.sh --commit "${bad_commit}" --non-interactive
+  [ "${status}" -eq 0 ]
+}

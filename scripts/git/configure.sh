@@ -238,20 +238,20 @@ _build_lint_config() {
         excludes="${excludes} --extend-exclude ${venv_dir}"
       fi
       echo "CGW_LINT_CMD=\"ruff\""
-      echo "CGW_LINT_CHECK_ARGS=\"check .\""
-      echo "CGW_LINT_FIX_ARGS=\"check --fix .\""
+      echo "CGW_LINT_CHECK_ARGS=\"check {files}\""
+      echo "CGW_LINT_FIX_ARGS=\"check --fix {files}\""
       echo "CGW_LINT_EXCLUDES=\"${excludes}\""
       echo "CGW_FORMAT_CMD=\"ruff\""
-      echo "CGW_FORMAT_CHECK_ARGS=\"format --check .\""
-      echo "CGW_FORMAT_FIX_ARGS=\"format .\""
+      echo "CGW_FORMAT_CHECK_ARGS=\"format --check {files}\""
+      echo "CGW_FORMAT_FIX_ARGS=\"format {files}\""
       local fmt_excludes="--exclude logs"
       if [[ -n "${venv_dir}" ]]; then fmt_excludes="${fmt_excludes} --exclude ${venv_dir}"; fi
       echo "CGW_FORMAT_EXCLUDES=\"${fmt_excludes}\""
       ;;
     flake8)
       echo "CGW_LINT_CMD=\"flake8\""
-      echo "CGW_LINT_CHECK_ARGS=\".\""
-      echo "CGW_LINT_FIX_ARGS=\".\"  # flake8 has no auto-fix; use autopep8 manually"
+      echo "CGW_LINT_CHECK_ARGS=\"{files}\""
+      echo "CGW_LINT_FIX_ARGS=\"{files}\"  # flake8 has no auto-fix; use autopep8 manually"
       echo "CGW_LINT_EXCLUDES=\"--exclude logs,.venv\""
       echo "CGW_FORMAT_CMD=\"\"  # set to 'black' or 'autopep8' if available"
       echo "CGW_FORMAT_CHECK_ARGS=\"\""
@@ -260,12 +260,12 @@ _build_lint_config() {
       ;;
     eslint)
       echo "CGW_LINT_CMD=\"eslint\""
-      echo "CGW_LINT_CHECK_ARGS=\".\""
-      echo "CGW_LINT_FIX_ARGS=\". --fix\""
+      echo "CGW_LINT_CHECK_ARGS=\"{files}\""
+      echo "CGW_LINT_FIX_ARGS=\"{files} --fix\""
       echo "CGW_LINT_EXCLUDES=\"\""
       echo "CGW_FORMAT_CMD=\"prettier\""
-      echo "CGW_FORMAT_CHECK_ARGS=\"--check .\""
-      echo "CGW_FORMAT_FIX_ARGS=\"--write .\""
+      echo "CGW_FORMAT_CHECK_ARGS=\"--check {files}\""
+      echo "CGW_FORMAT_FIX_ARGS=\"--write {files}\""
       echo "CGW_FORMAT_EXCLUDES=\"\""
       ;;
     golangci-lint)
@@ -274,11 +274,13 @@ _build_lint_config() {
       echo "CGW_LINT_FIX_ARGS=\"run --fix\""
       echo "CGW_LINT_EXCLUDES=\"\""
       echo "CGW_FORMAT_CMD=\"gofmt\""
-      echo "CGW_FORMAT_CHECK_ARGS=\"-l .\""
-      echo "CGW_FORMAT_FIX_ARGS=\"-w .\""
+      echo "CGW_FORMAT_CHECK_ARGS=\"-l {files}\""
+      echo "CGW_FORMAT_FIX_ARGS=\"-w {files}\""
       echo "CGW_FORMAT_EXCLUDES=\"\""
       ;;
     clang-tidy)
+      # clang-tidy/-format arg shapes keep the legacy form: scoped runs append
+      # files after these flags, which is correct usage for both tools.
       echo "CGW_LINT_CMD=\"clang-tidy\""
       echo "CGW_LINT_CHECK_ARGS=\"-p build\"  # adjust: path to compile_commands.json dir"
       echo "CGW_LINT_FIX_ARGS=\"-p build --fix\""
@@ -310,8 +312,8 @@ _build_lint_config() {
       ;;
     *)
       echo "CGW_LINT_CMD=\"${lint_tool}\""
-      echo "CGW_LINT_CHECK_ARGS=\".\"  # adjust for your tool"
-      echo "CGW_LINT_FIX_ARGS=\".\"    # adjust for your tool"
+      echo "CGW_LINT_CHECK_ARGS=\"{files}\"  # adjust for your tool; {files} = scan target"
+      echo "CGW_LINT_FIX_ARGS=\"{files}\"    # adjust for your tool"
       echo "CGW_LINT_EXCLUDES=\"\""
       echo "CGW_FORMAT_CMD=\"\""
       echo "CGW_FORMAT_CHECK_ARGS=\"\""
@@ -858,6 +860,16 @@ main() {
       echo "# Dev-only files warning for cherry-pick (space-separated; empty = skip)"
       echo "# Example: CGW_DEV_ONLY_FILES=\"tests/ pytest.ini\""
       echo "CGW_DEV_ONLY_FILES=\"\""
+      echo ""
+      echo "# Markdown lint (empty = disabled). ARGS = flags/exclusions only;"
+      echo "# PATHS = whole-repo audit target (commit gate scopes to staged *.md)."
+      echo "# CGW_MARKDOWNLINT_CMD=\"markdownlint-cli2\""
+      echo "# CGW_MARKDOWNLINT_ARGS=\"!CLAUDE.md !MEMORY.md\""
+      echo "# CGW_MARKDOWNLINT_PATHS=\"**/*.md\""
+      echo ""
+      echo "# Allow merge/cherry-pick to carry CGW_LOCAL_FILES into shared history"
+      echo "# (guard aborts non-interactively when 0)"
+      echo "# CGW_ALLOW_LOCAL_FILES_IN_MERGE=\"0\""
       echo ""
       echo "# Remove tests/ from target branch if gitignored (0=disabled, 1=enabled)"
       echo "CGW_CLEANUP_TESTS=\"0\""

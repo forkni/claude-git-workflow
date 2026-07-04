@@ -142,6 +142,109 @@ teardown() {
   "
 }
 
+# ── Centralized runtime-gate defaults (F2) ─────────────────────────────────────
+
+@test "F2: runtime-gate defaults are defined in _config.sh when unset" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    unset CGW_SKIP_LINT CGW_SKIP_MD_LINT CGW_SKIP_TYPECHECK CGW_ALL \
+          CGW_TYPECHECK_CMD CGW_TYPECHECK_CHECK_ARGS CGW_TYPECHECK_EXCLUDES
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"SKIP_LINT=\${CGW_SKIP_LINT}\"
+    echo \"SKIP_MD_LINT=\${CGW_SKIP_MD_LINT}\"
+    echo \"SKIP_TYPECHECK=\${CGW_SKIP_TYPECHECK}\"
+    echo \"ALL=\${CGW_ALL}\"
+    echo \"TC_CMD=[\${CGW_TYPECHECK_CMD}]\"
+    echo \"TC_ARGS=\${CGW_TYPECHECK_CHECK_ARGS}\"
+    echo \"TC_EX=[\${CGW_TYPECHECK_EXCLUDES}]\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"SKIP_LINT=0"* ]]
+  [[ "${output}" == *"SKIP_MD_LINT=0"* ]]
+  [[ "${output}" == *"SKIP_TYPECHECK=0"* ]]
+  [[ "${output}" == *"ALL=0"* ]]
+  [[ "${output}" == *"TC_CMD=[]"* ]]
+  [[ "${output}" == *"TC_ARGS=check"* ]]
+  [[ "${output}" == *"TC_EX=[]"* ]]
+}
+
+@test "F2: an explicitly-set gate value is preserved (+x semantics, not overridden)" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    export CGW_SKIP_LINT=1
+    export CGW_TYPECHECK_CMD=pyrefly
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"SKIP_LINT=\${CGW_SKIP_LINT}\"
+    echo \"TC_CMD=\${CGW_TYPECHECK_CMD}\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"SKIP_LINT=1"* ]]
+  [[ "${output}" == *"TC_CMD=pyrefly"* ]]
+}
+
+# ── Markdown-lint config split (A1) ────────────────────────────────────────────
+
+@test "A1: CGW_MARKDOWNLINT_ARGS defaults to exclusions only; PATHS holds the glob" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    unset CGW_MARKDOWNLINT_ARGS CGW_MARKDOWNLINT_PATHS
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"ARGS=[\${CGW_MARKDOWNLINT_ARGS}]\"
+    echo \"PATHS=[\${CGW_MARKDOWNLINT_PATHS}]\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"ARGS=[!CLAUDE.md !MEMORY.md]"* ]]
+  [[ "${output}" == *"PATHS=[**/*.md]"* ]]
+  # ARGS must not carry a scan glob.
+  [[ "${output}" != *"ARGS=[**"* ]]
+}
+
+@test "A1: legacy conflated CGW_MARKDOWNLINT_ARGS (with glob) warns" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    export CGW_MARKDOWNLINT_ARGS='**/*.md !CLAUDE.md !MEMORY.md'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+  " 2>&1
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"WARNING"* ]]
+  [[ "${output}" == *"CGW_MARKDOWNLINT_PATHS"* ]]
+}
+
+@test "G5: exclusion-only ARGS with glob chars ('!*.tmp') does NOT warn" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    export CGW_MARKDOWNLINT_ARGS='!*.tmp !CLAUDE.md --config .mdlintrc'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+  " 2>&1
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"WARNING: CGW_MARKDOWNLINT_ARGS"* ]]
+}
+
+# ── {files} placeholder defaults (A2+A3) ───────────────────────────────────────
+
+@test "A3: lint/format arg defaults use the {files} placeholder" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    unset CGW_LINT_CHECK_ARGS CGW_LINT_FIX_ARGS CGW_FORMAT_CHECK_ARGS CGW_FORMAT_FIX_ARGS
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"LC=\${CGW_LINT_CHECK_ARGS}\"
+    echo \"LF=\${CGW_LINT_FIX_ARGS}\"
+    echo \"FC=\${CGW_FORMAT_CHECK_ARGS}\"
+    echo \"FF=\${CGW_FORMAT_FIX_ARGS}\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"LC=check {files}"* ]]
+  [[ "${output}" == *"LF=check --fix {files}"* ]]
+  [[ "${output}" == *"FC=format --check {files}"* ]]
+  [[ "${output}" == *"FF=format {files}"* ]]
+}
+
 # ── CGW_ALL_PREFIXES construction ──────────────────────────────────────────────
 
 @test "CGW_ALL_PREFIXES without extras contains base prefixes" {

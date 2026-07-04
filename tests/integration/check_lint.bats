@@ -143,3 +143,25 @@ teardown() {
   "
   [ "${status}" -eq 0 ]
 }
+
+@test "--modified-only scopes to the modified file under a non-default arg shape (A3)" {
+  install_mock_lint
+  echo "x = 1" > "${TEST_REPO_DIR}/mod.py"
+  git -C "${TEST_REPO_DIR}" add mod.py
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: add mod.py"
+  echo "x = 2" > "${TEST_REPO_DIR}/mod.py"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_LINT_CHECK_ARGS='check {files} --no-cache'
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --modified-only
+  "
+  [ "${status}" -eq 0 ]
+  # The linter received the modified file; the {files} placeholder was resolved
+  # (not leaked literally) and did not revert to a whole-repo scan.
+  grep -q "mod.py" "${MOCK_BIN_DIR}/ruff.log"
+  ! grep -q "{files}" "${MOCK_BIN_DIR}/ruff.log"
+}
