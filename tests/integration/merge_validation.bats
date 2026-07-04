@@ -346,3 +346,28 @@ _seed_local_file_on_source() {
   # main advanced (merge happened).
   [ "$(git -C "${TEST_REPO_DIR}" rev-parse main)" != "${before}" ]
 }
+
+# A local-only file added then deleted on the source branch nets to no change
+# in the merge-base..tip tree diff, but --no-ff still carries both commits
+# into shared history — the guard must inspect per-commit touched paths, not
+# just the net diff, to catch this.
+_seed_add_then_delete_local_file_on_source() {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  mkdir -p "${TEST_REPO_DIR}/.claude"
+  echo '{}' > "${TEST_REPO_DIR}/.claude/settings.local.json"
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null add .claude/settings.local.json
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: leak local file"
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null rm --quiet .claude/settings.local.json
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: remove local file"
+}
+
+@test "merge aborts when source added-then-deleted a local-only file" {
+  _seed_add_then_delete_local_file_on_source
+  local before
+  before=$(git -C "${TEST_REPO_DIR}" rev-parse main)
+  run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"local-only file"* ]]
+  # main must not have advanced (no merge commit).
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse main)" = "${before}" ]
+}

@@ -544,7 +544,10 @@ cgw_filter_local_files() {
 #   (which already unstages CGW_LOCAL_FILES) against propagating a local-only
 #   file into shared history. <mode> selects how the incoming change set is
 #   computed; matched paths are reported.
-#     merge        — files changed on <ref> since the merge base (HEAD...<ref>)
+#     merge        — union of files touched by any commit reachable from <ref>
+#                    but not HEAD (HEAD..<ref>), so an add-then-delete on the
+#                    source branch is still caught even though it nets to no
+#                    change in the merge-base..tip tree diff
 #     cherry-pick  — files touched by commit <ref>
 #     amend        — files in commit <ref> (default HEAD)
 #   Returns 0 = proceed (nothing matched, or override set); 1 = abort.
@@ -554,7 +557,7 @@ cgw_guard_incoming_local_files() {
   local mode="$1" ref="${2:-HEAD}"
   local -a incoming=() _src_cmd=()
   case "${mode}" in
-    merge)               _src_cmd=(git diff --name-only "HEAD...${ref}") ;;
+    merge)               _src_cmd=(git log --name-only --pretty=format: "HEAD..${ref}") ;;
     cherry-pick | amend) _src_cmd=(git show --name-only --format= "${ref}") ;;
     *) err "cgw_guard_incoming_local_files: unknown mode '${mode}'"; return 2 ;;
   esac
