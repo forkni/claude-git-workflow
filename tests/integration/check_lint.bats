@@ -110,6 +110,48 @@ teardown() {
   [[ "${output}" == *"FAILED"* ]]
 }
 
+# ── format check is non-blocking (mirrors CI's shfmt continue-on-error) ───────
+# .github/workflows/branch-protection.yml has marked the shfmt step
+# `continue-on-error: true` since that workflow's introduction; a format-only
+# failure here must not flip overall STATUS/exit code, only lint/markdown do.
+
+# ruff mock that discriminates by subcommand: passes "check" (lint), fails
+# "format" (format check) -- isolates the format-only failure path.
+_install_mock_ruff_format_fails() {
+  cat > "${MOCK_BIN_DIR}/ruff" << 'EOF'
+#!/usr/bin/env bash
+echo "mock ruff $*" >> "${0%/*}/ruff.log"
+[[ "$1" == "format" ]] && { echo "1 file would be reformatted"; exit 1; }
+exit 0
+EOF
+  chmod +x "${MOCK_BIN_DIR}/ruff"
+}
+
+@test "format check failure alone does not fail overall exit code" {
+  _install_mock_ruff_format_fails
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_MARKDOWNLINT_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [ "${status}" -eq 0 ]
+}
+
+@test "format check failure alone reports WARN, not FAILED, and overall PASSED" {
+  _install_mock_ruff_format_fails
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_MARKDOWNLINT_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [[ "${output}" == *"WARN"* ]]
+  [[ "${output}" == *"STATUS: PASSED"* ]]
+}
+
 # ── --skip-md-lint ────────────────────────────────────────────────────────────
 
 @test "--skip-md-lint skips markdown lint step" {
