@@ -165,7 +165,7 @@ main() {
   # overall_status or the exit code -- only lint and markdown-lint do.
   local format_start format_end format_duration format_status_str
   format_start=$(date +%s)
-  cgw_run_format_check || format_status=1
+  CGW_FORMAT_CHECK_NONBLOCKING=1 cgw_run_format_check || format_status=1
   format_end=$(date +%s)
   format_duration=$((format_end - format_start))
   if [[ -n "${CGW_FORMAT_CMD}" ]]; then
