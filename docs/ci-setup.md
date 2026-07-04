@@ -59,6 +59,18 @@ shfmt -w -i 2 -ci scripts/
 bats tests/unit/
 bats tests/integration/
 bats tests/unit/ && bats tests/integration/   # full suite
+
+# Or via the parallel runner (recommended locally):
+tests/run.sh                                  # full suite, parallel
+CGW_RUN_SLOW=1 tests/run.sh                   # include slow files (see below)
 ```
 
 Test prerequisites: `bats-core` v1.13.0, `bats-support` v0.3.0, `bats-assert` v2.2.4. A git identity must be configured (`git config user.email` / `user.name`).
+
+`tests/run.sh`'s default full-suite run skips a curated list of slow files
+locally (currently just `tests/unit/common.bats`, ~156s serial — it disables
+within-file parallelization to avoid a `bats --jobs` index.lock race, so it's
+the parallel wall-clock floor). CI always runs the full set (`CI` is set by
+GitHub Actions); set `CGW_RUN_SLOW=1` to include them locally too. Naming a
+file or directory explicitly (e.g. `tests/run.sh tests/unit/common.bats`)
+bypasses the gate.
