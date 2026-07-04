@@ -313,6 +313,11 @@ main() {
   else
     log_section_start "GIT RESET" "$logfile"
 
+    # Tag current HEAD before the destructive hard reset so the discarded state
+    # is recoverable (matches rebase_safe.sh / undo_last.sh). Critical for the
+    # --non-interactive path, which auto-accepts and may fall back to HEAD~1.
+    cgw_create_backup_tag rollback
+
     if run_git_with_logging "GIT RESET HARD" "$logfile" reset --hard "${rollback_target}"; then
       log_section_end "GIT RESET" "$logfile" "0"
       echo "" | tee -a "$logfile"
