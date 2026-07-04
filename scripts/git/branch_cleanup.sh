@@ -34,9 +34,6 @@ main() {
   local prune_remote=0
   local clean_tags=0
   local older_than_days=30
-  local non_interactive=0
-
-  [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -76,7 +73,6 @@ main() {
         shift
         ;;
       --non-interactive)
-        non_interactive=1
         CGW_NON_INTERACTIVE=1
         ;;
       *)

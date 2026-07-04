@@ -133,20 +133,7 @@ main() {
   }
 
   # [1/6] Run validation
-  log_section_start "PRE-CHERRY-PICK VALIDATION" "$logfile"
-
-  if [[ -f "${SCRIPT_DIR}/validate_branches.sh" ]]; then
-    if ! CGW_SOURCE_BRANCH="${src_branch}" CGW_TARGET_BRANCH="${tgt_branch}" \
-      bash "${SCRIPT_DIR}/validate_branches.sh" >>"$logfile" 2>&1; then
-      err_tee "[FAIL] Validation failed - aborting cherry-pick"
-      log_section_end "PRE-CHERRY-PICK VALIDATION" "$logfile" "1"
-      echo "Please fix validation errors before retrying"
-      exit 1
-    fi
-  fi
-
-  echo "[OK] Pre-cherry-pick validation passed" | tee -a "$logfile"
-  log_section_end "PRE-CHERRY-PICK VALIDATION" "$logfile" "0"
+  cgw_run_pre_op_validation "cherry-pick" "${src_branch}" "${tgt_branch}" "$logfile" || exit 1
   echo "" | tee -a "$logfile"
 
   # [2/6] Store current branch and checkout target

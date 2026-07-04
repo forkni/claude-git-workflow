@@ -61,29 +61,17 @@ fi
 # AUTO-DETECTION FUNCTIONS
 # ============================================================================
 
-_detect_target_branch() {
-  # Check git remote HEAD pointer
-  local remote_head
-  remote_head=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
-  if [[ -n "${remote_head}" ]]; then
-    echo "${remote_head}"
-    return 0
-  fi
-  # Check common names
-  if git show-ref --verify --quiet refs/heads/main 2>/dev/null; then
-    echo "main"
-    return 0
-  fi
-  if git show-ref --verify --quiet refs/heads/master 2>/dev/null; then
-    echo "master"
-    return 0
-  fi
-  echo "main"
-}
+# NOTE: target-branch detection lives in _config.sh now (origin/HEAD -> main -> master ->
+# main), because TARGET is a repo-wide fact that every script should get for free at
+# runtime, not something baked into .cgw.conf at install time. CGW_TARGET_BRANCH is
+# already resolved by the time main() runs below (sourced via _common.sh above).
 
 _detect_source_branch() {
-  local target="$1"
-  # Check common source branch names (local first, then remote tracking)
+  # SOURCE is an inherently per-operation choice ("what am I merging"), so we only ever
+  # auto-detect it when a CONFIDENT, canonical dev-family branch exists -- no guessing at
+  # "the most recently committed other branch", and no falling back to the target branch's
+  # own name (that used to silently produce SOURCE == TARGET on single-branch repos).
+  # Single-branch / trunk-based repos get nothing written; --source is explicit per call.
   for name in development develop dev staging; do
     if git show-ref --verify --quiet "refs/heads/${name}" 2>/dev/null; then
       echo "${name}"
@@ -97,15 +85,7 @@ _detect_source_branch() {
       return 0
     fi
   done
-  # Most recently committed branch that isn't target
-  local recent
-  recent=$(git for-each-ref --sort=-committerdate --format='%(refname:short)' refs/heads/ 2>/dev/null |
-    grep -v "^${target}$" | head -1)
-  if [[ -n "${recent}" ]]; then
-    echo "${recent}"
-    return 0
-  fi
-  echo "${target}" # fallback: same branch (will warn later)
+  echo "" # no canonical source branch found -- leave unconfigured
 }
 
 _detect_lint_tool() {
@@ -553,6 +533,10 @@ _install_cc_guardrail() {
   if [[ "${install_mode}" == "global" ]]; then
     hook_dst="${HOME}/.claude/hooks/cc-block-dangerous-git.sh"
     settings_json="${HOME}/.claude/settings.json"
+    # Literal tilde is intentional (SC2088): this string is written verbatim
+    # into settings.json as the hook's "command" value, not executed here --
+    # Claude Code expands it via its own shell when it invokes the hook.
+    # shellcheck disable=SC2088
     hook_cmd="~/.claude/hooks/cc-block-dangerous-git.sh"
   else
     hook_dst="${PROJECT_ROOT}/.claude/hooks/cc-block-dangerous-git.sh"
@@ -560,6 +544,7 @@ _install_cc_guardrail() {
     # Literal double-quotes around $CLAUDE_PROJECT_DIR are intentional:
     # they become JSON-escaped \" in settings.json and are expanded by the shell
     # when Claude Code executes the hook command at runtime.
+    # shellcheck disable=SC2016
     hook_cmd='"$CLAUDE_PROJECT_DIR"/.claude/hooks/cc-block-dangerous-git.sh'
   fi
 
@@ -776,11 +761,11 @@ main() {
   echo "  Detecting branch names, lint tools, typecheck tool, virtual environment, and local-only files..."
   echo ""
 
-  local detected_target
-  detected_target="$(_detect_target_branch)"
+  # Already resolved at source time by _config.sh (origin/HEAD -> main -> master -> main).
+  local detected_target="${CGW_TARGET_BRANCH}"
 
   local detected_source
-  detected_source="$(_detect_source_branch "${detected_target}")"
+  detected_source="$(_detect_source_branch)"
 
   local detected_lint
   detected_lint="$(_detect_lint_tool)"
@@ -797,8 +782,8 @@ main() {
   local _tc_display="${detected_typecheck}"
   [[ "${_tc_display}" == "none-python" ]] && _tc_display="none detected (Tip: pip install pyrefly to enable)"
 
-  echo "  Target branch (stable):  ${detected_target}"
-  echo "  Source branch (dev):     ${detected_source}"
+  echo "  Target branch (stable):  ${detected_target} (auto-detected at runtime, not written to .cgw.conf)"
+  echo "  Source branch (dev):     ${detected_source:-none detected -- pass --source <branch> per invocation}"
   echo "  Lint tool:               ${detected_lint:-none detected}"
   echo "  Typecheck tool:          ${_tc_display:-none detected}"
   echo "  Venv directory:          ${detected_venv:-none found}"
@@ -807,7 +792,6 @@ main() {
 
   # -- Interactive confirmation (only when generating/updating config) ----------
 
-  local target_branch="${detected_target}"
   local source_branch="${detected_source}"
 
   local local_files="${detected_local_files:-CLAUDE.md MEMORY.md .claude/ logs/}"
@@ -822,15 +806,12 @@ main() {
     [[ -n "${conf_local_files}" ]] && local_files="${conf_local_files}"
   fi
 
+  # Branch names are no longer prompted for here: TARGET is auto-detected at runtime
+  # (see _config.sh) and SOURCE is an explicit per-invocation choice (--source flag, or
+  # a manually-added CGW_SOURCE_BRANCH in .cgw.conf) -- not something to guess or confirm
+  # interactively at install time.
   if [[ ${non_interactive} -eq 0 ]] && { [[ ! -f ".cgw.conf" ]] || [[ ${reconfigure} -eq 1 ]]; }; then
     echo "Press Enter to accept [default], or type a different value."
-    echo ""
-    read -e -r -p "Target branch [${target_branch}]: " answer
-    [[ -n "${answer}" && ! "${answer}" =~ ^[Yy]([Ee][Ss])?$ ]] && target_branch="${answer}"
-
-    read -e -r -p "Source branch [${source_branch}]: " answer
-    [[ -n "${answer}" && ! "${answer}" =~ ^[Yy]([Ee][Ss])?$ ]] && source_branch="${answer}"
-
     echo ""
     echo "Local-only files (never committed): ${local_files}"
     read -e -r -p "Add/change local files? (press Enter to keep, or type new list): " answer
@@ -849,10 +830,17 @@ main() {
       echo "# Edit as needed. See cgw.conf.example for all options."
       echo "# This file is git-ignored (.cgw.conf in .gitignore)."
       echo ""
-      echo "# Branch configuration"
-      echo "CGW_SOURCE_BRANCH=\"${source_branch}\""
-      echo "CGW_TARGET_BRANCH=\"${target_branch}\""
-      echo ""
+      # TARGET is intentionally NOT written -- _config.sh auto-detects it at runtime
+      # (origin/HEAD -> main -> master -> main) so it's never stale and never needs
+      # pinning here. SOURCE is written only when a canonical dev-family branch (development/
+      # develop/dev/staging) was confidently detected; single-branch/trunk-based repos get
+      # no branch lines at all -- pass --source <branch> per invocation instead.
+      if [[ -n "${source_branch}" ]]; then
+        echo "# Branch configuration"
+        echo "# (target branch is auto-detected at runtime; not stored here -- see _config.sh)"
+        echo "CGW_SOURCE_BRANCH=\"${source_branch}\""
+        echo ""
+      fi
       echo "# Local-only files (space-separated; never committed)"
       echo "CGW_LOCAL_FILES=\"${local_files}\""
       echo ""
@@ -981,6 +969,9 @@ main() {
     echo "repo-side git hooks — the model cannot bypass it by being asked to skip CGW."
     local install_guardrail
     local guardrail_dest_hint=".claude/settings.json"
+    # Literal tilde is intentional (SC2088): purely a display string in the
+    # prompt below, never expanded or executed.
+    # shellcheck disable=SC2088
     [[ ${global_skill} -eq 1 ]] && guardrail_dest_hint="~/.claude/settings.json"
     if cgw_confirm "Install PreToolUse guardrail to ${guardrail_dest_hint}?" --default yes --non-interactive accept; then
       install_guardrail="yes"
@@ -1003,21 +994,19 @@ main() {
   echo "=== Configuration Complete ==="
   echo ""
   echo "  Config file:    ${PROJECT_ROOT}/.cgw.conf"
-  # When not reconfiguring, show values from existing .cgw.conf rather than detected values
+  # When not reconfiguring, show the value from existing .cgw.conf rather than detected.
+  # Target is never read from .cgw.conf here -- CGW_TARGET_BRANCH is already the fully
+  # resolved runtime value (env > .cgw.conf > auto-detect), sourced above.
   if [[ -f ".cgw.conf" ]] && [[ ${reconfigure} -eq 0 ]]; then
-    local conf_source conf_target
+    local conf_source
     conf_source=$(grep -m1 '^CGW_SOURCE_BRANCH=' .cgw.conf || true)
     conf_source="${conf_source#*=}"
     conf_source="${conf_source//\"/}"
-    conf_target=$(grep -m1 '^CGW_TARGET_BRANCH=' .cgw.conf || true)
-    conf_target="${conf_target#*=}"
-    conf_target="${conf_target//\"/}"
-    echo "  Source branch:  ${conf_source:-${source_branch}}"
-    echo "  Target branch:  ${conf_target:-${target_branch}}"
+    echo "  Source branch:  ${conf_source:-none configured -- pass --source <branch> per invocation}"
   else
-    echo "  Source branch:  ${source_branch}"
-    echo "  Target branch:  ${target_branch}"
+    echo "  Source branch:  ${source_branch:-none configured -- pass --source <branch> per invocation}"
   fi
+  echo "  Target branch:  ${CGW_TARGET_BRANCH} (auto-detected at runtime)"
   if [[ -n "${detected_lint}" ]]; then
     echo "  Lint tool:      ${detected_lint}"
   fi

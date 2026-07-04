@@ -18,6 +18,7 @@
 #   run_tool_with_logging() - Run a tool and capture output to log
 #   run_git_with_logging()  - Run git command with section logging
 #   validate_branch_pair()  - Validate src/tgt branch names and local existence; exit 1 on error
+#   cgw_run_pre_op_validation() - Shared pre-op validate_branches.sh re-invoke + log section; returns 1 on failure
 #   ensure_no_stale_index_lock() - Detect/remove stale .git/index.lock; return 1 if refused/active
 #   cgw_create_backup_tag() - Create pre-<op>-<ts>-<pid> tag; sets $CGW_BACKUP_TAG
 #   cgw_backup_tag_glob()   - Echo glob pattern(s) for backup tag filtering
@@ -28,6 +29,8 @@
 #   cgw_resolve_safe_conflicts() - Auto-resolve DU/DD, emit halt messages; sets CGW_CONFLICT_STATE
 #   cgw_print_conflict_summary() - Print categorised file list from last cgw_classify_conflicts call
 #   cgw_confirm()               - Unified confirmation prompt; handles NI mode, literal tokens, defaults
+#   cgw_default_branch()        - Echo the repo's default branch (origin/HEAD, falls back to CGW_TARGET_BRANCH)
+#   cgw_require_gh()            - Verify gh CLI is installed and authenticated; prints [ERROR] and returns 1 on failure
 
 # SCRIPT_DIR must be set by the caller before sourcing _common.sh:
 #   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -277,6 +280,10 @@ run_git_with_logging() {
 
 validate_branch_pair() {
   local src="${1}" tgt="${2}"
+  if [[ -z "${src}" ]]; then
+    err "No source branch configured. Pass --source <branch>, or set CGW_SOURCE_BRANCH in .cgw.conf."
+    exit 1
+  fi
   if ! git check-ref-format --branch "${src}" 2>/dev/null; then
     err "Invalid source branch name: '${src}'"
     exit 1
@@ -299,6 +306,40 @@ validate_branch_pair() {
   fi
 }
 
+# cgw_run_pre_op_validation <op_label> <src> <tgt> <logfile>
+# Shared pre-operation validation step used by the merge/cherry-pick/docs-merge family:
+# re-invokes validate_branches.sh with the given branch pair via env override (so callers
+# don't need to touch CGW_SOURCE_BRANCH/CGW_TARGET_BRANCH globally), wrapped in a named
+# log section.
+#
+# <op_label> drives both the section name ("PRE-<OP_LABEL> VALIDATION") and the noun used
+# in pass/fail messages ("aborting <op_label>", "Pre-<op_label> validation passed") --
+# e.g. "merge", "cherry-pick", "documentation merge".
+#
+# Returns 0 on pass, 1 on failure. Does NOT exit -- callers own `|| exit 1`, which keeps
+# this testable in isolation (bats can assert the return code without a subshell).
+cgw_run_pre_op_validation() {
+  local op_label="${1}" src="${2}" tgt="${3}" log_path="${4}"
+  local section_name
+  section_name="PRE-$(printf '%s' "${op_label}" | tr '[:lower:]' '[:upper:]') VALIDATION"
+
+  log_section_start "${section_name}" "${log_path}"
+
+  if [[ -f "${SCRIPT_DIR}/validate_branches.sh" ]]; then
+    if ! CGW_SOURCE_BRANCH="${src}" CGW_TARGET_BRANCH="${tgt}" \
+      bash "${SCRIPT_DIR}/validate_branches.sh" >>"${log_path}" 2>&1; then
+      err_tee "[FAIL] Validation failed - aborting ${op_label}"
+      log_section_end "${section_name}" "${log_path}" "1"
+      echo "Please fix validation errors before retrying"
+      return 1
+    fi
+  fi
+
+  echo "[OK] Pre-${op_label} validation passed" | tee -a "${log_path}"
+  log_section_end "${section_name}" "${log_path}" "0"
+  return 0
+}
+
 # cgw_rev_count <base> <tip>
 # Outputs the number of commits reachable from <tip> but not from <base>.
 # Accepts any git ref (branch names, remote-tracking refs, SHAs).
@@ -319,6 +360,46 @@ cgw_remote_reachable() {
 # Accepts a plain branch name; builds refs/heads/ internally.
 cgw_remote_branch_exists() {
   git ls-remote --exit-code "${1}" "refs/heads/${2}" >/dev/null 2>&1
+}
+
+# cgw_default_branch [--refresh]
+# Echoes the repository's default branch name (no remote prefix).
+# Resolution order:
+#   1. ${CGW_REMOTE}/HEAD symbolic ref (set by `git clone`, or `git remote set-head`)
+#   2. CGW_TARGET_BRANCH (config default, e.g. "main") -- used when origin/HEAD is
+#      unset, which is common for repos created via `remote add` + `push` rather
+#      than `git clone` (origin/HEAD is only auto-populated by a clone).
+# Pass --refresh to attempt `git remote set-head ${CGW_REMOTE} --auto` first
+# (requires network access to CGW_REMOTE; failure is silently ignored so this
+# stays usable offline). Returns 0 always.
+cgw_default_branch() {
+  if [[ "${1:-}" == "--refresh" ]]; then
+    git remote set-head "${CGW_REMOTE}" --auto >/dev/null 2>&1 || true
+  fi
+  local ref
+  ref="$(git symbolic-ref --quiet --short "refs/remotes/${CGW_REMOTE}/HEAD" 2>/dev/null)"
+  if [[ -n "${ref}" ]]; then
+    echo "${ref#"${CGW_REMOTE}"/}"
+  else
+    echo "${CGW_TARGET_BRANCH}"
+  fi
+}
+
+# cgw_require_gh
+# Verifies the gh CLI is installed and authenticated.
+# Prints an [ERROR] line via err() and returns 1 on either failure.
+# Silent, returns 0, on success. Callers own any section logging around it
+# (see create_pr.sh, pr_checkout.sh).
+cgw_require_gh() {
+  if ! command -v gh >/dev/null 2>&1; then
+    err "gh CLI not found. Install from https://cli.github.com/"
+    return 1
+  fi
+  if ! gh auth status >/dev/null 2>&1; then
+    err "gh CLI not authenticated. Run: gh auth login"
+    return 1
+  fi
+  return 0
 }
 
 # ensure_no_stale_index_lock - Detect and auto-remove abandoned .git/index.lock files.

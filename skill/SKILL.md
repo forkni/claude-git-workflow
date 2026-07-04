@@ -15,6 +15,7 @@ Ensures all git operations follow established patterns:
 For script flags and environment variables, see [references/script-reference.md](references/script-reference.md).
 For error recovery procedures, see [references/error-recovery.md](references/error-recovery.md).
 For branch rules and merge workflow, see [references/branch-and-merge-rules.md](references/branch-and-merge-rules.md).
+For non-obvious git techniques not covered by a wrapper (pickaxe search, merge-base discovery, back-dated tags, PR diff URLs), see [references/git-recipes.md](references/git-recipes.md).
 When a merge or rebase **stops on a conflict that needs manual resolution** (`UU`, `AA`, `AU`, `UD`, `AD`, `DA`), follow the step-by-step procedure in [references/resolving-merge-conflicts.md](references/resolving-merge-conflicts.md) — investigate both sides' intent, preserve both where compatible, re-run checks, then conclude through the wrapper. **Before touching a hunk:** run `git log --merge -p -- <file>` and `git log --oneline --left-right --merge` to understand which commits on each side caused the conflict. Never blindly `git checkout --ours/--theirs`; resolve by default — abort only to deliberately abandon the operation, not to dodge a difficult conflict.
 
 ## When to use this skill
@@ -189,6 +190,9 @@ Optional flags: --skip-lint (skip all lint), --skip-md-lint (skip markdown lint 
 Typecheck: runs non-blocking in the pre-commit hook when CGW_TYPECHECK_CMD is set (pyrefly is the configured default for this project's Python code) — see script-reference.md.
 
 After commit: verify with git log --oneline -1
+(that single check is enough — skip any git status/diff scan beforehand; commit_enhanced.sh
+already validates lint and protects local-only files internally, regardless of how the request
+is phrased)
 ```
 
 **Merging to target branch** (direct merge, `CGW_MERGE_MODE="direct"`):
@@ -215,6 +219,9 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 ./scripts/git/push_validated.sh --dry-run             # preview
 ./scripts/git/push_validated.sh --skip-lint           # skip lint check entirely
 ./scripts/git/push_validated.sh --no-venv --skip-lint # both
+# One call is enough on its own -- no pre-check and no post-check needed, regardless of
+# urgency or stakes in the request; --force-with-lease + the protected-branch guard already
+# cover what an extra git status/log would verify.
 ```
 
 **Creating a PR** (when `CGW_MERGE_MODE="pr"`):
@@ -395,3 +402,26 @@ be needed.
 ./scripts/git/repo_health.sh                  # integrity check + size report
 ./scripts/git/repo_health.sh --gc             # also run garbage collection
 ```
+
+**Checking what changed on your branch:**
+```bash
+./scripts/git/branch_diff.sh                 # full patch vs the auto-detected default branch
+./scripts/git/branch_diff.sh --files         # changed file names only
+./scripts/git/branch_diff.sh --stat --no-ws  # diffstat, ignoring whitespace
+```
+Read-only; safe with a dirty working tree. Auto-detects `main` vs `master` vs a custom default via `${CGW_REMOTE}/HEAD`, falling back to `CGW_TARGET_BRANCH`.
+
+**Reviewing a PR locally:**
+```bash
+./scripts/git/pr_checkout.sh 42                          # check out PR #42
+./scripts/git/pr_checkout.sh --pr 42 --branch review/pr-42
+```
+Wraps `gh pr checkout`. Requires `gh auth login`. Refuses to switch branches over uncommitted tracked changes unless `--force` is passed — stash first with `stash_work.sh push`.
+
+**Generating/updating a Markdown Table of Contents:**
+```bash
+./scripts/git/md_toc.sh docs/usage.md --insert   # insert/update TOC in place
+./scripts/git/md_toc.sh docs/usage.md --check    # CI: fail if the TOC is stale
+./scripts/git/md_toc.sh --all                    # update every tracked *.md with a <!--ts--> marker
+```
+Computes GitHub-compatible anchor slugs offline — no network access or auth token needed.

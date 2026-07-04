@@ -18,10 +18,15 @@ teardown() {
 
 _run_merge() {
   # PATH is already correct from setup_mock_bin; PROJECT_ROOT pins scripts to TEST_REPO_DIR.
+  # SOURCE has no built-in default (an explicit per-invocation choice -- see _config.sh);
+  # create_test_repo_with_remote always produces a real 'development' branch, so default
+  # to it here the same way a real configure.sh run would. Tests that pass --source
+  # explicitly still override this via their own CLI flag.
   bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_SOURCE_BRANCH='development'
     export CGW_LINT_CMD=''
     export CGW_FORMAT_CMD=''
     export CGW_NON_INTERACTIVE=1
