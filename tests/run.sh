@@ -33,7 +33,14 @@ fi
 mapfile -t _files < <(find "${_targets[@]}" -name "*.bats" | sort)
 
 # Slow-file gate only applies to the default full-suite run — an explicitly
-# named target (file or dir) always runs regardless.
+# named target (file or dir) always runs regardless. _filtered tracks whether
+# anything was actually dropped: when nothing is filtered we hand bats its
+# original directory targets unchanged (see native-jobs branch below) rather
+# than an expanded flat file list, since bats schedules a flat list of files
+# across --jobs workers differently than it does directory args, which was
+# observed to change concurrent-file timing enough to trip an unrelated race
+# in merge_docs.bats on CI.
+_filtered=0
 if [[ "${_default_run}" -eq 1 ]]; then
   _run_slow="${CGW_RUN_SLOW:-0}"
   [[ -n "${CI:-}" ]] && _run_slow=1
@@ -52,6 +59,7 @@ if [[ "${_default_run}" -eq 1 ]]; then
     done
     _files=("${_kept[@]}")
     if [[ ${#_skipped_files[@]} -gt 0 ]]; then
+      _filtered=1
       printf '[run.sh] Skipping %d slow file(s) locally: %s\n' \
         "${#_skipped_files[@]}" "${_skipped_files[*]}" >&2
       printf '[run.sh]   Run with CGW_RUN_SLOW=1 to include them (always run on CI).\n' >&2
@@ -67,7 +75,10 @@ fi
 # bats --jobs requires flock/shlock, which Git Bash on Windows does not provide.
 # Fall back to per-file parallelism via xargs -P when flock is unavailable.
 if command -v flock >/dev/null 2>&1 || command -v shlock >/dev/null 2>&1; then
-  exec bats --jobs "${jobs}" "${_files[@]}"
+  if [[ "${_filtered}" -eq 1 ]]; then
+    exec bats --jobs "${jobs}" "${_files[@]}"
+  fi
+  exec bats --jobs "${jobs}" "${_targets[@]}"
 fi
 
 # ── xargs -P fallback (Windows Git Bash) ──────────────────────────────────────
