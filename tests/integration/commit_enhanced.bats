@@ -282,6 +282,23 @@ _run_commit() {
   [[ "${output}" == *"note v2"* ]]
 }
 
+@test "--only <dir> does not force-add ignored untracked files alongside a tracked one" {
+  mkdir -p "${TEST_REPO_DIR}/docs"
+  echo "note v1" > "${TEST_REPO_DIR}/docs/note.md"
+  git -C "${TEST_REPO_DIR}" add docs/note.md
+  git -C "${TEST_REPO_DIR}" commit -q -m "chore: add note"
+  echo "docs/" > "${TEST_REPO_DIR}/.gitignore"      # dir ignored AFTER note.md tracked
+  echo "note v2" > "${TEST_REPO_DIR}/docs/note.md"
+  echo "junk"   > "${TEST_REPO_DIR}/docs/artifact.log"  # ignored + untracked
+
+  run _run_commit "--skip-lint --only docs/ \"docs: update note\""
+  [ "${status}" -eq 0 ]
+  run git -C "${TEST_REPO_DIR}" show HEAD:docs/note.md
+  [[ "${output}" == *"note v2"* ]]
+  run git -C "${TEST_REPO_DIR}" ls-tree -r --name-only HEAD
+  [[ "${output}" != *"docs/artifact.log"* ]]   # the leak Charlie/Copilot caught
+}
+
 # ── Lint failure / auto-fix ───────────────────────────────────────────────────
 
 @test "lint failure in NI mode exits 1 when errors remain after auto-fix" {

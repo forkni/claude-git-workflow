@@ -279,15 +279,28 @@ main() {
     fi
     local only_path
     for only_path in "${only_paths[@]}"; do
-      local add_flags=()
-      # Already-tracked paths that later became gitignored make plain `git add`
-      # fail ("paths are ignored"); force-add to honor the explicit --only
-      # selection. New untracked paths are left to normal rules so .gitignore
-      # still blocks accidental artifacts.
-      if git ls-files --error-unmatch -- "${only_path}" >/dev/null 2>&1; then
-        add_flags=(-f)
+      local staged_any=0
+      # (a) Force-stage TRACKED files matching the pathspec. These are already
+      # committed, so -f only matters when the path later became gitignored.
+      # Scoping -f to concrete tracked paths (never the raw pathspec) means an
+      # ignored *untracked* artifact under a dir/glob pathspec can never be
+      # force-added alongside it -- .gitignore still protects new files.
+      local tracked_match
+      while IFS= read -r -d '' tracked_match; do
+        if ! git add -f -- "${tracked_match}"; then
+          err "Failed to stage: ${tracked_match}"
+          exit 1
+        fi
+        staged_any=1
+      done < <(git ls-files -z -- "${only_path}")
+      # (b) Stage untracked, non-ignored files matching the pathspec with a
+      # PLAIN add (no -f), so .gitignore still blocks new artifacts. A
+      # pathspec matching only ignored content fails here; that's fine when
+      # (a) already staged the tracked part -- staged_any covers both.
+      if git add -- "${only_path}" 2>/dev/null; then
+        staged_any=1
       fi
-      if ! git add "${add_flags[@]}" -- "${only_path}" 2>&1; then
+      if [[ ${staged_any} -eq 0 ]]; then
         err "Failed to stage: ${only_path}"
         exit 1
       fi

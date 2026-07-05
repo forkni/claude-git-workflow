@@ -148,7 +148,7 @@ EOF
     export CGW_MARKDOWNLINT_CMD=''
     bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
   "
-  [[ "${output}" == *"WARN"* ]]
+  [[ "${output}" =~ Format[[:space:]]+WARN ]]
   [[ "${output}" == *"STATUS: PASSED"* ]]
 }
 
