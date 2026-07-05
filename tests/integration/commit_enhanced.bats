@@ -299,6 +299,13 @@ _run_commit() {
   [[ "${output}" != *"docs/artifact.log"* ]]   # ensure ignored, untracked artifacts aren't staged
 }
 
+@test "--only surfaces git's error text when staging genuinely fails" {
+  run _run_commit "--skip-lint --only does-not-exist.txt \"feat: nope\""
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Failed to stage: does-not-exist.txt"* ]]   # generic message kept
+  [[ "${output}" == *"did not match"* ]]                          # git's actionable text now surfaced
+}
+
 # ── Lint failure / auto-fix ───────────────────────────────────────────────────
 
 @test "lint failure in NI mode exits 1 when errors remain after auto-fix" {

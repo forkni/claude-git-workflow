@@ -294,14 +294,18 @@ main() {
         staged_any=1
       done < <(git ls-files -z -- "${only_path}")
       # (b) Stage untracked, non-ignored files matching the pathspec with a
-      # PLAIN add (no -f), so .gitignore still blocks new artifacts. A
-      # pathspec matching only ignored content fails here; that's fine when
-      # (a) already staged the tracked part -- staged_any covers both.
-      if git add -- "${only_path}" 2>/dev/null; then
+      # PLAIN add (no -f), so .gitignore still blocks new artifacts. Capture
+      # combined output so a genuine failure (e.g. a pathspec that matched
+      # nothing) still surfaces git's actionable message; when (a) already
+      # staged the tracked part, staged_any stays set and this output is
+      # harmlessly discarded.
+      local add_out=""
+      if add_out=$(git add -- "${only_path}" 2>&1); then
         staged_any=1
       fi
       if [[ ${staged_any} -eq 0 ]]; then
         err "Failed to stage: ${only_path}"
+        [[ -n "${add_out}" ]] && err "${add_out}"
         exit 1
       fi
       echo "  + ${only_path}"
