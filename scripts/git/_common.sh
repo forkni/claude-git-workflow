@@ -170,7 +170,7 @@ log_section_start() {
 #              to "FAILED" when unset. PASSED is never overridden.)
 # Arguments: $1 section_name — must match a prior log_section_start call
 #            $2 log_path     — file path to append output to
-#            $3 exit_code    — 0 = PASSED, non-zero = FAILED (or override)
+#            $3 exit_code    — 0 = PASSED, non-zero = FAILED (label may be overridden)
 #            $4 error_count  — optional; reserved for future display (default 0)
 # Returns:   0 always
 log_section_end() {

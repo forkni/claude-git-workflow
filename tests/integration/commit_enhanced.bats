@@ -296,7 +296,7 @@ _run_commit() {
   run git -C "${TEST_REPO_DIR}" show HEAD:docs/note.md
   [[ "${output}" == *"note v2"* ]]
   run git -C "${TEST_REPO_DIR}" ls-tree -r --name-only HEAD
-  [[ "${output}" != *"docs/artifact.log"* ]]   # the leak Charlie/Copilot caught
+  [[ "${output}" != *"docs/artifact.log"* ]]   # ensure ignored, untracked artifacts aren't staged
 }
 
 # ── Lint failure / auto-fix ───────────────────────────────────────────────────

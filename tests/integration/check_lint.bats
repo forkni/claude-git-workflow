@@ -243,3 +243,22 @@ EOF
   grep -q "mod.py" "${MOCK_BIN_DIR}/ruff.log"
   ! grep -q "{files}" "${MOCK_BIN_DIR}/ruff.log"
 }
+
+@test "--modified-only format-only failure is non-blocking (exit 0), mirrors full mode" {
+  _install_mock_ruff_format_fails
+  echo "x = 1" > "${TEST_REPO_DIR}/mod.py"
+  git -C "${TEST_REPO_DIR}" add mod.py
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: add mod.py"
+  echo "x = 2" > "${TEST_REPO_DIR}/mod.py"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=ruff
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --modified-only
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"[FORMAT CHECK]"* ]]
+  [[ "${output}" == *"non-blocking"* ]]
+}
