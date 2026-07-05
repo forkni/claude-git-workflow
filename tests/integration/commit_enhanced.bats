@@ -266,6 +266,46 @@ _run_commit() {
   [[ "${output}" == *"--only requires a pathspec"* ]]
 }
 
+@test "--only stages a tracked file that later became gitignored" {
+  # Track the file first, commit, THEN gitignore its directory.
+  mkdir -p "${TEST_REPO_DIR}/docs"
+  echo "note v1" > "${TEST_REPO_DIR}/docs/note.md"
+  git -C "${TEST_REPO_DIR}" add docs/note.md
+  git -C "${TEST_REPO_DIR}" commit -q -m "chore: add note"
+  echo "docs/" > "${TEST_REPO_DIR}/.gitignore"
+  echo "note v2" > "${TEST_REPO_DIR}/docs/note.md"
+
+  run _run_commit "--skip-lint --only docs/note.md \"docs: update note\""
+  [ "${status}" -eq 0 ]
+  # The updated content is actually in the new commit.
+  run git -C "${TEST_REPO_DIR}" show HEAD:docs/note.md
+  [[ "${output}" == *"note v2"* ]]
+}
+
+@test "--only <dir> does not force-add ignored untracked files alongside a tracked one" {
+  mkdir -p "${TEST_REPO_DIR}/docs"
+  echo "note v1" > "${TEST_REPO_DIR}/docs/note.md"
+  git -C "${TEST_REPO_DIR}" add docs/note.md
+  git -C "${TEST_REPO_DIR}" commit -q -m "chore: add note"
+  echo "docs/" > "${TEST_REPO_DIR}/.gitignore"      # dir ignored AFTER note.md tracked
+  echo "note v2" > "${TEST_REPO_DIR}/docs/note.md"
+  echo "junk"   > "${TEST_REPO_DIR}/docs/artifact.log"  # ignored + untracked
+
+  run _run_commit "--skip-lint --only docs/ \"docs: update note\""
+  [ "${status}" -eq 0 ]
+  run git -C "${TEST_REPO_DIR}" show HEAD:docs/note.md
+  [[ "${output}" == *"note v2"* ]]
+  run git -C "${TEST_REPO_DIR}" ls-tree -r --name-only HEAD
+  [[ "${output}" != *"docs/artifact.log"* ]]   # ensure ignored, untracked artifacts aren't staged
+}
+
+@test "--only surfaces git's error text when staging genuinely fails" {
+  run _run_commit "--skip-lint --only does-not-exist.txt \"feat: nope\""
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Failed to stage: does-not-exist.txt"* ]]   # generic message kept
+  [[ "${output}" == *"did not match"* ]]                          # git's actionable text now surfaced
+}
+
 # ── Lint failure / auto-fix ───────────────────────────────────────────────────
 
 @test "lint failure in NI mode exits 1 when errors remain after auto-fix" {

@@ -121,8 +121,13 @@ main() {
       echo "[FORMAT CHECK]"
       local fmt_check_cmd_args
       fmt_check_cmd_args=$(cgw_strip_path_arg "${CGW_FORMAT_CHECK_ARGS}")
+      # Non-blocking: mirrors full-mode (overall_status gates on lint+markdown
+      # only) and CI's shfmt continue-on-error. A format diff is reported but
+      # never gates the exit code -- only the lint step above does.
       # shellcheck disable=SC2086
-      "${CGW_FORMAT_CMD}" ${fmt_check_cmd_args} $modified_files || EXIT_CODE=1
+      if ! "${CGW_FORMAT_CMD}" ${fmt_check_cmd_args} $modified_files; then
+        echo "[WARN] Format issues found (non-blocking) -- run fix_lint.sh to auto-format"
+      fi
     fi
 
     exit $EXIT_CODE
@@ -159,14 +164,18 @@ main() {
   fi
 
   # FORMAT CHECK
+  # Non-blocking: mirrors the CI workflow's `continue-on-error: true` on the
+  # shfmt step (.github/workflows/branch-protection.yml), present since that
+  # workflow's introduction. A format diff is reported but never gates
+  # overall_status or the exit code -- only lint and markdown-lint do.
   local format_start format_end format_duration format_status_str
   format_start=$(date +%s)
-  cgw_run_format_check || format_status=1
+  CGW_FORMAT_CHECK_NONBLOCKING=1 cgw_run_format_check || format_status=1
   format_end=$(date +%s)
   format_duration=$((format_end - format_start))
   if [[ -n "${CGW_FORMAT_CMD}" ]]; then
     format_status_str="PASSED"
-    [[ ${format_status} -ne 0 ]] && format_status_str="FAILED"
+    [[ ${format_status} -ne 0 ]] && format_status_str="WARN"
     results+=("Format:${format_status_str}:${TOOL_ERROR_COUNT}:${format_duration}")
   fi
 
@@ -192,7 +201,7 @@ main() {
   script_end=$(date +%s)
   total_duration=$((script_end - script_start))
 
-  if [[ $lint_status -eq 0 ]] && [[ $format_status -eq 0 ]] && [[ $md_lint_status -eq 0 ]]; then
+  if [[ $lint_status -eq 0 ]] && [[ $md_lint_status -eq 0 ]]; then
     overall_status="PASSED"
   else
     overall_status="FAILED"

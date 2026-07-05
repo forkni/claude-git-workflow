@@ -25,6 +25,8 @@
 #     (warns about unstaged files that are being left out). Use --all to override.
 #   - If nothing is pre-staged: auto-stages all tracked changes (legacy behavior).
 #   - --only <path>: explicit selection, resets index, stages listed paths only.
+#     Force-stages (git add -f) paths already tracked, so a path that became
+#     gitignored after it was first committed can still be selected explicitly.
 # Returns:
 #   0 on successful commit, 1 on failure
 
@@ -87,7 +89,10 @@ _restage_after_fix() {
     if [[ -n "${originally_staged_files}" ]]; then
       local f
       while IFS= read -r f; do
-        [[ -n "${f}" ]] && git add -- "${f}" 2>/dev/null || true
+        # -f: these paths came from a prior `git diff --cached` snapshot, so
+        # they're already tracked/staged -- force-add survives a .gitignore
+        # added between staging and this re-stage (see --only loop above).
+        [[ -n "${f}" ]] && git add -f -- "${f}" 2>/dev/null || true
       done <<<"${originally_staged_files}"
     fi
   else
@@ -274,8 +279,33 @@ main() {
     fi
     local only_path
     for only_path in "${only_paths[@]}"; do
-      if ! git add -- "${only_path}" 2>&1; then
+      local staged_any=0
+      # (a) Force-stage TRACKED files matching the pathspec. These are already
+      # committed, so -f only matters when the path later became gitignored.
+      # Scoping -f to concrete tracked paths (never the raw pathspec) means an
+      # ignored *untracked* artifact under a dir/glob pathspec can never be
+      # force-added alongside it -- .gitignore still protects new files.
+      local tracked_match
+      while IFS= read -r -d '' tracked_match; do
+        if ! git add -f -- "${tracked_match}"; then
+          err "Failed to stage: ${tracked_match}"
+          exit 1
+        fi
+        staged_any=1
+      done < <(git ls-files -z -- "${only_path}")
+      # (b) Stage untracked, non-ignored files matching the pathspec with a
+      # PLAIN add (no -f), so .gitignore still blocks new artifacts. Capture
+      # combined output so a genuine failure (e.g. a pathspec that matched
+      # nothing) still surfaces git's actionable message; when (a) already
+      # staged the tracked part, staged_any stays set and this output is
+      # harmlessly discarded.
+      local add_out=""
+      if add_out=$(git add -- "${only_path}" 2>&1); then
+        staged_any=1
+      fi
+      if [[ ${staged_any} -eq 0 ]]; then
         err "Failed to stage: ${only_path}"
+        [[ -n "${add_out}" ]] && err "${add_out}"
         exit 1
       fi
       echo "  + ${only_path}"

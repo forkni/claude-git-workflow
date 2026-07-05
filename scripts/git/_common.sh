@@ -165,9 +165,12 @@ log_section_start() {
 
 # log_section_end — print a section footer with elapsed time and PASSED/FAILED status.
 # Globals:   _SECTION_START_TIMES (read — looks up start epoch by section name)
+#            CGW_SECTION_FAIL_LABEL (read, optional — overrides the non-zero
+#              status label, e.g. "WARN" for a non-blocking section; defaults
+#              to "FAILED" when unset. PASSED is never overridden.)
 # Arguments: $1 section_name — must match a prior log_section_start call
 #            $2 log_path     — file path to append output to
-#            $3 exit_code    — 0 = PASSED, non-zero = FAILED
+#            $3 exit_code    — 0 = PASSED, non-zero = FAILED (label may be overridden)
 #            $4 error_count  — optional; reserved for future display (default 0)
 # Returns:   0 always
 log_section_end() {
@@ -187,7 +190,9 @@ log_section_end() {
   if [[ ${exit_code} -eq 0 ]]; then
     status="PASSED"
   else
-    status="FAILED"
+    # Optional caller override (see CGW_SECTION_FAIL_LABEL above), e.g. a
+    # non-blocking section prints "WARN" instead of "FAILED".
+    status="${CGW_SECTION_FAIL_LABEL:-FAILED}"
   fi
 
   echo "[${section_name}] Ended: ${time_str} (${duration}s) - ${status}" | tee -a "${log_path}"
@@ -1043,6 +1048,12 @@ cgw_run_lint_check() {
 # cgw_run_format_check [files...]
 #   Runs ${CGW_FORMAT_CMD} format check. Same file-list and skip conventions as
 #   cgw_run_lint_check. Returns 0 silently when CGW_FORMAT_CMD is unset.
+#   Honors CGW_FORMAT_CHECK_NONBLOCKING=1 (internal knob, not meant to be
+#   exported by users) -- when set, a failing check's log-section footer
+#   reads "WARN" instead of "FAILED" (via CGW_SECTION_FAIL_LABEL below).
+#   The exit code / return value are unaffected either way; callers that
+#   want non-blocking behavior (check_lint.sh) decide that separately by
+#   not gating their own overall_status on this function's return code.
 cgw_run_format_check() {
   if [[ "${CGW_SKIP_LINT:-0}" == "1" ]]; then
     return 0
@@ -1051,6 +1062,9 @@ cgw_run_format_check() {
   get_python_path 2>/dev/null || true
   local format_bin
   format_bin=$(cgw_resolve_lint_binary "${CGW_FORMAT_CMD}")
+  # shellcheck disable=SC2034  # read via dynamic scope by log_section_end
+  local CGW_SECTION_FAIL_LABEL=""
+  [[ "${CGW_FORMAT_CHECK_NONBLOCKING:-0}" == "1" ]] && CGW_SECTION_FAIL_LABEL="WARN"
   if [[ $# -gt 0 ]]; then
     local stripped_args
     stripped_args=$(cgw_strip_path_arg "${CGW_FORMAT_CHECK_ARGS:-}")

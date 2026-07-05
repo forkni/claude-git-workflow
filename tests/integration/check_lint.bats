@@ -110,6 +110,84 @@ teardown() {
   [[ "${output}" == *"FAILED"* ]]
 }
 
+# ── format check is non-blocking (mirrors CI's shfmt continue-on-error) ───────
+# .github/workflows/branch-protection.yml has marked the shfmt step
+# `continue-on-error: true` since that workflow's introduction; a format-only
+# failure here must not flip overall STATUS/exit code, only lint/markdown do.
+
+# ruff mock that discriminates by subcommand: passes "check" (lint), fails
+# "format" (format check) -- isolates the format-only failure path.
+_install_mock_ruff_format_fails() {
+  cat > "${MOCK_BIN_DIR}/ruff" << 'EOF'
+#!/usr/bin/env bash
+echo "mock ruff $*" >> "${0%/*}/ruff.log"
+[[ "$1" == "format" ]] && { echo "1 file would be reformatted"; exit 1; }
+exit 0
+EOF
+  chmod +x "${MOCK_BIN_DIR}/ruff"
+}
+
+@test "format check failure alone does not fail overall exit code" {
+  _install_mock_ruff_format_fails
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_MARKDOWNLINT_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [ "${status}" -eq 0 ]
+}
+
+@test "format check failure alone reports WARN, not FAILED, and overall PASSED" {
+  _install_mock_ruff_format_fails
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_MARKDOWNLINT_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [[ "${output}" =~ Format[[:space:]]+WARN ]]
+  [[ "${output}" == *"STATUS: PASSED"* ]]
+}
+
+# The test above only proves the SUMMARY TABLE says WARN -- that wording comes
+# from check_lint.sh's own aggregation and would pass even without the
+# CGW_SECTION_FAIL_LABEL fix. These two tests exercise the per-step log-section
+# footer (printed by log_section_end via run_tool_with_logging), which is what
+# CGW_SECTION_FAIL_LABEL / CGW_FORMAT_CHECK_NONBLOCKING actually control.
+
+@test "format check failure: per-step FORMAT CHECK line says WARN, not FAILED" {
+  _install_mock_ruff_format_fails
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_MARKDOWNLINT_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  local warn_re='\[FORMAT CHECK\] Ended:.*WARN'
+  local fail_re='\[FORMAT CHECK\] Ended:.*FAILED'
+  [[ "${output}" =~ $warn_re ]]
+  [[ ! "${output}" =~ $fail_re ]]
+}
+
+@test "lint failure: per-step LINT CHECK line still says FAILED (label not globalized)" {
+  MOCK_LINT_EXIT=1 install_mock_lint
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  local fail_re='\[LINT CHECK\] Ended:.*FAILED'
+  [[ "${output}" =~ $fail_re ]]
+}
+
 # ── --skip-md-lint ────────────────────────────────────────────────────────────
 
 @test "--skip-md-lint skips markdown lint step" {
@@ -164,4 +242,23 @@ teardown() {
   # (not leaked literally) and did not revert to a whole-repo scan.
   grep -q "mod.py" "${MOCK_BIN_DIR}/ruff.log"
   ! grep -q "{files}" "${MOCK_BIN_DIR}/ruff.log"
+}
+
+@test "--modified-only format-only failure is non-blocking (exit 0), mirrors full mode" {
+  _install_mock_ruff_format_fails
+  echo "x = 1" > "${TEST_REPO_DIR}/mod.py"
+  git -C "${TEST_REPO_DIR}" add mod.py
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: add mod.py"
+  echo "x = 2" > "${TEST_REPO_DIR}/mod.py"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=ruff
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --modified-only
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"[FORMAT CHECK]"* ]]
+  [[ "${output}" == *"non-blocking"* ]]
 }
