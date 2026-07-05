@@ -134,7 +134,10 @@ teardown() {
 _commit_local_file_on_dev() {
   mkdir -p "${TEST_REPO_DIR}/.claude"
   echo '{}' > "${TEST_REPO_DIR}/.claude/settings.local.json"
-  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null add .claude/settings.local.json
+  # -f: a global gitignore may block this path on some machines (see
+  # check_local_files.bats precedent) -- this helper deliberately seeds a
+  # "leaked" local-only file, so forcing past ignore rules is correct here.
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null add -f .claude/settings.local.json
   git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: local file commit"
   git -C "${TEST_REPO_DIR}" rev-parse HEAD
 }

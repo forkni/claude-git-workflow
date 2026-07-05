@@ -25,6 +25,8 @@
 #     (warns about unstaged files that are being left out). Use --all to override.
 #   - If nothing is pre-staged: auto-stages all tracked changes (legacy behavior).
 #   - --only <path>: explicit selection, resets index, stages listed paths only.
+#     Force-stages (git add -f) paths already tracked, so a path that became
+#     gitignored after it was first committed can still be selected explicitly.
 # Returns:
 #   0 on successful commit, 1 on failure
 
@@ -87,7 +89,10 @@ _restage_after_fix() {
     if [[ -n "${originally_staged_files}" ]]; then
       local f
       while IFS= read -r f; do
-        [[ -n "${f}" ]] && git add -- "${f}" 2>/dev/null || true
+        # -f: these paths came from a prior `git diff --cached` snapshot, so
+        # they're already tracked/staged -- force-add survives a .gitignore
+        # added between staging and this re-stage (see --only loop above).
+        [[ -n "${f}" ]] && git add -f -- "${f}" 2>/dev/null || true
       done <<<"${originally_staged_files}"
     fi
   else
@@ -274,7 +279,15 @@ main() {
     fi
     local only_path
     for only_path in "${only_paths[@]}"; do
-      if ! git add -- "${only_path}" 2>&1; then
+      local add_flags=()
+      # Already-tracked paths that later became gitignored make plain `git add`
+      # fail ("paths are ignored"); force-add to honor the explicit --only
+      # selection. New untracked paths are left to normal rules so .gitignore
+      # still blocks accidental artifacts.
+      if git ls-files --error-unmatch -- "${only_path}" >/dev/null 2>&1; then
+        add_flags=(-f)
+      fi
+      if ! git add "${add_flags[@]}" -- "${only_path}" 2>&1; then
         err "Failed to stage: ${only_path}"
         exit 1
       fi

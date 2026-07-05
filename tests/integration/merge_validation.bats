@@ -327,7 +327,10 @@ _seed_local_file_on_source() {
   git -C "${TEST_REPO_DIR}" checkout --quiet development
   mkdir -p "${TEST_REPO_DIR}/.claude"
   echo '{}' > "${TEST_REPO_DIR}/.claude/settings.local.json"
-  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null add .claude/settings.local.json
+  # -f: a global gitignore may block this path on some machines (see
+  # check_local_files.bats precedent) -- this helper deliberately seeds a
+  # "leaked" local-only file, so forcing past ignore rules is correct here.
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null add -f .claude/settings.local.json
   git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: leak local file"
 }
 
@@ -360,7 +363,8 @@ _seed_add_then_delete_local_file_on_source() {
   git -C "${TEST_REPO_DIR}" checkout --quiet development
   mkdir -p "${TEST_REPO_DIR}/.claude"
   echo '{}' > "${TEST_REPO_DIR}/.claude/settings.local.json"
-  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null add .claude/settings.local.json
+  # -f: see note in _seed_local_file_on_source above.
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null add -f .claude/settings.local.json
   git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: leak local file"
   git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null rm --quiet .claude/settings.local.json
   git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: remove local file"

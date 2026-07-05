@@ -266,6 +266,22 @@ _run_commit() {
   [[ "${output}" == *"--only requires a pathspec"* ]]
 }
 
+@test "--only stages a tracked file that later became gitignored" {
+  # Track the file first, commit, THEN gitignore its directory.
+  mkdir -p "${TEST_REPO_DIR}/docs"
+  echo "note v1" > "${TEST_REPO_DIR}/docs/note.md"
+  git -C "${TEST_REPO_DIR}" add docs/note.md
+  git -C "${TEST_REPO_DIR}" commit -q -m "chore: add note"
+  echo "docs/" > "${TEST_REPO_DIR}/.gitignore"
+  echo "note v2" > "${TEST_REPO_DIR}/docs/note.md"
+
+  run _run_commit "--skip-lint --only docs/note.md \"docs: update note\""
+  [ "${status}" -eq 0 ]
+  # The updated content is actually in the new commit.
+  run git -C "${TEST_REPO_DIR}" show HEAD:docs/note.md
+  [[ "${output}" == *"note v2"* ]]
+}
+
 # ── Lint failure / auto-fix ───────────────────────────────────────────────────
 
 @test "lint failure in NI mode exits 1 when errors remain after auto-fix" {
