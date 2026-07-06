@@ -153,11 +153,11 @@ rm -f .cgw.conf
 
 # Remove Claude Code integration (if installed locally)
 rm -rf .claude/skills/auto-git-workflow/
-rm -f .claude/commands/auto-git-workflow.md
+rm -f .claude/commands/auto-git-workflow-cmd.md
 ```
 
 To remove a globally-installed skill:
 ```bash
 rm -rf ~/.claude/skills/auto-git-workflow/
-rm -f ~/.claude/commands/auto-git-workflow.md
+rm -f ~/.claude/commands/auto-git-workflow-cmd.md
 ```

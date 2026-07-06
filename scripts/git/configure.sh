@@ -427,7 +427,7 @@ _install_skill() {
 
   # Try staging area first (present during install.cmd), then CGW source repo
   if skill_src="$(cd "${SCRIPT_DIR}" && cd "../../skill" 2>/dev/null && pwd)"; then
-    cmd_src="${skill_src}/../command/auto-git-workflow.md"
+    cmd_src="${skill_src}/../command/auto-git-workflow-cmd.md"
   elif [[ -f "${skill_dst}/SKILL.md" ]]; then
     echo "  [OK] Claude Code skill already installed (${install_mode})"
     return 0
@@ -446,7 +446,7 @@ _install_skill() {
 
   if [[ -f "${cmd_src}" ]]; then
     mkdir -p "${cmd_dst}"
-    cp "${cmd_src}" "${cmd_dst}/auto-git-workflow.md" 2>/dev/null || true
+    cp "${cmd_src}" "${cmd_dst}/auto-git-workflow-cmd.md" 2>/dev/null || true
     echo "  [OK] Claude Code skill + slash command installed (${install_mode})"
   else
     echo "  [OK] Claude Code skill installed (${install_mode}, command template not found)"

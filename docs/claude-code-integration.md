@@ -4,7 +4,9 @@
 
 CGW includes a Claude Code **skill** that teaches Claude to use `scripts/git/*.sh` wrapper scripts instead of raw `git` commands. This ensures lint checks, local-file protection, and backup tags are never bypassed when Claude performs git operations.
 
-It also includes a `/auto-git-workflow` **slash command** that runs the full commit → push → merge → push workflow in one step.
+It also includes a `/auto-git-workflow-cmd` **slash command** — an interactive menu covering
+every git operation (commit, push, sync, merge, PR, undo, release, and more), plus a one-click
+"Full promotion" shortcut that runs the full commit → push → merge → push workflow.
 
 ---
 
@@ -12,7 +14,7 @@ It also includes a `/auto-git-workflow` **slash command** that runs the full com
 
 `cgw-install.cmd` (Windows) and `configure.sh` (Unix) install the skill and slash command automatically during project setup.
 
-After installation, Claude Code will automatically enforce the workflow rules — no `/auto-git-workflow` invocation needed for individual operations.
+After installation, Claude Code will automatically enforce the workflow rules — no `/auto-git-workflow-cmd` invocation needed for individual operations.
 
 ---
 
@@ -32,11 +34,11 @@ Use `--global` to install into `~/.claude/` instead, making the skill available 
 
 **Global install locations:**
 - Skill: `~/.claude/skills/auto-git-workflow/`
-- Slash command: `~/.claude/commands/auto-git-workflow.md`
+- Slash command: `~/.claude/commands/auto-git-workflow-cmd.md`
 
 **Local install locations (default):**
 - Skill: `.claude/skills/auto-git-workflow/`
-- Slash command: `.claude/commands/auto-git-workflow.md`
+- Slash command: `.claude/commands/auto-git-workflow-cmd.md`
 
 Note: `.claude/` is git-ignored, so the skill is local to each developer's machine.
 
@@ -49,32 +51,35 @@ If `configure.sh` was run with `--skip-skill`, install manually:
 ```bash
 # Local (project-only)
 cp -r skill/ .claude/skills/auto-git-workflow/
-cp command/auto-git-workflow.md .claude/commands/
+cp command/auto-git-workflow-cmd.md .claude/commands/
 
 # Global (all projects)
 cp -r skill/ ~/.claude/skills/auto-git-workflow/
-cp command/auto-git-workflow.md ~/.claude/commands/
+cp command/auto-git-workflow-cmd.md ~/.claude/commands/
 ```
 
 ---
 
-## Using `/auto-git-workflow`
+## Using `/auto-git-workflow-cmd`
 
-The `/auto-git-workflow` slash command runs the full promotion workflow:
+The `/auto-git-workflow-cmd` slash command opens an interactive menu:
 
-1. Pre-commit validation (branch, lint check)
-2. Commit to source branch
-3. Push source branch
-4. Merge source → target (or create PR, depending on `CGW_MERGE_MODE`)
-5. Push target branch
+1. **⭐ Full promotion** — the full pipeline in one step: pre-commit validation, commit,
+   push source, merge (or create PR, depending on `CGW_MERGE_MODE`), push target
+2. **Commit & Stash**
+3. **Push, Pull & Sync**
+4. **Branch, Merge & PR**
+5. **Undo & Recover**
+6. **Release & Maintain**
 
 Run it in Claude Code:
 
 ```
-/auto-git-workflow
+/auto-git-workflow-cmd
 ```
 
-Claude will execute each step using the wrapper scripts and report results.
+Pick an option (or describe what you want directly instead of picking a number), and
+Claude will execute the matching wrapper script(s) and report results.
 
 ---
 
@@ -96,7 +101,7 @@ the user's request. CGW's description names every wrapper-backed verb explicitly
 (`commit`, `push`, `pull`, `fetch`, `merge`, `rebase`, `cherry-pick`, `rollback`,
 `revert`, `sync`, `stash`, `tag`, `release`, `branch`, `bisect`, `undo`, `amend`).
 Saying any of these in a request to Claude in a CGW-installed project should
-auto-load the skill — no explicit `/auto-git-workflow` invocation needed.
+auto-load the skill — no explicit `/auto-git-workflow-cmd` invocation needed.
 
 If you suspect the skill isn't loading:
 
@@ -104,7 +109,7 @@ If you suspect the skill isn't loading:
 2. If listed but not auto-loading, mention the wrapper script by name in your
    request (e.g. "use commit_enhanced.sh to commit this") — that always pulls
    the skill in.
-3. As a last resort, type `/auto-git-workflow` to force the runner; it links
+3. As a last resort, type `/auto-git-workflow-cmd` to force the router; it links
    back to SKILL.md so the rules load even if auto-invocation missed.
 
 The skill's `description` is intentionally broad. To narrow it (e.g. exclude

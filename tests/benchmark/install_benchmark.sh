@@ -270,7 +270,7 @@ phase_preflight() {
     local skill_ok=1
     [[ -f "${SOURCE_DIR}/skill/SKILL.md" ]] || skill_ok=0
     [[ -d "${SOURCE_DIR}/skill/references" ]] || skill_ok=0
-    [[ -f "${SOURCE_DIR}/command/auto-git-workflow.md" ]] || skill_ok=0
+    [[ -f "${SOURCE_DIR}/command/auto-git-workflow-cmd.md" ]] || skill_ok=0
     ref_count=$(ls "${SOURCE_DIR}/skill/references/"*.md 2>/dev/null | wc -l | tr -d ' ')
     t1=$(_ms); dur=$(( t1 - t0 ))
     if [[ "${skill_ok}" -eq 1 && "${ref_count}" -ge 3 ]]; then
@@ -658,15 +658,15 @@ phase_configure() {
 
     # CF-11: Slash command installed
     t0=$(_ms)
-    local cmd_file="${TARGET_DIR}/.claude/commands/auto-git-workflow.md"
+    local cmd_file="${TARGET_DIR}/.claude/commands/auto-git-workflow-cmd.md"
     t1=$(_ms); dur=$(( t1 - t0 ))
     if [[ -f "${cmd_file}" ]]; then
         verdict="PASS"; notes="slash command available"
     else
-        verdict="WARN"; notes="/auto-git-workflow command not installed"
+        verdict="WARN"; notes="/auto-git-workflow-cmd command not installed"
     fi
     run_check "CF-11" "configure" "Slash command installed (.claude/commands/)" "${verdict}" \
-              "test -f .claude/commands/auto-git-workflow.md" "" "" 0 "${dur}" "${notes}"
+              "test -f .claude/commands/auto-git-workflow-cmd.md" "" "" 0 "${dur}" "${notes}"
 }
 
 # ─── Phase 4: Custom Hooks ────────────────────────────────────────────────────
