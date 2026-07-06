@@ -15,6 +15,6 @@ mkdir -p "$REPO_ROOT/.claude/commands"
 
 cp "$REPO_ROOT/skill/SKILL.md" "$REPO_ROOT/.claude/skills/auto-git-workflow/SKILL.md"
 cp "$REPO_ROOT/skill/references/"*.md "$REPO_ROOT/.claude/skills/auto-git-workflow/references/"
-cp "$REPO_ROOT/command/auto-git-workflow.md" "$REPO_ROOT/.claude/commands/auto-git-workflow.md"
+cp "$REPO_ROOT/command/auto-git-workflow-cmd.md" "$REPO_ROOT/.claude/commands/auto-git-workflow-cmd.md"
 
 echo "Done. Local install matches source."

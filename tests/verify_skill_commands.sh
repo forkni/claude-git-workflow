@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/verify_skill_commands.sh
 # Verify every ./scripts/git/*.sh invocation documented in skill/SKILL.md and
-# command/auto-git-workflow.md against the actual scripts:
+# command/auto-git-workflow-cmd.md against the actual scripts:
 #   1. Every documented script exists.
 #   2. Every --flag on lines that call a given script appears in that script.
 #   3. A set of offline dry-run executions passes against a scratch git repo.
@@ -13,7 +13,7 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DOCS=(
   "$REPO_ROOT/skill/SKILL.md"
-  "$REPO_ROOT/command/auto-git-workflow.md"
+  "$REPO_ROOT/command/auto-git-workflow-cmd.md"
 )
 pass=0
 fail=0
@@ -61,11 +61,15 @@ for script in "${documented_scripts[@]}"; do
   script_path="$REPO_ROOT/scripts/git/$script"
   [[ -f "$script_path" ]] || continue
 
-  # Collect all --flags from lines mentioning this script name in the docs.
-  # Multi-line continuation flags (indented --flag after \) are not captured
-  # here; they are exercised by dry-run runs in section 3.
+  # Collect all --flags from lines that actually INVOKE this script
+  # (i.e. contain "scripts/git/<script>"), not from prose that merely names
+  # it in passing — a bare backtick mention like "conclude with
+  # `commit_enhanced.sh`" or "there is no `--continue` flag" on a line that
+  # happens to also name a different script would otherwise misattribute
+  # that flag. Multi-line continuation flags (indented --flag after \) are
+  # not captured here; they are exercised by dry-run runs in section 3.
   mapfile -t flags < <(
-    grep -h "$script" "${DOCS[@]}" 2>/dev/null |
+    grep -h "scripts/git/$script" "${DOCS[@]}" 2>/dev/null |
       grep -oE -- '--[a-z][a-z_-]+' | sort -u
   )
 
