@@ -17,6 +17,7 @@ For script flags and environment variables, see [references/script-reference.md]
 For error recovery procedures, see [references/error-recovery.md](references/error-recovery.md).
 For branch rules and merge workflow, see [references/branch-and-merge-rules.md](references/branch-and-merge-rules.md).
 For non-obvious git techniques not covered by a wrapper (pickaxe search, merge-base discovery, back-dated tags, PR diff URLs), see [references/git-recipes.md](references/git-recipes.md).
+For the full promotion pipeline (commit → push → merge/PR → push, run by `/auto-git-workflow-cmd` option 1), see [references/full-promotion.md](references/full-promotion.md).
 When a merge or rebase **stops on a conflict that needs manual resolution** (`UU`, `AA`, `AU`, `UD`, `AD`, `DA`), follow the step-by-step procedure in [references/resolving-merge-conflicts.md](references/resolving-merge-conflicts.md) — investigate both sides' intent, preserve both where compatible, re-run checks, then conclude through the wrapper. **Before touching a hunk:** run `git log --merge -p -- <file>` and `git log --oneline --left-right --merge` to understand which commits on each side caused the conflict. Never blindly `git checkout --ours/--theirs`; resolve by default — abort only to deliberately abandon the operation, not to dodge a difficult conflict.
 
 ## When to use this skill

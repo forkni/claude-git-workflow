@@ -14,6 +14,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DOCS=(
   "$REPO_ROOT/skill/SKILL.md"
   "$REPO_ROOT/command/auto-git-workflow-cmd.md"
+  "$REPO_ROOT/skill/references/full-promotion.md"
 )
 pass=0
 fail=0

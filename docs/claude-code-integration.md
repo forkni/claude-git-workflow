@@ -4,8 +4,11 @@
 
 CGW includes a Claude Code **skill** that teaches Claude to use `scripts/git/*.sh` wrapper scripts instead of raw `git` commands. This ensures lint checks, local-file protection, and backup tags are never bypassed when Claude performs git operations.
 
-It also includes a `/auto-git-workflow-cmd` **slash command** — an interactive menu covering
-every git operation (commit, push, sync, merge, PR, undo, release, and more), plus a one-click
+It also includes a `/auto-git-workflow-cmd` **slash command** — a state-aware interactive
+menu covering every git operation (commit, push, sync, merge, PR, undo, release, and more).
+Before showing the menu it scans the repo (uncommitted work, ahead/behind counts,
+in-progress merge/rebase, stashes) and suggests the likely next step — e.g. a dirty tree
+suggests committing, an ahead-only branch suggests pushing. It also offers a one-click
 "Full promotion" shortcut that runs the full commit → push → merge → push workflow.
 
 ---
