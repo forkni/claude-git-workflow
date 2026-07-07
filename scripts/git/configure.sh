@@ -21,18 +21,25 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Detect PROJECT_ROOT before sourcing _common.sh so _config.sh's auto-detection
-# sees it preset and skips its own walk (safe; _config.sh checks [[ -z "${PROJECT_ROOT:-}" ]]).
+# sees it preset and skips its own detection (safe; _config.sh checks
+# [[ -z "${PROJECT_ROOT:-}" ]]). Same resolution order as _config.sh: git's own
+# discovery from the cwd first (the repo being configured), then a walk up from
+# the script location for callers outside any work tree.
 _find_project_root() {
+  local root
+  if root="$(git rev-parse --show-toplevel 2>/dev/null)" && [[ -n "${root}" ]]; then
+    echo "${root}"
+    return 0
+  fi
   local dir
   dir="$(cd "${SCRIPT_DIR}" && pwd)"
   while [[ "${dir}" != "/" ]] && [[ -n "${dir}" ]]; do
-    if [[ -d "${dir}/.git" ]]; then
+    if [[ -e "${dir}/.git" ]]; then
       echo "${dir}"
       return 0
     fi
     dir="$(dirname "${dir}")"
   done
-  git rev-parse --show-toplevel 2>/dev/null && return 0
   return 1
 }
 

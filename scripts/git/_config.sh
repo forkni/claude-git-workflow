@@ -13,24 +13,34 @@
 # ============================================================================
 # PROJECT ROOT AUTO-DETECTION
 # ============================================================================
-# Walk up from SCRIPT_DIR to find the nearest .git/ directory.
-# Works regardless of where scripts/ lives in the project tree.
+# Resolve the repository the caller is standing in, matching git's own
+# discovery (Pro Git ch. 10: with GIT_DIR unset, "Git walks up the directory
+# tree until it gets to ~ or /, looking for a .git directory at every step" —
+# starting from the cwd). The scripts' bare git commands operate on the cwd
+# repo, so config, logs, and backup tags must resolve against that same repo —
+# never against wherever the script files happen to live (symlinked or shared
+# scripts/git installs would otherwise read another repo's .cgw.conf).
 
 _detect_project_root() {
+  local root
+  # Primary: git's own discovery from the cwd. Also handles linked worktrees
+  # and submodules, where .git is a file — invisible to a `-d .git` test.
+  if root="$(git rev-parse --show-toplevel 2>/dev/null)" && [[ -n "${root}" ]]; then
+    echo "${root}"
+    return 0
+  fi
+  # Fallback (cwd outside any work tree): walk up from SCRIPT_DIR, covering
+  # the standard install where scripts/git/ lives inside the project.
   local dir
   dir="$(cd "${SCRIPT_DIR}" && pwd)"
   while [[ "${dir}" != "/" ]] && [[ -n "${dir}" ]]; do
-    if [[ -d "${dir}/.git" ]]; then
+    if [[ -e "${dir}/.git" ]]; then
       echo "${dir}"
       return 0
     fi
     dir="$(dirname "${dir}")"
   done
-  # Fallback: ask git directly
-  if git rev-parse --show-toplevel 2>/dev/null; then
-    return 0
-  fi
-  echo "[ERROR] Cannot find git repository root from ${SCRIPT_DIR}" >&2
+  echo "[ERROR] Cannot find git repository root from ${PWD} or ${SCRIPT_DIR}" >&2
   return 1
 }
 

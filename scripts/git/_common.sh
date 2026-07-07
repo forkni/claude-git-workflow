@@ -3,7 +3,7 @@
 # Usage: source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 #
 # Sourcing this file also sources _config.sh, which:
-#   - Auto-detects PROJECT_ROOT (walks up to find .git/)
+#   - Auto-detects PROJECT_ROOT (git discovery from cwd; SCRIPT_DIR walk fallback)
 #   - Loads .cgw.conf if present
 #   - Applies CGW_* variable defaults
 #

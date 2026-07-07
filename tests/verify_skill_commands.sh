@@ -14,6 +14,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DOCS=(
   "$REPO_ROOT/skill/SKILL.md"
   "$REPO_ROOT/command/auto-git-workflow-cmd.md"
+  "$REPO_ROOT/skill/references/full-promotion.md"
 )
 pass=0
 fail=0
@@ -26,8 +27,11 @@ _fail() { printf "  FAIL  %s\n" "$*" >&2; (( fail++ )) || true; }
 # ─────────────────────────────────────────────────────────────────────────────
 echo "=== 1. Script existence ==="
 
+# Optional "./" prefix: matches both `./scripts/git/foo.sh` (POSIX examples)
+# and `bash scripts/git/foo.sh` (Windows cmd.exe examples), so neither form
+# can drift undetected.
 mapfile -t documented_scripts < <(
-  grep -hoE '\./scripts/git/[a-z_]+\.sh' "${DOCS[@]}" 2>/dev/null |
+  grep -hoE '(\./)?scripts/git/[a-z_]+\.sh' "${DOCS[@]}" 2>/dev/null |
     sed 's|.*/||' | sort -u
 )
 
@@ -118,6 +122,9 @@ ln -s "$REPO_ROOT/scripts/git" scripts/git
 
 _dry() {
   local label="$1"; shift
+  # No PROJECT_ROOT pin: this deliberately exercises _config.sh's cwd-based
+  # repo discovery — the scratch .cgw.conf above must be found even though the
+  # scripts are invoked by their real path outside the scratch repo.
   if CGW_NON_INTERACTIVE=1 bash "$REPO_ROOT/scripts/git/$@" >/dev/null 2>&1; then
     _pass "$label"
   else
