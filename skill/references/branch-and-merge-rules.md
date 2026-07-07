@@ -151,6 +151,10 @@ Never auto-resolve content conflicts — they require human review.
 ```bash
 # Accept deletion:
 git rm <file>
+# If <file> is git-ignored / local-only and you want to keep the on-disk copy,
+# use `git rm --cached <file>` (or `git reset HEAD -- <file>`) instead — plain
+# `git rm` (and especially `git rm -f`) deletes the working-tree copy, which is
+# unrecoverable for anything git-ignored.
 
 # Keep our version:
 git checkout --ours <file> && git add <file>

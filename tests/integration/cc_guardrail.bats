@@ -110,6 +110,25 @@ _run_configure() {
   [ "${status}" -eq 2 ]
 }
 
+@test "blocks git rm -f (working-tree delete)" {
+  _require_jq
+  run _run_guardrail "git rm -f secrets.toe"
+  [ "${status}" -eq 2 ]
+  [[ "${output}" == *"--cached"* ]]
+}
+
+@test "blocks git rm -rf" {
+  _require_jq
+  run _run_guardrail "git rm -rf build/"
+  [ "${status}" -eq 2 ]
+}
+
+@test "blocks git rm --force" {
+  _require_jq
+  run _run_guardrail "git rm --force notes.txt"
+  [ "${status}" -eq 2 ]
+}
+
 # ── Guardrail script: allowed commands ───────────────────────────────────────
 
 @test "allows commit_enhanced.sh" {
@@ -144,6 +163,26 @@ _run_configure() {
 
 @test "allows git commit-graph write" {
   run _run_guardrail "git commit-graph write --reachable"
+  [ "${status}" -eq 0 ]
+}
+
+@test "allows git rm --cached (index-only, keeps working-tree copy)" {
+  run _run_guardrail "git rm --cached CLAUDE.md"
+  [ "${status}" -eq 0 ]
+}
+
+@test "allows git rm -f --cached (cached wins over force)" {
+  run _run_guardrail "git rm -f --cached x"
+  [ "${status}" -eq 0 ]
+}
+
+@test "allows git rm without a force flag (git itself guards dirty/added files)" {
+  run _run_guardrail "git rm stale.py"
+  [ "${status}" -eq 0 ]
+}
+
+@test "allows git rm -f mentioned inside a commit message (quote-stripping)" {
+  run _run_guardrail "./scripts/git/commit_enhanced.sh 'docs: prefer git rm --cached over git rm -f'"
   [ "${status}" -eq 0 ]
 }
 
