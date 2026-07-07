@@ -41,9 +41,9 @@ read-only, safe to combine:
 git fetch --quiet 2>/dev/null || true
 git status --porcelain=v2 --branch
 echo "--- stash ---"; git stash list | head -3
-echo "--- in-progress ---"; ls "$(git rev-parse --git-dir)" 2>/dev/null | grep -E '^(MERGE_HEAD|CHERRY_PICK_HEAD|REVERT_HEAD|BISECT_LOG|rebase-merge|rebase-apply)$'
+echo "--- in-progress ---"; ls "$(git rev-parse --git-dir 2>/dev/null)" 2>/dev/null | grep -E '^(MERGE_HEAD|CHERRY_PICK_HEAD|REVERT_HEAD|BISECT_LOG|rebase-merge|rebase-apply)$'
 echo "--- recent ---"; git log --oneline -3
-echo "--- unmerged-to-target ---"; tgt="$(git symbolic-ref -q --short refs/remotes/${CGW_REMOTE:-origin}/HEAD 2>/dev/null || echo "${CGW_TARGET_BRANCH:-main}")"; git log --oneline "$tgt..HEAD" 2>/dev/null | head -3
+echo "--- unmerged-to-target ---"; tgt="$(git symbolic-ref -q --short "refs/remotes/${CGW_REMOTE:-origin}/HEAD" 2>/dev/null || echo "${CGW_TARGET_BRANCH:-main}")"; git log --oneline "$tgt..HEAD" 2>/dev/null | head -3
 ```
 
 If the fetch fails (offline, no remote), continue — ahead/behind counts may just be
@@ -109,6 +109,8 @@ Read
 [`references/full-promotion.md`](../skills/auto-git-workflow/references/full-promotion.md)
 and execute it: environment detection, then the phased pipeline (validate → commit →
 push source → merge or PR → push target) with each phase as a separate Bash call.
+(Link is relative to the installed layout — `.claude/commands/` next to
+`.claude/skills/auto-git-workflow/` — same as every reference link in this file.)
 
 ---
 

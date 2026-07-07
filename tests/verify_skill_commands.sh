@@ -27,8 +27,11 @@ _fail() { printf "  FAIL  %s\n" "$*" >&2; (( fail++ )) || true; }
 # ─────────────────────────────────────────────────────────────────────────────
 echo "=== 1. Script existence ==="
 
+# Optional "./" prefix: matches both `./scripts/git/foo.sh` (POSIX examples)
+# and `bash scripts/git/foo.sh` (Windows cmd.exe examples), so neither form
+# can drift undetected.
 mapfile -t documented_scripts < <(
-  grep -hoE '\./scripts/git/[a-z_]+\.sh' "${DOCS[@]}" 2>/dev/null |
+  grep -hoE '(\./)?scripts/git/[a-z_]+\.sh' "${DOCS[@]}" 2>/dev/null |
     sed 's|.*/||' | sort -u
 )
 
