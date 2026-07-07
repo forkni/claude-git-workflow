@@ -119,10 +119,10 @@ ln -s "$REPO_ROOT/scripts/git" scripts/git
 
 _dry() {
   local label="$1"; shift
-  # Pin PROJECT_ROOT to the scratch repo: scripts resolve .cgw.conf by walking up
-  # from their own (real) location, which would skip the scratch .cgw.conf above
-  # and silently depend on the host repo's git-ignored .cgw.conf (absent in CI).
-  if CGW_NON_INTERACTIVE=1 PROJECT_ROOT="$SCRATCH" bash "$REPO_ROOT/scripts/git/$@" >/dev/null 2>&1; then
+  # No PROJECT_ROOT pin: this deliberately exercises _config.sh's cwd-based
+  # repo discovery — the scratch .cgw.conf above must be found even though the
+  # scripts are invoked by their real path outside the scratch repo.
+  if CGW_NON_INTERACTIVE=1 bash "$REPO_ROOT/scripts/git/$@" >/dev/null 2>&1; then
     _pass "$label"
   else
     _fail "$label (exit $?)"
