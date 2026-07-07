@@ -66,7 +66,7 @@ No manual config editing required for common setups. `configure.sh` auto-detects
 | `bisect_helper.sh` | Guided git bisect with backup tag, auto-detect good ref, automated test support |
 | `rebase_safe.sh` | Safe rebase: backup tag, pushed-commit guard, abort/continue/skip, autostash |
 | `branch_cleanup.sh` | Prune merged branches, stale remote-tracking refs, and old backup tags |
-| `changelog_generate.sh` | Generate categorized markdown/text changelog from conventional commits |
+| `changelog_generate.sh` | Generate categorized markdown/text changelog from conventional commits; `--version`/`--prepend` build a cumulative `CHANGELOG.md` across releases |
 | `undo_last.sh` | Undo last commit (keep staged), unstage files, discard changes, amend message |
 | `recover.sh` | Reflog browsing, dangling-commit discovery (`git fsck`), and safe branch restore from any SHA |
 | `worktree_manage.sh` | Linked worktree management: list, add, remove (with dry-run default), prune stale admin files |

@@ -364,14 +364,21 @@ Protects `CGW_SOURCE_BRANCH`, `CGW_TARGET_BRANCH`, and `CGW_PROTECTED_BRANCHES` 
 ./scripts/git/changelog_generate.sh --from v1.0.0          # since specific ref
 ./scripts/git/changelog_generate.sh --from v1.0.0 --output CHANGELOG.md
 ./scripts/git/changelog_generate.sh --from v1.0.0 --to v1.1.0 --format text
+
+# Cumulative release changelog: --version supplies the heading before the tag exists;
+# --prepend stacks the new section above the file's existing content (refuses on a duplicate).
+./scripts/git/changelog_generate.sh --from v1.0.0 --version v1.1.0 \
+  --output CHANGELOG.md --prepend
 ```
 
 | Flag | Purpose |
 |------|---------|
 | `--from <ref>` | Start ref, exclusive (default: latest semver tag or root commit) |
 | `--to <ref>` | End ref, inclusive (default: HEAD) |
+| `--version <label>` | Override the section heading (default: exact tag match on `--to`, else its short hash) |
 | `--format <md\|text>` | Output format: `md` (default) or `text` |
 | `--output <file>` | Write to file instead of stdout |
+| `--prepend` | With `--output`, stack above existing file content instead of overwriting (cumulative changelog) |
 | `--include-merges` | Include merge commits (excluded by default) |
 
 Categories recognized: `feat`, `fix`, `docs`, `perf`, `refactor`, `style`, `test`, `chore`, `other`.

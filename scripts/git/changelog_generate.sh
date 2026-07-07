@@ -14,8 +14,14 @@
 # Arguments:
 #   --from <ref>     Start ref (exclusive) -- default: latest semver tag or first commit
 #   --to <ref>       End ref (inclusive) -- default: HEAD
+#   --version <label> Override the section heading (default: exact tag match on --to, else
+#                     its short hash). Use when generating a changelog before the release tag
+#                     exists, e.g. --version v1.2.0.
 #   --format <fmt>   Output format: md (default) or text
 #   --output <file>  Write to file instead of stdout
+#   --prepend        With --output, stack the new section above the file's existing content
+#                     instead of overwriting it (builds a cumulative changelog). Refuses if the
+#                     resolved heading is already present in the file.
 #   --include-merges Include merge commits (default: excluded)
 #   -h, --help       Show help
 # Returns:
@@ -30,9 +36,11 @@ source "${SCRIPT_DIR}/_common.sh"
 main() {
   local from_ref=""
   local to_ref="HEAD"
+  local version_label=""
   local output_format="md"
   local output_file=""
   local include_merges=0
+  local prepend=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -44,8 +52,13 @@ main() {
         echo "Options:"
         echo "  --from <ref>     Start ref (exclusive; default: latest semver tag or root)"
         echo "  --to <ref>       End ref inclusive (default: HEAD)"
+        echo "  --version <label> Override the section heading (default: exact tag match on"
+        echo "                   --to, else its short hash). Use before the release tag exists."
         echo "  --format <fmt>   Output format: md (default) or text"
         echo "  --output <file>  Write to file (default: stdout)"
+        echo "  --prepend        With --output, stack above existing file content instead of"
+        echo "                   overwriting it (cumulative changelog). Refuses on a duplicate"
+        echo "                   heading."
         echo "  --include-merges Also include merge commits (default: skipped)"
         echo "  -h, --help       Show this help"
         echo ""
@@ -57,6 +70,8 @@ main() {
         echo "  ./scripts/git/changelog_generate.sh"
         echo "  ./scripts/git/changelog_generate.sh --from v1.0.0 --to v1.1.0"
         echo "  ./scripts/git/changelog_generate.sh --from v1.0.0 --output CHANGELOG.md"
+        echo "  ./scripts/git/changelog_generate.sh --from v1.0.0 --version v1.1.0 \\"
+        echo "    --output CHANGELOG.md --prepend"
         exit 0
         ;;
       --from)
@@ -67,6 +82,10 @@ main() {
         to_ref="${2:-}"
         shift
         ;;
+      --version)
+        version_label="${2:-}"
+        shift
+        ;;
       --format)
         output_format="${2:-md}"
         shift
@@ -75,6 +94,7 @@ main() {
         output_file="${2:-}"
         shift
         ;;
+      --prepend) prepend=1 ;;
       --include-merges) include_merges=1 ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2
@@ -127,10 +147,16 @@ main() {
     log_range="${to_ref}"
   fi
 
-  # Get to_ref description for header
+  # Get to_ref description for header.  --version overrides the derived value outright --
+  # useful when generating a changelog before the release tag exists (git describe would
+  # otherwise fall back to a commit hash).
   local to_desc
-  to_desc=$(git describe --tags --exact-match "${to_ref}" 2>/dev/null ||
-    git log -1 --format="%h" "${to_ref}" 2>/dev/null || echo "${to_ref}")
+  if [[ -n "${version_label}" ]]; then
+    to_desc="${version_label}"
+  else
+    to_desc=$(git describe --tags --exact-match "${to_ref}" 2>/dev/null ||
+      git log -1 --format="%h" "${to_ref}" 2>/dev/null || echo "${to_ref}")
+  fi
   local to_date
   to_date=$(git log -1 --format="%ad" --date=short "${to_ref}" 2>/dev/null || date +%Y-%m-%d)
 
@@ -228,8 +254,10 @@ main() {
   )
 
   local output=""
+  local heading_line=""
   if [[ "${output_format}" == "md" ]]; then
-    output="## ${to_desc} (${to_date})"$'\n\n'
+    heading_line="## ${to_desc} (${to_date})"
+    output="${heading_line}"$'\n\n'
     [[ -n "${from_ref}" ]] && output+="> Changes since \`${from_ref}\`"$'\n\n'
 
     local has_any=0
@@ -252,7 +280,8 @@ main() {
     done
     [[ ${has_any} -eq 0 ]] && output+="_No categorized commits found in this range._"$'\n'
   else
-    output="${to_desc} (${to_date})"$'\n'
+    heading_line="${to_desc} (${to_date})"
+    output="${heading_line}"$'\n'
     output+="$(printf '=%.0s' {1..40})"$'\n'
     [[ -n "${from_ref}" ]] && output+="Changes since ${from_ref}"$'\n\n'
 
@@ -276,7 +305,21 @@ main() {
 
   # Write output
   if [[ -n "${output_file}" ]]; then
-    echo "${output}" >"${output_file}"
+    if [[ ${prepend} -eq 1 ]] && [[ -f "${output_file}" ]]; then
+      if grep -qF "${heading_line}" "${output_file}" 2>/dev/null; then
+        err "Section '${heading_line}' already present in ${output_file} -- refusing to duplicate"
+        exit 1
+      fi
+      local existing_content
+      existing_content=$(cat "${output_file}")
+      {
+        echo "${output}"
+        echo ""
+        echo "${existing_content}"
+      } >"${output_file}"
+    else
+      echo "${output}" >"${output_file}"
+    fi
     echo "[OK] Changelog written to: ${output_file}" >&2
   else
     echo "${output}"

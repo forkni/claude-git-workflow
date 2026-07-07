@@ -244,6 +244,15 @@ Creates a backup tag (`pre-rebase-<timestamp>-<pid>`) before rebasing. The insta
 ./scripts/git/changelog_generate.sh --from v1.0.0            # since specific tag
 ./scripts/git/changelog_generate.sh --from v1.0.0 --output CHANGELOG.md
 ./scripts/git/changelog_generate.sh --from v1.0.0 --format text  # plain text
+
+# Cutting a release before the tag exists: --version supplies the heading
+# (git describe can't find the tag yet, so it would otherwise fall back to a hash).
+./scripts/git/changelog_generate.sh --from v1.0.0 --version v1.1.0 --output CHANGELOG.md
+
+# --prepend stacks the new section above CHANGELOG.md's existing content instead of
+# overwriting it, building a cumulative history. Refuses if that heading is already present.
+./scripts/git/changelog_generate.sh --from v1.0.0 --version v1.1.0 \
+  --output CHANGELOG.md --prepend
 ```
 
 ### Recover lost commits
