@@ -364,6 +364,11 @@ Once only the wanted paths remain staged, commit through the wrapper:
 ```bash
 ./scripts/git/changelog_generate.sh --from v1.0.0           # since tag → stdout
 ./scripts/git/changelog_generate.sh --from v1.0.0 --output CHANGELOG.md
+
+# At release time, before the new tag exists: --version supplies the heading, and
+# --prepend stacks the new section above CHANGELOG.md's existing content (cumulative).
+./scripts/git/changelog_generate.sh --from v1.0.0 --version v1.1.0 \
+  --output CHANGELOG.md --prepend
 ```
 
 **Stashing work in progress:**

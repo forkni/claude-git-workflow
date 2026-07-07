@@ -92,3 +92,38 @@ teardown() {
   run run_script changelog_generate.sh --from nonexistent-ref-xyz
   [ "${status}" -eq 1 ]
 }
+
+# ── --version ─────────────────────────────────────────────────────────────────
+
+@test "--version overrides heading when to-ref has no exact tag" {
+  run run_script changelog_generate.sh --from v0.1.0 --version v9.9.9
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"## v9.9.9"* ]]
+}
+
+# ── --prepend ─────────────────────────────────────────────────────────────────
+
+@test "--prepend stacks a new section above existing --output content" {
+  run run_script changelog_generate.sh --from v0.1.0 --to HEAD~1 --version v0.2.0 \
+    --output "${TEST_REPO_DIR}/CHANGELOG.md"
+  [ "${status}" -eq 0 ]
+  run run_script changelog_generate.sh --from HEAD~1 --to HEAD --version v0.3.0 \
+    --output "${TEST_REPO_DIR}/CHANGELOG.md" --prepend
+  [ "${status}" -eq 0 ]
+  grep -q "## v0.2.0" "${TEST_REPO_DIR}/CHANGELOG.md"
+  grep -q "## v0.3.0" "${TEST_REPO_DIR}/CHANGELOG.md"
+  # The newer section (v0.3.0) must appear before the older one (v0.2.0).
+  local v3_line v2_line
+  v3_line=$(grep -n "## v0.3.0" "${TEST_REPO_DIR}/CHANGELOG.md" | head -1 | cut -d: -f1)
+  v2_line=$(grep -n "## v0.2.0" "${TEST_REPO_DIR}/CHANGELOG.md" | head -1 | cut -d: -f1)
+  [ "${v3_line}" -lt "${v2_line}" ]
+}
+
+@test "--prepend refuses to duplicate an existing section" {
+  run run_script changelog_generate.sh --from v0.1.0 --version v0.2.0 \
+    --output "${TEST_REPO_DIR}/CHANGELOG.md"
+  [ "${status}" -eq 0 ]
+  run run_script changelog_generate.sh --from v0.1.0 --version v0.2.0 \
+    --output "${TEST_REPO_DIR}/CHANGELOG.md" --prepend
+  [ "${status}" -eq 1 ]
+}
