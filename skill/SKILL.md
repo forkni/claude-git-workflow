@@ -71,6 +71,8 @@ git diff --cached --name-only | grep -E "(CLAUDE\.md|MEMORY\.md|\.claude/|logs/)
 
 `commit_enhanced.sh` automatically unstages all configured local-only files before committing. The pre-commit and pre-push hooks read `CGW_LOCAL_FILES` from `.cgw.conf` at run time, so editing the config takes effect immediately — no need to re-run `configure.sh`.
 
+This protection is **commit-scoped only** — CGW unstages local-only files before a commit, but nothing stops you from *deleting* them from disk. Never run `git rm -f` or `git clean -f` on a local-only or git-ignored path; for git-ignored files this is unrecoverable. See the split cherry-pick recipe below for the safe way to strip unwanted paths.
+
 ### Rule 4: Stale Lock Auto-Recovery
 
 CGW scripts automatically detect and remove stale `.git/index.lock` files left by crashed or killed git processes (the most common Claude Code failure mode). When this happens you will see:
@@ -259,6 +261,29 @@ Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login
 ./scripts/git/cherry_pick_commits.sh --commit abc1234      # non-interactive
 ./scripts/git/cherry_pick_commits.sh --dry-run --commit abc1234
 ./scripts/git/cherry_pick_commits.sh --source feature/hotfix --target release/1.2 --commit abc1234
+```
+
+**Cherry-picking only some files from a commit (split/partial cherry-pick):**
+
+There is no wrapper for this — `cherry_pick_commits.sh` picks the whole commit. To take only
+a subset of files:
+```bash
+git cherry-pick -n <hash>      # stage the commit's changes without auto-committing
+```
+Then strip the paths you don't want, **without deleting anything from disk**:
+```bash
+git reset HEAD -- <unwanted-path>      # unstage, keep the working-tree copy
+# or equivalently:
+git rm --cached <unwanted-path>        # index-only untrack, keep the working-tree copy
+```
+Only use plain `git rm <path>` (no `-f`) for files you genuinely don't want and that are
+recoverable (tracked in some other commit) — git itself will refuse if the file has staged
+changes. **Never run `git rm -f` on a git-ignored or local-only path**: `-f` deletes the
+working-tree copy too, which is unrecoverable for anything git-ignored (the PreToolUse
+guardrail blocks `git rm -f`/`--force` unless `--cached` is present, precisely to catch this).
+Once only the wanted paths remain staged, commit through the wrapper:
+```bash
+./scripts/git/commit_enhanced.sh --only <path> --only <path> "feat: split from <hash>"
 ```
 
 **Merging docs only:**
