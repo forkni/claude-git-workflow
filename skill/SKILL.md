@@ -2,6 +2,7 @@
 name: auto-git-workflow
 description: "Use whenever the user asks for a git operation in this project — commit, push, pull, fetch, merge, rebase, cherry-pick, rollback, revert, sync, stash, tag, release, changelog, worktree, recover/restore lost commits, branch (create/rename/delete/cleanup), bisect, undo, amend, or conflict resolution. Routes work through scripts/git/*.sh wrappers (commit_enhanced.sh, push_validated.sh, merge_with_validation.sh, rollback_merge.sh, cherry_pick_commits.sh, rebase_safe.sh, stash_work.sh, branch_cleanup.sh, bisect_helper.sh, changelog_generate.sh, create_release.sh, create_pr.sh, sync_branches.sh, undo_last.sh, recover.sh, worktree_manage.sh, merge_docs.sh, validate_branches.sh) instead of raw git, so lint validation, local-only file protection, backup tags, and force-push guards are never bypassed."
 allowed-tools: "Bash, Read, Grep"
+user-invocable: false
 ---
 
 # Auto Git Workflow
@@ -15,6 +16,8 @@ Ensures all git operations follow established patterns:
 For script flags and environment variables, see [references/script-reference.md](references/script-reference.md).
 For error recovery procedures, see [references/error-recovery.md](references/error-recovery.md).
 For branch rules and merge workflow, see [references/branch-and-merge-rules.md](references/branch-and-merge-rules.md).
+For non-obvious git techniques not covered by a wrapper (pickaxe search, merge-base discovery, back-dated tags, PR diff URLs), see [references/git-recipes.md](references/git-recipes.md).
+For the full promotion pipeline (commit → push → merge/PR → push, run by `/auto-git-workflow-cmd` option 1), see [references/full-promotion.md](references/full-promotion.md).
 When a merge or rebase **stops on a conflict that needs manual resolution** (`UU`, `AA`, `AU`, `UD`, `AD`, `DA`), follow the step-by-step procedure in [references/resolving-merge-conflicts.md](references/resolving-merge-conflicts.md) — investigate both sides' intent, preserve both where compatible, re-run checks, then conclude through the wrapper. **Before touching a hunk:** run `git log --merge -p -- <file>` and `git log --oneline --left-right --merge` to understand which commits on each side caused the conflict. Never blindly `git checkout --ours/--theirs`; resolve by default — abort only to deliberately abandon the operation, not to dodge a difficult conflict.
 
 ## When to use this skill
@@ -68,6 +71,8 @@ git diff --cached --name-only | grep -E "(CLAUDE\.md|MEMORY\.md|\.claude/|logs/)
 ```
 
 `commit_enhanced.sh` automatically unstages all configured local-only files before committing. The pre-commit and pre-push hooks read `CGW_LOCAL_FILES` from `.cgw.conf` at run time, so editing the config takes effect immediately — no need to re-run `configure.sh`.
+
+This protection is **commit-scoped only** — CGW unstages local-only files before a commit, but nothing stops you from *deleting* them from disk. Never run `git rm -f` or `git clean -f` on a local-only or git-ignored path; for git-ignored files this is unrecoverable. See the split cherry-pick recipe below for the safe way to strip unwanted paths.
 
 ### Rule 4: Stale Lock Auto-Recovery
 
@@ -189,6 +194,9 @@ Optional flags: --skip-lint (skip all lint), --skip-md-lint (skip markdown lint 
 Typecheck: runs non-blocking in the pre-commit hook when CGW_TYPECHECK_CMD is set (pyrefly is the configured default for this project's Python code) — see script-reference.md.
 
 After commit: verify with git log --oneline -1
+(that single check is enough — skip any git status/diff scan beforehand; commit_enhanced.sh
+already validates lint and protects local-only files internally, regardless of how the request
+is phrased)
 ```
 
 **Merging to target branch** (direct merge, `CGW_MERGE_MODE="direct"`):
@@ -215,6 +223,9 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 ./scripts/git/push_validated.sh --dry-run             # preview
 ./scripts/git/push_validated.sh --skip-lint           # skip lint check entirely
 ./scripts/git/push_validated.sh --no-venv --skip-lint # both
+# One call is enough on its own -- no pre-check and no post-check needed, regardless of
+# urgency or stakes in the request; --force-with-lease + the protected-branch guard already
+# cover what an extra git status/log would verify.
 ```
 
 **Creating a PR** (when `CGW_MERGE_MODE="pr"`):
@@ -251,6 +262,29 @@ Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login
 ./scripts/git/cherry_pick_commits.sh --commit abc1234      # non-interactive
 ./scripts/git/cherry_pick_commits.sh --dry-run --commit abc1234
 ./scripts/git/cherry_pick_commits.sh --source feature/hotfix --target release/1.2 --commit abc1234
+```
+
+**Cherry-picking only some files from a commit (split/partial cherry-pick):**
+
+There is no wrapper for this — `cherry_pick_commits.sh` picks the whole commit. To take only
+a subset of files:
+```bash
+git cherry-pick -n <hash>      # stage the commit's changes without auto-committing
+```
+Then strip the paths you don't want, **without deleting anything from disk**:
+```bash
+git reset HEAD -- <unwanted-path>      # unstage, keep the working-tree copy
+# or equivalently:
+git rm --cached <unwanted-path>        # index-only untrack, keep the working-tree copy
+```
+Only use plain `git rm <path>` (no `-f`) for files you genuinely don't want and that are
+recoverable (tracked in some other commit) — git itself will refuse if the file has staged
+changes. **Never run `git rm -f` on a git-ignored or local-only path**: `-f` deletes the
+working-tree copy too, which is unrecoverable for anything git-ignored (the PreToolUse
+guardrail blocks `git rm -f`/`--force` unless `--cached` is present, precisely to catch this).
+Once only the wanted paths remain staged, commit through the wrapper:
+```bash
+./scripts/git/commit_enhanced.sh --only <path> --only <path> "feat: split from <hash>"
 ```
 
 **Merging docs only:**
@@ -395,3 +429,26 @@ be needed.
 ./scripts/git/repo_health.sh                  # integrity check + size report
 ./scripts/git/repo_health.sh --gc             # also run garbage collection
 ```
+
+**Checking what changed on your branch:**
+```bash
+./scripts/git/branch_diff.sh                 # full patch vs the auto-detected default branch
+./scripts/git/branch_diff.sh --files         # changed file names only
+./scripts/git/branch_diff.sh --stat --no-ws  # diffstat, ignoring whitespace
+```
+Read-only; safe with a dirty working tree. Auto-detects `main` vs `master` vs a custom default via `${CGW_REMOTE}/HEAD`, falling back to `CGW_TARGET_BRANCH`.
+
+**Reviewing a PR locally:**
+```bash
+./scripts/git/pr_checkout.sh 42                          # check out PR #42
+./scripts/git/pr_checkout.sh --pr 42 --branch review/pr-42
+```
+Wraps `gh pr checkout`. Requires `gh auth login`. Refuses to switch branches over uncommitted tracked changes unless `--force` is passed — stash first with `stash_work.sh push`.
+
+**Generating/updating a Markdown Table of Contents:**
+```bash
+./scripts/git/md_toc.sh docs/usage.md --insert   # insert/update TOC in place
+./scripts/git/md_toc.sh docs/usage.md --check    # CI: fail if the TOC is stale
+./scripts/git/md_toc.sh --all                    # update every tracked *.md with a <!--ts--> marker
+```
+Computes GitHub-compatible anchor slugs offline — no network access or auth token needed.

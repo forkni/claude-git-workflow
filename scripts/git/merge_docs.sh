@@ -43,7 +43,6 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 main() {
-  local non_interactive=0
   local src_branch="${CGW_SOURCE_BRANCH}"
   local tgt_branch="${CGW_TARGET_BRANCH}"
 
@@ -73,7 +72,6 @@ main() {
         exit 0
         ;;
       --non-interactive)
-        non_interactive=1
         CGW_NON_INTERACTIVE=1
         ;;
       --source)
@@ -100,8 +98,6 @@ main() {
     shift
   done
 
-  [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
-
   validate_branch_pair "${src_branch}" "${tgt_branch}"
 
   {
@@ -121,20 +117,7 @@ main() {
   }
 
   # [1/7] Run validation
-  log_section_start "PRE-MERGE VALIDATION" "$logfile"
-
-  if [[ -f "${SCRIPT_DIR}/validate_branches.sh" ]]; then
-    if ! CGW_SOURCE_BRANCH="${src_branch}" CGW_TARGET_BRANCH="${tgt_branch}" \
-      bash "${SCRIPT_DIR}/validate_branches.sh" >>"$logfile" 2>&1; then
-      err_tee "[FAIL] Validation failed - aborting documentation merge"
-      log_section_end "PRE-MERGE VALIDATION" "$logfile" "1"
-      echo "Please fix validation errors before retrying"
-      exit 1
-    fi
-  fi
-
-  echo "[OK] Pre-merge validation passed" | tee -a "$logfile"
-  log_section_end "PRE-MERGE VALIDATION" "$logfile" "0"
+  cgw_run_pre_op_validation "documentation merge" "${src_branch}" "${tgt_branch}" "$logfile" || exit 1
   echo "" | tee -a "$logfile"
 
   # [2/7] Store current branch and checkout target
@@ -211,6 +194,22 @@ main() {
     git checkout "${original_branch}" >>"$logfile" 2>&1
     exit 1
   fi
+
+  # Exclude local-only files (CGW_LOCAL_FILES) carried in from the source's
+  # docs/ — they must not enter the target's shared history. Each excluded path
+  # is restored to its pre-checkout state: the HEAD version if the target
+  # tracks it, otherwise removed (the checkout above created it).
+  local _local_doc
+  while IFS= read -r _local_doc; do
+    [[ -z "${_local_doc}" ]] && continue
+    echo "[!] Excluding local-only file from docs merge: ${_local_doc}" | tee -a "$logfile"
+    if git cat-file -e "HEAD:${_local_doc}" 2>/dev/null; then
+      git checkout HEAD -- "${_local_doc}" >>"$logfile" 2>&1 || true
+    else
+      git rm --cached --quiet -- "${_local_doc}" >>"$logfile" 2>&1 || true
+      rm -f -- "${_local_doc}"
+    fi
+  done < <(git diff --cached --name-only | cgw_filter_local_files)
 
   if git diff --cached --quiet; then
     echo "" | tee -a "$logfile"

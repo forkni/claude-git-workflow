@@ -89,6 +89,49 @@ EOF
   chmod +x "${MOCK_BIN_DIR}/${cmd_name}"
 }
 
+# install_mock_lint_content_aware
+# Creates a ruff mock whose exit status depends on the FILES it receives: for
+# each real-file argument, if the file contains the marker "LINT-BAD" it fails
+# (exit 1), otherwise it passes. Flags/subcommands are ignored. Lets tests
+# assert the commit gate scans only the staged files (G1 scoping).
+install_mock_lint_content_aware() {
+  cat > "${MOCK_BIN_DIR}/ruff" << 'EOF'
+#!/usr/bin/env bash
+echo "mock ruff $*" >> "${0%/*}/ruff.log"
+rc=0
+for a in "$@"; do
+  [[ "$a" == -* ]] && continue
+  [[ -f "$a" ]] || continue
+  grep -q "LINT-BAD" "$a" && rc=1
+done
+exit $rc
+EOF
+  chmod +x "${MOCK_BIN_DIR}/ruff"
+}
+
+# install_mock_markdownlint_content_aware
+# Creates a markdownlint mock whose exit status depends on the FILES it receives:
+# for each real-file argument, if the file contains the marker "MDLINT-BAD" it
+# fails (exit 1), otherwise it passes. Flag/exclusion tokens (-x, !foo) and glob
+# patterns (**/*.md) are ignored. Lets tests assert that only the intended files
+# are actually scanned (the A1 scoping fix).
+install_mock_markdownlint_content_aware() {
+  local cmd_name="${1:-markdownlint-cli2}"
+  cat > "${MOCK_BIN_DIR}/${cmd_name}" << 'EOF'
+#!/usr/bin/env bash
+echo "mock md $*" >> "${0%/*}/mdlint.log"
+rc=0
+for a in "$@"; do
+  # Skip flags, exclusions, and glob patterns — inspect only concrete files.
+  [[ "$a" == -* || "$a" == !* || "$a" == *'*'* ]] && continue
+  [[ -f "$a" ]] || continue
+  grep -q "MDLINT-BAD" "$a" && rc=1
+done
+exit $rc
+EOF
+  chmod +x "${MOCK_BIN_DIR}/${cmd_name}"
+}
+
 # install_mock_lint_fixable
 # Creates a ruff mock that exits 1 on the first call, then exits 0.
 # Use to test the NI auto-fix path where the fix succeeds.

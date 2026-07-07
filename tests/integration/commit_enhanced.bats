@@ -266,12 +266,53 @@ _run_commit() {
   [[ "${output}" == *"--only requires a pathspec"* ]]
 }
 
+@test "--only stages a tracked file that later became gitignored" {
+  # Track the file first, commit, THEN gitignore its directory.
+  mkdir -p "${TEST_REPO_DIR}/docs"
+  echo "note v1" > "${TEST_REPO_DIR}/docs/note.md"
+  git -C "${TEST_REPO_DIR}" add docs/note.md
+  git -C "${TEST_REPO_DIR}" commit -q -m "chore: add note"
+  echo "docs/" > "${TEST_REPO_DIR}/.gitignore"
+  echo "note v2" > "${TEST_REPO_DIR}/docs/note.md"
+
+  run _run_commit "--skip-lint --only docs/note.md \"docs: update note\""
+  [ "${status}" -eq 0 ]
+  # The updated content is actually in the new commit.
+  run git -C "${TEST_REPO_DIR}" show HEAD:docs/note.md
+  [[ "${output}" == *"note v2"* ]]
+}
+
+@test "--only <dir> does not force-add ignored untracked files alongside a tracked one" {
+  mkdir -p "${TEST_REPO_DIR}/docs"
+  echo "note v1" > "${TEST_REPO_DIR}/docs/note.md"
+  git -C "${TEST_REPO_DIR}" add docs/note.md
+  git -C "${TEST_REPO_DIR}" commit -q -m "chore: add note"
+  echo "docs/" > "${TEST_REPO_DIR}/.gitignore"      # dir ignored AFTER note.md tracked
+  echo "note v2" > "${TEST_REPO_DIR}/docs/note.md"
+  echo "junk"   > "${TEST_REPO_DIR}/docs/artifact.log"  # ignored + untracked
+
+  run _run_commit "--skip-lint --only docs/ \"docs: update note\""
+  [ "${status}" -eq 0 ]
+  run git -C "${TEST_REPO_DIR}" show HEAD:docs/note.md
+  [[ "${output}" == *"note v2"* ]]
+  run git -C "${TEST_REPO_DIR}" ls-tree -r --name-only HEAD
+  [[ "${output}" != *"docs/artifact.log"* ]]   # ensure ignored, untracked artifacts aren't staged
+}
+
+@test "--only surfaces git's error text when staging genuinely fails" {
+  run _run_commit "--skip-lint --only does-not-exist.txt \"feat: nope\""
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Failed to stage: does-not-exist.txt"* ]]   # generic message kept
+  [[ "${output}" == *"did not match"* ]]                          # git's actionable text now surfaced
+}
+
 # ── Lint failure / auto-fix ───────────────────────────────────────────────────
 
 @test "lint failure in NI mode exits 1 when errors remain after auto-fix" {
   install_mock_lint_with_errors
-  echo "bad python" > "${TEST_REPO_DIR}/lint_test.txt"
-  git -C "${TEST_REPO_DIR}" add lint_test.txt
+  # Must be .py: the gate scopes to staged files matching CGW_LINT_EXTENSIONS
+  echo "bad python" > "${TEST_REPO_DIR}/lint_test.py"
+  git -C "${TEST_REPO_DIR}" add lint_test.py
   run _run_commit "\"feat: lint failure test\""
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"quality"* ]] || [[ "${output}" == *"lint"* ]] || \
@@ -280,8 +321,8 @@ _run_commit() {
 
 @test "lint auto-fix succeeds: exits 0 and creates commit" {
   install_mock_lint_fixable
-  echo "fixable content" > "${TEST_REPO_DIR}/fixable.txt"
-  git -C "${TEST_REPO_DIR}" add fixable.txt
+  echo "fixable content" > "${TEST_REPO_DIR}/fixable.py"
+  git -C "${TEST_REPO_DIR}" add fixable.py
   run _run_commit "\"feat: auto-fix succeeds\""
   [ "${status}" -eq 0 ]
   last_msg=$(git -C "${TEST_REPO_DIR}" log -1 --format="%s")
@@ -292,8 +333,8 @@ _run_commit() {
 
 @test "format check failure surfaces FORMAT ERRORS message" {
   install_mock_format_with_errors
-  echo "unformatted" > "${TEST_REPO_DIR}/fmt_test.txt"
-  git -C "${TEST_REPO_DIR}" add fmt_test.txt
+  echo "unformatted" > "${TEST_REPO_DIR}/fmt_test.py"
+  git -C "${TEST_REPO_DIR}" add fmt_test.py
   run bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
@@ -305,6 +346,41 @@ _run_commit() {
     bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'feat: format test'
   "
   [[ "${output}" == *"FORMAT ERRORS"* ]] || [[ "${output}" == *"would reformat"* ]]
+}
+
+# ── Code-quality gate scoping (G1) ────────────────────────────────────────────
+
+@test "lint gate is scoped to staged .py (unrelated dirty .py does not block)" {
+  install_mock_lint_content_aware
+  # Dirty python elsewhere in the tree, but NOT staged for this commit.
+  printf 'LINT-BAD\n' > "${TEST_REPO_DIR}/dirty_unrelated.py"
+  # Clean python, staged.
+  printf 'x = 1\n' > "${TEST_REPO_DIR}/clean_code.py"
+  git -C "${TEST_REPO_DIR}" add clean_code.py
+  run _run_commit "--staged-only \"feat: clean code\""
+  [ "${status}" -eq 0 ]
+  # The dirty unrelated file must never have been handed to the linter.
+  ! grep -q "dirty_unrelated.py" "${MOCK_BIN_DIR}/ruff.log"
+}
+
+@test "lint gate fails when a staged .py has a violation (content-aware)" {
+  install_mock_lint_content_aware
+  printf 'LINT-BAD\n' > "${TEST_REPO_DIR}/bad_code.py"
+  git -C "${TEST_REPO_DIR}" add bad_code.py
+  run _run_commit "--staged-only \"feat: bad staged code\""
+  [ "${status}" -eq 1 ]
+}
+
+@test "code-quality step is skipped when no staged files match CGW_LINT_EXTENSIONS" {
+  install_mock_lint
+  printf 'LINT-BAD\n' > "${TEST_REPO_DIR}/unstaged_dirty.py"  # dirty but unstaged
+  echo "notes" > "${TEST_REPO_DIR}/notes.txt"
+  git -C "${TEST_REPO_DIR}" add notes.txt
+  run _run_commit "--staged-only \"chore: non-python commit\""
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"no staged files matching"* ]]
+  # Linter never invoked → no log file created.
+  [ ! -f "${MOCK_BIN_DIR}/ruff.log" ]
 }
 
 # ── Markdownlint ──────────────────────────────────────────────────────────────
@@ -345,6 +421,68 @@ _run_commit() {
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"Markdown lint"* ]] || [[ "${output}" == *"markdown"* ]] || \
     [[ "${output}" == *"MARKDOWN"* ]]
+}
+
+# ── markdown lint scoping (A1) ────────────────────────────────────────────────
+
+@test "markdown lint is scoped to staged .md (unrelated dirty .md does not block)" {
+  install_mock_markdownlint_content_aware
+  # Dirty markdown elsewhere in the tree, but NOT staged for this commit.
+  printf 'MDLINT-BAD\n' > "${TEST_REPO_DIR}/dirty_unrelated.md"
+  # Clean markdown, staged.
+  printf 'clean\n' > "${TEST_REPO_DIR}/clean_doc.md"
+  git -C "${TEST_REPO_DIR}" add clean_doc.md
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD='markdownlint-cli2'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'docs: add clean doc'
+  "
+  [ "${status}" -eq 0 ]
+  # The dirty unrelated file must never have been handed to the linter.
+  ! grep -q "dirty_unrelated.md" "${MOCK_BIN_DIR}/mdlint.log"
+}
+
+@test "markdown lint fails when a staged .md has a violation (content-aware)" {
+  install_mock_markdownlint_content_aware
+  printf 'MDLINT-BAD\n' > "${TEST_REPO_DIR}/bad_doc.md"
+  git -C "${TEST_REPO_DIR}" add bad_doc.md
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD='markdownlint-cli2'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'docs: bad staged md'
+  "
+  [ "${status}" -eq 1 ]
+}
+
+@test "markdown lint step is skipped when no .md files are staged" {
+  install_mock_markdownlint_content_aware
+  printf 'MDLINT-BAD\n' > "${TEST_REPO_DIR}/unstaged.md"  # dirty but unstaged
+  echo "code" > "${TEST_REPO_DIR}/code.txt"
+  git -C "${TEST_REPO_DIR}" add code.txt
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD='markdownlint-cli2'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'feat: code only'
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"no staged .md files"* ]]
+  # Linter never invoked → no log file created.
+  [ ! -f "${MOCK_BIN_DIR}/mdlint.log" ]
 }
 
 # ── --no-venv flag ────────────────────────────────────────────────────────────

@@ -25,6 +25,8 @@
 #     (warns about unstaged files that are being left out). Use --all to override.
 #   - If nothing is pre-staged: auto-stages all tracked changes (legacy behavior).
 #   - --only <path>: explicit selection, resets index, stages listed paths only.
+#     Force-stages (git add -f) paths already tracked, so a path that became
+#     gitignored after it was first committed can still be selected explicitly.
 # Returns:
 #   0 on successful commit, 1 on failure
 
@@ -87,7 +89,10 @@ _restage_after_fix() {
     if [[ -n "${originally_staged_files}" ]]; then
       local f
       while IFS= read -r f; do
-        [[ -n "${f}" ]] && git add -- "${f}" 2>/dev/null || true
+        # -f: these paths came from a prior `git diff --cached` snapshot, so
+        # they're already tracked/staged -- force-add survives a .gitignore
+        # added between staging and this re-stage (see --only loop above).
+        [[ -n "${f}" ]] && git add -f -- "${f}" 2>/dev/null || true
       done <<<"${originally_staged_files}"
     fi
   else
@@ -262,11 +267,45 @@ main() {
   # Apply --only: reset index and stage only the listed paths
   if [[ ${#only_paths[@]} -gt 0 ]]; then
     echo "[--only] Resetting index and staging ${#only_paths[@]} path(s)..."
-    git reset HEAD >/dev/null 2>&1 || true
+    # Reset only when HEAD exists. An unborn HEAD (fresh repo, no commits) has
+    # nothing to reset, so skip. A real reset failure (e.g. stale index.lock)
+    # must abort — swallowing it would let pre-staged extras ride along, breaking
+    # the --only contract of "reset, then stage exactly these paths".
+    if git rev-parse --verify -q HEAD >/dev/null; then
+      if ! git reset HEAD >/dev/null 2>&1; then
+        err "--only: failed to reset index (stale index.lock?); aborting to avoid committing unintended files"
+        exit 1
+      fi
+    fi
     local only_path
     for only_path in "${only_paths[@]}"; do
-      if ! git add -- "${only_path}" 2>&1; then
+      local staged_any=0
+      # (a) Force-stage TRACKED files matching the pathspec. These are already
+      # committed, so -f only matters when the path later became gitignored.
+      # Scoping -f to concrete tracked paths (never the raw pathspec) means an
+      # ignored *untracked* artifact under a dir/glob pathspec can never be
+      # force-added alongside it -- .gitignore still protects new files.
+      local tracked_match
+      while IFS= read -r -d '' tracked_match; do
+        if ! git add -f -- "${tracked_match}"; then
+          err "Failed to stage: ${tracked_match}"
+          exit 1
+        fi
+        staged_any=1
+      done < <(git ls-files -z -- "${only_path}")
+      # (b) Stage untracked, non-ignored files matching the pathspec with a
+      # PLAIN add (no -f), so .gitignore still blocks new artifacts. Capture
+      # combined output so a genuine failure (e.g. a pathspec that matched
+      # nothing) still surfaces git's actionable message; when (a) already
+      # staged the tracked part, staged_any stays set and this output is
+      # harmlessly discarded.
+      local add_out=""
+      if add_out=$(git add -- "${only_path}" 2>&1); then
+        staged_any=1
+      fi
+      if [[ ${staged_any} -eq 0 ]]; then
         err "Failed to stage: ${only_path}"
+        [[ -n "${add_out}" ]] && err "${add_out}"
         exit 1
       fi
       echo "  + ${only_path}"
@@ -373,9 +412,22 @@ main() {
   if [[ ${skip_lint} -eq 1 ]]; then
     echo "  (all lint checks skipped -- --skip-lint)"
   else
+    # Scope code-quality checks to the staged files being committed. A bare call
+    # scans the whole repo, so an unrelated file's lint error blocks the commit
+    # and (worse) non-interactive auto-fix rewrites files outside the commit.
+    local -a staged_lint=()
+    local lint_f
+    while IFS= read -r lint_f; do
+      [[ -n "${lint_f}" ]] && staged_lint+=("${lint_f}")
+    done < <(cgw_staged_files_for_lint)
+
     local lint_error=0 format_error=0
-    cgw_run_lint_check || lint_error=1
-    cgw_run_format_check || format_error=1
+    if [[ ${#staged_lint[@]} -eq 0 ]]; then
+      echo "  (code quality checks skipped -- no staged files matching ${CGW_LINT_EXTENSIONS:-*.py})"
+    else
+      cgw_run_lint_check "${staged_lint[@]}" || lint_error=1
+      cgw_run_format_check "${staged_lint[@]}" || format_error=1
+    fi
 
     local python_lint_error=$((lint_error | format_error))
 
@@ -383,13 +435,13 @@ main() {
       echo "[!] Code quality errors detected"
       if [[ ${non_interactive} -eq 1 ]]; then
         echo "[Non-interactive] Auto-fixing code quality issues..."
-        cgw_run_lint_fix
+        cgw_run_lint_fix "${staged_lint[@]}"
         _restage_after_fix "${effective_staged_only}" "${originally_staged_files}"
 
-        # Re-check after fix
+        # Re-check after fix (same staged scope)
         python_lint_error=0
-        cgw_run_lint_check || python_lint_error=1
-        cgw_run_format_check || python_lint_error=1
+        cgw_run_lint_check "${staged_lint[@]}" || python_lint_error=1
+        cgw_run_format_check "${staged_lint[@]}" || python_lint_error=1
 
         if [[ ${python_lint_error} -eq 1 ]]; then
           err "Code quality errors remain after auto-fix"
@@ -399,7 +451,7 @@ main() {
         read -rp "Auto-fix code quality issues? (yes/no/skip): " fix_lint
         case "${fix_lint}" in
           yes | y)
-            cgw_run_lint_fix
+            cgw_run_lint_fix "${staged_lint[@]}"
             _restage_after_fix "${effective_staged_only}" "${originally_staged_files}"
             ;;
           skip | s)
@@ -415,14 +467,27 @@ main() {
       echo "[OK] Code quality checks passed"
     fi
 
-    # Markdown lint step (skipped if --skip-md-lint or CGW_MARKDOWNLINT_CMD not set)
+    # Markdown lint step (skipped if --skip-md-lint or CGW_MARKDOWNLINT_CMD not set).
+    # Scope to staged *.md only — a code-only commit must not be blocked by a
+    # markdown violation in an unrelated file elsewhere in the repo. Local-only
+    # files (CLAUDE.md/MEMORY.md) are already unstaged above, so they won't appear.
     if [[ ${skip_md_lint} -eq 0 ]]; then
-      local md_lint_error=0
-      cgw_run_markdownlint_check || md_lint_error=1
-      if [[ ${md_lint_error} -eq 1 ]]; then
-        echo "[!] Markdown lint errors detected"
-        if ! cgw_confirm "Proceed despite markdown lint errors?" --non-interactive abort; then
-          exit 1
+      local -a staged_md=()
+      local md_f
+      while IFS= read -r md_f; do
+        [[ -n "${md_f}" ]] && staged_md+=("${md_f}")
+      done < <(cgw_staged_files_for_md)
+
+      if [[ ${#staged_md[@]} -eq 0 ]]; then
+        echo "  (markdown lint skipped -- no staged .md files)"
+      else
+        local md_lint_error=0
+        cgw_run_markdownlint_check "${staged_md[@]}" || md_lint_error=1
+        if [[ ${md_lint_error} -eq 1 ]]; then
+          echo "[!] Markdown lint errors detected"
+          if ! cgw_confirm "Proceed despite markdown lint errors?" --non-interactive abort; then
+            exit 1
+          fi
         fi
       fi
     elif [[ ${skip_md_lint} -eq 1 ]]; then

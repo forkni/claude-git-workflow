@@ -38,15 +38,19 @@ fi
 
 echo "  No local-only files detected"
 
-# Optional: lint check for staged files using CGW_LINT_CMD (non-blocking)
+# STAGED_FILES gates the typecheck block below (any staged file at all).
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
 
-if [[ -n "${STAGED_FILES}" ]] && [[ -n "${CGW_LINT_CMD:-}" ]]; then
+# Optional: lint check for staged files using CGW_LINT_CMD (non-blocking).
+# Scope to CGW_LINT_EXTENSIONS (default *.py) so the linter is never handed
+# .h/.cpp/.md files it would parse as Python and reject. Mirrors commit_enhanced.sh.
+mapfile -t LINT_FILES < <(cgw_staged_files_for_lint)
+
+if (( ${#LINT_FILES[@]} > 0 )) && [[ -n "${CGW_LINT_CMD:-}" ]]; then
   echo ""
   echo "Checking lint (non-blocking)..."
   logfile=/dev/null
-  # shellcheck disable=SC2086  # STAGED_FILES intentionally word-split into separate file args
-  if cgw_run_lint_check ${STAGED_FILES} >/dev/null 2>&1; then
+  if cgw_run_lint_check "${LINT_FILES[@]}" >/dev/null 2>&1; then
     echo "  [PASS] Lint check passed"
   else
     echo "  [WARN] Lint issues found in staged files"
@@ -56,7 +60,7 @@ if [[ -n "${STAGED_FILES}" ]] && [[ -n "${CGW_LINT_CMD:-}" ]]; then
 fi
 
 # Optional: typecheck using CGW_TYPECHECK_CMD (non-blocking)
-if [[ -n "${STAGED_FILES}" ]] && [[ -n "${CGW_TYPECHECK_CMD:-}" ]]; then
+if [[ -n "${STAGED_FILES}" ]] && [[ -n "${CGW_TYPECHECK_CMD:-}" ]] && [[ "${CGW_SKIP_TYPECHECK:-0}" != "1" ]]; then
   echo ""
   echo "Checking types (non-blocking)..."
   logfile=/dev/null

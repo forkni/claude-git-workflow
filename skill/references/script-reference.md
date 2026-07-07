@@ -1,7 +1,7 @@
 # Script Reference
 
 ## Contents
-- All Available Scripts (commit, lint, branch management, push, sync, setup)
+- All Available Scripts (commit, lint, branch management, push, sync, setup, repository inspection)
 - Environment Variables
 - Configuration (.cgw.conf)
 
@@ -442,6 +442,64 @@ Runs `git fetch ${CGW_REMOTE}` then `git pull --rebase` on each target.
 
 ---
 
+## Repository Inspection & Documentation
+
+**`branch_diff.sh`** — Diff the current branch against the auto-detected default branch
+```bash
+./scripts/git/branch_diff.sh                 # full patch vs default branch
+./scripts/git/branch_diff.sh --files         # changed file names only (like git-tools' brfiles)
+./scripts/git/branch_diff.sh --stat --no-ws  # diffstat, ignoring whitespace
+./scripts/git/branch_diff.sh --base release/1.2
+```
+
+| Flag | Purpose |
+|------|---------|
+| *(no flags)* | Full patch (triple-dot diff: `<base>...HEAD`) |
+| `--files` | List changed file names only |
+| `--stat` | Show a diffstat summary |
+| `--no-ws`, `-w` | Ignore whitespace-only differences |
+| `--base <ref>` | Compare against an explicit ref instead of auto-detecting |
+| `--refresh` | Run `git remote set-head <remote> --auto` first (needs network access) |
+
+Read-only; safe with a dirty working tree. Default branch resolves via `${CGW_REMOTE}/HEAD`, falling back to `CGW_TARGET_BRANCH` when origin/HEAD is unset (common for repos set up via `remote add` + `push` rather than `git clone`).
+
+**`pr_checkout.sh`** — Check out a GitHub PR locally for review
+```bash
+./scripts/git/pr_checkout.sh 42
+./scripts/git/pr_checkout.sh --pr 42 --branch review/pr-42
+./scripts/git/pr_checkout.sh 42 --dry-run
+```
+
+| Flag | Purpose |
+|------|---------|
+| `<PR-number>` | PR number to check out (positional, or `--pr <N>`) |
+| `--branch <name>` | Local branch name to check out into |
+| `--force` | Allow checkout even with a dirty working tree |
+| `--detach` | Check out in detached-HEAD state |
+| `--dry-run` | Print the resolved `gh pr checkout` command without running it |
+| `--non-interactive` | Accept all defaults, no prompts |
+
+Wraps `gh pr checkout`. Requires `gh` CLI authenticated (`gh auth login`). Refuses to switch branches with uncommitted tracked changes unless `--force` is given — stash first with `./scripts/git/stash_work.sh push`.
+
+**`md_toc.sh`** — Generate/insert a Markdown Table of Contents
+```bash
+./scripts/git/md_toc.sh docs/usage.md              # print TOC to stdout
+./scripts/git/md_toc.sh docs/usage.md --insert      # insert/update in place
+./scripts/git/md_toc.sh docs/usage.md --check       # CI: exit 1 if stale
+./scripts/git/md_toc.sh --all                       # update every tracked *.md with a <!--ts--> marker
+```
+
+| Flag | Purpose |
+|------|---------|
+| `<file>` | Markdown file to read (default action: print TOC to stdout) |
+| `--insert` | Replace/create the `<!--ts-->...<!--te-->` block in `<file>` in place |
+| `--check` | Exit 1 if the in-file TOC is stale (CI-friendly, mirrors `check_local_files.sh`) |
+| `--all` | Apply `--insert` to every tracked `*.md` file containing a `<!--ts-->` marker |
+
+Computes GitHub-compatible heading slugs locally (offline port of `gh-md-toc` — no network access, auth token, or rate limit). Skips fenced code blocks and de-dupes repeated headings as `slug`, `slug-1`, `slug-2`, ... matching GitHub's own scheme.
+
+---
+
 ## Environment Variables
 
 ### CGW_* (primary)
@@ -479,11 +537,11 @@ Runs `git fetch ${CGW_REMOTE}` then `git pull --rebase` on each target.
 
 | Variable | Effect |
 |----------|--------|
-| `CGW_LINT_CHECK_ARGS=<args>` | Arguments for lint check (default: `"check ."` for ruff) |
-| `CGW_LINT_FIX_ARGS=<args>` | Arguments for lint auto-fix (default: `"check --fix ."` for ruff) |
+| `CGW_LINT_CHECK_ARGS=<args>` | Arguments for lint check (default: `"check {files}"` for ruff; `{files}` = scan target, legacy `.` also works) |
+| `CGW_LINT_FIX_ARGS=<args>` | Arguments for lint auto-fix (default: `"check --fix {files}"` for ruff) |
 | `CGW_LINT_EXCLUDES=<flags>` | Exclusion flags appended to lint commands |
-| `CGW_FORMAT_CHECK_ARGS=<args>` | Arguments for format check (default: `"format --check ."` for ruff) |
-| `CGW_FORMAT_FIX_ARGS=<args>` | Arguments for format auto-fix (default: `"format ."` for ruff) |
+| `CGW_FORMAT_CHECK_ARGS=<args>` | Arguments for format check (default: `"format --check {files}"` for ruff) |
+| `CGW_FORMAT_FIX_ARGS=<args>` | Arguments for format auto-fix (default: `"format {files}"` for ruff) |
 | `CGW_FORMAT_EXCLUDES=<flags>` | Exclusion flags appended to format commands |
 | `CGW_LINT_EXTENSIONS=<glob>` | File glob for `--modified-only` lint mode (default: `*.py`) |
 

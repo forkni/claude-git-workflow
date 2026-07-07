@@ -30,7 +30,6 @@ init_logging "push_validated"
 ensure_no_stale_index_lock || exit 1
 
 main() {
-  local non_interactive=0
   local dry_run=0
   local skip_lint=0
   local skip_md_lint=0
@@ -69,7 +68,6 @@ main() {
         exit 0
         ;;
       --non-interactive)
-        non_interactive=1
         CGW_NON_INTERACTIVE=1
         ;;
       --dry-run) dry_run=1 ;;
@@ -89,7 +87,6 @@ main() {
     shift
   done
 
-  [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
   [[ "${CGW_SKIP_LINT:-0}" == "1" ]] && skip_lint=1
   [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]] && skip_md_lint=1
   [[ "${CGW_NO_VENV:-0}" == "1" ]] && no_venv=1
@@ -168,8 +165,12 @@ main() {
   fi
   echo "[OK] Remote '${CGW_REMOTE}' is reachable" | tee -a "$logfile"
 
-  # Check if local is behind remote
-  git fetch "${CGW_REMOTE}" "${target_branch}" >>"$logfile" 2>&1 || true
+  # Check if local is behind remote. If the fetch fails (network/auth), the
+  # behind-check below runs against stale tracking refs and can silently pass —
+  # surface it so the result isn't trusted on stale data.
+  if ! git fetch "${CGW_REMOTE}" "${target_branch}" >>"$logfile" 2>&1; then
+    echo "[!] WARNING: fetch of ${CGW_REMOTE}/${target_branch} failed -- behind-remote check may use stale data" | tee -a "$logfile"
+  fi
   local behind
   behind=$(cgw_rev_count "${target_branch}" "${CGW_REMOTE}/${target_branch}" || echo "0")
   if [[ "${behind}" -gt 0 ]]; then

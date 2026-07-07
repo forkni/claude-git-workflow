@@ -18,10 +18,15 @@ teardown() {
 
 _run_merge() {
   # PATH is already correct from setup_mock_bin; PROJECT_ROOT pins scripts to TEST_REPO_DIR.
+  # SOURCE has no built-in default (an explicit per-invocation choice -- see _config.sh);
+  # create_test_repo_with_remote always produces a real 'development' branch, so default
+  # to it here the same way a real configure.sh run would. Tests that pass --source
+  # explicitly still override this via their own CLI flag.
   bash -c "
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_SOURCE_BRANCH='development'
     export CGW_LINT_CMD=''
     export CGW_FORMAT_CMD=''
     export CGW_NON_INTERACTIVE=1
@@ -311,4 +316,67 @@ _run_merge() {
   [ "${status}" -eq 1 ]
   # DU auto-resolved first, then halted on UU
   [[ "${output}" == *"Content conflicts require manual resolution"* ]]
+}
+
+# ── local-only file guard (C1) ────────────────────────────────────────────────
+
+# Commit a local-only file (default CGW_LOCAL_FILES: .claude/) on development.
+# Leaves the checkout on development — merge_with_validation.sh must be run from
+# the source branch (it checks out the target itself).
+_seed_local_file_on_source() {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  mkdir -p "${TEST_REPO_DIR}/.claude"
+  echo '{}' > "${TEST_REPO_DIR}/.claude/settings.local.json"
+  # -f: a global gitignore may block this path on some machines (see
+  # check_local_files.bats precedent) -- this helper deliberately seeds a
+  # "leaked" local-only file, so forcing past ignore rules is correct here.
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null add -f .claude/settings.local.json
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: leak local file"
+}
+
+@test "merge aborts when the source branch carries a local-only file" {
+  _seed_local_file_on_source
+  local before
+  before=$(git -C "${TEST_REPO_DIR}" rev-parse main)
+  run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"local-only file"* ]]
+  # main must not have advanced (no merge commit).
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse main)" = "${before}" ]
+}
+
+@test "merge proceeds with CGW_ALLOW_LOCAL_FILES_IN_MERGE=1 despite local-only file" {
+  _seed_local_file_on_source
+  local before
+  before=$(git -C "${TEST_REPO_DIR}" rev-parse main)
+  CGW_ALLOW_LOCAL_FILES_IN_MERGE=1 run _run_merge "--non-interactive"
+  [ "${status}" -eq 0 ]
+  # main advanced (merge happened).
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse main)" != "${before}" ]
+}
+
+# A local-only file added then deleted on the source branch nets to no change
+# in the merge-base..tip tree diff, but --no-ff still carries both commits
+# into shared history — the guard must inspect per-commit touched paths, not
+# just the net diff, to catch this.
+_seed_add_then_delete_local_file_on_source() {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  mkdir -p "${TEST_REPO_DIR}/.claude"
+  echo '{}' > "${TEST_REPO_DIR}/.claude/settings.local.json"
+  # -f: see note in _seed_local_file_on_source above.
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null add -f .claude/settings.local.json
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: leak local file"
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null rm --quiet .claude/settings.local.json
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: remove local file"
+}
+
+@test "merge aborts when source added-then-deleted a local-only file" {
+  _seed_add_then_delete_local_file_on_source
+  local before
+  before=$(git -C "${TEST_REPO_DIR}" rev-parse main)
+  run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"local-only file"* ]]
+  # main must not have advanced (no merge commit).
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse main)" = "${before}" ]
 }

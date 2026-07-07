@@ -13,24 +13,34 @@
 # ============================================================================
 # PROJECT ROOT AUTO-DETECTION
 # ============================================================================
-# Walk up from SCRIPT_DIR to find the nearest .git/ directory.
-# Works regardless of where scripts/ lives in the project tree.
+# Resolve the repository the caller is standing in, matching git's own
+# discovery (Pro Git ch. 10: with GIT_DIR unset, "Git walks up the directory
+# tree until it gets to ~ or /, looking for a .git directory at every step" —
+# starting from the cwd). The scripts' bare git commands operate on the cwd
+# repo, so config, logs, and backup tags must resolve against that same repo —
+# never against wherever the script files happen to live (symlinked or shared
+# scripts/git installs would otherwise read another repo's .cgw.conf).
 
 _detect_project_root() {
+  local root
+  # Primary: git's own discovery from the cwd. Also handles linked worktrees
+  # and submodules, where .git is a file — invisible to a `-d .git` test.
+  if root="$(git rev-parse --show-toplevel 2>/dev/null)" && [[ -n "${root}" ]]; then
+    echo "${root}"
+    return 0
+  fi
+  # Fallback (cwd outside any work tree): walk up from SCRIPT_DIR, covering
+  # the standard install where scripts/git/ lives inside the project.
   local dir
   dir="$(cd "${SCRIPT_DIR}" && pwd)"
   while [[ "${dir}" != "/" ]] && [[ -n "${dir}" ]]; do
-    if [[ -d "${dir}/.git" ]]; then
+    if [[ -e "${dir}/.git" ]]; then
       echo "${dir}"
       return 0
     fi
     dir="$(dirname "${dir}")"
   done
-  # Fallback: ask git directly
-  if git rev-parse --show-toplevel 2>/dev/null; then
-    return 0
-  fi
-  echo "[ERROR] Cannot find git repository root from ${SCRIPT_DIR}" >&2
+  echo "[ERROR] Cannot find git repository root from ${PWD} or ${SCRIPT_DIR}" >&2
   return 1
 }
 
@@ -90,8 +100,33 @@ fi
 # ============================================================================
 
 # --- Branch names ---
-CGW_SOURCE_BRANCH="${CGW_SOURCE_BRANCH:-development}"
-CGW_TARGET_BRANCH="${CGW_TARGET_BRANCH:-main}"
+# SOURCE has no default -- it's an inherently per-operation choice ("what am I merging"),
+# not a repo-wide fact. Scripts that need a default when no --source flag is given must
+# handle an empty CGW_SOURCE_BRANCH explicitly (see validate_branch_pair in _common.sh,
+# which reports a clear "no source branch configured" error instead of guessing).
+CGW_SOURCE_BRANCH="${CGW_SOURCE_BRANCH:-}"
+
+# TARGET is a repo-wide fact ("which branch is stable") and IS auto-detected here so every
+# script gets a sensible value without requiring .cgw.conf to pin it down.
+# Resolution: ${CGW_REMOTE}/HEAD symbolic ref -> local 'main' -> local 'master' -> 'main'.
+# Uses `git -C` (not bare cwd-relative git) because this runs at source time, before any
+# script's main() has cd'd into PROJECT_ROOT.
+if [[ -z "${CGW_TARGET_BRANCH:-}" ]]; then
+  _cgw_remote_for_detect="${CGW_REMOTE:-origin}"
+  _cgw_detected_target="$(git -C "${PROJECT_ROOT}" symbolic-ref --quiet --short "refs/remotes/${_cgw_remote_for_detect}/HEAD" 2>/dev/null)" || _cgw_detected_target=""
+  _cgw_detected_target="${_cgw_detected_target#"${_cgw_remote_for_detect}"/}"
+  if [[ -z "${_cgw_detected_target}" ]]; then
+    if git -C "${PROJECT_ROOT}" show-ref --verify --quiet refs/heads/main 2>/dev/null; then
+      _cgw_detected_target="main"
+    elif git -C "${PROJECT_ROOT}" show-ref --verify --quiet refs/heads/master 2>/dev/null; then
+      _cgw_detected_target="master"
+    else
+      _cgw_detected_target="main"
+    fi
+  fi
+  CGW_TARGET_BRANCH="${_cgw_detected_target}"
+  unset _cgw_remote_for_detect _cgw_detected_target
+fi
 
 # --- Remote name ---
 # Override with CGW_REMOTE=upstream (or any remote name) for fork-based workflows.
@@ -120,27 +155,67 @@ export CGW_ALL_PREFIXES # consumed by commit_enhanced.sh (cross-file, not detect
 # Set CGW_LINT_CMD="" to disable lint checks entirely (e.g. non-Python projects
 # that haven't configured a linter yet).
 # Use +x (not :-) to distinguish "unset" from "explicitly set to empty string".
+# The "{files}" token marks where a scoped file list is substituted (audit mode
+# expands it to "."); a legacy standalone "." also still works. See _common.sh
+# cgw_strip_path_arg / cgw_fill_path_placeholder.
 [[ -z "${CGW_LINT_CMD+x}" ]] && CGW_LINT_CMD="ruff"
-[[ -z "${CGW_LINT_CHECK_ARGS+x}" ]] && CGW_LINT_CHECK_ARGS="check ."
-[[ -z "${CGW_LINT_FIX_ARGS+x}" ]] && CGW_LINT_FIX_ARGS="check --fix ."
+[[ -z "${CGW_LINT_CHECK_ARGS+x}" ]] && CGW_LINT_CHECK_ARGS="check {files}"
+[[ -z "${CGW_LINT_FIX_ARGS+x}" ]] && CGW_LINT_FIX_ARGS="check --fix {files}"
 [[ -z "${CGW_LINT_EXCLUDES+x}" ]] && CGW_LINT_EXCLUDES="--extend-exclude logs --extend-exclude .venv"
 
 # Set CGW_FORMAT_CMD="" to disable formatting checks.
 # Use +x (not :-) to distinguish "unset" from "explicitly set to empty string".
 [[ -z "${CGW_FORMAT_CMD+x}" ]] && CGW_FORMAT_CMD="ruff"
-[[ -z "${CGW_FORMAT_CHECK_ARGS+x}" ]] && CGW_FORMAT_CHECK_ARGS="format --check ."
-[[ -z "${CGW_FORMAT_FIX_ARGS+x}" ]] && CGW_FORMAT_FIX_ARGS="format ."
+[[ -z "${CGW_FORMAT_CHECK_ARGS+x}" ]] && CGW_FORMAT_CHECK_ARGS="format --check {files}"
+[[ -z "${CGW_FORMAT_FIX_ARGS+x}" ]] && CGW_FORMAT_FIX_ARGS="format {files}"
 [[ -z "${CGW_FORMAT_EXCLUDES+x}" ]] && CGW_FORMAT_EXCLUDES="--exclude logs --exclude .venv"
 
 # Set CGW_MARKDOWNLINT_CMD to enable a dedicated markdown lint step.
 # Empty (default) = markdown lint step skipped. Example: "markdownlint-cli2"
 CGW_MARKDOWNLINT_CMD="${CGW_MARKDOWNLINT_CMD:-}"
-CGW_MARKDOWNLINT_ARGS="${CGW_MARKDOWNLINT_ARGS:-**/*.md !CLAUDE.md !MEMORY.md}"
+# CGW_MARKDOWNLINT_ARGS holds flags/exclusions ONLY — always applied, never
+# replaced by a file list. CGW_MARKDOWNLINT_PATHS is the default scan target,
+# used only in audit/whole-repo mode (no explicit file list). The commit gate
+# passes staged *.md files instead of the PATHS glob, so an unrelated markdown
+# violation elsewhere no longer blocks a code-only commit.
+[[ -z "${CGW_MARKDOWNLINT_ARGS+x}" ]]  && CGW_MARKDOWNLINT_ARGS="!CLAUDE.md !MEMORY.md"
+[[ -z "${CGW_MARKDOWNLINT_PATHS+x}" ]] && CGW_MARKDOWNLINT_PATHS="**/*.md"
+# Migration guard: the old single-var shape conflated the scan glob with
+# exclusions. Warn only on a bare glob token (exclusions like "!*.tmp" and
+# flags are legitimate ARGS content and must not trigger this). Tokenize with
+# read (not an unquoted for-loop) so globs are never expanded against the cwd.
+_cgw_md_toks=()
+read -r -a _cgw_md_toks <<<"${CGW_MARKDOWNLINT_ARGS}" || true
+for _cgw_md_tok in "${_cgw_md_toks[@]+"${_cgw_md_toks[@]}"}"; do
+  case "${_cgw_md_tok}" in
+    '!'* | -*) : ;;
+    *'*'*)
+      echo "[cgw-config] WARNING: CGW_MARKDOWNLINT_ARGS contains a path glob ('${_cgw_md_tok}'). Move the scan target to CGW_MARKDOWNLINT_PATHS; ARGS is now flags/exclusions only." >&2
+      break
+      ;;
+  esac
+done
+unset _cgw_md_tok _cgw_md_toks
 
 # --- Modified-only lint file extensions ---
 # Space-separated glob patterns used by check_lint.sh / fix_lint.sh --modified-only.
 # Default matches Python files. Override for other languages (e.g. "*.js *.ts" or "*.go").
 [[ -z "${CGW_LINT_EXTENSIONS+x}" ]] && CGW_LINT_EXTENSIONS="*.py"
+
+# --- Runtime gate defaults (single source of truth) ---
+# These were previously only defaulted inline in callers via ${VAR:-...}, with no
+# definition here. Centralized so there is one authoritative default; callers keep
+# their inline fallbacks as defense-in-depth. Use +x to preserve an explicit empty.
+[[ -z "${CGW_SKIP_LINT+x}" ]]            && CGW_SKIP_LINT=0
+[[ -z "${CGW_SKIP_MD_LINT+x}" ]]         && CGW_SKIP_MD_LINT=0
+[[ -z "${CGW_SKIP_TYPECHECK+x}" ]]       && CGW_SKIP_TYPECHECK=0
+[[ -z "${CGW_ALL+x}" ]]                  && CGW_ALL=0
+
+# --- Typecheck step (non-blocking pre-commit hook) ---
+# Empty CGW_TYPECHECK_CMD = typecheck step skipped. Example: "pyrefly".
+[[ -z "${CGW_TYPECHECK_CMD+x}" ]]        && CGW_TYPECHECK_CMD=""
+[[ -z "${CGW_TYPECHECK_CHECK_ARGS+x}" ]] && CGW_TYPECHECK_CHECK_ARGS="check"
+[[ -z "${CGW_TYPECHECK_EXCLUDES+x}" ]]   && CGW_TYPECHECK_EXCLUDES=""
 
 # --- Merge conflict style (merge_with_validation.sh) ---
 # Set to "diff3" to show the base version in conflict markers (Pro Git recommended).
@@ -160,6 +235,11 @@ CGW_DOCS_PATTERN="${CGW_DOCS_PATTERN:-}"
 # --- Dev-only file exclusions for cherry-pick warnings ---
 # Space-separated paths. Empty = no warning. Example: "tests/ pytest.ini"
 CGW_DEV_ONLY_FILES="${CGW_DEV_ONLY_FILES:-}"
+
+# --- Local-only file guard for merge / cherry-pick ---
+# Set to "1" to allow a merge or cherry-pick to carry CGW_LOCAL_FILES into shared
+# history (the guard otherwise aborts in non-interactive mode). Default 0.
+[[ -z "${CGW_ALLOW_LOCAL_FILES_IN_MERGE+x}" ]] && CGW_ALLOW_LOCAL_FILES_IN_MERGE=0
 
 # --- Tests directory cleanup on target branch ---
 # 0 = disabled (default), 1 = remove tests/ from target if gitignored

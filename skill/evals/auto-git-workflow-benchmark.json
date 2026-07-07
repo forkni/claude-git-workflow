@@ -1,0 +1,1362 @@
+{
+  "skill": "auto-git-workflow",
+  "version": "1.2",
+  "description": "Benchmark for auto-git-workflow: tests correct use of scripts/git/*.sh wrappers vs raw git, local-only file protection, conflict-handling procedure, and gotchas documented only in references/. Rollouts are DRY -- agent states commands without executing them. Rollout protocol: every rollout answer must also emit a structured trajectory (a JSON list of {tool_name, tool_args} steps mirroring the commands stated in prose), per skill-improvement-pipeline/references/tool-use-benchmarks.md -- must_not_include checks in this benchmark use target:\"trajectory\" so a correct answer that *names* a forbidden command in its explanation is never penalized. v1.2 adds a step-efficiency axis (tool_efficiency checks calibrated from SKILL.md's documented minimal-step happy paths, not observed base behaviour) and two read-only \"inspection\" cases exercising the read-only carve-out in \"When to use this skill\" (git status/log/diff/show do not require the skill) -- reconciled from development's independent v1.0 benchmark expansion (c8b20c1) after its wrapper-coverage cases were found redundant with v1.1's existing coverage.",
+  "cases": [
+    {
+      "id": "commit-001-novenv",
+      "prompt": "You need to commit a bug fix to pyccsl.py. There is no .venv directory in this repository. State the exact shell command you would run.",
+      "category": "commit",
+      "split": "val",
+      "source": "SKILL.md Rule 1 + Rule 2",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "commit_enhanced\\.sh",
+            "--no-venv",
+            "fix:"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+commit\\s+-"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "selective-001-only",
+      "prompt": "You need to commit exactly two files: src/pyccsl.py and tests/test_pyccsl.py. Other tracked files have modifications that should NOT be included in this commit. State the exact command(s) you would run.",
+      "category": "selective-commit",
+      "split": "val",
+      "source": "SKILL.md Rule 5",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "commit_enhanced\\.sh",
+            "--only"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+commit\\s+-"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "local-001-protect",
+      "prompt": "The user asks: 'Please commit my updated CLAUDE.md file.' What do you do? State any commands you would run and briefly explain.",
+      "category": "local-file-protection",
+      "split": "val",
+      "source": "SKILL.md Rule 3",
+      "combine": "mean",
+      "checks": [
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+add\\s+CLAUDE\\.md",
+            "git\\s+add\\s+-A\\b"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        },
+        {
+          "type": "expected_behavior",
+          "id": "protect_behavior",
+          "items": [
+            "Explains CLAUDE.md is a local-only protected file that must not be committed",
+            "Notes that commit_enhanced.sh will automatically unstage CLAUDE.md even if accidentally staged"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "push-001-basic",
+      "prompt": "Push the current branch to its remote tracking branch. State the exact command you would run.",
+      "category": "push",
+      "split": "val",
+      "source": "SKILL.md Quick Decision Tree — Pushing to remote",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "push_validated\\.sh"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+push\\s+[\\w-]"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "rebase-001-squash",
+      "prompt": "Squash the last 3 commits on your current feature branch into one. State the exact command you would run.",
+      "category": "rebase",
+      "split": "val",
+      "source": "SKILL.md Quick Decision Tree — Safe rebase",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "rebase_safe\\.sh",
+            "--squash-last\\s+3"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+rebase\\s+[-a-z]"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "conflict-003-merge-only-trap",
+      "prompt": "merge_with_validation.sh stopped on a content conflict in src/core.py. You manually resolved the conflict markers in the file and ran 'git add src/core.py'. Now you need to conclude the merge by committing. State the exact command you would run.",
+      "category": "conflict-handling",
+      "split": "val",
+      "source": "references/resolving-merge-conflicts.md §5 — --only flag breaks MERGE_HEAD state; NOT in SKILL.md body",
+      "combine": "mean",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "commit_enhanced\\.sh"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+commit\\s+-"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        },
+        {
+          "type": "expected_behavior",
+          "id": "no_only_flag",
+          "items": [
+            "Does NOT include the --only flag in the concluding commit command (using --only resets the index and destroys MERGE_HEAD state, breaking the merge)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "conflict-001-du-autoresolve",
+      "prompt": "You ran merge_with_validation.sh and the script reported DU conflicts on several files from the source branch, but the script is still running. Do you need to manually intervene and resolve these DU conflicts, or does the script handle them automatically? Explain.",
+      "category": "conflict-handling",
+      "split": "val",
+      "source": "SKILL.md body mentions 'modify/delete/both-deleted auto-resolution' — DU = delete-by-us/update-by-them (modify/delete type)",
+      "checks": [
+        {
+          "type": "expected_behavior",
+          "id": "du_behavior",
+          "items": [
+            "Correctly states that DU conflicts (delete/update type — one side deleted the file, the other modified it) are automatically resolved by merge_with_validation.sh without manual intervention",
+            "Does NOT say the user needs to manually open files and resolve DU conflict markers"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "selective-002-antidanger",
+      "prompt": "You want to commit only src/models.py. There are also tracked modifications in src/views.py and tests/test_models.py that should NOT be committed. Describe the safe, correct way — specifically avoiding the dangerous pattern.",
+      "category": "selective-commit",
+      "split": "train",
+      "source": "SKILL.md Rule 5 — dangerous pattern: git reset HEAD && git add",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "--only\\s+src/models\\.py"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+reset\\s+HEAD",
+            "git\\s+commit\\s+-"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "push-002-force-raw",
+      "prompt": "The user asks you to force-push the current branch to origin to overwrite the remote history. What exact command do you use?",
+      "category": "push",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree — push_validated.sh --force (uses --force-with-lease)",
+      "combine": "mean",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "push_validated\\.sh"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+push\\s+.*-f\\b",
+            "git\\s+push\\s+.*--force\\b"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        },
+        {
+          "type": "expected_behavior",
+          "id": "force_flag",
+          "items": [
+            "Uses the --force flag with push_validated.sh (not raw git push --force or git push -f)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "conflict-002-uu-stop",
+      "prompt": "merge_with_validation.sh stopped and reported a UU (both-modified) conflict in src/core.py. What does this mean and what must you do next?",
+      "category": "conflict-handling",
+      "split": "train",
+      "source": "SKILL.md — content conflict detection stops for manual review",
+      "checks": [
+        {
+          "type": "expected_behavior",
+          "id": "uu_behavior",
+          "items": [
+            "Explains UU is a content conflict (both sides modified the same file) requiring MANUAL resolution — merge_with_validation.sh has paused and is waiting",
+            "Says to open src/core.py and manually resolve the conflict markers",
+            "Does NOT say the wrapper will automatically resolve UU conflicts"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stash-001-basic",
+      "prompt": "You have uncommitted work-in-progress changes. You need to temporarily set them aside to fix a hotfix on the current branch, then restore them. State the exact commands — one to save, one to restore.",
+      "category": "stash",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree — Stashing work in progress",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "stash_work\\.sh\\s+push"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_include",
+          "patterns": [
+            "stash_work\\.sh\\s+pop"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+stash\\s+[a-z]"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "recover-001-lost",
+      "prompt": "You accidentally ran 'git reset --hard' and lost a commit. How do you find the lost commit SHA and restore it as a branch named 'recovered/lost-work'? State the exact commands in order.",
+      "category": "recovery",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree — Recovering lost commits",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "recover\\.sh\\s+reflog"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_include",
+          "patterns": [
+            "recover\\.sh\\s+restore"
+          ],
+          "regex": true
+        }
+      ]
+    },
+    {
+      "id": "commit-002-prefix-missing",
+      "prompt": "Stage all changes and commit them with the message 'Update pyccsl to handle edge case for 1M sessions'. State the exact command you would run, including the full commit message.",
+      "category": "commit",
+      "split": "train",
+      "source": "SKILL.md Commit Message Format — conventional prefix required",
+      "combine": "mean",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "commit_enhanced\\.sh"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+commit\\s+-"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        },
+        {
+          "type": "expected_behavior",
+          "id": "prefix_behavior",
+          "items": [
+            "Uses a conventional commit prefix (fix:, feat:, refactor:, chore:, docs:, test:, style:, or perf:) rather than a bare description without a prefix"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rebase-002-published",
+      "prompt": "You want to rebase your feature/auth branch (already pushed to origin/feature/auth) onto main to clean up history before merging. You run 'rebase_safe.sh --onto main'. What happens — does the rebase proceed normally?",
+      "category": "rebase",
+      "split": "test",
+      "source": "references/script-reference.md — pre-rebase hook blocks rebasing published commits; NOT in SKILL.md body",
+      "checks": [
+        {
+          "type": "expected_behavior",
+          "id": "published_rebase",
+          "items": [
+            "Warns that the pre-rebase hook will BLOCK the rebase because the branch is already published (pushed to remote) — it does NOT proceed normally",
+            "Mentions CGW_ALLOW_REBASE_PUBLISHED=1 as the environment variable to override this guard",
+            "Does NOT say the rebase will run normally without any issue or warning"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "merge-002-pushed-rollback",
+      "prompt": "A merge commit was made 2 hours ago and has already been pushed to origin/main. The merge introduced a critical bug. How do you roll it back? State the exact command(s) and explain why this approach is required.",
+      "category": "merge",
+      "split": "test",
+      "source": "references/branch-and-merge-rules.md — --revert required for pushed merges; hard reset + force-push is forbidden",
+      "combine": "mean",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "rollback_merge\\.sh"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+reset\\s+--hard"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        },
+        {
+          "type": "expected_behavior",
+          "id": "revert_reason",
+          "items": [
+            "Uses --revert with rollback_merge.sh because the merge is already on the shared remote (preserves history, no force-push required)",
+            "Explains that hard reset followed by force-push is NOT acceptable because the merge commit is already in the shared remote history"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lock-001-during-rebase",
+      "prompt": "There is a .git/index.lock file preventing git operations. However, you also see a rebase-merge/ subdirectory in .git/, indicating an interrupted interactive rebase. Should you immediately remove the lock file with 'rm -f .git/index.lock'? What do you do?",
+      "category": "lock",
+      "split": "test",
+      "source": "SKILL.md Rule 4 — auto-recovery refuses during in-progress operations",
+      "checks": [
+        {
+          "type": "expected_behavior",
+          "id": "lock_behavior",
+          "items": [
+            "Explains that lock removal should NOT happen while a rebase is in progress — the rebase-merge/ directory indicates an active rebase that may be using the lock",
+            "Advises completing or aborting the interrupted rebase first using rebase_safe.sh --continue or rebase_safe.sh --abort",
+            "Does NOT recommend immediately running rm -f to delete the lock file while the rebase is still in progress"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "conflict-005-dont-abort",
+      "prompt": "You are resolving a difficult UU merge conflict in a critical file. It is taking time and you are tempted to just run rollback_merge.sh to abort and start over. What does the skill recommend you do BEFORE considering an abort?",
+      "category": "conflict-handling",
+      "split": "test",
+      "source": "references/resolving-merge-conflicts.md — investigate both sides' intent; NOT in SKILL.md body",
+      "checks": [
+        {
+          "type": "expected_behavior",
+          "id": "investigate_behavior",
+          "items": [
+            "Recommends investigating BOTH sides' intent before considering an abort — e.g. use 'git log --merge' or 'git log --oneline --left-right --merge' to understand both branches' changes",
+            "Warns against blindly picking one side with --ours or --theirs without understanding the changes",
+            "Does not simply recommend aborting as the first or default option for a difficult conflict"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "merge-001-basic",
+      "prompt": "Merge the feature/auth-update branch into main. First preview the merge, then execute it. State the exact commands in order.",
+      "category": "merge",
+      "split": "test",
+      "source": "SKILL.md Quick Decision Tree — Merging to target branch (regression guard in test)",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "merge_with_validation\\.sh"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_include",
+          "patterns": [
+            "--dry-run"
+          ],
+          "regex": false
+        },
+        {
+          "type": "must_include",
+          "patterns": [
+            "--non-interactive"
+          ],
+          "regex": false
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+merge\\s+[\\w-]"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "conflict-004-conclude-merge",
+      "prompt": "You resolved conflict markers in src/api.py and staged it with 'git add src/api.py'. The merge_with_validation.sh script is paused, waiting for you to conclude the merge. State the exact command to run to complete the merge commit.",
+      "category": "conflict-handling",
+      "split": "train",
+      "source": "SKILL.md Rule 1 -- commit_enhanced.sh is the correct command for merge-conclusion commits (not merge_with_validation.sh)",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "commit_enhanced\\.sh"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "merge_with_validation\\.sh.*--non-interactive",
+            "merge_with_validation\\.sh.*--continue",
+            "git\\s+commit\\s+-"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "traj-001-merge-conclude-noonly",
+      "prompt": "You resolved a merge conflict in src/core.py and staged it with 'git add src/core.py'. Emit a structured trajectory of the tool calls you would make to conclude the merge. Include tool_name and tool_args for each step.",
+      "category": "conflict-handling",
+      "split": "val",
+      "source": "references/resolving-merge-conflicts.md §5 — --only flag resets index and destroys MERGE_HEAD; tool_call forbid_args detects this reliably unlike regex",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "commit_enhanced.sh",
+          "require_args": [],
+          "forbid_args": [
+            "--only"
+          ]
+        },
+        {
+          "type": "tool_sequence",
+          "sequence": [
+            "commit_enhanced.sh"
+          ],
+          "mode": "subsequence"
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+commit\\s+-"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "traj-002-selective-commit-efficiency",
+      "prompt": "Commit only the file src/pyccsl.py with message 'perf: optimize token counting'. Other tracked files have modifications that must NOT be included. Emit a structured trajectory. Aim to complete this in one tool call.",
+      "category": "selective-commit",
+      "split": "val",
+      "source": "SKILL.md Rule 5 — --only should complete selective commit in one step; tool_efficiency catches unnecessary pre-commit git status/log calls",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "commit_enhanced.sh",
+          "require_args": [
+            "--only"
+          ]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 2
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+commit\\s+-"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "traj-003-commit-push-sequence",
+      "prompt": "Commit all tracked changes with message 'chore: update dependencies'. There is no .venv directory. Then push the branch. Emit a structured trajectory of the tool calls, in order.",
+      "category": "commit",
+      "split": "train",
+      "source": "SKILL.md Rule 1 + Rule 2 + Quick Decision Tree — tool_sequence verifies order and tool_call verifies --no-venv flag",
+      "execution": "dry",
+      "combine": "mean",
+      "checks": [
+        {
+          "type": "tool_sequence",
+          "sequence": [
+            "commit_enhanced.sh",
+            "push_validated.sh"
+          ],
+          "mode": "subsequence"
+        },
+        {
+          "type": "tool_call",
+          "tool": "commit_enhanced.sh",
+          "require_args": [
+            "--no-venv"
+          ],
+          "forbid_args": []
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+commit\\s+-",
+            "git\\s+push\\s+origin"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "traj-004-lint-recovery",
+      "prompt": "You ran commit_enhanced.sh and received this observation: 'LINT FAILED — 2 errors in src/pyccsl.py. Run ./scripts/git/fix_lint.sh to auto-fix.' Emit a structured trajectory of the tool calls you would make to recover and complete the commit.",
+      "category": "commit",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree — 'Did lint checks fail? Run fix_lint.sh then retry commit'; tool_sequence checks recovery order; tool_recovery judge checks reasoning",
+      "execution": "dry",
+      "combine": "mean",
+      "checks": [
+        {
+          "type": "tool_sequence",
+          "sequence": [
+            "fix_lint.sh",
+            "commit_enhanced.sh"
+          ],
+          "mode": "subsequence"
+        },
+        {
+          "type": "tool_recovery",
+          "id": "lint_recovery_behavior",
+          "rubric": "Given the lint-failure observation, did the agent call fix_lint.sh (or equivalent) BEFORE retrying commit_enhanced.sh — not repeating the failing commit directly? A=yes in correct order (score 1.0), B/C=no or wrong order (score 0.0)."
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+commit\\s+-"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "rebase-003-published-train",
+      "prompt": "You have a branch 'feature/ui-overhaul' that you pushed to origin two days ago. A teammate may have pulled it. You want to squash the last 3 commits to clean up history. You run 'rebase_safe.sh --squash-last 3'. Will the rebase proceed without any issue?",
+      "category": "rebase",
+      "split": "train",
+      "source": "references/script-reference.md:34,248,467 — pre-rebase hook blocks rebasing published commits; NOT in SKILL.md body",
+      "checks": [
+        {
+          "type": "expected_behavior",
+          "id": "published_rebase_train",
+          "items": [
+            "Warns that the pre-rebase hook will BLOCK the rebase because the branch is already published (pushed to remote) — it does NOT proceed without issue",
+            "Mentions CGW_ALLOW_REBASE_PUBLISHED=1 as the environment variable to override this guard",
+            "Does NOT claim the rebase will run normally or without warning"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rebase-004-published-val",
+      "prompt": "Your branch 'fix/auth-timeout' has been pushed to origin and is tracking 'origin/fix/auth-timeout'. You want to rebase it onto main with 'rebase_safe.sh --onto main'. Describe what will happen when you run this command.",
+      "category": "rebase",
+      "split": "val",
+      "source": "references/script-reference.md:34,248,467 — pre-rebase hook blocks rebasing published commits; NOT in SKILL.md body",
+      "checks": [
+        {
+          "type": "expected_behavior",
+          "id": "published_rebase_val",
+          "items": [
+            "Warns that the pre-rebase hook will BLOCK the rebase because the branch is already published (pushed to remote) — the rebase does NOT proceed normally",
+            "Mentions CGW_ALLOW_REBASE_PUBLISHED=1 as the environment variable to override this guard",
+            "Does NOT say the rebase will run cleanly or without any issue or blocking"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "conflict-006-investigate-train",
+      "prompt": "merge_with_validation.sh stopped on a UU (both-sides-modified) conflict in config/settings.py. The conflict markers are complex and you are not sure which version is correct. What is the first thing you should do before even thinking about aborting?",
+      "category": "conflict-handling",
+      "split": "train",
+      "source": "references/resolving-merge-conflicts.md:24-34,38-49,91-97 — investigate both sides' intent; NOT in SKILL.md body",
+      "checks": [
+        {
+          "type": "expected_behavior",
+          "id": "investigate_behavior_train",
+          "items": [
+            "Recommends investigating BOTH sides' intent before considering an abort — e.g. use 'git log --merge' or 'git log --oneline --left-right --merge' to understand which commits on each side caused the conflict",
+            "Warns against blindly picking one side with --ours or --theirs without understanding the intent of both changes",
+            "Does not recommend aborting as the first or default response to a difficult conflict"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "conflict-007-investigate-val",
+      "prompt": "You are in the middle of a merge and hit a UU conflict in src/renderer.py. The conflict is dense and you are tempted to just run 'git checkout --theirs src/renderer.py' and move on. What does the skill say you should do instead?",
+      "category": "conflict-handling",
+      "split": "val",
+      "source": "references/resolving-merge-conflicts.md:24-34,38-49,91-97 — investigate both sides' intent; NOT in SKILL.md body",
+      "checks": [
+        {
+          "type": "expected_behavior",
+          "id": "investigate_behavior_val",
+          "items": [
+            "Recommends investigating BOTH sides' intent first — e.g. use 'git log --merge -p -- <file>' or 'git log --oneline --left-right --merge' to understand the conflicting commits on each side",
+            "Explicitly warns against blindly taking --theirs (or --ours) without understanding the purpose of both sides' changes",
+            "Advises preserving both intents where compatible rather than discarding one side entirely"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cherry-001-basic",
+      "prompt": "Cherry-pick commit abc1234 from feature/hotfix onto release/1.2, running non-interactively. State the exact command you would run.",
+      "category": "cherry-pick",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree -- Cherry-picking a commit / references/script-reference.md -- cherry_pick_commits.sh",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "cherry_pick_commits\\.sh",
+            "--commit\\s+abc1234",
+            "--non-interactive"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+cherry-pick\\s+[\\w-]"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "branchcleanup-001-dry-default",
+      "prompt": "The user asks: 'Clean up merged branches in this repo.' They did not say to actually delete anything yet. What do you do first? State the exact command.",
+      "category": "branch-cleanup",
+      "split": "val",
+      "source": "references/script-reference.md -- branch_cleanup.sh: dry-run is the safe default, --execute required to actually delete; NOT spelled out in SKILL.md body",
+      "combine": "mean",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "branch_cleanup\\.sh"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "branch_cleanup\\.sh[^\\n]*--execute"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        },
+        {
+          "type": "expected_behavior",
+          "id": "cleanup_dry_default",
+          "items": [
+            "Runs branch_cleanup.sh with no flags first, since dry-run preview is the safe default and nothing is deleted without --execute",
+            "Does NOT pass --execute on the first invocation when the user has not confirmed which branches to delete"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bisect-001-automated",
+      "prompt": "A bug was introduced somewhere after tag v1.0.0. You have a smoke test at tests/smoke.sh that exits 0 when the bug is absent. Run an automated bisect. State the exact command.",
+      "category": "bisect",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree -- Bisecting for a bug introduction / references/script-reference.md -- bisect_helper.sh --run",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "bisect_helper\\.sh",
+            "--good\\s+v1\\.0\\.0",
+            "--run"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+bisect\\s+start"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "changelog-001-generate",
+      "prompt": "Generate a changelog covering everything since tag v1.0.0, written to CHANGELOG.md. State the exact command.",
+      "category": "changelog",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree -- Generating a changelog / references/script-reference.md -- changelog_generate.sh",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "changelog_generate\\.sh",
+            "--from\\s+v1\\.0\\.0",
+            "--output\\s+CHANGELOG\\.md"
+          ],
+          "regex": true
+        }
+      ]
+    },
+    {
+      "id": "release-001-tag-push",
+      "prompt": "Create release v2.0.0 and push the tag so the GitHub Release workflow fires. State the exact command.",
+      "category": "release",
+      "split": "val",
+      "source": "SKILL.md Quick Decision Tree -- Creating a release / references/script-reference.md -- create_release.sh --push",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "create_release\\.sh\\s+v2\\.0\\.0",
+            "--push"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+tag\\s+[\\w-]",
+            "git\\s+push\\s+.*tag"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "pr-001-draft",
+      "prompt": "Open a draft PR from feature/experimental to main so it skips the Charlie CI auto-review for now. State the exact command.",
+      "category": "pr",
+      "split": "val",
+      "source": "SKILL.md Quick Decision Tree -- Opening a PR / references/script-reference.md -- create_pr.sh --draft skips Charlie CI auto-review",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "create_pr\\.sh",
+            "--draft"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "gh\\s+pr\\s+create"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "sync-001-current-branch",
+      "prompt": "Sync your current branch with its remote counterpart before starting new work. State the exact command.",
+      "category": "sync",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree -- Syncing branches with remote / references/script-reference.md -- sync_branches.sh",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "sync_branches\\.sh"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+pull\\s+--rebase",
+            "git\\s+fetch\\s+&&\\s+git\\s+pull"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "undo-001-uncommit-keep-staged",
+      "prompt": "You just made a commit by mistake -- the message is wrong and you want to fix it before committing again, but you want the changes to stay staged. State the exact command.",
+      "category": "undo",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree -- Undoing the last commit / references/script-reference.md -- undo_last.sh commit == git reset --soft HEAD~1",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "undo_last\\.sh\\s+commit"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+reset\\s+--soft"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "undo-002-discard-refused-noninteractive",
+      "prompt": "You are running non-interactively (agent harness, no TTY). The user asks you to discard uncommitted working-tree changes in src/scratch.py. What happens if you run undo_last.sh discard src/scratch.py in this context?",
+      "category": "undo",
+      "split": "test",
+      "source": "references/script-reference.md -- undo_last.sh discard: 'Refused in --non-interactive mode' (irreversible operation); NOT in SKILL.md body",
+      "checks": [
+        {
+          "type": "expected_behavior",
+          "id": "discard_refused",
+          "items": [
+            "Correctly states that undo_last.sh discard is REFUSED when running non-interactively, because discarding working-tree changes is irreversible",
+            "Does NOT claim the discard will proceed silently in a non-interactive/agent context"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "worktree-001-remove-requires-execute",
+      "prompt": "Remove the linked worktree at ../hotfix. State the exact command(s) needed, including anything required to actually perform the removal (not just preview it).",
+      "category": "worktree",
+      "split": "val",
+      "source": "references/script-reference.md -- worktree_manage.sh remove defaults to dry-run; --execute required; NOT spelled out in SKILL.md body",
+      "combine": "mean",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "worktree_manage\\.sh\\s+remove",
+            "--execute"
+          ],
+          "regex": true
+        },
+        {
+          "type": "expected_behavior",
+          "id": "worktree_execute_required",
+          "items": [
+            "Notes that --execute is required for worktree_manage.sh remove to actually delete the worktree link, since the default is a dry-run preview"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mergedocs-001-basic",
+      "prompt": "Merge only the docs/ changes from feature/api-docs into main, running non-interactively. State the exact command.",
+      "category": "merge",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree -- Merging docs-only changes / references/script-reference.md -- merge_docs.sh",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "merge_docs\\.sh",
+            "--non-interactive"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+merge\\s+[\\w-]"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "validate-001-branches",
+      "prompt": "Before merging feature/payments into main, you want to confirm the branch state is sane (no uncommitted changes, no unexpected divergence). State the exact command.",
+      "category": "validate-branches",
+      "split": "val",
+      "source": "SKILL.md Quick Decision Tree -- Validating branch state / references/script-reference.md -- validate_branches.sh",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "validate_branches\\.sh"
+          ],
+          "regex": true
+        }
+      ]
+    },
+    {
+      "id": "rollback-001-local-unpushed",
+      "prompt": "You just merged feature/x into main locally with merge_with_validation.sh, but have NOT pushed yet. You immediately realize it was the wrong branch. Roll it back. State the exact command and explain why this differs from rolling back an already-pushed merge.",
+      "category": "merge",
+      "split": "test",
+      "source": "references/branch-and-merge-rules.md -- rollback_merge.sh default hard-reset is fine for an unpushed local merge; --revert is only required once the merge is shared/pushed",
+      "combine": "mean",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "rollback_merge\\.sh"
+          ],
+          "regex": true
+        },
+        {
+          "type": "expected_behavior",
+          "id": "unpushed_rollback_reason",
+          "items": [
+            "Explains that since the merge has NOT been pushed, the default hard-reset rollback (no --revert needed) is safe -- no shared history is being rewritten",
+            "Contrasts this with a pushed merge, where --revert would be required instead"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "branchdiff-001-stat-nows",
+      "prompt": "Show a diffstat summary of your current branch against the default branch, ignoring whitespace-only differences. State the exact command.",
+      "category": "branch-diff",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree -- Diffing branch vs default / references/script-reference.md -- branch_diff.sh --stat --no-ws",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "branch_diff\\.sh",
+            "--stat",
+            "--no-ws|-w\\b"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+diff\\s+--stat"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "prcheckout-001-review",
+      "prompt": "Check out PR #57 locally for review into a branch named review/pr-57. State the exact command.",
+      "category": "pr-checkout",
+      "split": "val",
+      "source": "SKILL.md Quick Decision Tree -- Checking out a PR for review / references/script-reference.md -- pr_checkout.sh --branch",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "pr_checkout\\.sh",
+            "57",
+            "--branch\\s+review/pr-57"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "gh\\s+pr\\s+checkout"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "mdtoc-001-check-ci",
+      "prompt": "In CI, verify that the table of contents in docs/usage.md is not stale (fail the build if it is). State the exact command.",
+      "category": "md-toc",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree -- Checking a markdown TOC in CI / references/script-reference.md -- md_toc.sh --check",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "md_toc\\.sh\\s+docs/usage\\.md",
+            "--check"
+          ],
+          "regex": true
+        }
+      ]
+    },
+    {
+      "id": "stash-002-drop-noninteractive",
+      "prompt": "You are running non-interactively (agent harness, no TTY, piped input). The user asks you to delete stash@{1}. State the exact command, and note whether a confirmation flag is required in this context.",
+      "category": "stash",
+      "split": "test",
+      "source": "references/script-reference.md -- stash_work.sh drop/clear: --yes/-y/--non-interactive OR auto-proceeds when stdin is not a TTY; NOT in SKILL.md body (recent behavior addition)",
+      "combine": "mean",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "stash_work\\.sh\\s+drop\\s+stash@\\{1\\}"
+          ],
+          "regex": true
+        },
+        {
+          "type": "expected_behavior",
+          "id": "stash_drop_noninteractive",
+          "items": [
+            "Correctly explains that in a non-TTY/agent context, stash_work.sh drop proceeds automatically without requiring --yes/-y (or explicitly adds --yes/--non-interactive to make this non-interactive) -- it does NOT claim the command will hang waiting for a terminal confirmation",
+            "Notes that the dropped stash's SHA is echoed and remains reflog-recoverable"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "commit-003-lint-scope-staged",
+      "prompt": "You have staged only src/foo.py. There are separate, unstaged edits in src/unrelated.py elsewhere in the repo that also fail lint. Will commit_enhanced.sh's lint gate block your commit because of src/unrelated.py?",
+      "category": "commit",
+      "split": "test",
+      "source": "references/script-reference.md -- commit_enhanced.sh lint/format gate is scoped to staged .py files only (recent fix: staged-file-scoped lint gate); NOT spelled out in SKILL.md body",
+      "checks": [
+        {
+          "type": "expected_behavior",
+          "id": "lint_scope_staged",
+          "items": [
+            "Correctly states the lint gate only checks the staged file(s) (src/foo.py), not unrelated unstaged files elsewhere in the repo",
+            "Does NOT claim the commit will be blocked by lint failures in src/unrelated.py, since it is not staged"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "traj-005-commit-efficiency",
+      "prompt": "Commit a bug fix to pyccsl.py with message 'fix: correct token counting'. There is no .venv directory in this repository. Emit a structured trajectory.",
+      "category": "commit",
+      "split": "val",
+      "source": "SKILL.md Quick Decision Tree -- 'After commit: verify with git log --oneline -1 (that single check is enough -- skip any git status/diff scan beforehand)' = 2-step happy path",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "commit_enhanced.sh",
+          "require_args": [
+            "--no-venv"
+          ]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 2
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+commit\\s+-"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "traj-006-push-efficiency",
+      "prompt": "Push the current branch to its remote tracking branch. Emit a structured trajectory.",
+      "category": "push",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree -- push_validated.sh: 'One call is enough on its own -- no pre-check and no post-check needed'",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "push_validated.sh"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+push\\s+[\\w-]"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "traj-007-sync-efficiency",
+      "prompt": "Sync your current branch with its remote counterpart before starting new work. Emit a structured trajectory.",
+      "category": "sync",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree -- Syncing branches with remote / script-reference.md -- sync_branches.sh is a single wrapper call",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "sync_branches.sh"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+pull\\s+--rebase",
+            "git\\s+fetch\\s+&&\\s+git\\s+pull"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "traj-008-cherry-pick-efficiency",
+      "prompt": "Cherry-pick commit abc1234 from feature/hotfix onto release/1.2, running non-interactively. Emit a structured trajectory.",
+      "category": "cherry-pick",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree -- Cherry-picking a commit / script-reference.md -- cherry_pick_commits.sh is a single wrapper call",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "cherry_pick_commits.sh",
+          "require_args": [
+            "--commit",
+            "--non-interactive"
+          ]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+cherry-pick\\s+[\\w-]"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "traj-009-rebase-autostash-efficiency",
+      "prompt": "Rebase your current branch onto main to pick up the latest changes. Your working tree has uncommitted edits you do not want to lose. Emit a structured trajectory.",
+      "category": "rebase",
+      "split": "val",
+      "source": "SKILL.md 'Safe rebase' -- rebase_safe.sh --onto main --autostash is a single wrapper call (stash/restore handled internally)",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "rebase_safe.sh",
+          "require_args": [
+            "--onto",
+            "main",
+            "--autostash"
+          ]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+stash",
+            "git\\s+rebase\\s+[\\w-]"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
+      "id": "traj-010-changelog-efficiency",
+      "prompt": "Generate a markdown changelog of commits since tag v1.0.0. Emit a structured trajectory.",
+      "category": "changelog",
+      "split": "train",
+      "source": "SKILL.md 'Generating a changelog' -- changelog_generate.sh is a single wrapper call, no documented follow-up step",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "changelog_generate.sh",
+          "require_args": [
+            "--from"
+          ]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        }
+      ]
+    },
+    {
+      "id": "traj-011-worktree-add-efficiency",
+      "prompt": "Set up a separate worktree at ../hotfix checked out to a new branch hotfix/urgent, so you can work on an urgent fix without disturbing your current branch. Emit a structured trajectory.",
+      "category": "worktree",
+      "split": "test",
+      "source": "SKILL.md 'Worktree management' -- worktree_manage.sh add is a single wrapper call, no documented follow-up step",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "worktree_manage.sh",
+          "require_args": [
+            "add",
+            "hotfix/urgent"
+          ]
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        }
+      ]
+    },
+    {
+      "id": "inspect-001-diff-last-commit",
+      "prompt": "What changed between your working tree and the last commit?",
+      "category": "inspection",
+      "split": "val",
+      "source": "SKILL.md 'When to use this skill' -- read-only carve-out (git status/log/diff/show do not require the skill); negative/over-trigger test reconciled from development's benchmark expansion (c8b20c1)",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "git diff"
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "branch_diff\\.sh"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        }
+      ]
+    },
+    {
+      "id": "inspect-002-uncommitted-check",
+      "prompt": "Do you have any uncommitted changes in your working tree right now?",
+      "category": "inspection",
+      "split": "train",
+      "source": "SKILL.md 'When to use this skill' -- read-only carve-out (git status/log/diff/show do not require the skill); negative/over-trigger test reconciled from development's benchmark expansion (c8b20c1)",
+      "execution": "dry",
+      "combine": "min",
+      "checks": [
+        {
+          "type": "tool_call",
+          "tool": "git status"
+        },
+        {
+          "type": "tool_efficiency",
+          "max_steps": 1
+        }
+      ]
+    }
+  ]
+}

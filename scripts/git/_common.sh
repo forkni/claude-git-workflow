@@ -3,7 +3,7 @@
 # Usage: source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 #
 # Sourcing this file also sources _config.sh, which:
-#   - Auto-detects PROJECT_ROOT (walks up to find .git/)
+#   - Auto-detects PROJECT_ROOT (git discovery from cwd; SCRIPT_DIR walk fallback)
 #   - Loads .cgw.conf if present
 #   - Applies CGW_* variable defaults
 #
@@ -18,6 +18,7 @@
 #   run_tool_with_logging() - Run a tool and capture output to log
 #   run_git_with_logging()  - Run git command with section logging
 #   validate_branch_pair()  - Validate src/tgt branch names and local existence; exit 1 on error
+#   cgw_run_pre_op_validation() - Shared pre-op validate_branches.sh re-invoke + log section; returns 1 on failure
 #   ensure_no_stale_index_lock() - Detect/remove stale .git/index.lock; return 1 if refused/active
 #   cgw_create_backup_tag() - Create pre-<op>-<ts>-<pid> tag; sets $CGW_BACKUP_TAG
 #   cgw_backup_tag_glob()   - Echo glob pattern(s) for backup tag filtering
@@ -28,6 +29,8 @@
 #   cgw_resolve_safe_conflicts() - Auto-resolve DU/DD, emit halt messages; sets CGW_CONFLICT_STATE
 #   cgw_print_conflict_summary() - Print categorised file list from last cgw_classify_conflicts call
 #   cgw_confirm()               - Unified confirmation prompt; handles NI mode, literal tokens, defaults
+#   cgw_default_branch()        - Echo the repo's default branch (origin/HEAD, falls back to CGW_TARGET_BRANCH)
+#   cgw_require_gh()            - Verify gh CLI is installed and authenticated; prints [ERROR] and returns 1 on failure
 
 # SCRIPT_DIR must be set by the caller before sourcing _common.sh:
 #   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -162,9 +165,12 @@ log_section_start() {
 
 # log_section_end — print a section footer with elapsed time and PASSED/FAILED status.
 # Globals:   _SECTION_START_TIMES (read — looks up start epoch by section name)
+#            CGW_SECTION_FAIL_LABEL (read, optional — overrides the non-zero
+#              status label, e.g. "WARN" for a non-blocking section; defaults
+#              to "FAILED" when unset. PASSED is never overridden.)
 # Arguments: $1 section_name — must match a prior log_section_start call
 #            $2 log_path     — file path to append output to
-#            $3 exit_code    — 0 = PASSED, non-zero = FAILED
+#            $3 exit_code    — 0 = PASSED, non-zero = FAILED (label may be overridden)
 #            $4 error_count  — optional; reserved for future display (default 0)
 # Returns:   0 always
 log_section_end() {
@@ -184,7 +190,9 @@ log_section_end() {
   if [[ ${exit_code} -eq 0 ]]; then
     status="PASSED"
   else
-    status="FAILED"
+    # Optional caller override (see CGW_SECTION_FAIL_LABEL above), e.g. a
+    # non-blocking section prints "WARN" instead of "FAILED".
+    status="${CGW_SECTION_FAIL_LABEL:-FAILED}"
   fi
 
   echo "[${section_name}] Ended: ${time_str} (${duration}s) - ${status}" | tee -a "${log_path}"
@@ -277,6 +285,10 @@ run_git_with_logging() {
 
 validate_branch_pair() {
   local src="${1}" tgt="${2}"
+  if [[ -z "${src}" ]]; then
+    err "No source branch configured. Pass --source <branch>, or set CGW_SOURCE_BRANCH in .cgw.conf."
+    exit 1
+  fi
   if ! git check-ref-format --branch "${src}" 2>/dev/null; then
     err "Invalid source branch name: '${src}'"
     exit 1
@@ -299,6 +311,40 @@ validate_branch_pair() {
   fi
 }
 
+# cgw_run_pre_op_validation <op_label> <src> <tgt> <logfile>
+# Shared pre-operation validation step used by the merge/cherry-pick/docs-merge family:
+# re-invokes validate_branches.sh with the given branch pair via env override (so callers
+# don't need to touch CGW_SOURCE_BRANCH/CGW_TARGET_BRANCH globally), wrapped in a named
+# log section.
+#
+# <op_label> drives both the section name ("PRE-<OP_LABEL> VALIDATION") and the noun used
+# in pass/fail messages ("aborting <op_label>", "Pre-<op_label> validation passed") --
+# e.g. "merge", "cherry-pick", "documentation merge".
+#
+# Returns 0 on pass, 1 on failure. Does NOT exit -- callers own `|| exit 1`, which keeps
+# this testable in isolation (bats can assert the return code without a subshell).
+cgw_run_pre_op_validation() {
+  local op_label="${1}" src="${2}" tgt="${3}" log_path="${4}"
+  local section_name
+  section_name="PRE-$(printf '%s' "${op_label}" | tr '[:lower:]' '[:upper:]') VALIDATION"
+
+  log_section_start "${section_name}" "${log_path}"
+
+  if [[ -f "${SCRIPT_DIR}/validate_branches.sh" ]]; then
+    if ! CGW_SOURCE_BRANCH="${src}" CGW_TARGET_BRANCH="${tgt}" \
+      bash "${SCRIPT_DIR}/validate_branches.sh" >>"${log_path}" 2>&1; then
+      err_tee "[FAIL] Validation failed - aborting ${op_label}"
+      log_section_end "${section_name}" "${log_path}" "1"
+      echo "Please fix validation errors before retrying"
+      return 1
+    fi
+  fi
+
+  echo "[OK] Pre-${op_label} validation passed" | tee -a "${log_path}"
+  log_section_end "${section_name}" "${log_path}" "0"
+  return 0
+}
+
 # cgw_rev_count <base> <tip>
 # Outputs the number of commits reachable from <tip> but not from <base>.
 # Accepts any git ref (branch names, remote-tracking refs, SHAs).
@@ -319,6 +365,46 @@ cgw_remote_reachable() {
 # Accepts a plain branch name; builds refs/heads/ internally.
 cgw_remote_branch_exists() {
   git ls-remote --exit-code "${1}" "refs/heads/${2}" >/dev/null 2>&1
+}
+
+# cgw_default_branch [--refresh]
+# Echoes the repository's default branch name (no remote prefix).
+# Resolution order:
+#   1. ${CGW_REMOTE}/HEAD symbolic ref (set by `git clone`, or `git remote set-head`)
+#   2. CGW_TARGET_BRANCH (config default, e.g. "main") -- used when origin/HEAD is
+#      unset, which is common for repos created via `remote add` + `push` rather
+#      than `git clone` (origin/HEAD is only auto-populated by a clone).
+# Pass --refresh to attempt `git remote set-head ${CGW_REMOTE} --auto` first
+# (requires network access to CGW_REMOTE; failure is silently ignored so this
+# stays usable offline). Returns 0 always.
+cgw_default_branch() {
+  if [[ "${1:-}" == "--refresh" ]]; then
+    git remote set-head "${CGW_REMOTE}" --auto >/dev/null 2>&1 || true
+  fi
+  local ref
+  ref="$(git symbolic-ref --quiet --short "refs/remotes/${CGW_REMOTE}/HEAD" 2>/dev/null)"
+  if [[ -n "${ref}" ]]; then
+    echo "${ref#"${CGW_REMOTE}"/}"
+  else
+    echo "${CGW_TARGET_BRANCH}"
+  fi
+}
+
+# cgw_require_gh
+# Verifies the gh CLI is installed and authenticated.
+# Prints an [ERROR] line via err() and returns 1 on either failure.
+# Silent, returns 0, on success. Callers own any section logging around it
+# (see create_pr.sh, pr_checkout.sh).
+cgw_require_gh() {
+  if ! command -v gh >/dev/null 2>&1; then
+    err "gh CLI not found. Install from https://cli.github.com/"
+    return 1
+  fi
+  if ! gh auth status >/dev/null 2>&1; then
+    err "gh CLI not authenticated. Run: gh auth login"
+    return 1
+  fi
+  return 0
 }
 
 # ensure_no_stale_index_lock - Detect and auto-remove abandoned .git/index.lock files.
@@ -436,7 +522,7 @@ cgw_rebase_in_progress() {
 # ── backup-tag module ──────────────────────────────────────────────────────────
 # Closed registry of CGW ops that create a backup tag before mutating state.
 # To add an op: edit this array AND add a cgw_create_backup_tag call to the script.
-declare -gra CGW_BACKUP_OPS=(merge cherry-pick docs-merge bisect rebase undo-commit recover) 2>/dev/null || true
+declare -gra CGW_BACKUP_OPS=(merge cherry-pick docs-merge bisect rebase undo-commit recover rollback) 2>/dev/null || true
 
 # Create a lightweight tag pre-<op>-<timestamp>-<pid> at HEAD.
 # Sets global CGW_BACKUP_TAG. Warns but always proceeds on git tag failure.
@@ -537,6 +623,52 @@ cgw_filter_local_files() {
     done
   fi
   return ${any}
+}
+
+# cgw_guard_incoming_local_files <mode> <ref>
+#   Guards commit-producing paths that don't go through commit_enhanced.sh
+#   (which already unstages CGW_LOCAL_FILES) against propagating a local-only
+#   file into shared history. <mode> selects how the incoming change set is
+#   computed; matched paths are reported.
+#     merge        — union of files touched by any commit reachable from <ref>
+#                    but not HEAD (HEAD..<ref>), so an add-then-delete on the
+#                    source branch is still caught even though it nets to no
+#                    change in the merge-base..tip tree diff
+#     cherry-pick  — files touched by commit <ref>
+#     amend        — files in commit <ref> (default HEAD)
+#   Returns 0 = proceed (nothing matched, or override set); 1 = abort.
+#   Non-interactive aborts unless CGW_ALLOW_LOCAL_FILES_IN_MERGE=1; interactive
+#   prompts (default no). Reuses cgw_filter_local_files / cgw_is_local_file.
+cgw_guard_incoming_local_files() {
+  local mode="$1" ref="${2:-HEAD}"
+  local -a incoming=() _src_cmd=()
+  case "${mode}" in
+    merge)               _src_cmd=(git log --name-only --pretty=format: "HEAD..${ref}") ;;
+    cherry-pick | amend) _src_cmd=(git show --name-only --format= "${ref}") ;;
+    *) err "cgw_guard_incoming_local_files: unknown mode '${mode}'"; return 2 ;;
+  esac
+  local _p
+  while IFS= read -r _p; do
+    [[ -n "${_p}" ]] && incoming+=("${_p}")
+  done < <("${_src_cmd[@]}" 2>/dev/null | cgw_filter_local_files)
+
+  [[ ${#incoming[@]} -eq 0 ]] && return 0
+
+  err_tee "[!] Incoming ${mode} carries local-only file(s) that must not enter shared history:"
+  local f
+  for f in "${incoming[@]}"; do
+    err_tee "      ${f}"
+  done
+
+  if [[ "${CGW_ALLOW_LOCAL_FILES_IN_MERGE:-0}" == "1" ]]; then
+    err_tee "[!] CGW_ALLOW_LOCAL_FILES_IN_MERGE=1 -- proceeding despite local-only files."
+    return 0
+  fi
+  if [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]]; then
+    err_tee "[!] Aborting. Remove these files from the incoming change, or set CGW_ALLOW_LOCAL_FILES_IN_MERGE=1 to override."
+    return 1
+  fi
+  cgw_confirm "Proceed and include these local-only file(s)?" --default no
 }
 
 # ── conflict-policy module ─────────────────────────────────────────────────────
@@ -828,11 +960,48 @@ cgw_resolve_lint_binary() {
 }
 
 # cgw_strip_path_arg <args-string>
-#   Echo args-string minus its trailing whitespace-delimited token (the path
-#   placeholder, typically "."). Used by --modified-only callers to replace the
-#   default path with an explicit file list.
+#   Echo args-string with its file-position placeholder removed, so a scoped
+#   caller can append an explicit file list. Recognizes an explicit "{files}"
+#   token (preferred convention) anywhere in the string; otherwise removes a
+#   standalone "." token (legacy convention). All other tokens — flags and
+#   non-dot paths — are preserved. This is the A3 fix: the old implementation
+#   stripped only the LAST token, so args like "check . --fix" silently kept the
+#   whole-repo "." and reverted to an unscoped scan. Space-safe (read -r -a).
 cgw_strip_path_arg() {
-  echo "${1% *}"
+  local -a toks=() out=()
+  read -r -a toks <<<"${1:-}"
+  local tok has_placeholder=0 has_dot=0
+  for tok in "${toks[@]+"${toks[@]}"}"; do
+    [[ "${tok}" == "{files}" ]] && has_placeholder=1
+    [[ "${tok}" == "." ]] && has_dot=1
+  done
+  # No identifiable path token in a multi-token string: we can't know whether a
+  # token like "src/" is a scan target (should be replaced) or a flag argument
+  # (must be kept), so we keep everything and append files. Hint the explicit
+  # convention. Single tokens ("check", "run") are subcommands, not paths.
+  if [[ ${has_placeholder} -eq 0 && ${has_dot} -eq 0 && ${#toks[@]} -gt 1 ]]; then
+    echo "[cgw-lint] cannot identify a path token in '${1}'; appending files -- put {files} where the scan target goes to make scoping explicit" >&2
+  fi
+  for tok in "${toks[@]+"${toks[@]}"}"; do
+    if [[ ${has_placeholder} -eq 1 ]]; then
+      [[ "${tok}" == "{files}" ]] && continue
+    else
+      [[ "${tok}" == "." ]] && continue
+    fi
+    out+=("${tok}")
+  done
+  echo "${out[*]+"${out[*]}"}"
+}
+
+# cgw_fill_path_placeholder <args-string> [default-path]
+#   Echo args-string with the "{files}" placeholder replaced by <default-path>
+#   (default "."). Used by the whole-repo/audit branch so an args template that
+#   carries "{files}" (e.g. "check {files}") expands to a real path ("check .")
+#   instead of leaking the literal token to the tool. Legacy args without
+#   "{files}" pass through unchanged (they already carry their own path).
+cgw_fill_path_placeholder() {
+  local args="${1:-}" default_path="${2:-.}"
+  echo "${args//\{files\}/${default_path}}"
 }
 
 # cgw_modified_files_for_lint
@@ -869,14 +1038,22 @@ cgw_run_lint_check() {
     # shellcheck disable=SC2086  # Word splitting intentional: stripped_args contains multiple flags
     run_tool_with_logging "LINT CHECK" "${logfile}" "${lint_bin}" ${stripped_args} "$@"
   else
-    # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_CHECK_ARGS/CGW_LINT_EXCLUDES contain multiple flags
-    run_tool_with_logging "LINT CHECK" "${logfile}" "${lint_bin}" ${CGW_LINT_CHECK_ARGS:-} ${CGW_LINT_EXCLUDES:-}
+    local filled_args
+    filled_args=$(cgw_fill_path_placeholder "${CGW_LINT_CHECK_ARGS:-}")
+    # shellcheck disable=SC2086  # Word splitting intentional: filled_args/CGW_LINT_EXCLUDES contain multiple flags
+    run_tool_with_logging "LINT CHECK" "${logfile}" "${lint_bin}" ${filled_args} ${CGW_LINT_EXCLUDES:-}
   fi
 }
 
 # cgw_run_format_check [files...]
 #   Runs ${CGW_FORMAT_CMD} format check. Same file-list and skip conventions as
 #   cgw_run_lint_check. Returns 0 silently when CGW_FORMAT_CMD is unset.
+#   Honors CGW_FORMAT_CHECK_NONBLOCKING=1 (internal knob, not meant to be
+#   exported by users) -- when set, a failing check's log-section footer
+#   reads "WARN" instead of "FAILED" (via CGW_SECTION_FAIL_LABEL below).
+#   The exit code / return value are unaffected either way; callers that
+#   want non-blocking behavior (check_lint.sh) decide that separately by
+#   not gating their own overall_status on this function's return code.
 cgw_run_format_check() {
   if [[ "${CGW_SKIP_LINT:-0}" == "1" ]]; then
     return 0
@@ -885,14 +1062,19 @@ cgw_run_format_check() {
   get_python_path 2>/dev/null || true
   local format_bin
   format_bin=$(cgw_resolve_lint_binary "${CGW_FORMAT_CMD}")
+  # shellcheck disable=SC2034  # read via dynamic scope by log_section_end
+  local CGW_SECTION_FAIL_LABEL=""
+  [[ "${CGW_FORMAT_CHECK_NONBLOCKING:-0}" == "1" ]] && CGW_SECTION_FAIL_LABEL="WARN"
   if [[ $# -gt 0 ]]; then
     local stripped_args
     stripped_args=$(cgw_strip_path_arg "${CGW_FORMAT_CHECK_ARGS:-}")
     # shellcheck disable=SC2086
     run_tool_with_logging "FORMAT CHECK" "${logfile}" "${format_bin}" ${stripped_args} "$@"
   else
+    local filled_args
+    filled_args=$(cgw_fill_path_placeholder "${CGW_FORMAT_CHECK_ARGS:-}")
     # shellcheck disable=SC2086
-    run_tool_with_logging "FORMAT CHECK" "${logfile}" "${format_bin}" ${CGW_FORMAT_CHECK_ARGS:-} ${CGW_FORMAT_EXCLUDES:-}
+    run_tool_with_logging "FORMAT CHECK" "${logfile}" "${format_bin}" ${filled_args} ${CGW_FORMAT_EXCLUDES:-}
   fi
 }
 
@@ -916,8 +1098,10 @@ cgw_run_lint_fix() {
       # shellcheck disable=SC2086
       run_tool_with_logging "LINT AUTO-FIX" "${logfile}" "${lint_bin}" ${stripped_args} "$@" || fix_failed=1
     else
+      local filled_args
+      filled_args=$(cgw_fill_path_placeholder "${CGW_LINT_FIX_ARGS:-}")
       # shellcheck disable=SC2086
-      run_tool_with_logging "LINT AUTO-FIX" "${logfile}" "${lint_bin}" ${CGW_LINT_FIX_ARGS:-} ${CGW_LINT_EXCLUDES:-} || fix_failed=1
+      run_tool_with_logging "LINT AUTO-FIX" "${logfile}" "${lint_bin}" ${filled_args} ${CGW_LINT_EXCLUDES:-} || fix_failed=1
     fi
   fi
   if [[ -n "${CGW_FORMAT_CMD:-}" ]]; then
@@ -930,8 +1114,10 @@ cgw_run_lint_fix() {
       # shellcheck disable=SC2086
       run_tool_with_logging "FORMAT FIX" "${logfile}" "${format_bin}" ${stripped_args} "$@" || fix_failed=1
     else
+      local filled_args
+      filled_args=$(cgw_fill_path_placeholder "${CGW_FORMAT_FIX_ARGS:-}")
       # shellcheck disable=SC2086
-      run_tool_with_logging "FORMAT FIX" "${logfile}" "${format_bin}" ${CGW_FORMAT_FIX_ARGS:-} ${CGW_FORMAT_EXCLUDES:-} || fix_failed=1
+      run_tool_with_logging "FORMAT FIX" "${logfile}" "${format_bin}" ${filled_args} ${CGW_FORMAT_EXCLUDES:-} || fix_failed=1
     fi
   fi
   return $fix_failed
@@ -948,12 +1134,33 @@ cgw_run_markdownlint_check() {
   fi
   [[ -z "${CGW_MARKDOWNLINT_CMD:-}" ]] && return 0
   if [[ $# -gt 0 ]]; then
+    # Scoped: flags/exclusions + the explicit file list (NOT the PATHS glob).
     # shellcheck disable=SC2086
     run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS:-} "$@"
   else
+    # Audit/whole-repo: flags/exclusions + the default PATHS glob.
     # shellcheck disable=SC2086
-    run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS:-}
+    run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS:-} ${CGW_MARKDOWNLINT_PATHS:-}
   fi
+}
+
+# cgw_staged_files_for_md
+#   Stdout: newline-separated staged (index) markdown files (added/copied/
+#   modified/renamed). Uses --cached because the commit gate lints what is being
+#   committed. Outputs nothing when no staged *.md files; caller skips the step.
+cgw_staged_files_for_md() {
+  git diff --cached --name-only --diff-filter=ACMR -- '*.md'
+}
+
+# cgw_staged_files_for_lint
+#   Stdout: newline-separated staged (index) files matching CGW_LINT_EXTENSIONS
+#   (default *.py). The commit gate's code-quality checks must scope to what is
+#   being committed — not the whole repo — so an unrelated file's lint error
+#   can't block the commit and auto-fix can't rewrite files outside the commit.
+cgw_staged_files_for_lint() {
+  local -a lint_exts
+  read -r -a lint_exts <<<"${CGW_LINT_EXTENSIONS:-*.py}"
+  git diff --cached --name-only --diff-filter=ACMR -- "${lint_exts[@]}"
 }
 
 # cgw_run_typecheck [files...]
@@ -980,8 +1187,10 @@ cgw_run_typecheck() {
     # shellcheck disable=SC2086  # Word splitting intentional: stripped_args contains multiple flags
     run_tool_with_logging "TYPECHECK" "${logfile}" "${tc_bin}" ${stripped_args} "$@"
   else
-    # shellcheck disable=SC2086  # Word splitting intentional: CGW_TYPECHECK_CHECK_ARGS/CGW_TYPECHECK_EXCLUDES contain multiple flags
-    run_tool_with_logging "TYPECHECK" "${logfile}" "${tc_bin}" ${CGW_TYPECHECK_CHECK_ARGS-check} ${CGW_TYPECHECK_EXCLUDES:-}
+    local filled_args
+    filled_args=$(cgw_fill_path_placeholder "${CGW_TYPECHECK_CHECK_ARGS-check}")
+    # shellcheck disable=SC2086  # Word splitting intentional: filled_args/CGW_TYPECHECK_EXCLUDES contain multiple flags
+    run_tool_with_logging "TYPECHECK" "${logfile}" "${tc_bin}" ${filled_args} ${CGW_TYPECHECK_EXCLUDES:-}
   fi
 }
 

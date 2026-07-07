@@ -126,7 +126,7 @@ if not exist "!CGW_DIR!\hooks\pre-push"                        set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\pre-rebase"                      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\cc-block-dangerous-git.sh"       set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\skill\SKILL.md"                        set "SOURCE_OK=0"
-if not exist "!CGW_DIR!\command\auto-git-workflow.md"          set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\command\auto-git-workflow-cmd.md"      set "SOURCE_OK=0"
 if not "!SOURCE_OK!"=="1" goto :pi04_fail
 echo   [PASS] PI-04  CGW source files complete
 goto :pi04_done
@@ -134,7 +134,7 @@ goto :pi04_done
 echo   [FAIL] PI-04  CGW source missing required files
 echo          Expected: scripts\git\configure.sh, hooks\pre-commit, hooks\pre-push,
 echo                    hooks\pre-rebase, hooks\cc-block-dangerous-git.sh, skill\SKILL.md,
-echo                    command\auto-git-workflow.md
+echo                    command\auto-git-workflow-cmd.md
 set "CHECKS_PASSED=0"
 :pi04_done
 
@@ -398,7 +398,7 @@ for /f %%c in ('dir /b "!TARGET_DIR!\scripts\git\*.sh" 2^>nul ^| find /c ".sh"')
 if exist "!TARGET_DIR!\.cgw.conf"                                  echo(  Config:       !TARGET_DIR!\.cgw.conf
 if exist "!TARGET_DIR!\.git\hooks\pre-commit"                      echo(  Git hooks:    !TARGET_DIR!\.git\hooks\pre-commit + pre-push + pre-rebase
 if exist "!TARGET_DIR!\.claude\skills\auto-git-workflow\SKILL.md"  echo(  Claude skill: !TARGET_DIR!\.claude\skills\auto-git-workflow\
-if exist "!TARGET_DIR!\.claude\commands\auto-git-workflow.md"      echo(  Slash cmd:    !TARGET_DIR!\.claude\commands\auto-git-workflow.md
+if exist "!TARGET_DIR!\.claude\commands\auto-git-workflow-cmd.md"  echo(  Slash cmd:    !TARGET_DIR!\.claude\commands\auto-git-workflow-cmd.md
 
 echo.
 echo   Quick start (from your project root in Git Bash):

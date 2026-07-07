@@ -41,14 +41,79 @@ teardown() {
 
 # ── Default values ─────────────────────────────────────────────────────────────
 
-@test "CGW_SOURCE_BRANCH defaults to 'development'" {
+@test "CGW_SOURCE_BRANCH has no default (empty when unconfigured)" {
+  # SOURCE is an inherently per-operation choice ("what am I merging"), not a repo-wide
+  # fact -- it must never be silently guessed. Empty is the correct "unconfigured" state;
+  # validate_branch_pair (_common.sh) surfaces a clear error for scripts that need one.
   result=$(_source_config)
-  [[ "${result}" == *"CGW_SOURCE_BRANCH=development"* ]]
+  source_line=$(echo "${result}" | grep "^CGW_SOURCE_BRANCH=")
+  [[ "${source_line}" == "CGW_SOURCE_BRANCH=" ]]
 }
 
-@test "CGW_TARGET_BRANCH defaults to 'main'" {
+@test "CGW_TARGET_BRANCH auto-detects local 'main' when no origin/HEAD is set" {
+  # create_test_repo has a local 'main' branch and no remote -- target is a repo-wide
+  # fact, so it's auto-detected at source time even with no .cgw.conf.
   result=$(_source_config)
   [[ "${result}" == *"CGW_TARGET_BRANCH=main"* ]]
+}
+
+@test "_config.sh sourced directly survives a repo with no origin remote (regression)" {
+  # Regression for a bug where "_cgw_detected_target=\"\$(git symbolic-ref ...)\"" let
+  # `git symbolic-ref`'s non-zero exit (no origin/HEAD ref) propagate as the assignment's
+  # own exit status. The test above ("auto-detects local 'main'...") exercises the same
+  # repo shape but goes through _source_config's `bash -c` subshell, which does NOT run
+  # under bats' errexit trap and so never caught this. This test sources _config.sh
+  # directly in the test body -- exactly how _common.sh's callers (e.g. common.bats'
+  # setup()) do it -- so it runs under bats' `set -e` and reproduces the real crash:
+  # sourcing aborted entirely wherever origin/HEAD is unset, which is always true right
+  # after actions/checkout on CI (no local main/master fallback ever ran).
+  cd "${TEST_REPO_DIR}"
+  export SCRIPT_DIR="${TEST_REPO_DIR}/scripts/git"
+  # shellcheck source=scripts/git/_config.sh
+  source "${CGW_PROJECT_ROOT}/scripts/git/_config.sh"
+  [[ "${CGW_TARGET_BRANCH}" == "main" ]]
+}
+
+@test "CGW_TARGET_BRANCH falls back to 'master' when no 'main' branch exists" {
+  # Independent minimal repo (not create_test_repo, which always creates 'main').
+  local repo="${TEST_TMPDIR}/master-repo"
+  mkdir -p "${repo}/scripts/git"
+  git -C "${repo}" init --quiet --initial-branch=master
+  git -C "${repo}" config user.email "test@example.com"
+  git -C "${repo}" config user.name "Test User"
+  git -C "${repo}" commit --quiet --allow-empty -m "chore: initial commit"
+
+  result=$(bash -c "
+    cd '${repo}'
+    export SCRIPT_DIR='${repo}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"CGW_TARGET_BRANCH=\${CGW_TARGET_BRANCH}\"
+  ")
+  [[ "${result}" == *"CGW_TARGET_BRANCH=master"* ]]
+}
+
+@test "CGW_TARGET_BRANCH prefers origin/HEAD over local branch names" {
+  local repo="${TEST_TMPDIR}/head-repo"
+  local remote="${TEST_TMPDIR}/head-remote.git"
+  mkdir -p "${repo}/scripts/git"
+  git init --bare --quiet "${remote}"
+  git -C "${repo}" init --quiet
+  git -C "${repo}" config user.email "test@example.com"
+  git -C "${repo}" config user.name "Test User"
+  # Default branch name here is irrelevant -- origin/HEAD should win regardless.
+  git -C "${repo}" checkout --quiet -b release
+  git -C "${repo}" commit --quiet --allow-empty -m "chore: initial commit"
+  git -C "${repo}" remote add origin "${remote}"
+  git -C "${repo}" push --quiet origin release
+  git -C "${repo}" remote set-head origin release
+
+  result=$(bash -c "
+    cd '${repo}'
+    export SCRIPT_DIR='${repo}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"CGW_TARGET_BRANCH=\${CGW_TARGET_BRANCH}\"
+  ")
+  [[ "${result}" == *"CGW_TARGET_BRANCH=release"* ]]
 }
 
 @test "CGW_LINT_CMD defaults to 'ruff'" {
@@ -75,6 +140,109 @@ teardown() {
     source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
     [[ -z \"\${CGW_LOCAL_FILES_EXEMPT}\" ]]
   "
+}
+
+# ── Centralized runtime-gate defaults (F2) ─────────────────────────────────────
+
+@test "F2: runtime-gate defaults are defined in _config.sh when unset" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    unset CGW_SKIP_LINT CGW_SKIP_MD_LINT CGW_SKIP_TYPECHECK CGW_ALL \
+          CGW_TYPECHECK_CMD CGW_TYPECHECK_CHECK_ARGS CGW_TYPECHECK_EXCLUDES
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"SKIP_LINT=\${CGW_SKIP_LINT}\"
+    echo \"SKIP_MD_LINT=\${CGW_SKIP_MD_LINT}\"
+    echo \"SKIP_TYPECHECK=\${CGW_SKIP_TYPECHECK}\"
+    echo \"ALL=\${CGW_ALL}\"
+    echo \"TC_CMD=[\${CGW_TYPECHECK_CMD}]\"
+    echo \"TC_ARGS=\${CGW_TYPECHECK_CHECK_ARGS}\"
+    echo \"TC_EX=[\${CGW_TYPECHECK_EXCLUDES}]\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"SKIP_LINT=0"* ]]
+  [[ "${output}" == *"SKIP_MD_LINT=0"* ]]
+  [[ "${output}" == *"SKIP_TYPECHECK=0"* ]]
+  [[ "${output}" == *"ALL=0"* ]]
+  [[ "${output}" == *"TC_CMD=[]"* ]]
+  [[ "${output}" == *"TC_ARGS=check"* ]]
+  [[ "${output}" == *"TC_EX=[]"* ]]
+}
+
+@test "F2: an explicitly-set gate value is preserved (+x semantics, not overridden)" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    export CGW_SKIP_LINT=1
+    export CGW_TYPECHECK_CMD=pyrefly
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"SKIP_LINT=\${CGW_SKIP_LINT}\"
+    echo \"TC_CMD=\${CGW_TYPECHECK_CMD}\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"SKIP_LINT=1"* ]]
+  [[ "${output}" == *"TC_CMD=pyrefly"* ]]
+}
+
+# ── Markdown-lint config split (A1) ────────────────────────────────────────────
+
+@test "A1: CGW_MARKDOWNLINT_ARGS defaults to exclusions only; PATHS holds the glob" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    unset CGW_MARKDOWNLINT_ARGS CGW_MARKDOWNLINT_PATHS
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"ARGS=[\${CGW_MARKDOWNLINT_ARGS}]\"
+    echo \"PATHS=[\${CGW_MARKDOWNLINT_PATHS}]\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"ARGS=[!CLAUDE.md !MEMORY.md]"* ]]
+  [[ "${output}" == *"PATHS=[**/*.md]"* ]]
+  # ARGS must not carry a scan glob.
+  [[ "${output}" != *"ARGS=[**"* ]]
+}
+
+@test "A1: legacy conflated CGW_MARKDOWNLINT_ARGS (with glob) warns" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    export CGW_MARKDOWNLINT_ARGS='**/*.md !CLAUDE.md !MEMORY.md'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+  " 2>&1
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"WARNING"* ]]
+  [[ "${output}" == *"CGW_MARKDOWNLINT_PATHS"* ]]
+}
+
+@test "G5: exclusion-only ARGS with glob chars ('!*.tmp') does NOT warn" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    export CGW_MARKDOWNLINT_ARGS='!*.tmp !CLAUDE.md --config .mdlintrc'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+  " 2>&1
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"WARNING: CGW_MARKDOWNLINT_ARGS"* ]]
+}
+
+# ── {files} placeholder defaults (A2+A3) ───────────────────────────────────────
+
+@test "A3: lint/format arg defaults use the {files} placeholder" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    unset CGW_LINT_CHECK_ARGS CGW_LINT_FIX_ARGS CGW_FORMAT_CHECK_ARGS CGW_FORMAT_FIX_ARGS
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"LC=\${CGW_LINT_CHECK_ARGS}\"
+    echo \"LF=\${CGW_LINT_FIX_ARGS}\"
+    echo \"FC=\${CGW_FORMAT_CHECK_ARGS}\"
+    echo \"FF=\${CGW_FORMAT_FIX_ARGS}\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"LC=check {files}"* ]]
+  [[ "${output}" == *"LF=check --fix {files}"* ]]
+  [[ "${output}" == *"FC=format --check {files}"* ]]
+  [[ "${output}" == *"FF=format {files}"* ]]
 }
 
 # ── CGW_ALL_PREFIXES construction ──────────────────────────────────────────────

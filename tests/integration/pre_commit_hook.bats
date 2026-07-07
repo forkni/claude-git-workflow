@@ -103,3 +103,20 @@ EOF
   [[ "${output}" == *"[WARN]"* ]]
   rm -f "${fake_lint}"
 }
+
+@test "pre-commit hook: non-Python staged file does not trigger lint" {
+  # Regression: the hook used to pass ALL staged files to the linter, so ruff
+  # parsed .h/.cpp/.md as Python and emitted false-positive syntax errors.
+  local fake_lint
+  fake_lint="$(mktemp)"
+  printf '#!/usr/bin/env bash\necho "should not run"\nexit 1\n' > "${fake_lint}"
+  chmod +x "${fake_lint}"
+  printf 'CGW_LINT_CMD="%s"\n' "${fake_lint}" > "${TEST_REPO_DIR}/.cgw.conf"
+  printf 'int main(){return 0;}\n' > "${TEST_REPO_DIR}/main.cpp"
+  git -C "${TEST_REPO_DIR}" add main.cpp
+  run git -C "${TEST_REPO_DIR}" commit -m "feat: add main.cpp"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"Checking lint"* ]]
+  [[ "${output}" != *"[WARN]"* ]]
+  rm -f "${fake_lint}"
+}

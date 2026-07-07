@@ -152,7 +152,6 @@ cleanup_tests_dir() {
 }
 
 main() {
-  local non_interactive=0
   local dry_run=0
   local src_branch="${CGW_SOURCE_BRANCH}"
   local tgt_branch="${CGW_TARGET_BRANCH}"
@@ -190,7 +189,6 @@ main() {
         exit 0
         ;;
       --non-interactive)
-        non_interactive=1
         CGW_NON_INTERACTIVE=1
         ;;
       --dry-run) dry_run=1 ;;
@@ -217,8 +215,6 @@ main() {
     esac
     shift
   done
-
-  [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
 
   validate_branch_pair "${src_branch}" "${tgt_branch}"
 
@@ -257,20 +253,7 @@ main() {
   fi
 
   # [1/7] Run validation
-  log_section_start "PRE-MERGE VALIDATION" "$logfile"
-
-  if [[ -f "${SCRIPT_DIR}/validate_branches.sh" ]]; then
-    if ! CGW_SOURCE_BRANCH="${src_branch}" CGW_TARGET_BRANCH="${tgt_branch}" \
-      bash "${SCRIPT_DIR}/validate_branches.sh" >>"$logfile" 2>&1; then
-      err_tee "[FAIL] Validation failed - aborting merge"
-      log_section_end "PRE-MERGE VALIDATION" "$logfile" "1"
-      echo "Please fix validation errors before retrying"
-      exit 1
-    fi
-  fi
-
-  echo "[OK] Pre-merge validation passed" | tee -a "$logfile"
-  log_section_end "PRE-MERGE VALIDATION" "$logfile" "0"
+  cgw_run_pre_op_validation "merge" "${src_branch}" "${tgt_branch}" "$logfile" || exit 1
   echo "" | tee -a "$logfile"
 
   # [2/7] Store current branch and checkout target
@@ -322,6 +305,15 @@ main() {
   fi
   if [[ "${CGW_MERGE_IGNORE_WHITESPACE:-0}" == "1" ]]; then
     merge_extra_args+=("-Xignore-space-change")
+  fi
+
+  # Refuse to merge a source branch that would carry local-only files into the
+  # target's shared history (commit_enhanced.sh can't unstage from a merge).
+  # The EXIT trap restores the original branch on abort.
+  if ! cgw_guard_incoming_local_files merge "${src_branch}"; then
+    err_tee "[FAIL] Merge aborted: source branch carries local-only files"
+    log_section_end "GIT MERGE" "$logfile" "1"
+    exit 1
   fi
 
   # shellcheck disable=SC2068  # Intentional: empty array expands to zero words (${arr[@]+...} is Bash 3.x portable)

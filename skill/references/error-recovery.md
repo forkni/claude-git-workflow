@@ -1,5 +1,18 @@
 # Error Recovery
 
+## Contents
+- PreToolUse Guardrail
+- Lint Failures
+- Push Failures
+- Merge Rollback
+- Branch Sync Issues
+- Rebase Issues (rebase_safe.sh)
+- Bisect Stuck Session
+- Undo Operations
+- No Changes to Commit
+- Lock File Auto-Recovery
+- Log Files
+
 ## PreToolUse Guardrail
 
 If Claude Code blocks a command with `BLOCKED: ...`, the CGW harness guardrail is active. The block message includes a redirect to the correct CGW wrapper script.

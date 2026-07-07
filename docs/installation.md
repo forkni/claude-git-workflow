@@ -89,9 +89,9 @@ cd your-project && ./scripts/git/configure.sh
 
 ### "Cannot find git repository root"
 
-configure.sh walks up from its location looking for a `.git/` directory and found none.
+configure.sh resolves the repository from your current directory (git's own discovery, `git rev-parse --show-toplevel`), falling back to walking up from the script's location — and found no repository either way.
 
-**Fix:** Make sure you're installing into an initialised git repository. If the target project isn't a repo yet, run `git init` in it first.
+**Fix:** Run it from inside the target project, and make sure that project is an initialised git repository. If it isn't a repo yet, run `git init` in it first.
 
 ### "Hook template not found"
 
@@ -153,11 +153,11 @@ rm -f .cgw.conf
 
 # Remove Claude Code integration (if installed locally)
 rm -rf .claude/skills/auto-git-workflow/
-rm -f .claude/commands/auto-git-workflow.md
+rm -f .claude/commands/auto-git-workflow-cmd.md
 ```
 
 To remove a globally-installed skill:
 ```bash
 rm -rf ~/.claude/skills/auto-git-workflow/
-rm -f ~/.claude/commands/auto-git-workflow.md
+rm -f ~/.claude/commands/auto-git-workflow-cmd.md
 ```
