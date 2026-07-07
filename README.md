@@ -1,5 +1,7 @@
 # claude-git-workflow
 
+[![Release](https://img.shields.io/github/v/release/forkni/claude-git-workflow)](https://github.com/forkni/claude-git-workflow/releases)
+
 Drop-in git automation for any project. Enhanced commits, safe merges, validated pushes, branch sync — with optional Claude Code integration.
 
 ## Quick Start (30 seconds)
@@ -54,19 +56,22 @@ No manual config editing required for common setups. `configure.sh` auto-detects
 | `push_validated.sh` | Push with remote reachability check + force-push protection |
 | `sync_branches.sh` | Sync local branches via fetch + rebase |
 | `validate_branches.sh` | Check branch state before operations |
+| `branch_diff.sh` | Show what changed on the current branch vs. the default branch; `--files`/`--stat`/`--no-ws`/`--base` refine the diff |
 | `check_lint.sh` | Read-only lint validation |
 | `fix_lint.sh` | Auto-fix lint issues |
 | `create_pr.sh` | Create GitHub PR from source → target (triggers Charlie CI + GitHub Actions) |
+| `pr_checkout.sh` | Guarded, logged wrapper around `gh pr checkout <N>` for reviewing PRs locally; `--branch`/`--force`/`--detach`/`--dry-run` supported |
 | `install_hooks.sh` | Install git hooks (pre-commit, pre-push, pre-rebase) |
 | `setup_attributes.sh` | Generate `.gitattributes` for binary and text files (Python, TouchDesigner, GLSL, assets) |
 | `clean_build.sh` | Safe cleanup of build artifacts with dry-run default (Python, TouchDesigner, GLSL) |
 | `create_release.sh` | Create annotated version tags to trigger the GitHub Release workflow; `--sign` for GPG/SSH-signed tags |
-| `stash_work.sh` | Safe stash wrapper with untracked file support, named stashes, and logging |
+| `stash_work.sh` | Safe stash wrapper with untracked file support, named stashes, non-interactive drop/clear, and logging |
 | `repo_health.sh` | Repository health: integrity check, size report, large file detection, gc |
 | `bisect_helper.sh` | Guided git bisect with backup tag, auto-detect good ref, automated test support |
 | `rebase_safe.sh` | Safe rebase: backup tag, pushed-commit guard, abort/continue/skip, autostash |
 | `branch_cleanup.sh` | Prune merged branches, stale remote-tracking refs, and old backup tags |
 | `changelog_generate.sh` | Generate categorized markdown/text changelog from conventional commits; `--version`/`--prepend` build a cumulative `CHANGELOG.md` across releases |
+| `md_toc.sh` | Offline Markdown table-of-contents generator/inserter with GitHub-compatible heading slugs; `--insert`/`--check`/`--all` |
 | `undo_last.sh` | Undo last commit (keep staged), unstage files, discard changes, amend message |
 | `recover.sh` | Reflog browsing, dangling-commit discovery (`git fsck`), and safe branch restore from any SHA |
 | `worktree_manage.sh` | Linked worktree management: list, add, remove (with dry-run default), prune stale admin files |
@@ -105,7 +110,7 @@ See [docs/configuration.md](docs/configuration.md) for all options and language-
 | [Usage](docs/usage.md) | All script examples, commit format, branch setup, env vars |
 | [Configuration](docs/configuration.md) | Config system, all options, lint examples for 7 ecosystems |
 | [CI Setup](docs/ci-setup.md) | GitHub Actions, Charlie CI, local tool install |
-| [Claude Code](docs/claude-code-integration.md) | Skill install (local and global), slash command |
+| [Claude Code](docs/claude-code-integration.md) | Skill (`auto-git-workflow`) + `/auto-git-workflow-cmd` state-aware git menu — install (local and global) |
 | [Shell Style Audit](docs/STYLE_AUDIT.md) | Google Shell Style Guide compliance report and fixes (v0.3.0) |
 | [cgw.conf.example](cgw.conf.example) | Inline-documented reference for every config variable |
 
