@@ -36,10 +36,17 @@ _sync_original_branch=""
 _sync_did_checkout=0
 _SYNC_AUTOSTASH=0
 _sync_dry_run=0
+_SYNC_PROTECTED_FILES=()
+_sync_current_old_head=""
 
 _cleanup_sync() {
   local current
   current=$(git branch --show-current 2>/dev/null || true)
+  if [[ ${#_SYNC_PROTECTED_FILES[@]} -gt 0 ]]; then
+    echo "" >&2
+    echo "[!] Interrupted mid-sync -- restoring protected skip-worktree files" >&2
+    _sync_restore_skip_worktree "${_sync_current_old_head:-HEAD}" >&2 2>&1 || true
+  fi
   if [[ ${_sync_did_checkout} -eq 1 ]] && [[ -n "${_sync_original_branch}" ]] &&
     [[ "${current}" != "${_sync_original_branch}" ]]; then
     echo "" >&2
@@ -49,6 +56,103 @@ _cleanup_sync() {
   fi
 }
 trap _cleanup_sync EXIT INT TERM
+
+# ============================================================================
+# SKIP-WORKTREE PROTECTION (defense-in-depth for any skip-worktree file)
+# ============================================================================
+# git's skip-worktree bit hides local disk edits from `git status`/`diff-index`
+# (and even from `git diff`, since git trusts the index instead of stat-ing the
+# worktree once the bit is set), but it does NOT stop `git pull --rebase` from
+# refusing when the incoming commit also touches that file ("local changes
+# would be overwritten by merge"). Previously this meant a diverged
+# skip-worktree file could abort an entire sync with no warning ([1/4] reported
+# "clean"), requiring a manual clear-bit/stash/pull/restore/re-set-bit dance.
+# These helpers do that dance automatically: protect (before the pull) backs up
+# and resets any diverged skip-worktree file to HEAD so the pull can proceed;
+# restore (after the pull) puts the local bytes back, re-applies the bit, and
+# reports whatever upstream changed so the user can reconcile new fields.
+
+# _sync_report_skip_worktree_divergence - informational-only scan used by the
+# [1/4] working-tree check. Does not back up or mutate anything (aside from a
+# transient, always-restored skip-worktree toggle needed to see real content).
+_sync_report_skip_worktree_divergence() {
+  local sw_files f
+  local -a diverged=()
+  sw_files=$(git ls-files -v | sed -n 's/^S //p')
+  [[ -z "${sw_files}" ]] && return 0
+
+  while IFS= read -r f; do
+    [[ -z "${f}" ]] && continue
+    git update-index --no-skip-worktree -- "${f}"
+    if ! git diff --quiet HEAD -- "${f}" 2>/dev/null; then
+      diverged+=("${f}")
+    fi
+    git update-index --skip-worktree -- "${f}"
+  done <<<"${sw_files}"
+
+  if [[ ${#diverged[@]} -gt 0 ]]; then
+    echo "[!] skip-worktree file(s) diverged from HEAD on disk (will be auto-protected during pull):" | tee -a "$logfile"
+    printf '    %s\n' "${diverged[@]}" | tee -a "$logfile"
+  fi
+}
+
+# _sync_protect_skip_worktree - call immediately before the pull. For each
+# skip-worktree file that has genuinely diverged from HEAD on disk: back it up,
+# reset it to HEAD (unblocking the pull), and record it in
+# _SYNC_PROTECTED_FILES for _sync_restore_skip_worktree to fix up afterward.
+# Files that have NOT diverged are left alone (bit re-set immediately). No-op
+# when there are no skip-worktree files at all (the common case).
+_sync_protect_skip_worktree() {
+  _SYNC_PROTECTED_FILES=()
+  local sw_files f
+  sw_files=$(git ls-files -v | sed -n 's/^S //p')
+  [[ -z "${sw_files}" ]] && return 0
+
+  while IFS= read -r f; do
+    [[ -z "${f}" ]] && continue
+    git update-index --no-skip-worktree -- "${f}"
+    if ! git diff --quiet HEAD -- "${f}" 2>/dev/null; then
+      echo "  [!] Protecting diverged skip-worktree file for pull: ${f}" | tee -a "$logfile"
+      cp -- "${f}" "${f}.cgw-bak"
+      git checkout HEAD -- "${f}"
+      _SYNC_PROTECTED_FILES+=("${f}")
+    else
+      git update-index --skip-worktree -- "${f}"
+    fi
+  done <<<"${sw_files}"
+}
+
+# _sync_restore_skip_worktree - call after the pull (success, failure, or
+# interruption -- always). Restores local bytes from the backup, re-applies
+# skip-worktree, and reports the upstream diff (against the pre-pull HEAD
+# passed as $1) so the user can reconcile any new shared fields. Never
+# silently discards a protected file's local content.
+# Arguments:
+#   $1 - pre-pull HEAD (from `git rev-parse HEAD`, captured before protecting)
+_sync_restore_skip_worktree() {
+  local old_head="${1:-HEAD}"
+  [[ ${#_SYNC_PROTECTED_FILES[@]} -eq 0 ]] && return 0
+
+  local f upstream_diff
+  for f in "${_SYNC_PROTECTED_FILES[@]}"; do
+    echo "" | tee -a "$logfile"
+    echo "  [*] Restoring protected file: ${f}" | tee -a "$logfile"
+    upstream_diff=$(git diff "${old_head}" HEAD -- "${f}" 2>/dev/null || true)
+    if [[ -n "${upstream_diff}" ]]; then
+      echo "  Upstream changed this file during sync -- reconcile manually:" | tee -a "$logfile"
+      echo "${upstream_diff}" | tee -a "$logfile"
+    else
+      echo "  Upstream did not change this file -- nothing to reconcile" | tee -a "$logfile"
+    fi
+    if [[ -f "${f}.cgw-bak" ]]; then
+      cp -- "${f}.cgw-bak" "${f}"
+      rm -f -- "${f}.cgw-bak"
+    fi
+    git update-index --skip-worktree -- "${f}"
+  done
+  _SYNC_PROTECTED_FILES=()
+  echo "" | tee -a "$logfile"
+}
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -122,15 +226,20 @@ sync_one_branch() {
     echo "  [!] Diverged: ${ahead} local commits will be rebased on top of ${behind} remote commits" | tee -a "$logfile"
   fi
 
+  _sync_current_old_head=$(git rev-parse HEAD)
+  _sync_protect_skip_worktree
+
   local rebase_args=(pull --rebase "${CGW_REMOTE}" "${branch}")
   [[ "${_SYNC_AUTOSTASH}" == "1" ]] && rebase_args=(pull --rebase --autostash "${CGW_REMOTE}" "${branch}")
   if run_git_with_logging "GIT REBASE ${branch}" "$logfile" "${rebase_args[@]}"; then
     echo "  [OK] ${branch} synced successfully" | tee -a "$logfile"
+    _sync_restore_skip_worktree "${_sync_current_old_head}"
     return 0
   else
     err_tee "  [FAIL] Rebase failed for ${branch}"
     echo "  Aborting rebase..." | tee -a "$logfile"
     git rebase --abort 2>/dev/null || true
+    _sync_restore_skip_worktree "${_sync_current_old_head}"
     echo "  Manual action needed: git pull --rebase ${CGW_REMOTE} ${branch}" | tee -a "$logfile"
     return 1
   fi
@@ -236,6 +345,11 @@ main() {
   else
     echo "[OK] Working tree clean" | tee -a "$logfile"
   fi
+  # diff-index above ignores skip-worktree files by design (that's the bug
+  # class this hardening targets) -- surface real disk divergence separately
+  # so it's never silently reported as "clean". Actual protect/restore happens
+  # automatically per-branch in sync_one_branch; this is informational only.
+  _sync_report_skip_worktree_divergence
   echo "" | tee -a "$logfile"
 
   # [2/4] Fetch from origin
