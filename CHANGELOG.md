@@ -1,3 +1,16 @@
+## v0.7.0 (2026-07-09)
+
+> Changes since `v0.6.0`
+
+### New Features
+
+  - protect diverged skip-worktree local files across branch sync (69dcb1d)
+
+### Documentation
+
+  - document skip-worktree sync protection in README, usage.md, configuration.md (76c9677)
+  - bring README up to date with v0.6.0 script additions and integration details (16a5f19)
+
 ## v0.6.0 (2026-07-07)
 
 > Changes since `v0.5.0`
