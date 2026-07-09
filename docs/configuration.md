@@ -92,6 +92,12 @@ cp cgw.conf.example .cgw.conf
 | `CGW_NON_INTERACTIVE` | `0` | Set to `1` to suppress all prompts (CI mode) |
 | `CGW_NO_VENV` | `0` | Set to `1` to skip virtual environment detection |
 
+If a `CGW_LOCAL_FILES` entry (or any other local file) is also given the git **skip-worktree**
+bit, `sync_branches.sh` protects it across a sync: a diverged skip-worktree file no longer causes
+`pull --rebase` to silently fail or `[1/4]` to misreport "clean" — the script backs it up, resets
+it to `HEAD` so the pull proceeds, then restores the local bytes, re-applies the bit, and prints
+the upstream diff for reconciliation. See [`usage.md`](usage.md#sync-with-remote).
+
 For the complete list of all options with detailed descriptions, see [`cgw.conf.example`](../cgw.conf.example).
 
 ---

@@ -54,7 +54,7 @@ No manual config editing required for common setups. `configure.sh` auto-detects
 | `cherry_pick_commits.sh` | Cherry-pick with source branch validation and backup tag |
 | `merge_docs.sh` | Documentation-only merge from source to target |
 | `push_validated.sh` | Push with remote reachability check + force-push protection |
-| `sync_branches.sh` | Sync local branches via fetch + rebase |
+| `sync_branches.sh` | Sync local branches via fetch + rebase; auto-protects diverged `skip-worktree` local files across the pull |
 | `validate_branches.sh` | Check branch state before operations |
 | `branch_diff.sh` | Show what changed on the current branch vs. the default branch; `--files`/`--stat`/`--no-ws`/`--base` refine the diff |
 | `check_lint.sh` | Read-only lint validation |

@@ -133,6 +133,12 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use PRs by default.
 ./scripts/git/sync_branches.sh --prune      # also remove stale remote-tracking refs
 ```
 
+`sync_branches.sh` protects any `skip-worktree` local file (see `CGW_LOCAL_FILES`) that has
+genuinely diverged from `HEAD` on disk: it surfaces the divergence instead of a false "clean",
+backs up and resets the file to `HEAD` so `pull --rebase` can proceed, then restores the local
+bytes, re-applies the bit, and prints the upstream diff so new shared content can be reconciled
+by hand. No-op when nothing has diverged.
+
 ### Rollback a merge
 
 ```bash
