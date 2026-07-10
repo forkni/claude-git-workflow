@@ -248,6 +248,16 @@ Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login
 ./scripts/git/sync_branches.sh --prune      # also remove stale remote-tracking refs
 ```
 
+`sync_branches.sh` also protects any git **skip-worktree** local file (see `CGW_LOCAL_FILES`)
+across a sync. That bit hides local disk edits from `git status`/`diff-index`, but does **not**
+stop `git pull --rebase` from refusing when the incoming commit also touches the file ("local
+changes would be overwritten by merge") -- previously this could abort an entire sync with `[1/4]`
+misreporting the tree as "clean". The script now: (1) surfaces skip-worktree divergence at `[1/4]`
+instead of hiding it, (2) before the pull, backs up and resets any diverged skip-worktree file to
+HEAD so the pull can proceed, and (3) after the pull, restores the local bytes, re-applies the bit,
+and **prints the upstream diff** for that file so you can reconcile new shared content -- never
+silently discarding local edits. No-op when no skip-worktree file has diverged (the common case).
+
 **Rollback a merge:**
 ```bash
 ./scripts/git/rollback_merge.sh                          # interactive (hard reset)

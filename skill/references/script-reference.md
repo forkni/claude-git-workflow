@@ -447,6 +447,14 @@ Safety checks: verifies remote reachability, warns if behind remote, blocks ungu
 
 Runs `git fetch ${CGW_REMOTE}` then `git pull --rebase` on each target.
 
+**Skip-worktree protection:** the git skip-worktree bit hides local disk edits from
+`git status`/`diff-index`, but does not stop `pull --rebase` from refusing when the incoming
+commit also touches that file. `sync_branches.sh` detects any skip-worktree file that has
+genuinely diverged from `HEAD` (`[1/4]` now reports it instead of a false "clean"), backs it
+up and resets it to `HEAD` before the pull so the pull can proceed, then restores the local
+bytes, re-applies the bit, and prints the upstream diff for that file so new shared content can
+be reconciled by hand. No-op when no skip-worktree file has diverged.
+
 ---
 
 ## Repository Inspection & Documentation
