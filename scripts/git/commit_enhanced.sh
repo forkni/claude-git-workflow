@@ -320,9 +320,22 @@ main() {
   git diff --cached --quiet
   local has_staged=$?
 
+  # A merge in progress (MERGE_HEAD present) must still be concluded even when
+  # the resolved index happens to be byte-identical to HEAD -- e.g. conflict
+  # resolution that kept "our" side on every conflicting hunk. The commit
+  # below still needs to run: it records a real two-parent merge commit and
+  # clears MERGE_HEAD, regardless of whether the tree itself changed.
+  local merge_head_path merge_in_progress=0
+  merge_head_path="$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)"
+  [[ -n "${merge_head_path}" && -f "${merge_head_path}" ]] && merge_in_progress=1
+
   if [[ ${has_unstaged} -eq 0 ]] && [[ ${has_staged} -eq 0 ]]; then
-    echo "[!] No changes to commit"
-    exit 0
+    if [[ ${merge_in_progress} -eq 1 ]]; then
+      echo "[!] Merge in progress; resolved tree matches HEAD -- concluding merge commit"
+    else
+      echo "[!] No changes to commit"
+      exit 0
+    fi
   fi
 
   # Determine effective staging mode.
@@ -607,6 +620,17 @@ main() {
 
   local -a _commit_cmd=(git commit -m "${commit_msg}")
   [[ "${_do_sign}" -eq 1 ]] && _commit_cmd=(git commit -S -m "${commit_msg}")
+  # A merge conclusion whose STAGED tree is byte-identical to HEAD (every
+  # conflict resolved toward "ours") has nothing for plain `git commit` to
+  # see -- it would refuse with "nothing to commit" and, worse, silently
+  # drop MERGE_HEAD without ever recording the merge. --allow-empty forces
+  # the two-parent merge commit through in that case. Only has_staged (not
+  # has_unstaged) matters here: this commit only ever records the index, so
+  # unrelated dirty working-tree files elsewhere are irrelevant to whether
+  # *this* commit would be empty.
+  if [[ ${merge_in_progress} -eq 1 ]] && [[ ${has_staged} -eq 0 ]]; then
+    _commit_cmd+=(--allow-empty)
+  fi
 
   if "${_commit_cmd[@]}"; then
     echo ""
