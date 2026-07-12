@@ -48,8 +48,9 @@ The shared module responsible for running lint, format, and markdownlint tool bi
 - `cgw_run_markdownlint_check [files…]` — runs `CGW_MARKDOWNLINT_CMD` with `CGW_MARKDOWNLINT_ARGS` via `run_tool_with_logging`. Skips silently when `CGW_SKIP_MD_LINT=1` or `CGW_MARKDOWNLINT_CMD` is empty.
 - `cgw_strip_path_arg <args-string>` — strips the trailing path token from a CGW args string (the `${ARGS% *}` idiom). Used when a file list is passed explicitly so the default path token doesn't conflict.
 - `cgw_modified_files_for_lint` — returns the space-separated list of `.py` files modified vs HEAD (for `--modified-only` mode in `check_lint.sh` / `fix_lint.sh`).
+- `cgw_lint_files_diverging_from_index` — pure git-plumbing predicate: emits any staged lint-eligible file whose working-tree content (what the checks above validate) differs from its staged blob (what `git commit` records). Detects via `git hash-object --path=<f> <f>` vs `git rev-parse :<f>` — filter-correct (honors `.gitattributes`) and immune to skip-worktree/assume-unchanged, unlike `git diff`. Backs the `[3.5]` congruence guard in `commit_enhanced.sh` that closes the "validated the working tree, committed a different blob" bug class. `CGW_ALLOW_STAGED_DIVERGENCE=1` opts a genuine `--staged-only` commit out of the guard's fail-closed default.
 
-**Callers**: `commit_enhanced.sh` (lint check, format check, markdownlint, auto-fix loop), `check_lint.sh`, `fix_lint.sh`, `.githooks/pre-commit` (non-blocking advisory check).
+**Callers**: `commit_enhanced.sh` (lint check, format check, markdownlint, auto-fix loop, `[3.5]` congruence guard), `check_lint.sh`, `fix_lint.sh`, `.githooks/pre-commit` (non-blocking advisory check).
 
 ---
 

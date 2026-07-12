@@ -211,6 +211,16 @@ unset _cgw_md_tok _cgw_md_toks
 [[ -z "${CGW_SKIP_TYPECHECK+x}" ]]       && CGW_SKIP_TYPECHECK=0
 [[ -z "${CGW_ALL+x}" ]]                  && CGW_ALL=0
 
+# --- Staged-blob congruence guard (commit_enhanced.sh) ---
+# commit_enhanced.sh's code-quality checks validate the WORKING TREE, but
+# `git commit` records the INDEX. In a genuine --staged-only commit (partial
+# `git add -p`), CGW cannot tell "the user meant index != working tree" apart
+# from "a stale/unvalidated blob is about to be committed", so it fails closed
+# by default. Set to "1" to instead commit the staged blob as-is with a
+# warning. Bulk (--all) and --only commits are unaffected -- both stage
+# whole files, so the guard re-stages and re-verifies automatically there.
+[[ -z "${CGW_ALLOW_STAGED_DIVERGENCE+x}" ]] && CGW_ALLOW_STAGED_DIVERGENCE=0
+
 # --- Typecheck step (non-blocking pre-commit hook) ---
 # Empty CGW_TYPECHECK_CMD = typecheck step skipped. Example: "pyrefly".
 [[ -z "${CGW_TYPECHECK_CMD+x}" ]]        && CGW_TYPECHECK_CMD=""
