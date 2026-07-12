@@ -348,6 +348,163 @@ _run_commit() {
   [[ "${output}" == *"FORMAT ERRORS"* ]] || [[ "${output}" == *"would reformat"* ]]
 }
 
+# ── Staged-blob congruence guard [3.5] ────────────────────────────────────────
+# [3] validates the WORKING TREE, but `git commit` records the INDEX. These
+# tests exercise the [3.5] guard that closes the gap: it must never let a
+# staged blob CGW never validated silently reach HEAD. All cases need the
+# format path enabled, so they use the inline `bash -c` pattern above (the
+# `_run_commit` helper hard-codes CGW_FORMAT_CMD='').
+
+@test "Mode 1: unformatted staged blob + clean working tree aborts the commit (fails closed)" {
+  install_mock_ruff_reformatter
+  printf 'x = 1\n#UNFORMATTED#\n' > "${TEST_REPO_DIR}/mode1.py"
+  git -C "${TEST_REPO_DIR}" add mode1.py
+  # Working tree is already "clean" WITHOUT re-staging -- index still holds
+  # the unformatted blob. [3]'s format check reads disk (clean) and passes;
+  # only [3.5]'s index-vs-disk hash comparison can catch this.
+  printf 'x = 1\n' > "${TEST_REPO_DIR}/mode1.py"
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD='ruff'
+    export CGW_FORMAT_CHECK_ARGS='format --check'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'feat: mode1 divergence'
+  "
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"would commit a different staged blob"* ]]
+  # No commit landed -- the branch tip is still the pre-existing dev commit.
+  last_msg=$(git -C "${TEST_REPO_DIR}" log -1 --format="%s")
+  [ "${last_msg}" = "feat: dev commit" ]
+}
+
+@test "Mode 1: CGW_ALLOW_STAGED_DIVERGENCE=1 opts out and commits the staged blob as-is" {
+  install_mock_ruff_reformatter
+  printf 'x = 1\n#UNFORMATTED#\n' > "${TEST_REPO_DIR}/mode1.py"
+  git -C "${TEST_REPO_DIR}" add mode1.py
+  printf 'x = 1\n' > "${TEST_REPO_DIR}/mode1.py"
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD='ruff'
+    export CGW_FORMAT_CHECK_ARGS='format --check'
+    export CGW_NON_INTERACTIVE=1
+    export CGW_ALLOW_STAGED_DIVERGENCE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'feat: mode1 override'
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"CGW_ALLOW_STAGED_DIVERGENCE=1"* ]]
+  run git -C "${TEST_REPO_DIR}" show HEAD:mode1.py
+  [[ "${output}" == *"#UNFORMATTED#"* ]]
+}
+
+@test "Mode 2 (natural): auto-fix reformats disk and the committed blob is formatted" {
+  install_mock_ruff_reformatter
+  printf 'x = 1\n#UNFORMATTED#\n' > "${TEST_REPO_DIR}/mode2.py"
+  git -C "${TEST_REPO_DIR}" add mode2.py    # staged == disk == unformatted
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD='ruff'
+    export CGW_FORMAT_CHECK_ARGS='format --check'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'feat: mode2 autofix'
+  "
+  [ "${status}" -eq 0 ]
+  run git -C "${TEST_REPO_DIR}" show HEAD:mode2.py
+  [[ "${output}" != *"#UNFORMATTED#"* ]]
+  run cat "${TEST_REPO_DIR}/mode2.py"
+  [[ "${output}" != *"#UNFORMATTED#"* ]]
+}
+
+@test "Mode 2 (latent): a re-stage silently defeated by assume-unchanged aborts instead of committing stale content" {
+  install_mock_ruff_reformatter
+  printf 'x = 1\n#UNFORMATTED#\n' > "${TEST_REPO_DIR}/mode2b.py"
+  git -C "${TEST_REPO_DIR}" add mode2b.py
+  # Model a real restage no-op: assume-unchanged makes `git add -u`/`git add -f`
+  # skip this path even when explicitly named (verified: assume-unchanged
+  # survives an explicit `git add -f -- <path>`, not just bulk `git add -u`).
+  git -C "${TEST_REPO_DIR}" update-index --assume-unchanged mode2b.py
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD='ruff'
+    export CGW_FORMAT_CHECK_ARGS='format --check'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'feat: mode2 latent'
+  "
+  # The guard attempts the re-stage (bulk mode, effective_staged_only==0)...
+  [[ "${output}" == *"re-staging: mode2b.py"* ]]
+  # ...it silently fails (assume-unchanged), the re-verify catches it, and the
+  # commit aborts rather than landing the still-stale blob.
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"still diverges from the validated working tree; aborting"* ]]
+  last_msg=$(git -C "${TEST_REPO_DIR}" log -1 --format="%s")
+  [ "${last_msg}" = "feat: dev commit" ]
+}
+
+@test "guard: clean staged .py commits normally and the fixer never runs" {
+  install_mock_ruff_reformatter
+  printf 'x = 1\n' > "${TEST_REPO_DIR}/clean.py"   # no marker -- already formatted
+  git -C "${TEST_REPO_DIR}" add clean.py
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD='ruff'
+    export CGW_FORMAT_CHECK_ARGS='format --check'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'feat: clean commit'
+  "
+  [ "${status}" -eq 0 ]
+  run git -C "${TEST_REPO_DIR}" show HEAD:clean.py
+  [[ "${output}" == *"x = 1"* ]]
+  [[ "${output}" != *"#UNFORMATTED#"* ]]
+  # The format FIX (bare `ruff format <file>`) must never have run -- only the check.
+  run cat "${MOCK_BIN_DIR}/ruff.log"
+  [[ "${output}" == *"format --check clean.py"* ]]
+  [[ "${output}" != *"mock ruff format clean.py"* ]]
+}
+
+@test "guard: auto-fix re-stage never pulls in a dirty local-only file" {
+  install_mock_ruff_reformatter
+  printf 'x = 1\n#UNFORMATTED#\n' > "${TEST_REPO_DIR}/needs_fmt.py"
+  git -C "${TEST_REPO_DIR}" add needs_fmt.py
+  # A local-only file dirty in the working tree at the same time.
+  echo "# secret local notes" > "${TEST_REPO_DIR}/CLAUDE.md"
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD='ruff'
+    export CGW_FORMAT_CHECK_ARGS='format --check'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'feat: fix and protect local'
+  "
+  [ "${status}" -eq 0 ]
+  run git -C "${TEST_REPO_DIR}" show HEAD:needs_fmt.py
+  [[ "${output}" != *"#UNFORMATTED#"* ]]
+  # CLAUDE.md never tracked / never in the commit.
+  tracked=$(git -C "${TEST_REPO_DIR}" ls-files CLAUDE.md)
+  [ -z "${tracked}" ]
+}
+
 # ── Code-quality gate scoping (G1) ────────────────────────────────────────────
 
 @test "lint gate is scoped to staged .py (unrelated dirty .py does not block)" {

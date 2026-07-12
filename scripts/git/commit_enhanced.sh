@@ -467,6 +467,48 @@ main() {
       echo "[OK] Code quality checks passed"
     fi
 
+    # [3.5] Congruence guard: the checks above validated the WORKING TREE, but
+    # `git commit` records the INDEX. If a staged lint file's blob differs from
+    # what's on disk, CGW would commit content it never validated -- silently.
+    # Covers both the gate-skip case (working tree already clean, stale staged
+    # blob) and a re-stage that silently failed to update the index.
+    local -a _diverged_lint_files=()
+    local _div_f
+    while IFS= read -r _div_f; do
+      [[ -n "${_div_f}" ]] && _diverged_lint_files+=("${_div_f}")
+    done < <(cgw_lint_files_diverging_from_index)
+
+    if [[ ${#_diverged_lint_files[@]} -gt 0 ]]; then
+      # Re-staging the whole file is safe only when staging intent is
+      # whole-file: bulk/--all (effective_staged_only==0) or --only <paths>
+      # (only_paths non-empty; --only forces staged_only=1 above). Genuine
+      # partial staging (--staged-only, or auto-detected pre-stage+unstaged,
+      # with no --only) may intentionally leave index != working tree --
+      # never silently re-stage there.
+      if [[ ${effective_staged_only} -eq 0 || ${#only_paths[@]} -gt 0 ]]; then
+        echo "[!] Validated working tree diverges from staged blob; re-staging: ${_diverged_lint_files[*]}"
+        local _div_rf
+        for _div_rf in "${_diverged_lint_files[@]}"; do
+          git add -f -- "${_div_rf}"
+        done
+        unstage_local_only_files
+        # Re-verify: a path that still can't be re-staged (e.g. assume-unchanged/
+        # skip-worktree) stays divergent -- fail closed rather than commit
+        # unvalidated content.
+        if cgw_lint_files_diverging_from_index >/dev/null; then
+          err "Staged content still diverges from the validated working tree; aborting."
+          exit 1
+        fi
+      elif [[ "${CGW_ALLOW_STAGED_DIVERGENCE:-0}" == "1" ]]; then
+        echo "[!] staged-only: committing staged blob that differs from the validated working tree (CGW_ALLOW_STAGED_DIVERGENCE=1)"
+      else
+        err "Staged content differs from the validated working tree for: ${_diverged_lint_files[*]}"
+        err "CGW validated the working tree but would commit a different staged blob."
+        err "Re-stage the file(s) with 'git add', or set CGW_ALLOW_STAGED_DIVERGENCE=1 to commit the staged blob as-is."
+        exit 1
+      fi
+    fi
+
     # Markdown lint step (skipped if --skip-md-lint or CGW_MARKDOWNLINT_CMD not set).
     # Scope to staged *.md only — a code-only commit must not be blocked by a
     # markdown violation in an unrelated file elsewhere in the repo. Local-only

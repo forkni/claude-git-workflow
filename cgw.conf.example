@@ -171,6 +171,24 @@ CGW_LINT_EXTENSIONS="*.py"
 # CGW_LINT_EXTENSIONS="*.c *.cpp *.h *.hpp"
 
 # ============================================================================
+# STAGED-BLOB CONGRUENCE GUARD (commit_enhanced.sh)
+# ============================================================================
+# commit_enhanced.sh's lint/format checks validate the WORKING TREE, but
+# `git commit` records the INDEX. If a staged file's blob differs from what's
+# on disk (e.g. a partial `git add -p`, or a formatter that touched disk
+# without re-staging), the guard fails the commit closed rather than silently
+# committing content that was never validated.
+#
+# Bulk (--all) and --only commits are unaffected -- both stage whole files,
+# so the guard re-stages and re-verifies automatically. This setting only
+# matters for a genuine --staged-only commit where index != working tree is
+# deliberate.
+#
+# 0 = abort on divergence (default, safe). 1 = commit the staged blob as-is
+# with a warning.
+CGW_ALLOW_STAGED_DIVERGENCE="0"
+
+# ============================================================================
 # MERGE STRATEGY OPTIONS (merge_with_validation.sh)
 # ============================================================================
 # CGW_MERGE_CONFLICT_STYLE: Set to "diff3" to show the base version in conflict

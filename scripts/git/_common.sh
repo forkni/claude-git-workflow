@@ -1163,6 +1163,32 @@ cgw_staged_files_for_lint() {
   git diff --cached --name-only --diff-filter=ACMR -- "${lint_exts[@]}"
 }
 
+# cgw_lint_files_diverging_from_index
+#   Stdout: newline-separated staged lint-eligible files whose WORKING-TREE
+#   content differs from what is currently staged. Exists because the commit
+#   gate's lint/format checks read files from disk (working tree) while
+#   `git commit` records the index -- when the two differ, CGW can validate
+#   one thing and commit another, silently. Detection uses pure git plumbing
+#   only (tool-agnostic): `git hash-object --path=<f> <f>` computes the blob
+#   `git add` would produce -- filter-correct (honors .gitattributes eol/clean,
+#   so no CRLF false-positives) and immune to skip-worktree/assume-unchanged
+#   (unlike `git diff`, which reads the index and skips those paths). Returns
+#   0 if any file diverges, 1 if none do.
+cgw_lint_files_diverging_from_index() {
+  local _f _staged _disk _any=1
+  while IFS= read -r _f; do
+    [[ -z "${_f}" ]] && continue
+    _staged=$(git rev-parse --quiet --verify ":${_f}" 2>/dev/null) || continue
+    [[ -f "${_f}" ]] || continue
+    _disk=$(git hash-object --path="${_f}" -- "${_f}" 2>/dev/null) || continue
+    if [[ "${_staged}" != "${_disk}" ]]; then
+      printf '%s\n' "${_f}"
+      _any=0
+    fi
+  done < <(cgw_staged_files_for_lint)
+  return "${_any}"
+}
+
 # cgw_run_typecheck [files...]
 #   Runs ${CGW_TYPECHECK_CMD} against the project (no files) or a given file
 #   list (strips trailing path token from CGW_TYPECHECK_CHECK_ARGS when files

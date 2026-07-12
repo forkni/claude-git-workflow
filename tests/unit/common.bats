@@ -864,6 +864,54 @@ UU b.py
   rm -f "${fake_bin}"
 }
 
+# ── cgw_lint_files_diverging_from_index() ─────────────────────────────────────
+# Backs the commit_enhanced.sh [3.5] congruence guard: the lint/format checks
+# above validate the WORKING TREE, but `git commit` records the INDEX. This
+# predicate detects when the two differ for a staged lint-eligible file. Each
+# test spins up its own throwaway repo (see cgw_rev_count section) so real
+# staged/disk git state never pollutes the shared file-scope repo.
+
+@test "cgw_lint_files_diverging_from_index: emits the path when disk differs from the staged blob" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\n#UNFORMATTED#\n' > \"\${tmp}/f.py\"
+    git -C \"\${tmp}\" add f.py
+    printf 'x = 1\n' > \"\${tmp}/f.py\"
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_lint_files_diverging_from_index; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "f.py" ]
+}
+
+@test "cgw_lint_files_diverging_from_index: emits nothing when staged content matches disk" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\n' > \"\${tmp}/f.py\"
+    git -C \"\${tmp}\" add f.py
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_lint_files_diverging_from_index; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 1 ]
+  [ -z "${output}" ]
+}
+
 # ── cgw_run_lint_fix() ────────────────────────────────────────────────────────
 
 @test "cgw_run_lint_fix: skips when CGW_SKIP_LINT=1" {

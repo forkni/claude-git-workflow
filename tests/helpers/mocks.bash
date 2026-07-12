@@ -162,6 +162,68 @@ MOCK_EOF
   chmod +x "${MOCK_BIN_DIR}/ruff"
 }
 
+# install_mock_ruff_reformatter
+# A ruff-compatible mock for staged-blob vs working-tree divergence tests.
+# Unlike every other mock above, `format <files>` (the FIX) REWRITES files on
+# disk, simulating a real formatter. A file is "unformatted" iff it contains a
+# line exactly equal to the marker "#UNFORMATTED#"; formatting deletes that
+# line. `format --check <files>` fails (exit 1) iff any given file still holds
+# the marker -- it reads disk, matching the real ruff CLI. `check [--fix]
+# <files>` (the lint path) is an intentional no-op so tests can isolate the
+# format divergence behavior; exit 0 always. Portable: no `sed -i`, writes a
+# temp file then `mv -f`. Logs argv to $MOCK_BIN_DIR/ruff.log.
+install_mock_ruff_reformatter() {
+  cat > "${MOCK_BIN_DIR}/ruff" << 'MOCK_EOF'
+#!/usr/bin/env bash
+echo "mock ruff $*" >> "${0%/*}/ruff.log"
+
+subcmd=""
+is_check=0
+files=()
+for a in "$@"; do
+  case "$a" in
+    --check) is_check=1 ;;
+    --fix) : ;; # lint-fix flag; mock lint fix is a no-op
+    check | format)
+      if [[ -z "$subcmd" ]]; then subcmd="$a"; else files+=("$a"); fi
+      ;;
+    -*) : ;; # ignore any other flags/excludes
+    *) files+=("$a") ;; # a path
+  esac
+done
+
+marker='#UNFORMATTED#'
+
+# FORMAT FIX: rewrite each file to its formatted form (strip the marker line).
+if [[ "$subcmd" == "format" && $is_check -eq 0 ]]; then
+  for f in "${files[@]}"; do
+    [[ -f "$f" ]] || continue
+    tmp="${f}.cgwmock.$$"
+    grep -v -x "$marker" "$f" > "$tmp"
+    mv -f "$tmp" "$f"
+  done
+  exit 0
+fi
+
+# FORMAT CHECK: fail iff any file still contains the marker (reads DISK).
+if [[ "$subcmd" == "format" && $is_check -eq 1 ]]; then
+  rc=0
+  for f in "${files[@]}"; do
+    [[ -f "$f" ]] || continue
+    if grep -q -x "$marker" "$f"; then
+      echo "would reformat: $f"
+      rc=1
+    fi
+  done
+  exit $rc
+fi
+
+# LINT check / lint --fix: intentionally inert for these tests.
+exit 0
+MOCK_EOF
+  chmod +x "${MOCK_BIN_DIR}/ruff"
+}
+
 # ── gh CLI absence helper ──────────────────────────────────────────────────────
 
 # hide_gh
