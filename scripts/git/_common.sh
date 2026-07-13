@@ -1173,15 +1173,22 @@ cgw_staged_files_for_lint() {
 #   `git add` would produce -- filter-correct (honors .gitattributes eol/clean,
 #   so no CRLF false-positives) and immune to skip-worktree/assume-unchanged
 #   (unlike `git diff`, which reads the index and skips those paths). Returns
-#   0 if any file diverges, 1 if none do.
+#   0 if any file diverges, 1 if none do. Fails closed: a staged path that's
+#   missing from the working tree, or whose blob can't be hashed, is reported
+#   as diverged rather than skipped -- lint validated nothing for that path,
+#   so a stale staged blob must not commit silently.
 cgw_lint_files_diverging_from_index() {
   local _f _staged _disk _any=1
   while IFS= read -r _f; do
     [[ -z "${_f}" ]] && continue
     _staged=$(git rev-parse --quiet --verify ":${_f}" 2>/dev/null) || continue
-    [[ -f "${_f}" ]] || continue
-    _disk=$(git hash-object --path="${_f}" -- "${_f}" 2>/dev/null) || continue
-    if [[ "${_staged}" != "${_disk}" ]]; then
+    if [[ ! -f "${_f}" ]]; then
+      printf '%s\n' "${_f}"
+      _any=0
+      continue
+    fi
+    _disk=$(git hash-object --path="${_f}" -- "${_f}" 2>/dev/null)
+    if [[ -z "${_disk}" || "${_staged}" != "${_disk}" ]]; then
       printf '%s\n' "${_f}"
       _any=0
     fi

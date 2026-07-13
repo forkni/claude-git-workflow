@@ -455,6 +455,32 @@ _run_commit() {
   [ "${last_msg}" = "feat: dev commit" ]
 }
 
+@test "Mode 3: staged file deleted from working tree aborts instead of committing an unvalidated blob" {
+  install_mock_ruff_reformatter
+  printf 'x = 1\n#UNFORMATTED#\n' > "${TEST_REPO_DIR}/mode3.py"
+  git -C "${TEST_REPO_DIR}" add mode3.py
+  # Delete from disk without re-staging: index still holds the unformatted
+  # blob, but there's no working-tree file left for [3]'s format check to
+  # read -- the mock (like real ruff) skips missing paths and reports clean,
+  # so only [3.5]'s divergence guard can catch the stale staged blob.
+  rm "${TEST_REPO_DIR}/mode3.py"
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD='ruff'
+    export CGW_FORMAT_CHECK_ARGS='format --check'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'feat: mode3 deleted divergence'
+  "
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"would commit a different staged blob"* ]]
+  last_msg=$(git -C "${TEST_REPO_DIR}" log -1 --format="%s")
+  [ "${last_msg}" = "feat: dev commit" ]
+}
+
 @test "guard: clean staged .py commits normally and the fixer never runs" {
   install_mock_ruff_reformatter
   printf 'x = 1\n' > "${TEST_REPO_DIR}/clean.py"   # no marker -- already formatted
