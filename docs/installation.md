@@ -79,6 +79,31 @@ cd your-project && ./scripts/git/configure.sh
 
 ---
 
+## Batch-updating multiple projects (Windows)
+
+If you maintain several projects with CGW already installed, `cgw-batch-install.cmd` refreshes
+the toolkit (scripts, hooks, Claude Code skill/command, guardrail) across all of them in one run,
+without touching any project's `.cgw.conf`.
+
+```cmd
+:: 1. Copy the example config and list your project paths
+copy cgw-install-batch.conf.example cgw-install-batch.conf
+notepad cgw-install-batch.conf
+
+:: 2. Preview what would be updated (no changes made)
+cgw-batch-install.cmd --dry-run
+
+:: 3. Run it
+cgw-batch-install.cmd
+```
+
+Each listed project is run through `configure.sh --non-interactive` (never `--reconfigure`), so
+hooks, skill, command, and the guardrail are refreshed while `.cgw.conf` is preserved untouched.
+Projects with no existing `.cgw.conf` are skipped with a warning — use `cgw-install.cmd` for a
+first-time install.
+
+---
+
 ## Troubleshooting
 
 ### "bash not found" (Windows)

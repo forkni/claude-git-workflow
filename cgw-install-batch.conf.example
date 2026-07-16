@@ -1,0 +1,23 @@
+# cgw-install-batch.conf -- project list for cgw-batch-install.cmd
+#
+# One absolute project path per line. Each path must already be a
+# CGW-managed project (i.e. it has a .cgw.conf from a prior run of
+# cgw-install.cmd) -- projects without one are skipped with a warning,
+# since this file drives an UPDATE, not a first-time install.
+#
+# - Lines starting with "#" are comments (the whole line is ignored).
+# - Blank lines are ignored.
+# - No globs/wildcards -- list each project directory explicitly.
+#
+# Copy this file to cgw-install-batch.conf (git-ignored) and edit the
+# list below to match your machine.
+#
+# Usage:
+#   cgw-batch-install.cmd                # update every project listed here
+#   cgw-batch-install.cmd --dry-run       # preview only, no changes made
+#   cgw-batch-install.cmd other.conf      # use a different list file
+#
+# Examples (edit/replace with your real project paths):
+# C:\Users\me\Projects\my-web-app
+# C:\Users\me\Projects\my-other-repo
+# D:\Work\client-project

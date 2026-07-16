@@ -1,6 +1,7 @@
 logs/
 *.log
 .cgw.conf
+cgw-install-batch.conf
 CLAUDE.md
 SESSION_LOG.md
 .claude/commands/
