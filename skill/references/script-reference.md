@@ -541,6 +541,9 @@ Computes GitHub-compatible heading slugs locally (offline port of `gh-md-toc` â€
 | `CGW_CLEANUP_TESTS=1` | Remove `tests/` from target branch if gitignored on target (default: `0`) |
 | `CGW_DEV_ONLY_FILES=<paths>` | Space-separated dev-only paths; cherry-pick warns if these are included |
 | `CGW_SIGN_COMMITS=1` | GPG/SSH-sign all commits (`commit_enhanced.sh`); overridable per-call with `--sign`/`--no-sign` |
+| `CGW_COMMIT_SUBJECT_SOFT_LEN=<n>` | Subject length past which an advisory tip is printed (default: `50`, Pro Git recommendation) |
+| `CGW_COMMIT_SUBJECT_HARD_LEN=<n>` | Subject length past which the commit is blocked (default: `72`, `git log --oneline`/GitHub truncation point) |
+| `CGW_ENFORCE_SUBJECT_LENGTH=0` | Make the hard cap advisory-only instead of blocking (default: `1` = blocking) |
 | `CGW_SIGN_TAGS=1` | Create signed annotated tags (`create_release.sh`); overridable per-call with `--sign`/`--no-sign` |
 | `CGW_ALLOW_REBASE_PUBLISHED=1` | Allow rebasing commits already pushed to remote; disables `pre-rebase` hook guard |
 | `CGW_SKIP_LINT=1` | Skip pre-push lint check (`push_validated.sh`) |

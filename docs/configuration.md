@@ -76,6 +76,9 @@ cp cgw.conf.example .cgw.conf
 | `CGW_TYPECHECK_EXCLUDES` | `` | Exclusion flags appended to the typecheck command |
 | `CGW_SKIP_TYPECHECK` | `0` | Set to `1` to skip the typecheck step at runtime |
 | `CGW_STAGED_ONLY` | `0` | Set to `1` to commit only pre-staged files (`commit_enhanced.sh`) |
+| `CGW_COMMIT_SUBJECT_SOFT_LEN` | `50` | Commit subject length past which an advisory tip is printed (Pro Git recommendation) |
+| `CGW_COMMIT_SUBJECT_HARD_LEN` | `72` | Commit subject length past which the commit is blocked (`git log --oneline`/GitHub truncation point) |
+| `CGW_ENFORCE_SUBJECT_LENGTH` | `1` | Set to `0` to make the hard cap advisory-only instead of blocking |
 | `CGW_ALL` | `0` | Set to `1` to force-stage all tracked changes, overriding pre-staged-only logic (`commit_enhanced.sh`) |
 | `CGW_EXTRA_PREFIXES` | `` | Extra commit prefixes (pipe-separated, e.g. `cuda\|tensorrt`) |
 | `CGW_DOCS_PATTERN` | `` | Regex for allowed docs filenames (`""` to skip) |

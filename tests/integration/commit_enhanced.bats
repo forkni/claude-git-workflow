@@ -710,3 +710,47 @@ _run_commit() {
   [[ "${output}" != *"Switch to correct branch first"* ]]
   [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
 }
+
+# ── Commit subject length (Pro Git recommendation) ────────────────────────────
+
+@test "subject 51-72 chars prints advisory tip and still commits" {
+  echo "content" > "${TEST_REPO_DIR}/subject_soft.txt"
+  git -C "${TEST_REPO_DIR}" add subject_soft.txt
+  local subject
+  subject="$(printf 'a%.0s' {1..60})"
+  run _run_commit "\"feat: ${subject}\""
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Tip: subject after prefix is 60 chars"* ]]
+  [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+}
+
+@test "subject over 72 chars blocks commit in non-interactive mode" {
+  echo "content" > "${TEST_REPO_DIR}/subject_hard.txt"
+  git -C "${TEST_REPO_DIR}" add subject_hard.txt
+  local subject
+  subject="$(printf 'a%.0s' {1..80})"
+  run _run_commit "\"feat: ${subject}\""
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"over the 72-char hard cap"* ]]
+  [[ "${output}" != *"COMMIT SUCCESSFUL"* ]]
+}
+
+@test "subject over 72 chars with CGW_ENFORCE_SUBJECT_LENGTH=0 warns but commits" {
+  echo "content" > "${TEST_REPO_DIR}/subject_hard_bypass.txt"
+  git -C "${TEST_REPO_DIR}" add subject_hard_bypass.txt
+  local subject
+  subject="$(printf 'a%.0s' {1..80})"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_NON_INTERACTIVE=1
+    export CGW_ENFORCE_SUBJECT_LENGTH=0
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' \"feat: ${subject}\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"over the 72-char hard cap"* ]]
+  [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+}

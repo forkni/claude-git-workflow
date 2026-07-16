@@ -160,6 +160,13 @@ Conventional commit format (enforced by `commit_enhanced.sh`):
 
 Additional project-specific prefixes can be configured via `CGW_EXTRA_PREFIXES` in `.cgw.conf`.
 
+**Subject length (Pro Git recommendation):** keep the summary after the prefix to **≤50 chars**
+— draft it that way up front rather than relying on the script to catch it. `commit_enhanced.sh`
+prints an advisory tip between 50–72 chars and **blocks the commit** past 72 chars (the point
+`git log --oneline`/GitHub truncate at), requiring explicit confirmation to proceed. Put any
+extra detail in the commit body, not a long subject line. Tune via `CGW_COMMIT_SUBJECT_SOFT_LEN`
+/ `CGW_COMMIT_SUBJECT_HARD_LEN` / `CGW_ENFORCE_SUBJECT_LENGTH` in `.cgw.conf`.
+
 ---
 
 ## Quick Decision Tree
