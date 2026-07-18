@@ -589,7 +589,12 @@ main() {
   # commonly truncate around 72). Soft threshold: advisory tip, non-blocking.
   # Hard threshold: blocks via cgw_confirm (non-interactive: abort) unless
   # CGW_ENFORCE_SUBJECT_LENGTH=0.
-  local _summary_part="${commit_msg#*: }"
+  # NOTE: measure the first line only -- commit_msg is the full multi-line
+  # message (subject + body + trailers); stripping "*: " against the whole
+  # string would swallow the body into the "summary" and false-positive on
+  # any commit with a normal-length body.
+  local _subject_line="${commit_msg%%$'\n'*}"
+  local _summary_part="${_subject_line#*: }"
   local _summary_len=${#_summary_part}
   if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_SOFT_LEN} ]]; then
     if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_HARD_LEN} ]]; then
@@ -605,7 +610,7 @@ main() {
       echo "[!] Tip: subject after prefix is ${_summary_len} chars (Pro Git recommends ≤${CGW_COMMIT_SUBJECT_SOFT_LEN})"
     fi
   fi
-  unset _summary_part _summary_len
+  unset _subject_line _summary_part _summary_len
 
   echo "Commit message: ${commit_msg}"
   echo ""

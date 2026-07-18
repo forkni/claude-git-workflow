@@ -754,3 +754,37 @@ _run_commit() {
   [[ "${output}" == *"over the 72-char hard cap"* ]]
   [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
 }
+
+# Regression: length must be measured from the subject LINE only, not the
+# whole multi-line message. commit_msg is "subject\n\nbody...trailers", and
+# stripping "*: " against the full string previously swallowed the body into
+# the "summary" length, false-positiving the hard cap on any commit with a
+# normal-length body (see Error_log.md / commit history for the real-world
+# repro: a 61-char subject measured as 595 chars and blocked the commit).
+
+@test "short subject with long multi-line body is not measured against the body" {
+  echo "content" > "${TEST_REPO_DIR}/subject_short_long_body.txt"
+  git -C "${TEST_REPO_DIR}" add subject_short_long_body.txt
+  local body_filler msg
+  body_filler="$(printf 'b%.0s' {1..120})"
+  msg=$'fix: short subject\n\nDetail: '"${body_filler}"$'\n\nCo-Authored-By: Test <test@example.com>'
+  run _run_commit "\"${msg}\""
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"hard cap"* ]]
+  [[ "${output}" != *"Tip: subject after prefix"* ]]
+  [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+}
+
+@test "60-char subject with long body still reports 60 chars, not body length" {
+  echo "content" > "${TEST_REPO_DIR}/subject_soft_long_body.txt"
+  git -C "${TEST_REPO_DIR}" add subject_soft_long_body.txt
+  local subject body_filler msg
+  subject="$(printf 'a%.0s' {1..60})"
+  body_filler="$(printf 'b%.0s' {1..120})"
+  msg=$'feat: '"${subject}"$'\n\nDetail: '"${body_filler}"
+  run _run_commit "\"${msg}\""
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Tip: subject after prefix is 60 chars"* ]]
+  [[ "${output}" != *"hard cap"* ]]
+  [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+}
