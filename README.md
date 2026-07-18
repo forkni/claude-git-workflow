@@ -21,6 +21,8 @@ claude-git-workflow\cgw-install.cmd
 
 `cgw-install.cmd` runs pre-install checks, copies scripts, runs `configure.sh` interactively, and cleans up temporary files.
 
+Already have CGW installed in several projects? `cgw-batch-install.cmd` refreshes the toolkit across all of them in one run, without touching any project's `.cgw.conf` — see [Installation](docs/installation.md).
+
 ### Unix / manual
 
 ```bash

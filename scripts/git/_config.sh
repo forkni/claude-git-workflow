@@ -221,6 +221,17 @@ unset _cgw_md_tok _cgw_md_toks
 # whole files, so the guard re-stages and re-verifies automatically there.
 [[ -z "${CGW_ALLOW_STAGED_DIVERGENCE+x}" ]] && CGW_ALLOW_STAGED_DIVERGENCE=0
 
+# --- Commit subject length (commit_enhanced.sh) ---
+# Pro Git's "Commit Guidelines" recommend keeping the subject line (the part
+# after the "type:" prefix) to ~50 chars; git log --oneline and the GitHub UI
+# commonly truncate around 72. Below CGW_COMMIT_SUBJECT_SOFT_LEN: silent.
+# Between soft and hard: non-blocking advisory tip. Past
+# CGW_COMMIT_SUBJECT_HARD_LEN: blocks via cgw_confirm (non-interactive: abort)
+# when CGW_ENFORCE_SUBJECT_LENGTH=1 (default) -- set to 0 to keep it advisory-only.
+[[ -z "${CGW_COMMIT_SUBJECT_SOFT_LEN+x}" ]] && CGW_COMMIT_SUBJECT_SOFT_LEN=50
+[[ -z "${CGW_COMMIT_SUBJECT_HARD_LEN+x}" ]] && CGW_COMMIT_SUBJECT_HARD_LEN=72
+[[ -z "${CGW_ENFORCE_SUBJECT_LENGTH+x}" ]] && CGW_ENFORCE_SUBJECT_LENGTH=1
+
 # --- Typecheck step (non-blocking pre-commit hook) ---
 # Empty CGW_TYPECHECK_CMD = typecheck step skipped. Example: "pyrefly".
 [[ -z "${CGW_TYPECHECK_CMD+x}" ]]        && CGW_TYPECHECK_CMD=""
@@ -307,6 +318,8 @@ _cgw_validate_int() {
 _cgw_validate_int CGW_AUTO_REMOVE_INDEX_LOCK 1
 _cgw_validate_int CGW_INDEX_LOCK_MAX_AGE_SECONDS 30
 _cgw_validate_int CGW_INDEX_LOCK_WAIT_SECONDS 10
+_cgw_validate_int CGW_COMMIT_SUBJECT_SOFT_LEN 50
+_cgw_validate_int CGW_COMMIT_SUBJECT_HARD_LEN 72
 unset -f _cgw_validate_int
 
 # ============================================================================

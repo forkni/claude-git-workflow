@@ -189,6 +189,23 @@ CGW_LINT_EXTENSIONS="*.py"
 CGW_ALLOW_STAGED_DIVERGENCE="0"
 
 # ============================================================================
+# COMMIT SUBJECT LENGTH (commit_enhanced.sh)
+# ============================================================================
+# Pro Git's "Commit Guidelines" recommend keeping the subject line (the part
+# after the "type:" prefix) to ~50 chars; git log --oneline and the GitHub UI
+# commonly truncate around 72.
+#
+# Below CGW_COMMIT_SUBJECT_SOFT_LEN: silent.
+# Between soft and hard length: non-blocking advisory tip.
+# Past CGW_COMMIT_SUBJECT_HARD_LEN: blocks the commit via a confirmation
+# prompt (non-interactive mode aborts) when CGW_ENFORCE_SUBJECT_LENGTH=1.
+#
+# Set CGW_ENFORCE_SUBJECT_LENGTH="0" to make the hard cap advisory-only too.
+CGW_COMMIT_SUBJECT_SOFT_LEN="50"
+CGW_COMMIT_SUBJECT_HARD_LEN="72"
+CGW_ENFORCE_SUBJECT_LENGTH="1"
+
+# ============================================================================
 # MERGE STRATEGY OPTIONS (merge_with_validation.sh)
 # ============================================================================
 # CGW_MERGE_CONFLICT_STYLE: Set to "diff3" to show the base version in conflict

@@ -584,14 +584,38 @@ main() {
     fi
   fi
 
-  # Advisory: Pro Git recommends ≤50 chars for the summary line after the prefix
-  # (§"Commit Guidelines").  This is non-blocking — just a style nudge.
-  local _summary_part="${commit_msg#*: }"
-  if [[ ${#_summary_part} -gt 50 ]]; then
-    echo "[!] Tip: summary after prefix is ${#_summary_part} chars (Pro Git recommends ≤50)"
-    echo "  Consider: ${commit_msg:0:72}..."
+  # Commit subject length (Pro Git §"Commit Guidelines" recommends ~50 chars
+  # for the summary line after the prefix; git log --oneline / GitHub UI
+  # commonly truncate around 72). Soft threshold: advisory tip, non-blocking.
+  # Hard threshold: blocks via cgw_confirm (non-interactive: abort) unless
+  # CGW_ENFORCE_SUBJECT_LENGTH=0.
+  # NOTE: measure the first line only -- commit_msg is the full multi-line
+  # message (subject + body + trailers); stripping "*: " against the whole
+  # string would swallow the body into the "summary" and false-positive on
+  # any commit with a normal-length body.
+  # NOTE: cgw_validate_commit_message only requires "type:" (colon, no
+  # mandatory space) -- strip on the bare colon, then trim one optional
+  # leading space, so "type:subject" (no space) isn't measured with the
+  # prefix still attached.
+  local _subject_line="${commit_msg%%$'\n'*}"
+  local _summary_part="${_subject_line#*:}"
+  _summary_part="${_summary_part# }"
+  local _summary_len=${#_summary_part}
+  if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_SOFT_LEN} ]]; then
+    if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_HARD_LEN} ]]; then
+      echo "[!] Subject after prefix is ${_summary_len} chars, over the ${CGW_COMMIT_SUBJECT_HARD_LEN}-char hard cap (Pro Git recommends ~${CGW_COMMIT_SUBJECT_SOFT_LEN})"
+      echo "  Move detail into the commit body instead of a long summary line."
+      if [[ "${CGW_ENFORCE_SUBJECT_LENGTH}" == "1" ]]; then
+        if ! cgw_confirm "Commit with an oversized subject line anyway?" --non-interactive abort; then
+          echo "Commit cancelled"
+          exit 0
+        fi
+      fi
+    else
+      echo "[!] Tip: subject after prefix is ${_summary_len} chars (Pro Git recommends ≤${CGW_COMMIT_SUBJECT_SOFT_LEN})"
+    fi
   fi
-  unset _summary_part
+  unset _subject_line _summary_part _summary_len
 
   echo "Commit message: ${commit_msg}"
   echo ""
