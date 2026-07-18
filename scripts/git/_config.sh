@@ -318,6 +318,8 @@ _cgw_validate_int() {
 _cgw_validate_int CGW_AUTO_REMOVE_INDEX_LOCK 1
 _cgw_validate_int CGW_INDEX_LOCK_MAX_AGE_SECONDS 30
 _cgw_validate_int CGW_INDEX_LOCK_WAIT_SECONDS 10
+_cgw_validate_int CGW_COMMIT_SUBJECT_SOFT_LEN 50
+_cgw_validate_int CGW_COMMIT_SUBJECT_HARD_LEN 72
 unset -f _cgw_validate_int
 
 # ============================================================================
