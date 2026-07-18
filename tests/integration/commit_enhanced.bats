@@ -788,3 +788,22 @@ _run_commit() {
   [[ "${output}" != *"hard cap"* ]]
   [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
 }
+
+# Regression: cgw_validate_commit_message only requires "type:" (colon, no
+# mandatory space), so "type:subject" is a valid prefix. The old
+# "${_subject_line#*: }" strip only matched on colon+space, leaving the
+# 5-char "feat:" prefix attached to the measured summary on a no-space
+# subject and inflating the count past the soft cap for subjects that should
+# pass silently.
+@test "subject with no space after colon is measured without the prefix" {
+  echo "content" > "${TEST_REPO_DIR}/subject_no_space_colon.txt"
+  git -C "${TEST_REPO_DIR}" add subject_no_space_colon.txt
+  local subject msg
+  subject="$(printf 'a%.0s' {1..48})"
+  msg="feat:${subject}"
+  run _run_commit "\"${msg}\""
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"Tip: subject after prefix"* ]]
+  [[ "${output}" != *"hard cap"* ]]
+  [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+}

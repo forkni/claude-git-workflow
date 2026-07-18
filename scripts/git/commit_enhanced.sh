@@ -593,8 +593,13 @@ main() {
   # message (subject + body + trailers); stripping "*: " against the whole
   # string would swallow the body into the "summary" and false-positive on
   # any commit with a normal-length body.
+  # NOTE: cgw_validate_commit_message only requires "type:" (colon, no
+  # mandatory space) -- strip on the bare colon, then trim one optional
+  # leading space, so "type:subject" (no space) isn't measured with the
+  # prefix still attached.
   local _subject_line="${commit_msg%%$'\n'*}"
-  local _summary_part="${_subject_line#*: }"
+  local _summary_part="${_subject_line#*:}"
+  _summary_part="${_summary_part# }"
   local _summary_len=${#_summary_part}
   if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_SOFT_LEN} ]]; then
     if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_HARD_LEN} ]]; then
