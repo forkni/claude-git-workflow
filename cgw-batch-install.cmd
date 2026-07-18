@@ -212,6 +212,16 @@ echo.
 goto :eof
 :pp_do_update
 
+rem --- Record pre-existing state before staging, so :pp_cleanup_stage never
+rem     deletes content this invocation did not create (a project could
+rem     legitimately have its own top-level hooks\/skill\/command\ dirs).
+set "HOOKS_PREEXISTED=0"
+if exist "!P!\hooks\" set "HOOKS_PREEXISTED=1"
+set "SKILL_PREEXISTED=0"
+if exist "!P!\skill\" set "SKILL_PREEXISTED=1"
+set "COMMAND_PREEXISTED=0"
+if exist "!P!\command\" set "COMMAND_PREEXISTED=1"
+
 rem --- Stage payload (mirror cgw-install.cmd's copy block) ---
 set "STAGE_OK=1"
 
@@ -289,12 +299,37 @@ rem :pp_cleanup_stage <path>
 rem   Remove the staged hooks\, skill\, command\ temp dirs. These
 rem   are staging directories only (same as cgw-install.cmd's
 rem   post-install cleanup) -- never the runtime install location.
+rem   Only removes a dir if HOOKS_PREEXISTED/SKILL_PREEXISTED/
+rem   COMMAND_PREEXISTED (set in :process_project before staging)
+rem   says this invocation created it -- a project that legitimately
+rem   already had one of these top-level dirs keeps its content
+rem   instead of it being recursively deleted.
+rem   NOTE: goto-based on purpose, not "( ... echo( ... )" -- an
+rem   echo( inside a multi-line parenthesized block throws off
+rem   cmd.exe's paren-balance counting (see :process_project).
 rem ============================================================
 :pp_cleanup_stage
 set "CP=%~1"
-if exist "!CP!\hooks\"   rmdir /s /q "!CP!\hooks\"   2>nul
-if exist "!CP!\skill\"   rmdir /s /q "!CP!\skill\"   2>nul
+
+if "!HOOKS_PREEXISTED!"=="1" goto :pp_cleanup_hooks_kept
+if exist "!CP!\hooks\" rmdir /s /q "!CP!\hooks\" 2>nul
+goto :pp_cleanup_skill
+:pp_cleanup_hooks_kept
+if exist "!CP!\hooks\" echo(  [WARN] !CP!\hooks\ pre-existed -- left in place, not deleted
+:pp_cleanup_skill
+
+if "!SKILL_PREEXISTED!"=="1" goto :pp_cleanup_skill_kept
+if exist "!CP!\skill\" rmdir /s /q "!CP!\skill\" 2>nul
+goto :pp_cleanup_command
+:pp_cleanup_skill_kept
+if exist "!CP!\skill\" echo(  [WARN] !CP!\skill\ pre-existed -- left in place, not deleted
+:pp_cleanup_command
+
+if "!COMMAND_PREEXISTED!"=="1" goto :pp_cleanup_command_kept
 if exist "!CP!\command\" rmdir /s /q "!CP!\command\" 2>nul
+goto :eof
+:pp_cleanup_command_kept
+if exist "!CP!\command\" echo(  [WARN] !CP!\command\ pre-existed -- left in place, not deleted
 goto :eof
 
 :summary
