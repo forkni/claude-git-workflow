@@ -28,15 +28,19 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     continue
   fi
 
-  # Determine commit range to check
+  # Determine commit range to check. In both cases, exclude commits already
+  # reachable from ANY remote-tracking ref — a commit already vetted and
+  # pushed on one branch (e.g. development) must not be re-flagged just
+  # because it's the first time that history reaches a different branch
+  # (e.g. a long-lived development -> main merge). Only genuinely new,
+  # never-pushed-anywhere commits need checking here.
   if [[ "${REMOTE_SHA}" = "0000000000000000000000000000000000000000" ]]; then
     # New branch being pushed — check all commits not in any remote branch
     RANGE="${LOCAL_SHA}"
-    COMMITS=$(git rev-list "${RANGE}" --not --remotes 2>/dev/null || true)
   else
     RANGE="${REMOTE_SHA}..${LOCAL_SHA}"
-    COMMITS=$(git rev-list "${RANGE}" 2>/dev/null || true)
   fi
+  COMMITS=$(git rev-list "${RANGE}" --not --remotes 2>/dev/null || true)
 
   [[ -z "${COMMITS}" ]] && continue
 
