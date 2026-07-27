@@ -38,9 +38,14 @@ before the probe:
 
 ## Baseline + Resolve Runs
 
-**Same commit can carry runs on two branches** — a direct-merge fast-forward means `main` and
-`development` can share a SHA, and `gh run list --commit` alone returns both. Always filter on
-**commit AND branch**:
+**Same commit can carry runs on two branches** — `merge_with_validation.sh` always merges
+with `--no-ff`, so a *direct*-mode merge never fast-forwards and `CGW_TARGET_BRANCH` gets its
+own merge-commit SHA. But other paths can still leave two branches pointing at the identical
+commit — a PR merged on GitHub via "Rebase and merge" (or "Fast forward only") when the PR
+reduces to one commit, or any manual `git merge --ff-only` outside the wrappers — and when
+that happens, `gh run list --commit` alone returns runs from both branches. Filtering on
+**commit AND branch** costs nothing and removes the ambiguity unconditionally, so do it even
+on the direct-merge path where the collision cannot occur:
 
 ```bash
 sha=$(git rev-parse HEAD)
