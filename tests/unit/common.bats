@@ -912,6 +912,206 @@ UU b.py
   [ -z "${output}" ]
 }
 
+# ── cgw_lint_files_diverging_from_index: CRLF-in-index arbiter ───────────────
+# Regression: `git hash-object` never reads the index. Once an index blob
+# already contains CRLF, `git add` preserves it forever (convert.c:
+# has_crlf_in_index), but hash-object still renormalizes to LF -- a permanent
+# mismatch no re-stage can clear. These pin the index-aware arbiter that
+# distinguishes that phantom from a real divergence.
+
+@test "cgw_lint_files_diverging_from_index: CRLF-in-index file under autocrlf=true is not reported (phantom divergence)" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\r\n' > \"\${tmp}/f.py\"
+    git -C \"\${tmp}\" add f.py
+    git -C \"\${tmp}\" config core.autocrlf true
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    # Confirm the fixture is a genuine landmine: hash-object must disagree
+    # with the index even though git itself considers the path clean.
+    staged=\$(git rev-parse :f.py)
+    disk=\$(git hash-object --path=f.py -- f.py)
+    if [[ \"\${staged}\" == \"\${disk}\" ]]; then
+      echo 'FIXTURE-NOT-A-LANDMINE'; rm -rf \"\${tmp}\"; exit 2
+    fi
+    git diff --quiet -- f.py || { echo 'FIXTURE-NOT-CLEAN'; rm -rf \"\${tmp}\"; exit 2; }
+    cgw_lint_files_diverging_from_index; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 1 ]
+  [ -z "${output}" ]
+}
+
+@test "cgw_lint_files_diverging_from_index: a real divergence under autocrlf=true is still reported" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\r\n' > \"\${tmp}/f.py\"
+    git -C \"\${tmp}\" add f.py
+    git -C \"\${tmp}\" config core.autocrlf true
+    printf 'x = 2\r\n' > \"\${tmp}/f.py\"
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_lint_files_diverging_from_index; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "f.py" ]
+}
+
+@test "cgw_lint_files_diverging_from_index: a diff-blind (assume-unchanged) stale blob is still reported" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\n#UNFORMATTED#\n' > \"\${tmp}/f.py\"
+    git -C \"\${tmp}\" add f.py
+    printf 'x = 1\n' > \"\${tmp}/f.py\"
+    git -C \"\${tmp}\" update-index --assume-unchanged f.py
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_lint_files_diverging_from_index; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "f.py" ]
+}
+
+# ── cgw_crlf_in_index_files() ─────────────────────────────────────────────────
+
+@test "cgw_crlf_in_index_files: emits a path whose index blob retains CRLF under autocrlf=true" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\r\n' > \"\${tmp}/f.py\"
+    git -C \"\${tmp}\" add f.py
+    git -C \"\${tmp}\" config core.autocrlf true
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_crlf_in_index_files
+    rm -rf \"\${tmp}\"
+  "
+  [[ "${output}" == *"f.py"* ]]
+}
+
+@test "cgw_crlf_in_index_files: emits nothing when autocrlf is off (no conversion active)" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\r\n' > \"\${tmp}/f.py\"
+    git -C \"\${tmp}\" add f.py
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_crlf_in_index_files; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ -z "${output}" ]
+}
+
+@test "cgw_crlf_in_index_files: emits nothing for a binary blob" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf true
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf '\x00\x01\xff\xfe' > \"\${tmp}/f.bin\"
+    git -C \"\${tmp}\" add f.bin
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_crlf_in_index_files; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ -z "${output}" ]
+}
+
+# ── cgw_path_is_diff_blind() ───────────────────────────────────────────────────
+
+@test "cgw_path_is_diff_blind: false for a normal tracked file" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\n' > \"\${tmp}/f.py\"
+    git -C \"\${tmp}\" add f.py
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_path_is_diff_blind f.py; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_path_is_diff_blind: true for an assume-unchanged file" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\n' > \"\${tmp}/f.py\"
+    git -C \"\${tmp}\" add f.py
+    git -C \"\${tmp}\" update-index --assume-unchanged f.py
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_path_is_diff_blind f.py; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_path_is_diff_blind: true for a skip-worktree file" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\n' > \"\${tmp}/f.py\"
+    git -C \"\${tmp}\" add f.py
+    git -C \"\${tmp}\" update-index --skip-worktree f.py
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_path_is_diff_blind f.py; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+}
+
 # ── cgw_run_lint_fix() ────────────────────────────────────────────────────────
 
 @test "cgw_run_lint_fix: skips when CGW_SKIP_LINT=1" {
