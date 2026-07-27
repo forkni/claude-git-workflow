@@ -1,5 +1,5 @@
 ---
-description: State-aware interactive git menu — scans the repo (uncommitted work, ahead/behind, in-progress merge/rebase, stashes) and suggests the likely next step, with categories for commit, push, sync, merge, PR, undo, release, plus a one-click full commit → push → merge → push promotion — the sole entry point for CGW git actions
+description: State-aware interactive git menu — scans the repo (uncommitted work, ahead/behind, in-progress merge/rebase, stashes) and suggests the likely next step, with categories for commit, push, sync, merge, PR, undo, release, plus a one-click full commit → push → merge → push promotion — the sole entry point for CGW git actions; every push this command performs is followed through to a green CI verdict (or fixed until it is) before being reported done
 ---
 
 # Auto Git Workflow
@@ -14,6 +14,13 @@ its Core Rules (no raw `git commit`, no committing local-only files, lint-on-com
 selective-staging intent) govern every action below. This file is the *router*,
 not the rule book — do not duplicate SKILL.md's command snippets here; look them up
 by section name when executing.
+
+**Push gate.** Every push this command performs — direct push, a merge's target push, or a
+PR's checks — is followed by the CI verification gate in
+[`references/ci-verification.md`](../skills/auto-git-workflow/references/ci-verification.md)
+(SKILL.md Rule 6): subscribe to the resulting run(s), wait for a terminal verdict, and
+fix-and-retry on red before reporting that step done. The ⏱ marker on rows in Step 4's
+tables below flags exactly which actions this applies to.
 
 **Output policy**: Suppress command output except errors. Show a brief summary at the end
 of whatever action was taken.
@@ -125,6 +132,10 @@ When the Step 1 scan already answers a category's obvious question, use it — e
 the user picks "Commit & Stash" with a dirty tree, default the conversation toward
 committing those files rather than asking what they want from scratch.
 
+⏱ marks an action whose push is CI-gated per the Push gate above — do not report it
+done until [ci-verification.md](../skills/auto-git-workflow/references/ci-verification.md)'s
+verdict is green (or not applicable).
+
 ### 2. Commit & Stash
 
 | Action | SKILL.md section | Primary script |
@@ -138,7 +149,7 @@ committing those files rather than asking what they want from scratch.
 
 | Action | SKILL.md section | Primary script |
 |---|---|---|
-| Push to remote (also publishes a new branch) | "Pushing to remote" | `push_validated.sh` |
+| Push to remote (also publishes a new branch) ⏱ | "Pushing to remote" | `push_validated.sh` |
 | Sync current branch with remote | "Syncing with remote" | `sync_branches.sh` |
 | Sync both source + target branches | "Syncing with remote" | `sync_branches.sh --all` |
 | Preview sync (fetch only) | "Syncing with remote" | `sync_branches.sh --dry-run` |
@@ -147,8 +158,8 @@ committing those files rather than asking what they want from scratch.
 
 | Action | SKILL.md section | Primary script |
 |---|---|---|
-| Merge to target branch | "Merging to target branch" | `merge_with_validation.sh` |
-| Create a PR | "Creating a PR" | `create_pr.sh` |
+| Merge to target branch ⏱ | "Merging to target branch" | `merge_with_validation.sh` |
+| Create a PR ⏱ | "Creating a PR" | `create_pr.sh` |
 | Rebase onto a branch | "Safe rebase" | `rebase_safe.sh --onto <branch>` |
 | Cherry-pick a commit | "Cherry-picking a commit" | `cherry_pick_commits.sh` |
 
@@ -169,7 +180,7 @@ branch diff (`branch_diff.sh`), merge docs only (`merge_docs.sh`), branch cleanu
 
 | Action | SKILL.md section | Primary script |
 |---|---|---|
-| Create a release (tag + push) | "Creating a release" | `create_release.sh` |
+| Create a release (tag + push) ⏱ | "Creating a release" | `create_release.sh` |
 | Generate a changelog | "Generating a changelog" | `changelog_generate.sh` |
 | Repo health check | "Project setup & hygiene" | `repo_health.sh` |
 | Clean build artifacts | "Project setup & hygiene" | `clean_build.sh` |
@@ -189,7 +200,8 @@ lock-file issues — see
 
 ## Token Efficiency
 
-- All successful commands: `>/dev/null 2>&1` (the Step 1 scan is the exception — its
-  output is the input to the suggestion rules)
+- All successful commands: `>/dev/null 2>&1` (two exceptions: the Step 1 scan, whose
+  output feeds the suggestion rules; and the CI gate's `gh run watch` / `gh pr checks
+  --watch`, whose progress output is what confirms the wait is actually happening)
 - Only show errors: remove suppression on retry
 - Keep the final summary to a few lines

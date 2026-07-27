@@ -1,7 +1,7 @@
 ---
 name: auto-git-workflow
 description: "Use whenever the user asks for a git operation in this project — commit, push, pull, fetch, merge, rebase, cherry-pick, rollback, revert, sync, stash, tag, release, changelog, worktree, recover/restore lost commits, branch (create/rename/delete/cleanup), bisect, undo, amend, or conflict resolution. Routes work through scripts/git/*.sh wrappers (commit_enhanced.sh, push_validated.sh, merge_with_validation.sh, rollback_merge.sh, cherry_pick_commits.sh, rebase_safe.sh, stash_work.sh, branch_cleanup.sh, bisect_helper.sh, changelog_generate.sh, create_release.sh, create_pr.sh, sync_branches.sh, undo_last.sh, recover.sh, worktree_manage.sh, merge_docs.sh, validate_branches.sh) instead of raw git, so lint validation, local-only file protection, backup tags, and force-push guards are never bypassed."
-allowed-tools: "Bash, Read, Grep"
+allowed-tools: "Bash, Read, Grep, Edit"
 user-invocable: false
 ---
 
@@ -18,6 +18,7 @@ For error recovery procedures, see [references/error-recovery.md](references/err
 For branch rules and merge workflow, see [references/branch-and-merge-rules.md](references/branch-and-merge-rules.md).
 For non-obvious git techniques not covered by a wrapper (pickaxe search, merge-base discovery, back-dated tags, PR diff URLs), see [references/git-recipes.md](references/git-recipes.md).
 For the full promotion pipeline (commit → push → merge/PR → push, run by `/auto-git-workflow-cmd` option 1), see [references/full-promotion.md](references/full-promotion.md).
+For the mandatory post-push CI verification gate (subscribe, wait, fix-until-green), see [references/ci-verification.md](references/ci-verification.md).
 When a merge or rebase **stops on a conflict that needs manual resolution** (`UU`, `AA`, `AU`, `UD`, `AD`, `DA`), follow the step-by-step procedure in [references/resolving-merge-conflicts.md](references/resolving-merge-conflicts.md) — investigate both sides' intent, preserve both where compatible, re-run checks, then conclude through the wrapper. **Before touching a hunk:** run `git log --merge -p -- <file>` and `git log --oneline --left-right --merge` to understand which commits on each side caused the conflict. Never blindly `git checkout --ours/--theirs`; resolve by default — abort only to deliberately abandon the operation, not to dodge a difficult conflict.
 
 ## When to use this skill
@@ -141,6 +142,18 @@ git reset HEAD && git add src/foo.py && ./scripts/git/commit_enhanced.sh "feat: 
 ./scripts/git/commit_enhanced.sh --only src/foo.py "feat: ..."
 ```
 
+### Rule 6: Every Push Must End Green
+
+A push is not "done" the moment git accepts it. Every push CGW performs — `push_validated.sh`,
+a merge's target push, `create_pr.sh`, `create_release.sh --push` — must be followed by
+subscribing to the CI runs it triggered, waiting for a terminal verdict, and treating anything
+other than green as unfinished work: diagnose, fix on the source branch, re-push through the
+wrappers, and re-watch until green or a bounded retry budget is exhausted. Never report a
+push/merge/promotion "complete" while a resolved run is still pending or red. Full procedure —
+applicability probe, run resolution (commit **and** branch, since a direct-merge fast-forward
+can put the same SHA on two branches), watch, fix loop, hard prohibitions — in
+[references/ci-verification.md](references/ci-verification.md).
+
 ---
 
 ## Commit Message Format
@@ -230,9 +243,10 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 ./scripts/git/push_validated.sh --dry-run             # preview
 ./scripts/git/push_validated.sh --skip-lint           # skip lint check entirely
 ./scripts/git/push_validated.sh --no-venv --skip-lint # both
-# One call is enough on its own -- no pre-check and no post-check needed, regardless of
-# urgency or stakes in the request; --force-with-lease + the protected-branch guard already
-# cover what an extra git status/log would verify.
+# One call is enough on its own -- no pre-check needed, regardless of urgency or stakes in
+# the request; --force-with-lease + the protected-branch guard already cover what an extra
+# git status/log would verify. A post-check IS required, though: Rule 6 — subscribe to the
+# CI runs this push triggers and wait for green, see ci-verification.md.
 ```
 
 **Creating a PR** (when `CGW_MERGE_MODE="pr"`):
@@ -244,7 +258,7 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 ./scripts/git/create_pr.sh --draft                  # open as draft
 ./scripts/git/create_pr.sh --source feature/hotfix --target release/1.2
 ```
-Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login`. Charlie CI auto-reviews on PR open.
+Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login`. Charlie CI auto-reviews on PR open. Rule 6 applies here too — watch the PR's checks (`gh pr checks <n> --watch`), not just Charlie's review, per ci-verification.md.
 
 **Syncing with remote:**
 ```bash
@@ -410,6 +424,8 @@ be needed.
 ./scripts/git/create_release.sh v1.2.3 --push --sign      # GPG/SSH-signed annotated tag
 ./scripts/git/create_release.sh v1.2.3 --dry-run
 ```
+`--push` triggers `release.yml` (tag push matching `v*`) — Rule 6 applies: watch that run
+too before considering the release done, per ci-verification.md.
 
 **Recovering lost commits (reflog + fsck):**
 ```bash

@@ -4,6 +4,7 @@
 - PreToolUse Guardrail
 - Lint Failures
 - Push Failures
+- CI Failures
 - Merge Rollback
 - Branch Sync Issues
 - Rebase Issues (rebase_safe.sh)
@@ -74,6 +75,47 @@ Common failures and fixes:
 git pull --rebase origin <branch>
 git push origin <branch>
 ```
+
+---
+
+## CI Failures
+
+A push passing every local check can still turn up red once GitHub Actions runs —
+that's what [ci-verification.md](ci-verification.md) (SKILL.md Rule 6) watches for. This
+section is its fix-loop reference: map the failing `branch-protection.yml` job to a local
+repro command, fix, then re-promote through the wrappers.
+
+**Read the failing steps only, not the whole log:**
+```bash
+gh run view <run-id> --log-failed
+```
+
+**Map the job to a local reproduction:**
+
+| Failing job/step | Local reproduction |
+|---|---|
+| `validate` — local-file check | `bash scripts/git/check_local_files.sh` |
+| `validate` — `.gitattributes` check | `./scripts/git/setup_attributes.sh --dry-run` (regenerate with no flag if it drifted) |
+| `lint` — ShellCheck (blocking) | `shellcheck -x --source-path=scripts/git scripts/git/*.sh` |
+| `lint` — shfmt (advisory, `continue-on-error`) | `shfmt -d -i 2 -ci scripts/` |
+| `test` — Bats suite | `tests/run.sh` (or `bats tests/unit/ tests/integration/` to isolate one failure) |
+| `docs-validation.yml` (any job) | All steps carry `continue-on-error: true` — always concludes `success`; a red *step* here is advisory, not a gate. Fix at leisure, don't block on it. |
+
+**Infrastructural failure** (runner outage, transient network/auth error unrelated to the
+diff) — try one rerun before touching code:
+```bash
+gh run rerun <run-id> --failed
+```
+
+**Otherwise, fix and re-promote through the wrappers** — never bypass Rule 1, and never
+commit the fix directly on `CGW_TARGET_BRANCH`; author it on `CGW_SOURCE_BRANCH`:
+```bash
+./scripts/git/commit_enhanced.sh --non-interactive "fix: <what CI caught>"
+./scripts/git/push_validated.sh --non-interactive --skip-lint
+```
+Then re-watch from ci-verification.md's *Baseline + Resolve Runs* against the new SHA.
+Bounded by `CGW_CI_MAX_FIX_ROUNDS` (default 3) — exhausted means stop and report, not
+silently give up or claim success while a run is still red.
 
 ---
 

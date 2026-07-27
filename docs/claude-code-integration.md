@@ -9,7 +9,9 @@ menu covering every git operation (commit, push, sync, merge, PR, undo, release,
 Before showing the menu it scans the repo (uncommitted work, ahead/behind counts,
 in-progress merge/rebase, stashes) and suggests the likely next step — e.g. a dirty tree
 suggests committing, an ahead-only branch suggests pushing. It also offers a one-click
-"Full promotion" shortcut that runs the full commit → push → merge → push workflow.
+"Full promotion" shortcut that runs the full commit → push → merge → push workflow. Every
+push it performs is followed by a mandatory CI verification gate — see
+[`ci-setup.md`](ci-setup.md#ci-verification-gate).
 
 ---
 

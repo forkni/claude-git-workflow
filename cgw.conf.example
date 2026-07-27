@@ -307,6 +307,32 @@ CGW_CLEANUP_TESTS="0"
 CGW_MERGE_MODE="direct"
 # CGW_MERGE_MODE="pr"
 
+# ============================================================================
+# CI VERIFICATION GATE (agent procedure — see skill/references/ci-verification.md)
+# ============================================================================
+# Not read by any scripts/git/*.sh script. These are agent-facing conventions:
+# after every push CGW performs, the agent subscribes to the CI runs it
+# triggered, waits for a terminal verdict, and fixes-and-retries until green
+# (or the round budget below is exhausted) before reporting the push done.
+# Requires the gh CLI, installed + authenticated, and a GitHub remote; silently
+# no-ops otherwise.
+#
+# Set to 0 to disable the gate entirely (push completes as soon as git accepts it).
+CGW_CI_VERIFY="1"
+
+# Max seconds to wait for all resolved runs to reach a terminal state.
+CGW_CI_TIMEOUT_SECONDS="900"
+
+# Seconds between `gh run watch` / poll refreshes.
+CGW_CI_POLL_INTERVAL="15"
+
+# Fix -> push -> re-watch attempts before stopping and handing back to the user.
+CGW_CI_MAX_FIX_ROUNDS="3"
+
+# Space-separated workflow-name allow-list to judge (e.g. "Branch Protection").
+# Empty = judge every workflow run the push triggered (default).
+CGW_CI_REQUIRED_WORKFLOWS=""
+
 # ── Stale index.lock auto-recovery ────────────────────────────────────────────
 # CGW scripts detect and remove abandoned .git/index.lock files left by crashed
 # or killed git processes (the most common Claude Code failure mode).
