@@ -122,10 +122,12 @@ exit ≠0 on the push: rerun without suppression, stop.
 **Phase 5b — CI gate on target**
 
 Apply [references/ci-verification.md](ci-verification.md) again, this time against
-`CGW_TARGET_BRANCH`. A direct merge fast-forwards, so `CGW_TARGET_BRANCH` and
-`CGW_SOURCE_BRANCH` can share the exact same commit SHA — resolve runs with **both**
-`--commit` and `--branch` (ci-verification.md → *Baseline + Resolve Runs*), never commit
-alone, or this ends up re-watching Phase 3b's already-green runs and calling it done.
+`CGW_TARGET_BRANCH`. `merge_with_validation.sh`'s `--no-ff` merge gives `CGW_TARGET_BRANCH`
+its own merge-commit SHA, distinct from `CGW_SOURCE_BRANCH` — but resolve runs with **both**
+`--commit` and `--branch` regardless (ci-verification.md → *Baseline + Resolve Runs*), never
+commit alone. Other paths (a GitHub "Rebase and merge" PR, a manual `--ff-only`) can still
+leave the two branches sharing a SHA, and commit-only filtering would then re-watch Phase 3b's
+already-green runs and call it done.
 
 Red and unfixable → do **not** report success. A fix here is still authored on
 `CGW_SOURCE_BRANCH` and re-promoted through Phases 2-5 (never committed directly to
