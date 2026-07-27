@@ -12,6 +12,22 @@ Three workflows are included in `.github/workflows/`:
 
 ---
 
+## CI Verification Gate
+
+CGW doesn't stop at "push succeeded" — every push it performs (direct push, a merge's
+target push, a PR, or a tagged release) is followed by an agent procedure that subscribes
+to the resulting GitHub Actions runs, waits for a terminal verdict, and fixes-and-retries
+on red rather than reporting the step done. This is an agent-driven procedure (`gh`, not a
+`scripts/git/*.sh` wrapper) documented in
+[`skill/references/ci-verification.md`](../skill/references/ci-verification.md); it degrades
+silently to a no-op when there's no `gh` CLI, no auth, or no GitHub remote.
+
+Knobs (`.cgw.conf` or environment — see [`configuration.md`](configuration.md)):
+`CGW_CI_VERIFY` (`0` disables the gate), `CGW_CI_TIMEOUT_SECONDS`, `CGW_CI_POLL_INTERVAL`,
+`CGW_CI_MAX_FIX_ROUNDS`, `CGW_CI_REQUIRED_WORKFLOWS`.
+
+---
+
 ## Charlie CI Agent
 
 This project uses [Charlie](https://charlielabs.ai) for AI-assisted code review on pull requests.

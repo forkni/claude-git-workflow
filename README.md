@@ -2,7 +2,7 @@
 
 [![Release](https://img.shields.io/github/v/release/forkni/claude-git-workflow)](https://github.com/forkni/claude-git-workflow/releases)
 
-Drop-in git automation for any project. Enhanced commits, safe merges, validated pushes, branch sync — with optional Claude Code integration.
+Drop-in git automation for any project. Enhanced commits, safe merges, validated pushes, branch sync — with optional Claude Code integration, including a mandatory CI verification gate that watches every push through to a green GitHub Actions run (or fixes it until it is one).
 
 ## Quick Start (30 seconds)
 

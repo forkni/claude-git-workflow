@@ -94,6 +94,11 @@ cp cgw.conf.example .cgw.conf
 | `CGW_ALLOW_REBASE_PUBLISHED` | `0` | Set to `1` to allow rebasing commits already pushed (disables `pre-rebase` hook guard) |
 | `CGW_NON_INTERACTIVE` | `0` | Set to `1` to suppress all prompts (CI mode) |
 | `CGW_NO_VENV` | `0` | Set to `1` to skip virtual environment detection |
+| `CGW_CI_VERIFY` | `1` | Set to `0` to disable the post-push CI verification gate entirely (agent procedure, see [`skill/references/ci-verification.md`](../skill/references/ci-verification.md)) |
+| `CGW_CI_TIMEOUT_SECONDS` | `900` | Max seconds the CI gate waits for all resolved runs to reach a terminal state |
+| `CGW_CI_POLL_INTERVAL` | `15` | Seconds between `gh run watch` / poll refreshes |
+| `CGW_CI_MAX_FIX_ROUNDS` | `3` | Fix → push → re-watch attempts before the CI gate stops and hands back to the user |
+| `CGW_CI_REQUIRED_WORKFLOWS` | `` | Space-separated workflow-name allow-list for the CI gate; empty = judge every triggered workflow |
 
 If a `CGW_LOCAL_FILES` entry (or any other local file) is also given the git **skip-worktree**
 bit, `sync_branches.sh` protects it across a sync: a diverged skip-worktree file no longer causes
