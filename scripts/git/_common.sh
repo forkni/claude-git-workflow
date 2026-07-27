@@ -1163,20 +1163,40 @@ cgw_staged_files_for_lint() {
   git diff --cached --name-only --diff-filter=ACMR -- "${lint_exts[@]}"
 }
 
+# cgw_path_is_diff_blind <path>
+#   0 (true) when the index entry for <path> carries assume-unchanged or
+#   skip-worktree -- `git diff` / `git status` report such paths clean no
+#   matter what's on disk, so their verdict can't be trusted as a second
+#   opinion. `git ls-files -v` tags: lowercase letter == assume-unchanged,
+#   'S' == skip-worktree (verified empirically; not documented in git-ls-files(1)
+#   beyond "lower case letter means assume-unchanged").
+cgw_path_is_diff_blind() {
+  local _tag
+  _tag=$(git ls-files -v -- "$1" 2>/dev/null | head -1 | cut -c1)
+  [[ "${_tag}" == [a-z] || "${_tag}" == "S" ]]
+}
+
 # cgw_lint_files_diverging_from_index
 #   Stdout: newline-separated staged lint-eligible files whose WORKING-TREE
 #   content differs from what is currently staged. Exists because the commit
 #   gate's lint/format checks read files from disk (working tree) while
 #   `git commit` records the index -- when the two differ, CGW can validate
-#   one thing and commit another, silently. Detection uses pure git plumbing
-#   only (tool-agnostic): `git hash-object --path=<f> <f>` computes the blob
-#   `git add` would produce -- filter-correct (honors .gitattributes eol/clean,
-#   so no CRLF false-positives) and immune to skip-worktree/assume-unchanged
-#   (unlike `git diff`, which reads the index and skips those paths). Returns
-#   0 if any file diverges, 1 if none do. Fails closed: a staged path that's
-#   missing from the working tree, or whose blob can't be hashed, is reported
-#   as diverged rather than skipped -- lint validated nothing for that path,
-#   so a stale staged blob must not commit silently.
+#   one thing and commit another, silently. Primary detection uses pure git
+#   plumbing (tool-agnostic): `git hash-object --path=<f> <f>` computes the
+#   blob `git add` would produce from a CLEAN file, and is immune to
+#   skip-worktree/assume-unchanged (unlike `git diff`, which reads the index
+#   and skips those paths). BUT hash-object never reads the index, while
+#   `git add` does: for text=auto/core.autocrlf, git add preserves CRLF
+#   verbatim once the index blob already contains CRLF (convert.c:
+#   has_crlf_in_index() -- cleared only by an explicit `git add --renormalize`).
+#   On such a file hash-object permanently disagrees with a byte-identical,
+#   `git add`-clean disk file. So a hash-object mismatch is arbitrated with an
+#   index-aware `git diff --quiet` before being reported -- except on
+#   diff-blind paths, where hash-object is the only honest signal. Returns 0 if
+#   any file diverges, 1 if none do. Fails closed: a staged path that's missing
+#   from the working tree, or whose blob can't be hashed, is reported as
+#   diverged rather than skipped -- lint validated nothing for that path, so a
+#   stale staged blob must not commit silently.
 cgw_lint_files_diverging_from_index() {
   local _f _staged _disk _any=1
   while IFS= read -r _f; do
@@ -1189,11 +1209,43 @@ cgw_lint_files_diverging_from_index() {
     fi
     _disk=$(git hash-object --path="${_f}" -- "${_f}" 2>/dev/null)
     if [[ -z "${_disk}" || "${_staged}" != "${_disk}" ]]; then
+      # Second opinion: if the index blob already carries CRLF that `git add`
+      # preserves forever, hash-object's renormalized hash will never match --
+      # a phantom divergence no re-stage can clear. `git diff --quiet` uses the
+      # same index-aware conversion `git add` would, so trust it when it CAN
+      # see the path (not diff-blind) and hash-object did produce a hash.
+      if [[ -n "${_disk}" ]] && ! cgw_path_is_diff_blind "${_f}" &&
+        git diff --quiet -- "${_f}" 2>/dev/null; then
+        continue
+      fi
       printf '%s\n' "${_f}"
       _any=0
     fi
   done < <(cgw_staged_files_for_lint)
   return "${_any}"
+}
+
+# cgw_crlf_in_index_files
+#   Stdout: tracked paths whose INDEX blob is not in the normalized form the
+#   repo's current filters (.gitattributes eol=, core.autocrlf) would produce
+#   -- i.e. CRLF retained in the index where conversion is active. `git add`
+#   preserves that CRLF forever once it's in the index; only an explicit
+#   `git add --renormalize <path>` clears it. This is what makes such files a
+#   landmine for cgw_lint_files_diverging_from_index's arbiter above.
+#   Pre-filtered to `git ls-files --eol`'s "i/crlf" entries -- normalization
+#   only ever strips CR, so nothing else can differ; binary blobs compare
+#   equal to themselves and drop out for free. Advisory/read-only: used by
+#   repo_health.sh, never by the commit gate.
+cgw_crlf_in_index_files() {
+  local _rec _f _blob _norm
+  while IFS= read -r -d '' _rec; do
+    [[ "${_rec}" == i/crlf* ]] || continue
+    _f="${_rec#*$'\t'}"
+    _blob=$(git rev-parse --quiet --verify ":${_f}" 2>/dev/null) || continue
+    _norm=$(git cat-file blob "${_blob}" 2>/dev/null |
+      git hash-object --stdin --path="${_f}" 2>/dev/null)
+    [[ -n "${_norm}" && "${_norm}" != "${_blob}" ]] && printf '%s\n' "${_f}"
+  done < <(git ls-files --eol -z)
 }
 
 # cgw_run_typecheck [files...]

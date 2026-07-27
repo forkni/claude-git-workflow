@@ -58,7 +58,8 @@ main() {
         echo "  2. Object store size"
         echo "  3. Large files in git history"
         echo "  4. Stale backup tags count"
-        echo "  5. Branch divergence summary"
+        echo "  5. Line-ending hygiene (CRLF retained in the index)"
+        echo "  6. Branch divergence summary"
         echo ""
         echo "Environment:"
         echo "  CGW_REMOTE   Remote name for divergence check (default: origin)"
@@ -91,7 +92,7 @@ main() {
   echo ""
 
   # -- [1] Integrity check (git fsck) ---------------------------------------
-  echo "--- [1/5] Integrity Check ---"
+  echo "--- [1/6] Integrity Check ---"
   local fsck_args=("--no-reflogs")
   [[ ${full_fsck} -eq 1 ]] && fsck_args=("--full")
 
@@ -106,7 +107,7 @@ main() {
   echo ""
 
   # -- [2] Object store size -------------------------------------------------
-  echo "--- [2/5] Object Store Size ---"
+  echo "--- [2/6] Object Store Size ---"
   # Use git count-objects (cross-platform, no GNU du needed)
   local obj_size_kb=0 pack_count=0
   while IFS=': ' read -r key val; do
@@ -132,7 +133,7 @@ main() {
   echo ""
 
   # -- [3] Large files in history --------------------------------------------
-  echo "--- [3/5] Large Files in History (>${large_threshold_mb}MB) ---"
+  echo "--- [3/6] Large Files in History (>${large_threshold_mb}MB) ---"
   local threshold_bytes=$((large_threshold_mb * 1048576))
   local large_count=0
 
@@ -158,7 +159,7 @@ main() {
   echo ""
 
   # -- [4] Backup tag count --------------------------------------------------
-  echo "--- [4/5] Backup Tags ---"
+  echo "--- [4/6] Backup Tags ---"
   local backup_count
   backup_count=$(cgw_list_backup_tags 2>/dev/null | wc -l | tr -d ' ')
   echo "  Backup tags: ${backup_count}"
@@ -171,8 +172,30 @@ main() {
   fi
   echo ""
 
-  # -- [5] Branch summary ----------------------------------------------------
-  echo "--- [5/5] Branch Status ---"
+  # -- [5] Line-ending hygiene -------------------------------------------------
+  # Advisory only -- a CRLF-in-index file is legal git state and (after the
+  # cgw_lint_files_diverging_from_index arbiter) no longer breaks the commit
+  # gate. Surfaced here so users notice before it surprises them elsewhere.
+  echo "--- [5/6] Line-Ending Hygiene ---"
+  local -a crlf_files=()
+  local crlf_f
+  while IFS= read -r crlf_f; do
+    [[ -n "${crlf_f}" ]] && crlf_files+=("${crlf_f}")
+  done < <(cgw_crlf_in_index_files 2>/dev/null)
+
+  if [[ ${#crlf_files[@]} -eq 0 ]]; then
+    echo "  [OK] No CRLF-in-index files"
+  else
+    echo "  [!] ${#crlf_files[@]} file(s) hold CRLF in the index while filters normalize to LF:"
+    for crlf_f in "${crlf_files[@]}"; do
+      echo "        ${crlf_f}"
+    done
+    echo "  Fix with: git add --renormalize <file> && git commit"
+  fi
+  echo ""
+
+  # -- [6] Branch summary ----------------------------------------------------
+  echo "--- [6/6] Branch Status ---"
   local current_branch
   current_branch=$(git branch --show-current 2>/dev/null || echo "(detached)")
   echo "  Current:  ${current_branch}"

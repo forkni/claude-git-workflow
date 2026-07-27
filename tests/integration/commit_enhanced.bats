@@ -481,6 +481,44 @@ _run_commit() {
   [ "${last_msg}" = "feat: dev commit" ]
 }
 
+@test "Mode 4: a CRLF-in-index file commits cleanly under autocrlf=true (no phantom divergence)" {
+  install_mock_ruff_reformatter
+  # Stage CRLF content while autocrlf=false (create_test_repo's default) so the
+  # index blob holds CRLF verbatim -- the same shape a file committed before
+  # autocrlf was enabled, or added with -f, ends up in.
+  printf 'x = 1\r\n' > "${TEST_REPO_DIR}/mode4.py"
+  git -C "${TEST_REPO_DIR}" add mode4.py
+  # Capture the staged (pre-commit) blob hash directly -- bats' `run` output
+  # capture normalizes CRLF on this platform, so asserting on captured file
+  # *content* for an embedded \r is unreliable; comparing blob hashes sidesteps
+  # that and is a stronger assertion anyway (proves the exact bytes, not just
+  # "some CR survived somewhere").
+  staged_blob=$(git -C "${TEST_REPO_DIR}" rev-parse :mode4.py)
+  # Now flip to autocrlf=true without touching the file. `git add` would keep
+  # preserving CRLF forever (has_crlf_in_index), and git itself reports the
+  # path clean -- only `git hash-object` (no index access) disagrees.
+  git -C "${TEST_REPO_DIR}" config core.autocrlf true
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD='ruff'
+    export CGW_FORMAT_CHECK_ARGS='format --check'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'feat: mode4 crlf-in-index'
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"diverges"* ]]
+  last_msg=$(git -C "${TEST_REPO_DIR}" log -1 --format="%s")
+  [ "${last_msg}" = "feat: mode4 crlf-in-index" ]
+  # CGW must not have silently renormalized the user's line endings: the
+  # committed blob must be byte-identical to what was staged pre-commit.
+  head_blob=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD:mode4.py)
+  [ "${head_blob}" = "${staged_blob}" ]
+}
+
 @test "guard: clean staged .py commits normally and the fixer never runs" {
   install_mock_ruff_reformatter
   printf 'x = 1\n' > "${TEST_REPO_DIR}/clean.py"   # no marker -- already formatted
