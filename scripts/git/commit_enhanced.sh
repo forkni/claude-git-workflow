@@ -560,6 +560,15 @@ main() {
               yes | y)
                 cgw_run_markdownlint_fix "${staged_md[@]}"
                 _restage_after_fix "${effective_staged_only}" "${originally_staged_files}"
+
+                # Re-check after fix (same staged scope)
+                md_lint_error=0
+                cgw_run_markdownlint_check "${staged_md[@]}" || md_lint_error=1
+
+                if [[ ${md_lint_error} -eq 1 ]]; then
+                  err "Markdown lint errors remain after auto-fix"
+                  exit 1
+                fi
                 ;;
               skip | s)
                 echo "[!] Proceeding with markdown lint warnings (CI may flag these)"
