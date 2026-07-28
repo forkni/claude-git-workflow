@@ -55,7 +55,7 @@ Branch: `development`, in sync with `origin/development`.
 
 ### Drift smoke (final state)
 
-```
+```bash
 grep -rn 'git status --short\|--diff-filter=U' scripts/git/
 ```
 
@@ -63,7 +63,7 @@ grep -rn 'git status --short\|--diff-filter=U' scripts/git/
 
 ### Files changed (`b05f30e`)
 
-```
+```text
 scripts/git/_common.sh                  | +231 / -0
 scripts/git/cherry_pick_commits.sh      |  +6 / -55
 scripts/git/merge_with_validation.sh    |  +6 / -102
@@ -108,7 +108,7 @@ Phase 1 exploration disconfirmed the original "phase extraction" hypothesis: mos
 
 ### Files changed
 
-```
+```text
 scripts/git/_common.sh           | +47 / -0   (two new functions + section headers)
 scripts/git/commit_enhanced.sh   | -28 net    (inline blocks replaced, drift bug fixed)
 scripts/git/check_lint.sh        |  -6 net    (cgw_resolve_lint_binary adoption)
@@ -150,7 +150,7 @@ Whether this is **actually** a deep refactor or a shallow one depends on Phase 1
 
 ### Where to look first (seed for Phase 1 exploration)
 
-```
+```text
 scripts/git/commit_enhanced.sh        — primary site (orchestrator today)
 scripts/git/check_lint.sh             — phase 3 (lint) lives here partly already
 scripts/git/_common.sh                — local-only matcher already lives here (phase 4)
@@ -184,7 +184,7 @@ Search for: phase markers (`[1/`, `[2/`, etc.), the commit-format regex (`^(feat
 
 ### Follow-up message to paste at the start of the next session
 
-```
+```text
 Continue the architectural-deepening review of CGW (claude-git-workflow) at
 F:\RD_PROJECTS\COMPONENTS\claude-git-workflow. Branch: development; in sync
 with origin. 362 bats tests passing.
@@ -237,7 +237,7 @@ lint/format/markdownlint invocation pattern. The pre-commit hook hardcoded
 
 ### Files changed
 
-```
+```text
 scripts/git/_common.sh                 | +6 new functions (cgw_run_lint_check, cgw_run_format_check,
                                        |   cgw_run_lint_fix, cgw_run_markdownlint_check,
                                        |   cgw_strip_path_arg, cgw_modified_files_for_lint)
@@ -286,7 +286,7 @@ Existing integration tests for all 15 affected scripts continued to pass unchang
 
 ### Files changed
 
-```
+```text
 scripts/git/_common.sh                 | +cgw_confirm (new interactive prompts module section)
 scripts/git/bisect_helper.sh           | cgw_confirm adoption
 scripts/git/branch_cleanup.sh          | cgw_confirm adoption

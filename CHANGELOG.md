@@ -1,3 +1,5 @@
+# Changelog
+
 ## v0.7.0 (2026-07-09)
 
 > Changes since `v0.6.0`

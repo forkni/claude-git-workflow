@@ -81,7 +81,7 @@ The `/auto-git-workflow-cmd` slash command opens an interactive menu:
 
 Run it in Claude Code:
 
-```
+```text
 /auto-git-workflow-cmd
 ```
 

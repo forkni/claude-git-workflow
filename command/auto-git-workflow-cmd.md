@@ -81,7 +81,7 @@ Present a one-line state summary, the suggestion, and 6 categories as a plain
 numbered list in your reply (not `AskUserQuestion` — it caps at 4 options and this
 needs 6), then wait for the user's pick:
 
-```
+```text
 Repo state: on <branch> · <n> modified / <n> staged / <n> untracked · <ahead N / behind M | in sync> · <n stashes>
 
   ➤ Suggested: <suggestion from Step 1> — reply "y" to accept
