@@ -199,8 +199,8 @@ fi
 # used only in audit/whole-repo mode (no explicit file list). The commit gate
 # passes staged *.md files instead of the PATHS glob, so an unrelated markdown
 # violation elsewhere no longer blocks a code-only commit.
-[[ -z "${CGW_MARKDOWNLINT_ARGS+x}" ]]     && CGW_MARKDOWNLINT_ARGS="!CLAUDE.md !MEMORY.md"
-[[ -z "${CGW_MARKDOWNLINT_PATHS+x}" ]]    && CGW_MARKDOWNLINT_PATHS="**/*.md"
+[[ -z "${CGW_MARKDOWNLINT_ARGS+x}" ]] && CGW_MARKDOWNLINT_ARGS="!CLAUDE.md !MEMORY.md"
+[[ -z "${CGW_MARKDOWNLINT_PATHS+x}" ]] && CGW_MARKDOWNLINT_PATHS="**/*.md"
 # CGW_MARKDOWNLINT_FIX_ARGS is the --fix invocation, applied the same way
 # CHECK_ARGS is (scoped file list in commit/modified-only mode, PATHS glob in
 # audit mode). Works unchanged for both markdownlint-cli2 and markdownlint.
@@ -231,10 +231,10 @@ unset _cgw_md_tok _cgw_md_toks
 # These were previously only defaulted inline in callers via ${VAR:-...}, with no
 # definition here. Centralized so there is one authoritative default; callers keep
 # their inline fallbacks as defense-in-depth. Use +x to preserve an explicit empty.
-[[ -z "${CGW_SKIP_LINT+x}" ]]            && CGW_SKIP_LINT=0
-[[ -z "${CGW_SKIP_MD_LINT+x}" ]]         && CGW_SKIP_MD_LINT=0
-[[ -z "${CGW_SKIP_TYPECHECK+x}" ]]       && CGW_SKIP_TYPECHECK=0
-[[ -z "${CGW_ALL+x}" ]]                  && CGW_ALL=0
+[[ -z "${CGW_SKIP_LINT+x}" ]] && CGW_SKIP_LINT=0
+[[ -z "${CGW_SKIP_MD_LINT+x}" ]] && CGW_SKIP_MD_LINT=0
+[[ -z "${CGW_SKIP_TYPECHECK+x}" ]] && CGW_SKIP_TYPECHECK=0
+[[ -z "${CGW_ALL+x}" ]] && CGW_ALL=0
 
 # --- Staged-blob congruence guard (commit_enhanced.sh) ---
 # commit_enhanced.sh's code-quality checks validate the WORKING TREE, but
@@ -259,9 +259,9 @@ unset _cgw_md_tok _cgw_md_toks
 
 # --- Typecheck step (non-blocking pre-commit hook) ---
 # Empty CGW_TYPECHECK_CMD = typecheck step skipped. Example: "pyrefly".
-[[ -z "${CGW_TYPECHECK_CMD+x}" ]]        && CGW_TYPECHECK_CMD=""
+[[ -z "${CGW_TYPECHECK_CMD+x}" ]] && CGW_TYPECHECK_CMD=""
 [[ -z "${CGW_TYPECHECK_CHECK_ARGS+x}" ]] && CGW_TYPECHECK_CHECK_ARGS="check"
-[[ -z "${CGW_TYPECHECK_EXCLUDES+x}" ]]   && CGW_TYPECHECK_EXCLUDES=""
+[[ -z "${CGW_TYPECHECK_EXCLUDES+x}" ]] && CGW_TYPECHECK_EXCLUDES=""
 
 # --- Merge conflict style (merge_with_validation.sh) ---
 # Set to "diff3" to show the base version in conflict markers (Pro Git recommended).

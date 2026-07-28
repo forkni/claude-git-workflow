@@ -643,9 +643,12 @@ cgw_guard_incoming_local_files() {
   local mode="$1" ref="${2:-HEAD}"
   local -a incoming=() _src_cmd=()
   case "${mode}" in
-    merge)               _src_cmd=(git log --name-only --pretty=format: "HEAD..${ref}") ;;
+    merge) _src_cmd=(git log --name-only --pretty=format: "HEAD..${ref}") ;;
     cherry-pick | amend) _src_cmd=(git show --name-only --format= "${ref}") ;;
-    *) err "cgw_guard_incoming_local_files: unknown mode '${mode}'"; return 2 ;;
+    *)
+      err "cgw_guard_incoming_local_files: unknown mode '${mode}'"
+      return 2
+      ;;
   esac
   local _p
   while IFS= read -r _p; do
