@@ -118,6 +118,7 @@ if not exist "!CGW_DIR!\hooks\pre-rebase"                      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\cc-block-dangerous-git.sh"       set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\skill\SKILL.md"                        set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\command\auto-git-workflow-cmd.md"      set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\templates\markdownlint.json"           set "SOURCE_OK=0"
 if not "!SOURCE_OK!"=="1" goto :bf03_fail
 echo   [PASS] BF-03  CGW source files complete
 goto :bf03_done
@@ -125,7 +126,7 @@ goto :bf03_done
 echo   [FAIL] BF-03  CGW source missing required files
 echo          Expected: scripts\git\configure.sh, hooks\pre-commit, hooks\pre-push,
 echo                    hooks\pre-rebase, hooks\cc-block-dangerous-git.sh, skill\SKILL.md,
-echo                    command\auto-git-workflow-cmd.md
+echo                    command\auto-git-workflow-cmd.md, templates\markdownlint.json
 set "CHECKS_PASSED=0"
 :bf03_done
 
@@ -221,6 +222,8 @@ set "SKILL_PREEXISTED=0"
 if exist "!P!\skill\" set "SKILL_PREEXISTED=1"
 set "COMMAND_PREEXISTED=0"
 if exist "!P!\command\" set "COMMAND_PREEXISTED=1"
+set "TEMPLATES_PREEXISTED=0"
+if exist "!P!\templates\" set "TEMPLATES_PREEXISTED=1"
 
 rem --- Stage payload (mirror cgw-install.cmd's copy block) ---
 set "STAGE_OK=1"
@@ -245,6 +248,10 @@ if errorlevel 1 set "STAGE_OK=0"
 
 if not exist "!P!\command\" mkdir "!P!\command\"
 xcopy /y /q /e "!CGW_DIR!\command\" "!P!\command\" >nul
+if errorlevel 1 set "STAGE_OK=0"
+
+if not exist "!P!\templates\" mkdir "!P!\templates\"
+xcopy /y /q /e "!CGW_DIR!\templates\" "!P!\templates\" >nul
 if errorlevel 1 set "STAGE_OK=0"
 
 if exist "!CGW_DIR!\cgw.conf.example" copy /y "!CGW_DIR!\cgw.conf.example" "!P!\cgw.conf.example" >nul
@@ -296,14 +303,15 @@ goto :eof
 
 rem ============================================================
 rem :pp_cleanup_stage <path>
-rem   Remove the staged hooks\, skill\, command\ temp dirs. These
-rem   are staging directories only (same as cgw-install.cmd's
-rem   post-install cleanup) -- never the runtime install location.
-rem   Only removes a dir if HOOKS_PREEXISTED/SKILL_PREEXISTED/
-rem   COMMAND_PREEXISTED (set in :process_project before staging)
-rem   says this invocation created it -- a project that legitimately
-rem   already had one of these top-level dirs keeps its content
-rem   instead of it being recursively deleted.
+rem   Remove the staged hooks\, skill\, command\, templates\ temp
+rem   dirs. These are staging directories only (same as
+rem   cgw-install.cmd's post-install cleanup) -- never the runtime
+rem   install location. Only removes a dir if HOOKS_PREEXISTED/
+rem   SKILL_PREEXISTED/COMMAND_PREEXISTED/TEMPLATES_PREEXISTED (set
+rem   in :process_project before staging) says this invocation
+rem   created it -- a project that legitimately already had one of
+rem   these top-level dirs keeps its content instead of it being
+rem   recursively deleted.
 rem   NOTE: goto-based on purpose, not "( ... echo( ... )" -- an
 rem   echo( inside a multi-line parenthesized block throws off
 rem   cmd.exe's paren-balance counting (see :process_project).
@@ -327,9 +335,16 @@ if exist "!CP!\skill\" echo(  [WARN] !CP!\skill\ pre-existed -- left in place, n
 
 if "!COMMAND_PREEXISTED!"=="1" goto :pp_cleanup_command_kept
 if exist "!CP!\command\" rmdir /s /q "!CP!\command\" 2>nul
-goto :eof
+goto :pp_cleanup_templates
 :pp_cleanup_command_kept
 if exist "!CP!\command\" echo(  [WARN] !CP!\command\ pre-existed -- left in place, not deleted
+:pp_cleanup_templates
+
+if "!TEMPLATES_PREEXISTED!"=="1" goto :pp_cleanup_templates_kept
+if exist "!CP!\templates\" rmdir /s /q "!CP!\templates\" 2>nul
+goto :eof
+:pp_cleanup_templates_kept
+if exist "!CP!\templates\" echo(  [WARN] !CP!\templates\ pre-existed -- left in place, not deleted
 goto :eof
 
 :summary

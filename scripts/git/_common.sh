@@ -643,9 +643,12 @@ cgw_guard_incoming_local_files() {
   local mode="$1" ref="${2:-HEAD}"
   local -a incoming=() _src_cmd=()
   case "${mode}" in
-    merge)               _src_cmd=(git log --name-only --pretty=format: "HEAD..${ref}") ;;
+    merge) _src_cmd=(git log --name-only --pretty=format: "HEAD..${ref}") ;;
     cherry-pick | amend) _src_cmd=(git show --name-only --format= "${ref}") ;;
-    *) err "cgw_guard_incoming_local_files: unknown mode '${mode}'"; return 2 ;;
+    *)
+      err "cgw_guard_incoming_local_files: unknown mode '${mode}'"
+      return 2
+      ;;
   esac
   local _p
   while IFS= read -r _p; do
@@ -1127,20 +1130,64 @@ cgw_run_lint_fix() {
 #   Runs ${CGW_MARKDOWNLINT_CMD}. Honors CGW_SKIP_MD_LINT=1 and empty
 #   CGW_MARKDOWNLINT_CMD (returns 0 silently when unconfigured).
 #   Returns 0 = clean (or skipped/unconfigured), 1 = errors found.
+#   CGW_MARKDOWNLINT_CMD is word-split into an array (not exec'd as a single
+#   token) because auto-detection (_config.sh) can resolve it to a multi-word
+#   command -- "npx --yes markdownlint-cli2" -- which must reach exec as three
+#   argv entries, not one nonexistent binary named with embedded spaces.
 cgw_run_markdownlint_check() {
   if [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]]; then
     echo "  (markdown lint skipped -- CGW_SKIP_MD_LINT=1)"
     return 0
   fi
   [[ -z "${CGW_MARKDOWNLINT_CMD:-}" ]] && return 0
+  local -a _md_cmd=()
+  read -r -a _md_cmd <<<"${CGW_MARKDOWNLINT_CMD}"
   if [[ $# -gt 0 ]]; then
-    # Scoped: flags/exclusions + the explicit file list (NOT the PATHS glob).
+    # Scoped: the explicit file list, then flags/exclusions. markdownlint-cli2
+    # (globby) resolves glob args in order -- a "!CLAUDE.md" exclusion only
+    # removes matches already added by an earlier positive glob, so it MUST
+    # come after the target, not before (verified: reversing this order
+    # silently stops excluding CLAUDE.md/MEMORY.md from the scan).
     # shellcheck disable=SC2086
-    run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS:-} "$@"
+    run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${_md_cmd[@]}" "$@" ${CGW_MARKDOWNLINT_ARGS:-}
   else
-    # Audit/whole-repo: flags/exclusions + the default PATHS glob.
+    # Audit/whole-repo: the default PATHS glob, then flags/exclusions -- same
+    # target-before-exclusion ordering as the scoped branch above. PATHS is
+    # word-split via read (not left unquoted) so bash's own pathname
+    # expansion never touches it -- an unquoted "**/*.md" without globstar
+    # silently degrades to "*/*.md" (one directory deep only), passing a
+    # partial file list to markdownlint-cli2 instead of its literal glob.
+    local -a _md_paths=()
+    read -r -a _md_paths <<<"${CGW_MARKDOWNLINT_PATHS:-}"
     # shellcheck disable=SC2086
-    run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${CGW_MARKDOWNLINT_CMD}" ${CGW_MARKDOWNLINT_ARGS:-} ${CGW_MARKDOWNLINT_PATHS:-}
+    run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${_md_cmd[@]}" "${_md_paths[@]}" ${CGW_MARKDOWNLINT_ARGS:-}
+  fi
+}
+
+# cgw_run_markdownlint_fix [files...]
+#   Runs ${CGW_MARKDOWNLINT_CMD} ${CGW_MARKDOWNLINT_FIX_ARGS}. Same skip/unset/
+#   scoping conventions as cgw_run_markdownlint_check (including the word-split
+#   for a multi-word auto-detected command, e.g. the npx fallback).
+#   Returns 0 = all fixed (or skipped/unconfigured), 1 = unfixable errors remain.
+cgw_run_markdownlint_fix() {
+  if [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]]; then
+    echo "  (markdown fix skipped -- CGW_SKIP_MD_LINT=1)"
+    return 0
+  fi
+  [[ -z "${CGW_MARKDOWNLINT_CMD:-}" ]] && return 0
+  local -a _md_cmd=()
+  read -r -a _md_cmd <<<"${CGW_MARKDOWNLINT_CMD}"
+  if [[ $# -gt 0 ]]; then
+    # --fix is a flag (order-independent); the target file list must still
+    # precede the ARGS exclusion globs -- see cgw_run_markdownlint_check.
+    # shellcheck disable=SC2086
+    run_tool_with_logging "MARKDOWN FIX" "${logfile}" "${_md_cmd[@]}" ${CGW_MARKDOWNLINT_FIX_ARGS:-} "$@" ${CGW_MARKDOWNLINT_ARGS:-}
+  else
+    # PATHS word-split via read, not left unquoted -- see cgw_run_markdownlint_check.
+    local -a _md_paths=()
+    read -r -a _md_paths <<<"${CGW_MARKDOWNLINT_PATHS:-}"
+    # shellcheck disable=SC2086
+    run_tool_with_logging "MARKDOWN FIX" "${logfile}" "${_md_cmd[@]}" ${CGW_MARKDOWNLINT_FIX_ARGS:-} "${_md_paths[@]}" ${CGW_MARKDOWNLINT_ARGS:-}
   fi
 }
 
@@ -1150,6 +1197,16 @@ cgw_run_markdownlint_check() {
 #   committed. Outputs nothing when no staged *.md files; caller skips the step.
 cgw_staged_files_for_md() {
   git diff --cached --name-only --diff-filter=ACMR -- '*.md'
+}
+
+# cgw_modified_files_for_md
+#   Stdout: newline-separated markdown files modified/added vs HEAD (working
+#   tree, not the index) -- the counterpart to cgw_staged_files_for_md, used by
+#   fix_lint.sh --modified-only which operates on disk, not the index. Mirrors
+#   cgw_modified_files_for_lint's diff-filter contract (deletions excluded, so
+#   a locally deleted file is never re-created by --fix).
+cgw_modified_files_for_md() {
+  git diff --name-only --diff-filter=ACMR HEAD -- '*.md'
 }
 
 # cgw_staged_files_for_lint

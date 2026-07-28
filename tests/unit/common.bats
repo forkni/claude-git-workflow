@@ -1195,6 +1195,293 @@ UU b.py
   rm -f "${fake_bin}"
 }
 
+# ── PATHS glob quoting + ARGS ordering regressions (Verification) ────────────
+# Both bugs were latent in the mocked tests above (which never exercised a
+# real glob or a real exclusion) and only surfaced when fix_lint.sh was run
+# end-to-end against this repo's own docs during Verification.
+
+@test "cgw_run_markdownlint_check: audit-mode PATHS glob is not locally expanded by bash" {
+  # Without "shopt -s globstar", an unquoted "**/*.md" in the call expression
+  # degrades to "*/*.md" (one directory deep only) and bash silently expands
+  # it to real filenames before markdownlint-cli2 ever sees it -- passing a
+  # partial, host-state-dependent file list instead of the literal glob.
+  local fake_bin argv_log workdir
+  fake_bin="$(mktemp)"
+  argv_log="$(mktemp)"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s"\nexit 0\n' "${argv_log}" > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  workdir="$(mktemp -d)"
+  mkdir -p "${workdir}/onedeep"
+  : > "${workdir}/onedeep/decoy.md"
+  run bash -c "
+    cd '${workdir}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_MARKDOWNLINT_CMD='${fake_bin}'
+    CGW_MARKDOWNLINT_ARGS=''
+    CGW_MARKDOWNLINT_PATHS='**/*.md'
+    logfile='/dev/null'
+    cgw_run_markdownlint_check
+  "
+  [ "${status}" -eq 0 ]
+  run cat "${argv_log}"
+  [[ "${output}" == *"**/*.md"* ]]
+  [[ "${output}" != *"onedeep/decoy.md"* ]]
+  rm -f "${fake_bin}" "${argv_log}"
+  rm -rf "${workdir}"
+}
+
+@test "cgw_run_markdownlint_check: audit-mode ARGS exclusions are ordered after the PATHS glob" {
+  # markdownlint-cli2 (globby) resolves glob args left-to-right: a "!X"
+  # negation only removes matches already added by an earlier positive glob.
+  # ARGS before PATHS silently stops excluding CLAUDE.md/MEMORY.md.
+  local fake_bin argv_log
+  fake_bin="$(mktemp)"
+  argv_log="$(mktemp)"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s"\nexit 0\n' "${argv_log}" > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_MARKDOWNLINT_CMD='${fake_bin}'
+    CGW_MARKDOWNLINT_ARGS='!CLAUDE.md'
+    CGW_MARKDOWNLINT_PATHS='**/*.md'
+    logfile='/dev/null'
+    cgw_run_markdownlint_check
+  "
+  [ "${status}" -eq 0 ]
+  run bash -c "grep -n . '${argv_log}'"
+  local paths_line args_line
+  paths_line=$(grep -n -x -F '**/*.md' "${argv_log}" | cut -d: -f1)
+  args_line=$(grep -n -x -F '!CLAUDE.md' "${argv_log}" | cut -d: -f1)
+  [ -n "${paths_line}" ]
+  [ -n "${args_line}" ]
+  [ "${paths_line}" -lt "${args_line}" ]
+  rm -f "${fake_bin}" "${argv_log}"
+}
+
+@test "cgw_run_markdownlint_check: scoped-mode ARGS exclusions are ordered after the file list" {
+  local fake_bin argv_log
+  fake_bin="$(mktemp)"
+  argv_log="$(mktemp)"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s"\nexit 0\n' "${argv_log}" > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_MARKDOWNLINT_CMD='${fake_bin}'
+    CGW_MARKDOWNLINT_ARGS='!CLAUDE.md'
+    logfile='/dev/null'
+    cgw_run_markdownlint_check README.md
+  "
+  [ "${status}" -eq 0 ]
+  local file_line args_line
+  file_line=$(grep -n -x -F 'README.md' "${argv_log}" | cut -d: -f1)
+  args_line=$(grep -n -x -F '!CLAUDE.md' "${argv_log}" | cut -d: -f1)
+  [ -n "${file_line}" ]
+  [ -n "${args_line}" ]
+  [ "${file_line}" -lt "${args_line}" ]
+  rm -f "${fake_bin}" "${argv_log}"
+}
+
+# ── cgw_run_markdownlint_fix() ─────────────────────────────────────────────────
+
+@test "cgw_run_markdownlint_fix: skips when CGW_SKIP_MD_LINT=1" {
+  CGW_SKIP_MD_LINT=1 logfile=/dev/null run cgw_run_markdownlint_fix
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"skipped"* ]]
+}
+
+@test "cgw_run_markdownlint_fix: returns 0 silently when CGW_MARKDOWNLINT_CMD is empty" {
+  CGW_MARKDOWNLINT_CMD="" logfile=/dev/null run cgw_run_markdownlint_fix
+  [ "${status}" -eq 0 ]
+  [ -z "${output}" ]
+}
+
+@test "cgw_run_markdownlint_fix: returns 0 when markdownlint exits clean" {
+  local fake_bin
+  fake_bin="$(mktemp)"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_MARKDOWNLINT_CMD='${fake_bin}'
+    CGW_MARKDOWNLINT_ARGS=''
+    CGW_MARKDOWNLINT_FIX_ARGS='--fix'
+    logfile='/dev/null'
+    cgw_run_markdownlint_fix
+  "
+  [ "${status}" -eq 0 ]
+  rm -f "${fake_bin}"
+}
+
+@test "cgw_run_markdownlint_fix: returns 1 when unfixable errors remain" {
+  local fake_bin
+  fake_bin="$(mktemp)"
+  printf '#!/usr/bin/env bash\necho "README.md:5 MD013 line too long"\nexit 1\n' > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  CGW_MARKDOWNLINT_CMD="${fake_bin}" CGW_MARKDOWNLINT_ARGS="" CGW_MARKDOWNLINT_FIX_ARGS="--fix" logfile=/dev/null run cgw_run_markdownlint_fix
+  [ "${status}" -eq 1 ]
+  rm -f "${fake_bin}"
+}
+
+@test "cgw_run_markdownlint_fix: assembles ARGS + FIX_ARGS + explicit file list as argv" {
+  local fake_bin argv_log
+  fake_bin="$(mktemp)"
+  argv_log="$(mktemp)"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s"\nexit 0\n' "${argv_log}" > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_MARKDOWNLINT_CMD='${fake_bin}'
+    CGW_MARKDOWNLINT_ARGS='!CLAUDE.md'
+    CGW_MARKDOWNLINT_FIX_ARGS='--fix'
+    logfile='/dev/null'
+    cgw_run_markdownlint_fix README.md docs/usage.md
+  "
+  [ "${status}" -eq 0 ]
+  run cat "${argv_log}"
+  [[ "${output}" == *"!CLAUDE.md"* ]]
+  [[ "${output}" == *"--fix"* ]]
+  [[ "${output}" == *"README.md"* ]]
+  [[ "${output}" == *"docs/usage.md"* ]]
+  # Explicit file-list mode must NOT fall back to the PATHS glob.
+  [[ "${output}" != *"**/*.md"* ]]
+  rm -f "${fake_bin}" "${argv_log}"
+}
+
+@test "cgw_run_markdownlint_fix: audit mode (no files) falls back to CGW_MARKDOWNLINT_PATHS glob" {
+  local fake_bin argv_log
+  fake_bin="$(mktemp)"
+  argv_log="$(mktemp)"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s"\nexit 0\n' "${argv_log}" > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_MARKDOWNLINT_CMD='${fake_bin}'
+    CGW_MARKDOWNLINT_ARGS=''
+    CGW_MARKDOWNLINT_FIX_ARGS='--fix'
+    CGW_MARKDOWNLINT_PATHS='**/*.md'
+    logfile='/dev/null'
+    cgw_run_markdownlint_fix
+  "
+  [ "${status}" -eq 0 ]
+  run cat "${argv_log}"
+  [[ "${output}" == *"**/*.md"* ]]
+  rm -f "${fake_bin}" "${argv_log}"
+}
+
+@test "cgw_run_markdownlint_fix: word-splits a multi-token CGW_MARKDOWNLINT_CMD (B1, npx fallback shape)" {
+  local fake_bin argv_log
+  fake_bin="$(mktemp)"
+  argv_log="$(mktemp)"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s"\nexit 0\n' "${argv_log}" > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  # A literal, un-split "${fake_bin} --yes markdownlint-cli2" is not an
+  # executable path -- exec would fail with status != 0 if B1 regressed.
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_MARKDOWNLINT_CMD='${fake_bin} --yes markdownlint-cli2'
+    CGW_MARKDOWNLINT_ARGS=''
+    CGW_MARKDOWNLINT_FIX_ARGS='--fix'
+    logfile='/dev/null'
+    cgw_run_markdownlint_fix README.md
+  "
+  [ "${status}" -eq 0 ]
+  run cat "${argv_log}"
+  [[ "${output}" == *"--yes"* ]]
+  [[ "${output}" == *"markdownlint-cli2"* ]]
+  [[ "${output}" == *"--fix"* ]]
+  [[ "${output}" == *"README.md"* ]]
+  rm -f "${fake_bin}" "${argv_log}"
+}
+
+# ── PATHS glob quoting + ARGS ordering regressions (Verification) ────────────
+# Fix-side counterparts to the cgw_run_markdownlint_check regressions above.
+
+@test "cgw_run_markdownlint_fix: audit-mode PATHS glob is not locally expanded by bash" {
+  local fake_bin argv_log workdir
+  fake_bin="$(mktemp)"
+  argv_log="$(mktemp)"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s"\nexit 0\n' "${argv_log}" > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  workdir="$(mktemp -d)"
+  mkdir -p "${workdir}/onedeep"
+  : > "${workdir}/onedeep/decoy.md"
+  run bash -c "
+    cd '${workdir}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_MARKDOWNLINT_CMD='${fake_bin}'
+    CGW_MARKDOWNLINT_ARGS=''
+    CGW_MARKDOWNLINT_FIX_ARGS='--fix'
+    CGW_MARKDOWNLINT_PATHS='**/*.md'
+    logfile='/dev/null'
+    cgw_run_markdownlint_fix
+  "
+  [ "${status}" -eq 0 ]
+  run cat "${argv_log}"
+  [[ "${output}" == *"**/*.md"* ]]
+  [[ "${output}" != *"onedeep/decoy.md"* ]]
+  rm -f "${fake_bin}" "${argv_log}"
+  rm -rf "${workdir}"
+}
+
+@test "cgw_run_markdownlint_fix: audit-mode ARGS exclusions are ordered after the PATHS glob" {
+  local fake_bin argv_log
+  fake_bin="$(mktemp)"
+  argv_log="$(mktemp)"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s"\nexit 0\n' "${argv_log}" > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_MARKDOWNLINT_CMD='${fake_bin}'
+    CGW_MARKDOWNLINT_ARGS='!CLAUDE.md'
+    CGW_MARKDOWNLINT_FIX_ARGS='--fix'
+    CGW_MARKDOWNLINT_PATHS='**/*.md'
+    logfile='/dev/null'
+    cgw_run_markdownlint_fix
+  "
+  [ "${status}" -eq 0 ]
+  local paths_line args_line
+  paths_line=$(grep -n -x -F '**/*.md' "${argv_log}" | cut -d: -f1)
+  args_line=$(grep -n -x -F '!CLAUDE.md' "${argv_log}" | cut -d: -f1)
+  [ -n "${paths_line}" ]
+  [ -n "${args_line}" ]
+  [ "${paths_line}" -lt "${args_line}" ]
+  rm -f "${fake_bin}" "${argv_log}"
+}
+
+@test "cgw_run_markdownlint_fix: scoped-mode ARGS exclusions are ordered after the file list" {
+  local fake_bin argv_log
+  fake_bin="$(mktemp)"
+  argv_log="$(mktemp)"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "%s"\nexit 0\n' "${argv_log}" > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_MARKDOWNLINT_CMD='${fake_bin}'
+    CGW_MARKDOWNLINT_ARGS='!CLAUDE.md'
+    CGW_MARKDOWNLINT_FIX_ARGS='--fix'
+    logfile='/dev/null'
+    cgw_run_markdownlint_fix README.md
+  "
+  [ "${status}" -eq 0 ]
+  local file_line args_line
+  file_line=$(grep -n -x -F 'README.md' "${argv_log}" | cut -d: -f1)
+  args_line=$(grep -n -x -F '!CLAUDE.md' "${argv_log}" | cut -d: -f1)
+  [ -n "${file_line}" ]
+  [ -n "${args_line}" ]
+  [ "${file_line}" -lt "${args_line}" ]
+  rm -f "${fake_bin}" "${argv_log}"
+}
+
 # ── cgw_confirm() ─────────────────────────────────────────────────────────────
 
 @test "cgw_confirm: 'yes' returns 0" {

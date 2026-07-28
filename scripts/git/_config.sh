@@ -171,15 +171,40 @@ export CGW_ALL_PREFIXES # consumed by commit_enhanced.sh (cross-file, not detect
 [[ -z "${CGW_FORMAT_EXCLUDES+x}" ]] && CGW_FORMAT_EXCLUDES="--exclude logs --exclude .venv"
 
 # Set CGW_MARKDOWNLINT_CMD to enable a dedicated markdown lint step.
-# Empty (default) = markdown lint step skipped. Example: "markdownlint-cli2"
-CGW_MARKDOWNLINT_CMD="${CGW_MARKDOWNLINT_CMD:-}"
+# Unset (never configured -- the common case, since configure.sh writes no
+# CGW_MARKDOWNLINT_CMD line) = auto-detect a markdownlint binary on PATH,
+# falling back to `npx --yes markdownlint-cli2` when node is available (see
+# _cgw_detect_markdownlint below). This is what lets an already-installed
+# project pick up markdown lint on the next scripts/ refresh with no .cgw.conf
+# edit -- mirrors how CGW_TARGET_BRANCH is auto-detected above. Explicitly set
+# to "" in .cgw.conf or the environment to opt out and keep the step disabled.
+# Use +x (not :-) to distinguish "unset" from "explicitly set to empty string".
+[[ -z "${CGW_MARKDOWNLINT_NPX_FALLBACK+x}" ]] && CGW_MARKDOWNLINT_NPX_FALLBACK=1
+_cgw_detect_markdownlint() {
+  if command -v markdownlint-cli2 >/dev/null 2>&1; then
+    echo "markdownlint-cli2"
+  elif command -v markdownlint >/dev/null 2>&1; then
+    echo "markdownlint"
+  elif [[ "${CGW_MARKDOWNLINT_NPX_FALLBACK}" != "0" ]] && command -v npx >/dev/null 2>&1; then
+    echo "npx --yes markdownlint-cli2"
+  else
+    echo ""
+  fi
+}
+if [[ -z "${CGW_MARKDOWNLINT_CMD+x}" ]]; then
+  CGW_MARKDOWNLINT_CMD="$(_cgw_detect_markdownlint)"
+fi
 # CGW_MARKDOWNLINT_ARGS holds flags/exclusions ONLY — always applied, never
 # replaced by a file list. CGW_MARKDOWNLINT_PATHS is the default scan target,
 # used only in audit/whole-repo mode (no explicit file list). The commit gate
 # passes staged *.md files instead of the PATHS glob, so an unrelated markdown
 # violation elsewhere no longer blocks a code-only commit.
-[[ -z "${CGW_MARKDOWNLINT_ARGS+x}" ]]  && CGW_MARKDOWNLINT_ARGS="!CLAUDE.md !MEMORY.md"
+[[ -z "${CGW_MARKDOWNLINT_ARGS+x}" ]] && CGW_MARKDOWNLINT_ARGS="!CLAUDE.md !MEMORY.md"
 [[ -z "${CGW_MARKDOWNLINT_PATHS+x}" ]] && CGW_MARKDOWNLINT_PATHS="**/*.md"
+# CGW_MARKDOWNLINT_FIX_ARGS is the --fix invocation, applied the same way
+# CHECK_ARGS is (scoped file list in commit/modified-only mode, PATHS glob in
+# audit mode). Works unchanged for both markdownlint-cli2 and markdownlint.
+[[ -z "${CGW_MARKDOWNLINT_FIX_ARGS+x}" ]] && CGW_MARKDOWNLINT_FIX_ARGS="--fix"
 # Migration guard: the old single-var shape conflated the scan glob with
 # exclusions. Warn only on a bare glob token (exclusions like "!*.tmp" and
 # flags are legitimate ARGS content and must not trigger this). Tokenize with
@@ -206,10 +231,10 @@ unset _cgw_md_tok _cgw_md_toks
 # These were previously only defaulted inline in callers via ${VAR:-...}, with no
 # definition here. Centralized so there is one authoritative default; callers keep
 # their inline fallbacks as defense-in-depth. Use +x to preserve an explicit empty.
-[[ -z "${CGW_SKIP_LINT+x}" ]]            && CGW_SKIP_LINT=0
-[[ -z "${CGW_SKIP_MD_LINT+x}" ]]         && CGW_SKIP_MD_LINT=0
-[[ -z "${CGW_SKIP_TYPECHECK+x}" ]]       && CGW_SKIP_TYPECHECK=0
-[[ -z "${CGW_ALL+x}" ]]                  && CGW_ALL=0
+[[ -z "${CGW_SKIP_LINT+x}" ]] && CGW_SKIP_LINT=0
+[[ -z "${CGW_SKIP_MD_LINT+x}" ]] && CGW_SKIP_MD_LINT=0
+[[ -z "${CGW_SKIP_TYPECHECK+x}" ]] && CGW_SKIP_TYPECHECK=0
+[[ -z "${CGW_ALL+x}" ]] && CGW_ALL=0
 
 # --- Staged-blob congruence guard (commit_enhanced.sh) ---
 # commit_enhanced.sh's code-quality checks validate the WORKING TREE, but
@@ -234,9 +259,9 @@ unset _cgw_md_tok _cgw_md_toks
 
 # --- Typecheck step (non-blocking pre-commit hook) ---
 # Empty CGW_TYPECHECK_CMD = typecheck step skipped. Example: "pyrefly".
-[[ -z "${CGW_TYPECHECK_CMD+x}" ]]        && CGW_TYPECHECK_CMD=""
+[[ -z "${CGW_TYPECHECK_CMD+x}" ]] && CGW_TYPECHECK_CMD=""
 [[ -z "${CGW_TYPECHECK_CHECK_ARGS+x}" ]] && CGW_TYPECHECK_CHECK_ARGS="check"
-[[ -z "${CGW_TYPECHECK_EXCLUDES+x}" ]]   && CGW_TYPECHECK_EXCLUDES=""
+[[ -z "${CGW_TYPECHECK_EXCLUDES+x}" ]] && CGW_TYPECHECK_EXCLUDES=""
 
 # --- Merge conflict style (merge_with_validation.sh) ---
 # Set to "diff3" to show the base version in conflict markers (Pro Git recommended).

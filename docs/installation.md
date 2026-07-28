@@ -123,6 +123,7 @@ configure.sh resolves the repository from your current directory (git's own disc
 The `hooks/pre-commit` file isn't where configure.sh expects it (relative to `scripts/git/`).
 
 **Fix:** Copy the `hooks/` directory from the CGW source repo into your project root, then re-run configure.sh:
+
 ```bash
 cp -r /path/to/claude-git-workflow/hooks/ ./hooks/
 ./scripts/git/configure.sh
@@ -133,9 +134,11 @@ cp -r /path/to/claude-git-workflow/hooks/ ./hooks/
 configure.sh patched and wrote the hooks but `install_hooks.sh` couldn't copy them.
 
 **Fix:** Run the hook installer directly:
+
 ```bash
 ./scripts/git/install_hooks.sh
 ```
+
 If that also fails, check that `.git/hooks/` is writable by your user.
 
 ### "Skill template not found"
@@ -143,6 +146,7 @@ If that also fails, check that `.git/hooks/` is writable by your user.
 The `skill/` or `command/` directory isn't where configure.sh expects it.
 
 **Fix:** Copy both directories from the CGW source repo into your project root:
+
 ```bash
 cp -r /path/to/claude-git-workflow/skill/ ./skill/
 cp -r /path/to/claude-git-workflow/command/ ./command/
@@ -154,6 +158,7 @@ cp -r /path/to/claude-git-workflow/command/ ./command/
 The installer warns but continues. Check the configure.sh output printed above the warning.
 
 **Fix:** Re-run configure.sh manually from the target project in Git Bash:
+
 ```bash
 cd "C:\path\to\your-project"
 bash scripts/git/configure.sh
@@ -182,6 +187,7 @@ rm -f .claude/commands/auto-git-workflow-cmd.md
 ```
 
 To remove a globally-installed skill:
+
 ```bash
 rm -rf ~/.claude/skills/auto-git-workflow/
 rm -f ~/.claude/commands/auto-git-workflow-cmd.md

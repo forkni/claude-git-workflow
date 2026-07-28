@@ -1,6 +1,7 @@
 # Branch and Merge Rules
 
 ## Contents
+
 - Branch Configuration
 - Branch Policies
 - Conflict Resolution
@@ -71,6 +72,7 @@ invocation.
      non-interactive mode (cherry-pick too). Remove the file from the incoming
      change, or override with `CGW_ALLOW_LOCAL_FILES_IN_MERGE=1`.
 5. Push both branches:
+
    ```bash
    ./scripts/git/push_validated.sh                                           # push target
    git checkout "${CGW_SOURCE_BRANCH}" && ./scripts/git/push_validated.sh    # push source
@@ -116,6 +118,7 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use GitHub PRs instead of direct loc
 **Action:** STOP workflow, require manual resolution. Follow the full procedure
 in [resolving-merge-conflicts.md](resolving-merge-conflicts.md) — investigate each
 side's intent, preserve both where compatible, re-run lint/tests, then conclude:
+
 ```bash
 # Resolve each hunk (see resolving-merge-conflicts.md), then:
 git add <resolved-files>
@@ -148,6 +151,7 @@ Never auto-resolve content conflicts — they require human review.
 **When:** One side modified or added a file while the other side deleted it. Unlike `DU`/`DD`, the intent is ambiguous and requires a human decision.
 
 **Action:** STOP workflow, require manual resolution:
+
 ```bash
 # Accept deletion:
 git rm <file>
@@ -172,6 +176,7 @@ git merge --abort  # if abandoning
 ## Merge Workflow Detail
 
 `merge_with_validation.sh --non-interactive` steps:
+
 1. Run `validate_branches.sh` (checks branch state, warns on untracked files)
 2. Checkout target branch
 3. Create backup tag `pre-merge-<timestamp>-<pid>` via `cgw_create_backup_tag merge` (PID suffix prevents collision on fast CI)
@@ -191,6 +196,7 @@ After merge: review with `git log --oneline -5`, then push via `push_validated.s
 ## Rollback Policy
 
 If a merge introduces problems:
+
 1. **Immediate rollback** (before pushing): `./scripts/git/rollback_merge.sh`
 2. **After pushing to remote**: use `rollback_merge.sh` locally, then force-push with `push_validated.sh --force`
 3. **Force-push confirmation**: always requires explicit typing `FORCE` when pushing to protected branches

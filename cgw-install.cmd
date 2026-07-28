@@ -127,6 +127,7 @@ if not exist "!CGW_DIR!\hooks\pre-rebase"                      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\cc-block-dangerous-git.sh"       set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\skill\SKILL.md"                        set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\command\auto-git-workflow-cmd.md"      set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\templates\markdownlint.json"           set "SOURCE_OK=0"
 if not "!SOURCE_OK!"=="1" goto :pi04_fail
 echo   [PASS] PI-04  CGW source files complete
 goto :pi04_done
@@ -134,7 +135,7 @@ goto :pi04_done
 echo   [FAIL] PI-04  CGW source missing required files
 echo          Expected: scripts\git\configure.sh, hooks\pre-commit, hooks\pre-push,
 echo                    hooks\pre-rebase, hooks\cc-block-dangerous-git.sh, skill\SKILL.md,
-echo                    command\auto-git-workflow-cmd.md
+echo                    command\auto-git-workflow-cmd.md, templates\markdownlint.json
 set "CHECKS_PASSED=0"
 :pi04_done
 
@@ -202,6 +203,7 @@ echo     scripts\git\    (shell scripts)
 echo     hooks\          (pre-commit, pre-push, pre-rebase templates)
 echo     skill\          (Claude Code skill source)
 echo     command\        (slash command source)
+echo     templates\      (markdown lint baseline config)
 echo     cgw.conf.example (config reference)
 echo.
 if "!GLOBAL_SKILL!"=="1" (
@@ -211,7 +213,7 @@ if "!GLOBAL_SKILL!"=="1" (
 )
 echo.
 echo   Then run: configure.sh (interactive)
-echo   Finally:  offer to remove temp files (hooks\, skill\, command\)
+echo   Finally:  offer to remove temp files (hooks\, skill\, command\, templates\)
 echo.
 set /p "CONFIRM=Proceed with installation? [Y/n]: "
 if /i "!CONFIRM!"=="n"  goto :cancel
@@ -306,6 +308,17 @@ echo   [ERR] Failed to copy command\
 goto :abort
 :cp_cmd_done
 
+rem templates/
+if not exist "!TARGET_DIR!\templates\" mkdir "!TARGET_DIR!\templates\"
+xcopy /y /q /e "!CGW_DIR!\templates\" "!TARGET_DIR!\templates\" >nul
+if errorlevel 1 goto :cp_templates_fail
+echo   [OK] Copied templates\
+goto :cp_templates_done
+:cp_templates_fail
+echo   [ERR] Failed to copy templates\
+goto :abort
+:cp_templates_done
+
 rem cgw.conf.example (optional)
 if not exist "!CGW_DIR!\cgw.conf.example" goto :cp_example_done
 copy /y "!CGW_DIR!\cgw.conf.example" "!TARGET_DIR!\cgw.conf.example" >nul
@@ -367,14 +380,16 @@ echo   and can be safely removed from the target project:
 echo(    !TARGET_DIR!\hooks\
 echo(    !TARGET_DIR!\skill\
 echo(    !TARGET_DIR!\command\
+echo(    !TARGET_DIR!\templates\
 echo.
 set /p "CLEANUP=Remove temporary install files? [Y/n]: "
 if /i "!CLEANUP!"=="n"  goto :cleanup_skip
 if /i "!CLEANUP!"=="no" goto :cleanup_skip
 set "REMOVED_DIRS="
-if exist "!TARGET_DIR!\hooks\"   ( rmdir /s /q "!TARGET_DIR!\hooks\"   & if not exist "!TARGET_DIR!\hooks\"   set "REMOVED_DIRS=!REMOVED_DIRS! hooks\" )
-if exist "!TARGET_DIR!\skill\"   ( rmdir /s /q "!TARGET_DIR!\skill\"   & if not exist "!TARGET_DIR!\skill\"   set "REMOVED_DIRS=!REMOVED_DIRS! skill\" )
-if exist "!TARGET_DIR!\command\" ( rmdir /s /q "!TARGET_DIR!\command\" & if not exist "!TARGET_DIR!\command\" set "REMOVED_DIRS=!REMOVED_DIRS! command\" )
+if exist "!TARGET_DIR!\hooks\"     ( rmdir /s /q "!TARGET_DIR!\hooks\"     & if not exist "!TARGET_DIR!\hooks\"     set "REMOVED_DIRS=!REMOVED_DIRS! hooks\" )
+if exist "!TARGET_DIR!\skill\"     ( rmdir /s /q "!TARGET_DIR!\skill\"     & if not exist "!TARGET_DIR!\skill\"     set "REMOVED_DIRS=!REMOVED_DIRS! skill\" )
+if exist "!TARGET_DIR!\command\"   ( rmdir /s /q "!TARGET_DIR!\command\"   & if not exist "!TARGET_DIR!\command\"   set "REMOVED_DIRS=!REMOVED_DIRS! command\" )
+if exist "!TARGET_DIR!\templates\" ( rmdir /s /q "!TARGET_DIR!\templates\" & if not exist "!TARGET_DIR!\templates\" set "REMOVED_DIRS=!REMOVED_DIRS! templates\" )
 if "!REMOVED_DIRS!"=="" (
     echo   [WARN] Could not fully remove temp directories (files may be locked)
 ) else (
@@ -399,6 +414,7 @@ if exist "!TARGET_DIR!\.cgw.conf"                                  echo(  Config
 if exist "!TARGET_DIR!\.git\hooks\pre-commit"                      echo(  Git hooks:    !TARGET_DIR!\.git\hooks\pre-commit + pre-push + pre-rebase
 if exist "!TARGET_DIR!\.claude\skills\auto-git-workflow\SKILL.md"  echo(  Claude skill: !TARGET_DIR!\.claude\skills\auto-git-workflow\
 if exist "!TARGET_DIR!\.claude\commands\auto-git-workflow-cmd.md"  echo(  Slash cmd:    !TARGET_DIR!\.claude\commands\auto-git-workflow-cmd.md
+if exist "!TARGET_DIR!\.markdownlint.json"                         echo(  Markdown cfg: !TARGET_DIR!\.markdownlint.json
 
 echo.
 echo   Quick start (from your project root in Git Bash):

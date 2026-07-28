@@ -2,4 +2,4 @@
 
 ## Maintainer
 
-- forkni — forkni@gmail.com
+- forkni — <forkni@gmail.com>

@@ -706,6 +706,36 @@ _run_commit() {
   [ ! -f "${MOCK_BIN_DIR}/mdlint.log" ]
 }
 
+@test "non-interactive markdown auto-fix rewrites the file and re-stages it before committing" {
+  install_mock_markdownlint_fixable
+  printf 'title\n\nMDLINT-BAD\n' > "${TEST_REPO_DIR}/fixme.md"
+  git -C "${TEST_REPO_DIR}" add fixme.md
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD='markdownlint-cli2'
+    export CGW_MARKDOWNLINT_ARGS=''
+    export CGW_MARKDOWNLINT_FIX_ARGS='--fix'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'docs: fix markdown'
+  "
+  [ "${status}" -eq 0 ]
+  # Working tree file was rewritten by the fix.
+  run grep -x "MDLINT-BAD" "${TEST_REPO_DIR}/fixme.md"
+  [ "${status}" -ne 0 ]
+  # The commit picked up the fixed content -- re-staging worked, not the stale
+  # pre-fix blob (which would still trip the congruence guard or ship the bug).
+  run bash -c "cd '${TEST_REPO_DIR}' && git show HEAD:fixme.md"
+  [[ "${output}" != *"MDLINT-BAD"* ]]
+  # No divergence between index and worktree left behind for the fixed file
+  # (a leftover "logs/" dir from run_tool_with_logging is expected and unrelated).
+  run bash -c "cd '${TEST_REPO_DIR}' && git status --porcelain -- fixme.md"
+  [ -z "${output}" ]
+}
+
 # ── --no-venv flag ────────────────────────────────────────────────────────────
 
 @test "--no-venv uses system lint binary and exits 0" {

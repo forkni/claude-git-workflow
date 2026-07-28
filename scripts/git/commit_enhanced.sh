@@ -538,14 +538,52 @@ main() {
       else
         local md_lint_error=0
         cgw_run_markdownlint_check "${staged_md[@]}" || md_lint_error=1
+
         if [[ ${md_lint_error} -eq 1 ]]; then
           echo "[!] Markdown lint errors detected"
-          if ! cgw_confirm "Proceed despite markdown lint errors?" --non-interactive abort; then
-            exit 1
+          if [[ ${non_interactive} -eq 1 ]]; then
+            echo "[Non-interactive] Auto-fixing markdown lint issues..."
+            cgw_run_markdownlint_fix "${staged_md[@]}"
+            _restage_after_fix "${effective_staged_only}" "${originally_staged_files}"
+
+            # Re-check after fix (same staged scope)
+            md_lint_error=0
+            cgw_run_markdownlint_check "${staged_md[@]}" || md_lint_error=1
+
+            if [[ ${md_lint_error} -eq 1 ]]; then
+              err "Markdown lint errors remain after auto-fix"
+              exit 1
+            fi
+          else
+            read -rp "Auto-fix markdown lint issues? (yes/no/skip): " fix_md_lint
+            case "${fix_md_lint}" in
+              yes | y)
+                cgw_run_markdownlint_fix "${staged_md[@]}"
+                _restage_after_fix "${effective_staged_only}" "${originally_staged_files}"
+
+                # Re-check after fix (same staged scope)
+                md_lint_error=0
+                cgw_run_markdownlint_check "${staged_md[@]}" || md_lint_error=1
+
+                if [[ ${md_lint_error} -eq 1 ]]; then
+                  err "Markdown lint errors remain after auto-fix"
+                  exit 1
+                fi
+                ;;
+              skip | s)
+                echo "[!] Proceeding with markdown lint warnings (CI may flag these)"
+                ;;
+              *)
+                echo "Commit cancelled -- fix markdown lint errors first"
+                exit 1
+                ;;
+            esac
           fi
+        else
+          echo "[OK] Markdown lint checks passed"
         fi
       fi
-    elif [[ ${skip_md_lint} -eq 1 ]]; then
+    else
       echo "  (markdown lint skipped -- --skip-md-lint)"
     fi
   fi
