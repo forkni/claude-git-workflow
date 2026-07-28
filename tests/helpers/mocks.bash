@@ -13,6 +13,16 @@ setup_mock_bin() {
   export MOCK_BIN_DIR
   mkdir -p "${MOCK_BIN_DIR}"
   export PATH="${MOCK_BIN_DIR}:${PATH}"
+
+  # This dir only shadows PATH for names it explicitly mocks -- a real npx
+  # from the host/CI runner (e.g. GitHub Actions' preinstalled Node.js) is
+  # still resolvable, and _cgw_detect_markdownlint()'s npx fallback would
+  # invoke it for real: a live, network-dependent `npx --yes markdownlint-cli2`
+  # call from inside a test. Disable the fallback by default so integration
+  # tests get deterministic (empty) auto-detection unless a test explicitly
+  # opts in via CGW_MARKDOWNLINT_CMD/install_mock_markdownlint or re-enables
+  # this and installs install_mock_npx.
+  export CGW_MARKDOWNLINT_NPX_FALLBACK=0
 }
 
 # ── Lint mock ──────────────────────────────────────────────────────────────────
