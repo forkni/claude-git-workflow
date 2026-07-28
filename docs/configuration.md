@@ -25,6 +25,7 @@ The easiest way to configure CGW:
 ```
 
 **What it auto-detects:**
+
 - Branch names (from `git remote HEAD`, common names: main/master, development/develop/dev)
 - Lint tool (from `pyproject.toml`, `setup.py`, `package.json`, `go.mod`, `Cargo.toml`, `CMakeLists.txt`, etc.)
 - Virtual environment location (`.venv/`, `venv/`, `env/`, `.env/`)
@@ -66,9 +67,11 @@ cp cgw.conf.example .cgw.conf
 | `CGW_LINT_EXCLUDES` | `--extend-exclude logs --extend-exclude .venv` | Exclusion flags appended to lint commands |
 | `CGW_FORMAT_EXCLUDES` | `--exclude logs --exclude .venv` | Exclusion flags appended to format commands |
 | `CGW_LINT_EXTENSIONS` | `*.py` | File globs for `--modified-only` lint mode (e.g. `*.js *.ts`) |
-| `CGW_MARKDOWNLINT_CMD` | `` | Markdown lint tool; set to e.g. `markdownlint-cli2` to enable |
+| `CGW_MARKDOWNLINT_CMD` | *(auto-detected)* | Markdown lint tool; auto-detected at runtime if unset (`markdownlint-cli2` → `markdownlint` → `npx --yes markdownlint-cli2` fallback → disabled). Set explicitly to override, or to `""` to opt out |
 | `CGW_MARKDOWNLINT_ARGS` | `!CLAUDE.md !MEMORY.md` | Flags/exclusions only (never a scan-target glob) |
 | `CGW_MARKDOWNLINT_PATHS` | `**/*.md` | Default scan target for audit mode (`check_lint.sh`/`push_validated.sh`); the commit gate scopes to staged `*.md` instead |
+| `CGW_MARKDOWNLINT_FIX_ARGS` | `--fix` | Arguments for markdown auto-fix (`fix_lint.sh`, commit-gate auto-fix) |
+| `CGW_MARKDOWNLINT_NPX_FALLBACK` | `1` | Set to `0` to disable the `npx --yes markdownlint-cli2` fallback when no markdownlint binary is on `PATH` |
 | `CGW_SKIP_LINT` | `0` | Set to `1` to skip all lint checks at runtime |
 | `CGW_SKIP_MD_LINT` | `0` | Set to `1` to skip only the markdown lint step |
 | `CGW_TYPECHECK_CMD` | `` | Typecheck tool; set to e.g. `pyrefly` to enable (`""` to disable) |

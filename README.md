@@ -59,8 +59,8 @@ No manual config editing required for common setups. `configure.sh` auto-detects
 | `sync_branches.sh` | Sync local branches via fetch + rebase; auto-protects diverged `skip-worktree` local files across the pull |
 | `validate_branches.sh` | Check branch state before operations |
 | `branch_diff.sh` | Show what changed on the current branch vs. the default branch; `--files`/`--stat`/`--no-ws`/`--base` refine the diff |
-| `check_lint.sh` | Read-only lint validation |
-| `fix_lint.sh` | Auto-fix lint issues |
+| `check_lint.sh` | Read-only lint validation (code + Markdown) |
+| `fix_lint.sh` | Auto-fix lint issues (code + Markdown; `--skip-md-lint`/`--md-only`/`--modified-only`) |
 | `create_pr.sh` | Create GitHub PR from source → target (triggers Charlie CI + GitHub Actions) |
 | `pr_checkout.sh` | Guarded, logged wrapper around `gh pr checkout <N>` for reviewing PRs locally; `--branch`/`--force`/`--detach`/`--dry-run` supported |
 | `install_hooks.sh` | Install git hooks (pre-commit, pre-push, pre-rebase) |

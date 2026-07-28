@@ -40,6 +40,7 @@ A file or directory that must never be committed to the remote repository. Confi
 The shared module responsible for running lint, format, and markdownlint tool binaries against staged or modified files. Lives in `_common.sh` and is reused by `commit_enhanced.sh`, `check_lint.sh`, `fix_lint.sh`, and the pre-commit hook.
 
 **Key seams**:
+
 - `cgw_resolve_lint_binary <cmd>` — pure venv-aware path resolver. Given a binary name (e.g., `ruff`), returns the absolute venv path when it exists, or the bare name for system PATH lookup. Reads `PYTHON_BIN` / `PYTHON_EXT` (pre-populated by `get_python_path`). No side effects.
 - `run_tool_with_logging <section-name> <logfile> <cmd> [args…]` — runs a tool, captures stdout+stderr, writes to the named log section via `log_section_start`/`log_section_end`, returns the tool's exit code. Used by all lint/format/markdownlint invocations.
 - `cgw_run_lint_check [files…]` — runs `CGW_LINT_CMD` with `CGW_LINT_CHECK_ARGS` (and optional file list) via `run_tool_with_logging`. Skips silently when `CGW_SKIP_LINT=1` or `CGW_LINT_CMD` is empty.
@@ -79,6 +80,7 @@ An annotated git tag recording the state of a branch immediately before a mutati
 The shared module for all binary yes/no confirmation prompts in CGW scripts. Concentrates a seam previously scattered across 35+ inline `read -r -p` sites in 15 scripts, with inconsistent non-interactive policy at each site.
 
 **Implementation seam**: `cgw_confirm <prompt> [options]` in `scripts/git/_common.sh`.
+
 - Default mode: reads a line from stdin; `yes` → returns 0, anything else → returns 1.
 - `--default yes|no`: maps an empty answer to confirmed or denied.
 - `--literal-token TOKEN`: requires the literal token (e.g., `CLEAR`, `FORCE`, `ROLLBACK`) instead of `yes/no` — used for destructive-operation double-confirms.
@@ -93,6 +95,7 @@ The shared module for all binary yes/no confirmation prompts in CGW scripts. Con
 The shared module for querying remote reachability, remote branch existence, and commit distance between two refs. Concentrates a seam previously scattered across ~10 inline `git rev-list --count` and `git ls-remote` call sites in 6+ scripts, several of which were untested (notably `repo_health.sh`).
 
 **Implementation seam** — three silent helpers in `scripts/git/_common.sh`:
+
 - `cgw_rev_count <base> <tip>` — outputs `git rev-list --count "base..tip"` to stdout; exits non-zero on error (bad refs, git failure). No fallback — callers own their own `|| count=0` or `|| exit 1`. Accepts any git ref (branch names, remote tracking refs, SHAs).
 - `cgw_remote_reachable <remote>` — exits 0 if the remote is reachable (probes via `git ls-remote HEAD`), non-zero otherwise.
 - `cgw_remote_branch_exists <remote> <branch>` — exits 0 if `<branch>` exists on `<remote>`; builds `refs/heads/<branch>` internally so callers pass plain branch names.

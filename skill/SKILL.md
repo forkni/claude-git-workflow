@@ -8,6 +8,7 @@ user-invocable: false
 # Auto Git Workflow
 
 Ensures all git operations follow established patterns:
+
 - Use `scripts/git/*.sh` scripts instead of raw git commands
 - Protect local-only files from accidental commits
 - Handle merge conflicts correctly (auto-resolve safe cases, stop for manual review)
@@ -34,11 +35,13 @@ Invoke this skill **before** running any git command in this project. If the ans
 ### Rule 1: NEVER Use Raw `git commit`
 
 **Always use:**
+
 ```bash
 ./scripts/git/commit_enhanced.sh [flags] "commit message"
 ```
 
 **NEVER use:**
+
 ```bash
 git commit -m "message"  # WRONG — bypasses lint, protection, logging
 ```
@@ -67,6 +70,7 @@ Default protected files: `CLAUDE.md`, `MEMORY.md`, `.claude/`, `logs/`
 Use `CGW_LOCAL_FILES_EXEMPT` in `.cgw.conf` to allow specific files inside a blocked directory (e.g., `.claude/settings.json` is a shared project config inside the blocked `.claude/` dir).
 
 Before any commit, verify:
+
 ```bash
 git diff --cached --name-only | grep -E "(CLAUDE\.md|MEMORY\.md|\.claude/|logs/)"
 ```
@@ -84,10 +88,12 @@ CGW scripts automatically detect and remove stale `.git/index.lock` files left b
 ```
 
 **Safety guards — the helper refuses to remove the lock when:**
+
 - A `rebase`, `merge`, `cherry-pick`, `revert`, or `bisect` is in progress (detected by state dirs/sentinels in `.git/`). This protects you if a `git rebase -i` editor is open in another terminal.
 - `CGW_AUTO_REMOVE_INDEX_LOCK=0` is set (warn-only mode).
 
 **Manual removal** is only needed if the auto-recovery refuses. Use the worktree-aware path (not always literally `.git/index.lock`):
+
 ```bash
 rm -f "$(git rev-parse --git-dir)/index.lock"
 ```
@@ -114,6 +120,7 @@ If you regularly run `git rebase -i` and pause in the editor for minutes, set `C
 | **Yes** | **Yes** | **Commit pre-staged files ONLY** — warns loudly about excluded changes |
 
 **Use `--only` for the clearest intent (preferred in Claude Code):**
+
 ```bash
 # Commit exactly two files — any prior index state is reset first
 ./scripts/git/commit_enhanced.sh --no-venv \
@@ -123,18 +130,21 @@ If you regularly run `git rebase -i` and pause in the editor for minutes, set `C
 ```
 
 **Or pre-stage + commit (safe default respects your selection):**
+
 ```bash
 git add src/foo.py src/bar.py && \
   ./scripts/git/commit_enhanced.sh --no-venv "feat: selective change"
 ```
 
 **To include all tracked changes regardless of index state:**
+
 ```bash
 ./scripts/git/commit_enhanced.sh --all --no-venv "chore: bulk update"
 # Equivalent env var: CGW_ALL=1
 ```
 
 **Never do this when you have pre-existing tracked modifications and only want to commit some of them:**
+
 ```bash
 # DANGEROUS (old pattern) — auto-stages EVERYTHING in non-interactive mode if nothing pre-staged
 git reset HEAD && git add src/foo.py && ./scripts/git/commit_enhanced.sh "feat: ..."
@@ -185,6 +195,7 @@ extra detail in the commit body, not a long subject line. Tune via `CGW_COMMIT_S
 ## Quick Decision Tree
 
 **Committing code:**
+
 ```
 Is .venv directory present?
 ├─ Yes → ./scripts/git/commit_enhanced.sh "feat: message"
@@ -205,7 +216,9 @@ Are local-only files staged?
 └─ No  → Proceed
 
 Did lint checks fail?
-├─ Yes → Run ./scripts/git/fix_lint.sh then retry commit
+├─ Yes → Code lint: run ./scripts/git/fix_lint.sh then retry commit
+│         Markdown lint: commit_enhanced.sh offers auto-fix inline (interactive prompt,
+│         or automatic when non-interactive) via CGW_MARKDOWNLINT_CMD (auto-detected)
 └─ No  → Commit proceeds
 
 Optional flags: --skip-lint (skip all lint), --skip-md-lint (skip markdown lint only),
@@ -220,6 +233,7 @@ is phrased)
 ```
 
 **Merging to target branch** (direct merge, `CGW_MERGE_MODE="direct"`):
+
 ```bash
 # Preview first (no changes):
 ./scripts/git/merge_with_validation.sh --dry-run
@@ -230,6 +244,7 @@ is phrased)
 # Override branch pair for this invocation (doesn't mutate config):
 ./scripts/git/merge_with_validation.sh --source feature/hotfix --target release/1.2 --non-interactive
 ```
+
 Handles: pre-merge validation, backup tag, modify/delete/both-deleted conflict auto-resolution, content conflict detection (stops for manual review).
 
 **After manual conflict resolution:** when the script pauses for a content conflict (`UU`/`AA`/`AU`), resolve the markers, run `git add <file>`, then conclude the merge with `commit_enhanced.sh` — Rule 1 applies to merge-conclusion commits too. Do NOT re-run `merge_with_validation.sh`; there is no `--continue` flag.
@@ -237,6 +252,7 @@ Handles: pre-merge validation, backup tag, modify/delete/both-deleted conflict a
 Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Creating a PR below).
 
 **Pushing to remote:**
+
 ```bash
 ./scripts/git/push_validated.sh                       # with lint check
 ./scripts/git/push_validated.sh --no-venv             # no .venv (forwards to check_lint.sh)
@@ -250,6 +266,7 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 ```
 
 **Creating a PR** (when `CGW_MERGE_MODE="pr"`):
+
 ```bash
 ./scripts/git/create_pr.sh                          # interactive
 ./scripts/git/create_pr.sh --non-interactive        # skip prompts
@@ -258,9 +275,11 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 ./scripts/git/create_pr.sh --draft                  # open as draft
 ./scripts/git/create_pr.sh --source feature/hotfix --target release/1.2
 ```
+
 Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login`. Charlie CI auto-reviews on PR open. Rule 6 applies here too — watch the PR's checks (`gh pr checks <n> --watch`), not just Charlie's review, per ci-verification.md.
 
 **Syncing with remote:**
+
 ```bash
 ./scripts/git/sync_branches.sh              # sync current branch
 ./scripts/git/sync_branches.sh --all        # sync both source and target branches
@@ -280,6 +299,7 @@ and **prints the upstream diff** for that file so you can reconcile new shared c
 silently discarding local edits. No-op when no skip-worktree file has diverged (the common case).
 
 **Rollback a merge:**
+
 ```bash
 ./scripts/git/rollback_merge.sh                          # interactive (hard reset)
 ./scripts/git/rollback_merge.sh --revert                 # safe revert (preserves history, no force-push)
@@ -288,6 +308,7 @@ silently discarding local edits. No-op when no skip-worktree file has diverged (
 ```
 
 **Cherry-picking a commit:**
+
 ```bash
 ./scripts/git/cherry_pick_commits.sh                       # interactive
 ./scripts/git/cherry_pick_commits.sh --commit abc1234      # non-interactive
@@ -299,26 +320,32 @@ silently discarding local edits. No-op when no skip-worktree file has diverged (
 
 There is no wrapper for this — `cherry_pick_commits.sh` picks the whole commit. To take only
 a subset of files:
+
 ```bash
 git cherry-pick -n <hash>      # stage the commit's changes without auto-committing
 ```
+
 Then strip the paths you don't want, **without deleting anything from disk**:
+
 ```bash
 git reset HEAD -- <unwanted-path>      # unstage, keep the working-tree copy
 # or equivalently:
 git rm --cached <unwanted-path>        # index-only untrack, keep the working-tree copy
 ```
+
 Only use plain `git rm <path>` (no `-f`) for files you genuinely don't want and that are
 recoverable (tracked in some other commit) — git itself will refuse if the file has staged
 changes. **Never run `git rm -f` on a git-ignored or local-only path**: `-f` deletes the
 working-tree copy too, which is unrecoverable for anything git-ignored (the PreToolUse
 guardrail blocks `git rm -f`/`--force` unless `--cached` is present, precisely to catch this).
 Once only the wanted paths remain staged, commit through the wrapper:
+
 ```bash
 ./scripts/git/commit_enhanced.sh --only <path> --only <path> "feat: split from <hash>"
 ```
 
 **Merging docs only:**
+
 ```bash
 ./scripts/git/merge_docs.sh
 ./scripts/git/merge_docs.sh --non-interactive
@@ -326,6 +353,7 @@ Once only the wanted paths remain staged, commit through the wrapper:
 ```
 
 **Undoing something:**
+
 ```bash
 # Undo last commit (keep changes staged, creates backup tag):
 ./scripts/git/undo_last.sh commit
@@ -341,6 +369,7 @@ Once only the wanted paths remain staged, commit through the wrapper:
 ```
 
 **Branch cleanup:**
+
 ```bash
 # Dry-run preview (safe default — shows what would be deleted):
 ./scripts/git/branch_cleanup.sh
@@ -353,6 +382,7 @@ Once only the wanted paths remain staged, commit through the wrapper:
 ```
 
 **Safe rebase:**
+
 ```bash
 # Rebase current branch onto target:
 ./scripts/git/rebase_safe.sh --onto main
@@ -380,6 +410,7 @@ Once only the wanted paths remain staged, commit through the wrapper:
 `CGW_ALLOW_REBASE_PUBLISHED=1 ./scripts/git/rebase_safe.sh --onto main`
 
 **Bisecting a bug:**
+
 ```bash
 # Automated: provide a test command
 ./scripts/git/bisect_helper.sh --good v1.0.0 --run "bash tests/smoke_test.sh"
@@ -392,6 +423,7 @@ Once only the wanted paths remain staged, commit through the wrapper:
 ```
 
 **Generating a changelog:**
+
 ```bash
 ./scripts/git/changelog_generate.sh --from v1.0.0           # since tag → stdout
 ./scripts/git/changelog_generate.sh --from v1.0.0 --output CHANGELOG.md
@@ -403,6 +435,7 @@ Once only the wanted paths remain staged, commit through the wrapper:
 ```
 
 **Stashing work in progress:**
+
 ```bash
 ./scripts/git/stash_work.sh push "wip: description"
 ./scripts/git/stash_work.sh pop
@@ -419,15 +452,18 @@ confirmation. With the `--yes` flag and no-TTY auto-detection now in place, this
 be needed.
 
 **Creating a release:**
+
 ```bash
 ./scripts/git/create_release.sh v1.2.3 --push             # tag + push (triggers GitHub Release)
 ./scripts/git/create_release.sh v1.2.3 --push --sign      # GPG/SSH-signed annotated tag
 ./scripts/git/create_release.sh v1.2.3 --dry-run
 ```
+
 `--push` triggers `release.yml` (tag push matching `v*`) — Rule 6 applies: watch that run
 too before considering the release done, per ci-verification.md.
 
 **Recovering lost commits (reflog + fsck):**
+
 ```bash
 # Show reflog with restore hints (read-only):
 ./scripts/git/recover.sh reflog
@@ -445,6 +481,7 @@ too before considering the release done, per ci-verification.md.
 ```
 
 **Worktree management (parallel branch checkouts):**
+
 ```bash
 ./scripts/git/worktree_manage.sh list                          # show all worktrees
 ./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent   # add linked worktree
@@ -454,6 +491,7 @@ too before considering the release done, per ci-verification.md.
 ```
 
 **Project setup & hygiene:**
+
 ```bash
 ./scripts/git/setup_attributes.sh --dry-run   # preview .gitattributes changes
 ./scripts/git/setup_attributes.sh             # write .gitattributes
@@ -469,24 +507,30 @@ too before considering the release done, per ci-verification.md.
 ```
 
 **Checking what changed on your branch:**
+
 ```bash
 ./scripts/git/branch_diff.sh                 # full patch vs the auto-detected default branch
 ./scripts/git/branch_diff.sh --files         # changed file names only
 ./scripts/git/branch_diff.sh --stat --no-ws  # diffstat, ignoring whitespace
 ```
+
 Read-only; safe with a dirty working tree. Auto-detects `main` vs `master` vs a custom default via `${CGW_REMOTE}/HEAD`, falling back to `CGW_TARGET_BRANCH`.
 
 **Reviewing a PR locally:**
+
 ```bash
 ./scripts/git/pr_checkout.sh 42                          # check out PR #42
 ./scripts/git/pr_checkout.sh --pr 42 --branch review/pr-42
 ```
+
 Wraps `gh pr checkout`. Requires `gh auth login`. Refuses to switch branches over uncommitted tracked changes unless `--force` is passed — stash first with `stash_work.sh push`.
 
 **Generating/updating a Markdown Table of Contents:**
+
 ```bash
 ./scripts/git/md_toc.sh docs/usage.md --insert   # insert/update TOC in place
 ./scripts/git/md_toc.sh docs/usage.md --check    # CI: fail if the TOC is stale
 ./scripts/git/md_toc.sh --all                    # update every tracked *.md with a <!--ts--> marker
 ```
+
 Computes GitHub-compatible anchor slugs offline — no network access or auth token needed.

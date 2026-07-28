@@ -34,6 +34,7 @@ Charlie also reads CLAUDE.md for project context.
 ### Good examples
 
 - [R1] — Correct shebang and flags
+
 ```bash
 #!/usr/bin/env bash
 set -uo pipefail
@@ -41,6 +42,7 @@ set -uo pipefail
 ```
 
 - [R2] — Correct source chain
+
 ```bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/git/_common.sh
@@ -48,6 +50,7 @@ source "${SCRIPT_DIR}/_common.sh"
 ```
 
 - [R6] — Acceptable shellcheck suppression
+
 ```bash
 # shellcheck disable=SC2086  # Word splitting intentional: CGW_LINT_ARGS contains multiple flags
 ${lint_cmd} ${CGW_LINT_ARGS}
@@ -56,16 +59,18 @@ ${lint_cmd} ${CGW_LINT_ARGS}
 ### Bad examples
 
 - [R1] — Never add set -e
+
 ```bash
 set -euo pipefail  # BAD: -e causes false failures on git diff exit codes
 ```
 
 - [R3] — Never use single brackets
+
 ```bash
 if [ "$branch" = "main" ]; then  # BAD: use [[ ]]
 ```
 
 ## References
 
-1. ShellCheck wiki — https://www.shellcheck.net/wiki/
+1. ShellCheck wiki — <https://www.shellcheck.net/wiki/>
 2. CGW config variables — ./cgw.conf.example

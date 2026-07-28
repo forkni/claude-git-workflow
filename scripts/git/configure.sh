@@ -460,6 +460,30 @@ _install_skill() {
   fi
 }
 
+_install_markdownlint_config() {
+  local template_src
+
+  # Try staging area first (present during install.cmd), then CGW source repo
+  if ! template_src="$(cd "${SCRIPT_DIR}" && cd "../../templates" 2>/dev/null && pwd)"; then
+    echo "  [!] Markdown lint template not found -- skipping" >&2
+    return 0
+  fi
+
+  if [[ ! -f "${template_src}/markdownlint.json" ]]; then
+    echo "  [!] Markdown lint template not found -- skipping" >&2
+    return 0
+  fi
+
+  # Never overwrite an existing markdownlint config, however the project names it
+  if compgen -G ".markdownlint*" >/dev/null || compgen -G ".markdownlint-cli2*" >/dev/null; then
+    echo "  [OK] Markdown lint config already present -- not overwriting"
+    return 0
+  fi
+
+  cp "${template_src}/markdownlint.json" "${PROJECT_ROOT}/.markdownlint.json"
+  echo "  [OK] Markdown lint baseline installed (.markdownlint.json)"
+}
+
 _install_guardrail_nojq() {
   local settings_json="${1}"
   local hook_cmd="${2}"
@@ -868,11 +892,14 @@ main() {
       echo "# Example: CGW_DEV_ONLY_FILES=\"tests/ pytest.ini\""
       echo "CGW_DEV_ONLY_FILES=\"\""
       echo ""
-      echo "# Markdown lint (empty = disabled). ARGS = flags/exclusions only;"
-      echo "# PATHS = whole-repo audit target (commit gate scopes to staged *.md)."
+      echo "# Markdown lint tool is auto-detected at runtime (markdownlint-cli2 ->"
+      echo "# markdownlint -> npx --yes markdownlint-cli2 fallback -> disabled); not"
+      echo "# stored here -- see _config.sh. Set CGW_MARKDOWNLINT_CMD=\"\" to opt out,"
+      echo "# or override CMD/ARGS/PATHS/FIX_ARGS explicitly:"
       echo "# CGW_MARKDOWNLINT_CMD=\"markdownlint-cli2\""
       echo "# CGW_MARKDOWNLINT_ARGS=\"!CLAUDE.md !MEMORY.md\""
       echo "# CGW_MARKDOWNLINT_PATHS=\"**/*.md\""
+      echo "# CGW_MARKDOWNLINT_FIX_ARGS=\"--fix\""
       echo ""
       echo "# Allow merge/cherry-pick to carry CGW_LOCAL_FILES into shared history"
       echo "# (guard aborts non-interactively when 0)"
@@ -892,6 +919,11 @@ main() {
     echo "Updating .gitignore..."
     _update_gitignore
   fi
+
+  # -- Install markdown lint baseline config ---------------------------------
+
+  echo ""
+  _install_markdownlint_config
 
   # -- Install pre-commit hook -----------------------------------------------
 
