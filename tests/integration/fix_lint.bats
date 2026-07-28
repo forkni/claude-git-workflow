@@ -24,6 +24,7 @@ teardown() {
     export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_LINT_CMD=''
     export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
     bash '${CGW_PROJECT_ROOT}/scripts/git/fix_lint.sh'
   "
   [ "${status}" -eq 0 ]
@@ -48,6 +49,7 @@ teardown() {
     export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_LINT_CMD=ruff
     export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
     bash '${CGW_PROJECT_ROOT}/scripts/git/fix_lint.sh'
   "
   [ "${status}" -eq 0 ]
@@ -63,6 +65,7 @@ teardown() {
     export PROJECT_ROOT='${TEST_REPO_DIR}'
     export CGW_LINT_CMD=ruff
     export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
     bash '${CGW_PROJECT_ROOT}/scripts/git/fix_lint.sh'
   "
   [[ "${output}" == *"issues"* ]] || [[ "${output}" == *"FAILED"* ]] || \
