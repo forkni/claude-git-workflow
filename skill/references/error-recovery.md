@@ -1,6 +1,7 @@
 # Error Recovery
 
 ## Contents
+
 - PreToolUse Guardrail
 - Lint Failures
 - Push Failures
@@ -19,6 +20,7 @@
 If Claude Code blocks a command with `BLOCKED: ...`, the CGW harness guardrail is active. The block message includes a redirect to the correct CGW wrapper script.
 
 **Block message format:**
+
 ```
 BLOCKED: Command matched dangerous pattern "<pattern>".
 <redirect — the CGW wrapper to use instead>
@@ -28,6 +30,7 @@ The user has prevented you from doing this.
 **Normal response:** follow the redirect. For example, replace `git commit -m "..."` with `./scripts/git/commit_enhanced.sh "..."`.
 
 **Temporary disable** (current shell session only):
+
 ```bash
 export SKIP_CGW_GUARDRAIL=1
 # Run your command
@@ -35,6 +38,7 @@ unset SKIP_CGW_GUARDRAIL
 ```
 
 **Permanent uninstall:**
+
 1. Remove the PreToolUse entry from `.claude/settings.json` (delete the object whose `command` contains `cc-block-dangerous-git`)
 2. Delete `.claude/hooks/cc-block-dangerous-git.sh`
 
@@ -45,6 +49,7 @@ unset SKIP_CGW_GUARDRAIL
 ## Lint Failures
 
 **Auto-fix and retry:**
+
 ```bash
 ./scripts/git/fix_lint.sh       # Auto-fix
 ./scripts/git/check_lint.sh     # Verify fixed
@@ -60,17 +65,20 @@ unset SKIP_CGW_GUARDRAIL
 ## Push Failures
 
 **Use `push_validated.sh` for all pushes** — it provides better error context:
+
 ```bash
 ./scripts/git/push_validated.sh
 ```
 
 Common failures and fixes:
+
 1. **Remote has diverged**: `./scripts/git/sync_branches.sh` then retry push
 2. **Auth failure**: check SSH key or token configuration
 3. **Branch protection**: resolve via PR workflow
 4. **Behind remote**: `./scripts/git/sync_branches.sh` to pull --rebase before pushing
 
 **Raw fallback** (if push_validated.sh unavailable):
+
 ```bash
 git pull --rebase origin <branch>
 git push origin <branch>
@@ -86,6 +94,7 @@ section is its fix-loop reference: map the failing `branch-protection.yml` job t
 repro command, fix, then re-promote through the wrappers.
 
 **Read the failing steps only, not the whole log:**
+
 ```bash
 gh run view <run-id> --log-failed
 ```
@@ -103,16 +112,19 @@ gh run view <run-id> --log-failed
 
 **Infrastructural failure** (runner outage, transient network/auth error unrelated to the
 diff) — try one rerun before touching code:
+
 ```bash
 gh run rerun <run-id> --failed
 ```
 
 **Otherwise, fix and re-promote through the wrappers** — never bypass Rule 1, and never
 commit the fix directly on `CGW_TARGET_BRANCH`; author it on `CGW_SOURCE_BRANCH`:
+
 ```bash
 ./scripts/git/commit_enhanced.sh --non-interactive "fix: <what CI caught>"
 ./scripts/git/push_validated.sh --non-interactive --skip-lint
 ```
+
 Then re-watch from ci-verification.md's *Baseline + Resolve Runs* against the new SHA.
 Bounded by `CGW_CI_MAX_FIX_ROUNDS` (default 3) — exhausted means stop and report, not
 silently give up or claim success while a run is still red.
@@ -138,6 +150,7 @@ When you need to undo a merge to the target branch:
 ```
 
 Interactive mode prompts for rollback target:
+
 1. Latest `pre-merge-*` tag (recommended)
 2. `HEAD~1` (commit before merge)
 3. Specific commit hash
@@ -145,6 +158,7 @@ Interactive mode prompts for rollback target:
 Requires typing `ROLLBACK` to confirm (interactive mode). Force-push warning shown afterward.
 
 **Safe revert (preserves history — preferred for shared/already-pushed branches):**
+
 ```bash
 # Creates a new revert commit instead of resetting — no force-push needed:
 ./scripts/git/rollback_merge.sh --revert
@@ -154,6 +168,7 @@ Requires typing `ROLLBACK` to confirm (interactive mode). Force-push warning sho
 ```
 
 **Manual rollback** (if script unavailable):
+
 ```bash
 git checkout main
 git reset --hard pre-merge-<timestamp>-<pid>
@@ -165,12 +180,14 @@ git checkout development
 ## Branch Sync Issues
 
 If local and remote have diverged:
+
 ```bash
 ./scripts/git/sync_branches.sh           # sync current branch
 ./scripts/git/sync_branches.sh --all     # sync both source and target branches
 ```
 
 If rebase fails (conflicting local commits):
+
 ```bash
 git rebase --abort      # abort the failed rebase
 git status              # check current state
@@ -183,6 +200,7 @@ git rebase --continue
 ## Rebase Issues (rebase_safe.sh)
 
 If `rebase_safe.sh` hits conflicts mid-rebase:
+
 ```bash
 # Resolve conflicting files, then:
 git add <resolved-files>
@@ -196,6 +214,7 @@ git add <resolved-files>
 ```
 
 Restore from backup tag if needed:
+
 ```bash
 git checkout pre-rebase-<timestamp>-<pid>
 ```
@@ -205,11 +224,13 @@ git checkout pre-rebase-<timestamp>-<pid>
 ## Bisect Stuck Session
 
 If a `bisect_helper.sh` session gets interrupted or abandoned:
+
 ```bash
 ./scripts/git/bisect_helper.sh --abort   # resets bisect and returns to original branch
 ```
 
 Restore from backup tag if needed:
+
 ```bash
 git checkout pre-bisect-<timestamp>-<pid>
 ```
@@ -219,6 +240,7 @@ git checkout pre-bisect-<timestamp>-<pid>
 ## Undo Operations
 
 Use `undo_last.sh` to recover from common commit mistakes:
+
 ```bash
 # Undo most recent commit (changes remain staged):
 ./scripts/git/undo_last.sh commit
@@ -237,6 +259,7 @@ Each operation creates a backup tag (`pre-undo-commit-*`) before acting.
 ## No Changes to Commit
 
 `commit_enhanced.sh` checks for changes before committing. If no changes exist, it exits cleanly — not an error. Check with:
+
 ```bash
 git diff --quiet && git diff --cached --quiet && echo "No changes"
 ```

@@ -68,6 +68,7 @@ Add project-specific prefixes via `CGW_EXTRA_PREFIXES="cuda|tensorrt"` in `.cgw.
 ```
 
 **Staging behaviour (non-interactive):**
+
 - Pre-staged files exist + unstaged changes exist → commits pre-staged only (warns about skipped files). Use `--all` to override.
 - Nothing pre-staged → auto-stages all tracked changes (legacy behaviour).
 - `--only <path>` → resets index, stages listed paths only.
@@ -326,6 +327,22 @@ Computes GitHub-compatible anchor slugs offline (no network access or auth token
 
 ---
 
+### Fix lint issues (code + Markdown)
+
+```bash
+./scripts/git/fix_lint.sh                    # auto-fix code lint + markdown, full repo
+./scripts/git/fix_lint.sh --modified-only     # only files changed vs HEAD
+./scripts/git/fix_lint.sh --md-only           # markdown auto-fix only, skip code lint
+./scripts/git/fix_lint.sh --skip-md-lint      # code lint auto-fix only, skip markdown
+```
+
+Markdown auto-fix uses `CGW_MARKDOWNLINT_CMD` (auto-detected at runtime — see
+[Configuration](configuration.md)) with `CGW_MARKDOWNLINT_FIX_ARGS` (default `--fix`).
+Only auto-fixable rules are corrected in place; manual-only violations (e.g. `MD013`,
+`MD041`) still require a hand fix and are reported by `check_lint.sh`.
+
+---
+
 ## Environment Variables
 
 All scripts support `CGW_*` environment variables to override config at runtime:
@@ -341,6 +358,7 @@ CGW_ALL=1 ./scripts/git/commit_enhanced.sh "chore: bulk stage"  # force-stage al
 ```
 
 Legacy `CLAUDE_GIT_*` variables are still supported:
+
 - `CLAUDE_GIT_NON_INTERACTIVE=1` → `CGW_NON_INTERACTIVE=1`
 - `CLAUDE_GIT_NO_VENV=1` → `CGW_NO_VENV=1`
 - `CLAUDE_GIT_STAGED_ONLY=1` → `CGW_STAGED_ONLY=1`
@@ -359,6 +377,7 @@ git add notes.md && git commit -m "test"   # → blocked by pre-commit on next t
 ```
 
 Match contract:
+
 - A bare name (`CLAUDE.md`) matches the path **exactly** — `CLAUDE.md.bak` does NOT match.
 - A trailing-slash entry (`logs/`) matches the directory itself or anything inside it.
 - `CGW_LOCAL_FILES_EXEMPT` accepts exact paths that override a match.

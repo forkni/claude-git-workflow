@@ -38,10 +38,12 @@ Use `--global` to install into `~/.claude/` instead, making the skill available 
 ```
 
 **Global install locations:**
+
 - Skill: `~/.claude/skills/auto-git-workflow/`
 - Slash command: `~/.claude/commands/auto-git-workflow-cmd.md`
 
 **Local install locations (default):**
+
 - Skill: `.claude/skills/auto-git-workflow/`
 - Slash command: `.claude/commands/auto-git-workflow-cmd.md`
 
@@ -93,6 +95,7 @@ Claude will execute the matching wrapper script(s) and report results.
 In Claude Code, type `/skills` to list loaded skills. `auto-git-workflow` should appear in the list.
 
 If it's missing:
+
 1. Check that `.claude/skills/auto-git-workflow/SKILL.md` (or `~/.claude/skills/auto-git-workflow/SKILL.md`) exists
 2. Restart Claude Code to reload skills
 3. Re-run `./scripts/git/configure.sh` if the files are missing

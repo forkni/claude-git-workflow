@@ -77,16 +77,88 @@ install_mock_gh_no_auth() {
 
 # install_mock_markdownlint
 # Creates a fake markdownlint-cli2 at $MOCK_BIN_DIR.
-# Exits with $MOCK_MDLINT_EXIT (default 0).
+# Exits with $MOCK_MDLINT_EXIT (default 0). Logs full argv to mdlint.log, plus
+# a dedicated "FIX_FLAG_SEEN" marker line when --fix is among the args -- lets
+# tests assert the fix path was actually invoked (vs. the check path) without
+# parsing the raw argv line.
 install_mock_markdownlint() {
   local exit_code="${MOCK_MDLINT_EXIT:-0}"
   local cmd_name="${1:-markdownlint-cli2}"
   cat > "${MOCK_BIN_DIR}/${cmd_name}" << EOF
 #!/usr/bin/env bash
 echo "mock ${cmd_name} \$*" >> "${MOCK_BIN_DIR}/mdlint.log"
+for a in "\$@"; do
+  [[ "\$a" == "--fix" ]] && echo "FIX_FLAG_SEEN" >> "${MOCK_BIN_DIR}/mdlint.log"
+done
 exit ${exit_code}
 EOF
   chmod +x "${MOCK_BIN_DIR}/${cmd_name}"
+}
+
+# install_mock_markdownlint_fixable
+# A markdownlint-cli2-compatible mock for --fix / re-stage flows. Like
+# install_mock_ruff_reformatter, `--fix` REWRITES files on disk: a file is
+# "unfixable-clean" iff it contains a line exactly equal to the marker
+# "MDLINT-BAD"; --fix deletes that line. Without --fix (check mode), it reads
+# disk and fails (exit 1) iff any given file still holds the marker. Flag/
+# exclusion tokens (-*, !*, glob patterns) are ignored -- only concrete file
+# arguments are inspected/rewritten. Portable: no `sed -i`, writes a temp file
+# then `mv -f`. Logs argv to $MOCK_BIN_DIR/mdlint.log.
+install_mock_markdownlint_fixable() {
+  local cmd_name="${1:-markdownlint-cli2}"
+  cat > "${MOCK_BIN_DIR}/${cmd_name}" << 'MOCK_EOF'
+#!/usr/bin/env bash
+echo "mock md $*" >> "${0%/*}/mdlint.log"
+
+is_fix=0
+files=()
+for a in "$@"; do
+  case "$a" in
+    --fix) is_fix=1 ;;
+    -* | !* | *'*'*) : ;; # flags, exclusions, glob patterns -- not files
+    *) files+=("$a") ;;
+  esac
+done
+
+marker='MDLINT-BAD'
+
+if [[ $is_fix -eq 1 ]]; then
+  for f in "${files[@]}"; do
+    [[ -f "$f" ]] || continue
+    tmp="${f}.cgwmock.$$"
+    grep -v -x "$marker" "$f" > "$tmp"
+    mv -f "$tmp" "$f"
+  done
+  exit 0
+fi
+
+rc=0
+for f in "${files[@]}"; do
+  [[ -f "$f" ]] || continue
+  grep -q -x "$marker" "$f" && rc=1
+done
+exit $rc
+MOCK_EOF
+  chmod +x "${MOCK_BIN_DIR}/${cmd_name}"
+}
+
+# install_mock_npx
+# Creates a fake `npx` that, when invoked as `npx --yes <tool> ...`, delegates
+# to whatever mock is already installed in $MOCK_BIN_DIR under <tool>'s name
+# (install_mock_markdownlint / install_mock_markdownlint_fixable must be
+# installed first, under the name the npx fallback resolves to --
+# "markdownlint-cli2"). Exercises the _cgw_detect_markdownlint() npx fallback
+# end-to-end without a real npm/node install. Logs argv to
+# $MOCK_BIN_DIR/npx.log.
+install_mock_npx() {
+  cat > "${MOCK_BIN_DIR}/npx" << 'MOCK_EOF'
+#!/usr/bin/env bash
+echo "mock npx $*" >> "${0%/*}/npx.log"
+[[ "$1" == "--yes" ]] && shift
+tool="$1"; shift
+exec "${0%/*}/${tool}" "$@"
+MOCK_EOF
+  chmod +x "${MOCK_BIN_DIR}/npx"
 }
 
 # install_mock_lint_content_aware

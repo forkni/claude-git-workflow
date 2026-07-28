@@ -47,6 +47,7 @@ Branch: `development`, in sync with `origin/development`.
 ### Test count delta
 
 `346 → 362` tests passing (`+16`, no regressions):
+
 - `tests/unit/common.bats`: +9 unit tests for `cgw_classify_conflicts` (porcelain fixture injection — empty input, single per-category, all-categories, mixed, non-conflict prefixes ignored, blank lines, second-call reset).
 - `tests/integration/merge_validation.bats`: +4 (DU auto-resolve exits 0; UU halt; UD halt; mixed DU+UU).
 - `tests/integration/cherry_pick.bats`: +2 (UU halt with same message string as merge — drift parity proof; DU auto-resolve exits 1 with `--continue` hint).
@@ -100,6 +101,7 @@ Phase 1 exploration disconfirmed the original "phase extraction" hypothesis: mos
 ### Test count delta
 
 `362 → 381` tests passing (`+19`, no regressions):
+
 - `tests/integration/commit_enhanced.bats`: +7 (lint auto-fix, format check, markdownlint, --no-venv, prefix strict)
 - `tests/integration/fix_lint.bats`: +4 (new file — CGW_LINT_CMD empty skips, --help, lint pass, lint fail)
 - `tests/unit/common.bats`: +5 (`cgw_validate_commit_message`) + 3 (`cgw_resolve_lint_binary`) = +8
@@ -229,6 +231,7 @@ lint/format/markdownlint invocation pattern. The pre-commit hook hardcoded
 ### Test count delta
 
 `381 → ~393` (+12, no regressions):
+
 - `tests/unit/common.bats`: +10 (all four run helpers + `cgw_strip_path_arg` + `cgw_modified_files_for_lint`)
 - `tests/integration/pre_commit_hook.bats`: +2 (CGW_LINT_CMD empty skips silently; lint failure → WARN but exits 0)
 
@@ -276,6 +279,7 @@ used `[y/N]` / `read -n 1 -r` vs every other site's `(yes/no)` literal-yes).
 ### Test count delta
 
 `~393 → ~403` (+10, no regressions):
+
 - `tests/unit/common.bats`: +10 (`cgw_confirm` — default mode, `--default yes`, `--literal-token`, `--non-interactive abort|accept|deny`)
 
 Existing integration tests for all 15 affected scripts continued to pass unchanged.

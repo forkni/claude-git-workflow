@@ -6,6 +6,7 @@ do not run this pipeline unprompted; it is only for an explicit "full promotion"
 request. SKILL.md Core Rules govern every step.
 
 ## Contents
+
 - Environment Detection
 - Bash Tool Compatibility
 - Section A: Git Bash / Linux / macOS (Phases 1-5b)
@@ -91,20 +92,24 @@ echo "${CGW_MERGE_MODE:-direct}"
   [error-recovery.md](error-recovery.md).
 - `pr` → **4B**: `./scripts/git/create_pr.sh --non-interactive`, then watch the PR's own
   checks in place of a plain branch-run watch:
+
   ```bash
   pr_number=$(gh pr view --json number --jq .number)
   gh pr checks "$pr_number" --watch --fail-fast --interval "${CGW_CI_POLL_INTERVAL:-15}"
   ```
+
   (exit `8` = still pending — `--watch` normally blocks past that to a terminal state.) Red →
   run the Fix Loop from [ci-verification.md](ci-verification.md): commit the fix on
   `CGW_SOURCE_BRANCH`, `push_validated.sh` (this updates the open PR automatically), re-watch.
   Bounded by `CGW_CI_MAX_FIX_ROUNDS`; exhausted → stop and hand back to the user. Green →
   `git checkout "${CGW_SOURCE_BRANCH:-development}" >/dev/null 2>&1` and report:
+
   ```
   Workflow complete (PR mode)
   Source branch: [hash] "[message]" pushed
   PR: [url] — checks: green, Charlie review: [pending|approved|changes requested]
   ```
+
   Charlie's review is tracked separately from checks (a reviewer, not a required check) —
   mention its status but don't block on it. Stop here regardless — merging into
   `CGW_TARGET_BRANCH` happens on GitHub once the PR is approved and merged, outside this

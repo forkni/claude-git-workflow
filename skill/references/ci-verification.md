@@ -8,6 +8,7 @@ pending or red. This is an agent procedure (uses `gh`, not a `scripts/git/*.sh` 
 apply it manually at each push site listed in [SKILL.md](../SKILL.md).
 
 ## Contents
+
 - Applicability Probe
 - Baseline + Resolve Runs
 - Watch
@@ -105,9 +106,11 @@ special-casing needed.)
 Bounded by `CGW_CI_MAX_FIX_ROUNDS` (default 3 attempts). On red:
 
 1. **Inspect** — pull failing steps only, not the whole log:
+
    ```bash
    gh run view <run-id> --log-failed
    ```
+
 2. **Infrastructural failure** (runner outage, transient network/auth error unrelated to the
    diff) — try one rerun before touching code: `gh run rerun <run-id> --failed`. Re-watch.
 3. **Otherwise, reproduce locally before editing.** Map the failing job to its local
@@ -116,10 +119,12 @@ Bounded by `CGW_CI_MAX_FIX_ROUNDS` (default 3 attempts). On red:
    `bash scripts/git/check_local_files.sh`, `./scripts/git/setup_attributes.sh`.
 4. **Fix, then re-promote through the wrappers** — never bypass Rule 1. Author the fix on
    `CGW_SOURCE_BRANCH`:
+
    ```bash
    ./scripts/git/commit_enhanced.sh --non-interactive "fix: <what CI caught>"
    ./scripts/git/push_validated.sh --non-interactive --skip-lint
    ```
+
    Re-watch from **Baseline + Resolve Runs** against the new SHA.
 5. **Budget exhausted** — stop. Report the failing workflow name, job, and the `gh run view`
    URL, and hand back to the user. Never silently give up mid-loop, and never report success

@@ -225,6 +225,125 @@ teardown() {
   [[ "${output}" != *"WARNING: CGW_MARKDOWNLINT_ARGS"* ]]
 }
 
+# ── Markdown-lint runtime auto-detection (A) ────────────────────────────────────
+# _cgw_detect_markdownlint() (_config.sh) shells out to `command -v` for
+# markdownlint-cli2/markdownlint/npx. The real dev machine (and possibly CI) may
+# have real markdownlint tooling on PATH, so these tests override the `command`
+# builtin with a same-named shell function that fakes only those three lookups
+# and delegates everything else to `builtin command "$@"` -- deterministic
+# regardless of what is actually installed.
+
+@test "A: no markdownlint tooling on PATH -> CGW_MARKDOWNLINT_CMD resolves empty" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    command() {
+      case \"\$2\" in
+        markdownlint-cli2|markdownlint|npx) return 1 ;;
+        *) builtin command \"\$@\" ;;
+      esac
+    }
+    unset CGW_MARKDOWNLINT_CMD
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"CMD=[\${CGW_MARKDOWNLINT_CMD}]\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"CMD=[]"* ]]
+}
+
+@test "A: no binary but npx present + fallback enabled (default) -> npx --yes markdownlint-cli2" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    command() {
+      case \"\$2\" in
+        markdownlint-cli2|markdownlint) return 1 ;;
+        npx) return 0 ;;
+        *) builtin command \"\$@\" ;;
+      esac
+    }
+    unset CGW_MARKDOWNLINT_CMD CGW_MARKDOWNLINT_NPX_FALLBACK
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"CMD=[\${CGW_MARKDOWNLINT_CMD}]\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"CMD=[npx --yes markdownlint-cli2]"* ]]
+}
+
+@test "A: no binary, npx present, CGW_MARKDOWNLINT_NPX_FALLBACK=0 -> resolves empty" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    command() {
+      case \"\$2\" in
+        markdownlint-cli2|markdownlint) return 1 ;;
+        npx) return 0 ;;
+        *) builtin command \"\$@\" ;;
+      esac
+    }
+    unset CGW_MARKDOWNLINT_CMD
+    export CGW_MARKDOWNLINT_NPX_FALLBACK=0
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"CMD=[\${CGW_MARKDOWNLINT_CMD}]\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"CMD=[]"* ]]
+}
+
+@test "A: markdownlint-cli2 present -> takes priority over markdownlint and npx" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    command() {
+      case \"\$2\" in
+        markdownlint-cli2|markdownlint|npx) return 0 ;;
+        *) builtin command \"\$@\" ;;
+      esac
+    }
+    unset CGW_MARKDOWNLINT_CMD
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"CMD=[\${CGW_MARKDOWNLINT_CMD}]\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"CMD=[markdownlint-cli2]"* ]]
+}
+
+@test "A: explicit CGW_MARKDOWNLINT_CMD=\"\" opts out regardless of detectable tooling" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    command() {
+      case \"\$2\" in
+        markdownlint-cli2|markdownlint|npx) return 0 ;;
+        *) builtin command \"\$@\" ;;
+      esac
+    }
+    export CGW_MARKDOWNLINT_CMD=''
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"CMD=[\${CGW_MARKDOWNLINT_CMD}]\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"CMD=[]"* ]]
+}
+
+@test "A: explicit CGW_MARKDOWNLINT_CMD env var wins over auto-detection" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    command() {
+      case \"\$2\" in
+        markdownlint-cli2|markdownlint|npx) return 1 ;;
+        *) builtin command \"\$@\" ;;
+      esac
+    }
+    export CGW_MARKDOWNLINT_CMD='custom-tool'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"CMD=[\${CGW_MARKDOWNLINT_CMD}]\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"CMD=[custom-tool]"* ]]
+}
+
 # ── {files} placeholder defaults (A2+A3) ───────────────────────────────────────
 
 @test "A3: lint/format arg defaults use the {files} placeholder" {

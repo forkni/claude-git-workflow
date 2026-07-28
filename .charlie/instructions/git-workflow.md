@@ -32,6 +32,7 @@ All git operations: commits, merges, pushes, cherry-picks, rollbacks.
 ### Good examples
 
 - [R5] — Trap handler for branch safety
+
 ```bash
 original_branch="$(git rev-parse --abbrev-ref HEAD)"
 cleanup() { git checkout "${original_branch}" 2>/dev/null || true; }
@@ -39,6 +40,7 @@ trap cleanup INT TERM
 ```
 
 - [R6] — Backup tag before mutation (use the shared registry function)
+
 ```bash
 cgw_create_backup_tag merge   # sets $CGW_BACKUP_TAG; op must be in CGW_BACKUP_OPS
 local backup_tag="${CGW_BACKUP_TAG}"
@@ -47,6 +49,7 @@ local backup_tag="${CGW_BACKUP_TAG}"
 ### Bad examples
 
 - [R1] — Never bypass wrappers
+
 ```bash
 git commit -m "feat: add feature"  # BAD: skips lint, local-file check, message validation
 git push origin main                 # BAD: skips remote check and force-push protection

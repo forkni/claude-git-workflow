@@ -103,6 +103,36 @@ _run_configure() {
   [ ! -f "${TEST_REPO_DIR}/.githooks/pre-commit" ]
 }
 
+# ── Markdown lint baseline config (_install_markdownlint_config) ─────────────
+# SCRIPT_DIR is pinned to CGW_PROJECT_ROOT/scripts/git (see _run_configure), so
+# "../../templates" resolves to the real repo's templates/markdownlint.json --
+# no per-test staging needed, unlike the hook/skill installers above.
+
+@test "fresh install copies templates/markdownlint.json to .markdownlint.json" {
+  _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.markdownlint.json" ]
+  diff -q "${CGW_PROJECT_ROOT}/templates/markdownlint.json" "${TEST_REPO_DIR}/.markdownlint.json"
+}
+
+@test "existing .markdownlint.json is never overwritten" {
+  echo '{"custom": true}' > "${TEST_REPO_DIR}/.markdownlint.json"
+  _run_configure "--non-interactive"
+  grep -q '"custom": true' "${TEST_REPO_DIR}/.markdownlint.json"
+}
+
+@test "existing .markdownlint-cli2.jsonc blocks installing .markdownlint.json" {
+  echo '{"custom": true}' > "${TEST_REPO_DIR}/.markdownlint-cli2.jsonc"
+  _run_configure "--non-interactive"
+  [ ! -f "${TEST_REPO_DIR}/.markdownlint.json" ]
+  grep -q '"custom": true' "${TEST_REPO_DIR}/.markdownlint-cli2.jsonc"
+}
+
+@test "--reconfigure does not overwrite an existing markdown lint config" {
+  echo '{"custom": true}' > "${TEST_REPO_DIR}/.markdownlint.json"
+  _run_configure "--non-interactive --reconfigure"
+  grep -q '"custom": true' "${TEST_REPO_DIR}/.markdownlint.json"
+}
+
 # ── Branch detection on reconfigure ──────────────────────────────────────────
 
 @test "--reconfigure re-detects source branch, ignoring stale custom names" {
