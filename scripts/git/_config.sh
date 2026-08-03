@@ -264,10 +264,12 @@ unset _cgw_md_tok _cgw_md_toks
 [[ -z "${CGW_TYPECHECK_EXCLUDES+x}" ]] && CGW_TYPECHECK_EXCLUDES=""
 
 # --- Merge conflict style (merge_with_validation.sh) ---
-# Set to "diff3" or "zdiff3" to show the common-ancestor version in conflict
-# markers (diff3; Pro Git recommended) or the same view with non-conflicting
-# hunks collapsed (zdiff3, git >= 2.35 -- falls back to diff3 with a warning
-# on older git). Empty = git default (two-way markers).
+# Set to "merge" for git's default two-way markers (accepted explicitly, same
+# effect as leaving this empty), "diff3" to show the common-ancestor version
+# in conflict markers (Pro Git recommended), or "zdiff3" for the same view
+# with non-conflicting hunks collapsed (git >= 2.35 -- falls back to diff3
+# with a warning on older git). Empty = git default (two-way markers, same as
+# "merge").
 CGW_MERGE_CONFLICT_STYLE="${CGW_MERGE_CONFLICT_STYLE:-}"
 
 # Reject unsupported style values (silently ignored by git otherwise) and
