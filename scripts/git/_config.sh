@@ -264,9 +264,36 @@ unset _cgw_md_tok _cgw_md_toks
 [[ -z "${CGW_TYPECHECK_EXCLUDES+x}" ]] && CGW_TYPECHECK_EXCLUDES=""
 
 # --- Merge conflict style (merge_with_validation.sh) ---
-# Set to "diff3" to show the base version in conflict markers (Pro Git recommended).
-# Empty = git default (two-way markers).
+# Set to "diff3" or "zdiff3" to show the common-ancestor version in conflict
+# markers (diff3; Pro Git recommended) or the same view with non-conflicting
+# hunks collapsed (zdiff3, git >= 2.35 -- falls back to diff3 with a warning
+# on older git). Empty = git default (two-way markers).
 CGW_MERGE_CONFLICT_STYLE="${CGW_MERGE_CONFLICT_STYLE:-}"
+
+# Reject unsupported style values (silently ignored by git otherwise) and
+# downgrade zdiff3 -> diff3 when the installed git predates 2.35.
+_cgw_git_supports_zdiff3() {
+  local ver
+  ver="$(git version 2>/dev/null | sed -n 's/^git version \([0-9][0-9.]*\).*/\1/p')"
+  [[ -n "${ver}" ]] || return 1
+  [[ "$(printf '%s\n%s\n' "2.35" "${ver}" | sort -V | head -n1)" == "2.35" ]]
+}
+_cgw_validate_merge_conflict_style() {
+  case "${CGW_MERGE_CONFLICT_STYLE}" in
+    "" | merge | diff3 | zdiff3) ;;
+    *)
+      printf '[WARN] CGW_MERGE_CONFLICT_STYLE has unsupported value "%s"; ignoring (expected: merge, diff3, zdiff3)\n' \
+        "${CGW_MERGE_CONFLICT_STYLE}" >&2
+      CGW_MERGE_CONFLICT_STYLE=""
+      ;;
+  esac
+  if [[ "${CGW_MERGE_CONFLICT_STYLE}" == "zdiff3" ]] && ! _cgw_git_supports_zdiff3; then
+    printf '[WARN] CGW_MERGE_CONFLICT_STYLE=zdiff3 requires git >= 2.35; falling back to diff3\n' >&2
+    CGW_MERGE_CONFLICT_STYLE="diff3"
+  fi
+}
+_cgw_validate_merge_conflict_style
+unset -f _cgw_validate_merge_conflict_style _cgw_git_supports_zdiff3
 
 # --- Merge whitespace handling (merge_with_validation.sh) ---
 # Set to "1" to add -Xignore-space-change to the merge command.

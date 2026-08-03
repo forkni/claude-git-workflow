@@ -267,6 +267,49 @@ _run_merge() {
 
 # ── Conflict resolution: UD (deleted-by-them halt) ───────────────────────────
 
+# ── Merge conflict style (CGW_MERGE_CONFLICT_STYLE) ──────────────────────────
+
+@test "CGW_MERGE_CONFLICT_STYLE=zdiff3 does not break a clean merge" {
+  # Regression test: git merge --conflict=<style> doesn't exist and used to
+  # fail every merge with "error: unknown option 'conflict=zdiff3'" whenever
+  # this variable was set. It must be applied via `-c merge.conflictStyle=`.
+  git -C "${TEST_REPO_DIR}" checkout development
+  CGW_MERGE_CONFLICT_STYLE=zdiff3 run _run_merge "--non-interactive"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"unknown option"* ]]
+}
+
+@test "CGW_MERGE_CONFLICT_STYLE=zdiff3 shows a base marker in the conflicted file" {
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'line1\nline2\n' >"${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add conflict.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff -m "chore: sync conflict.txt"
+  printf 'dev-line1\nline2\n' >"${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev edits line1"
+
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'main-line1\nline2\n' >"${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "fix: main edits line1"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  CGW_MERGE_CONFLICT_STYLE=zdiff3 run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+  grep -q '|||||||' "${TEST_REPO_DIR}/conflict.txt"
+}
+
+@test "CGW_MERGE_CONFLICT_STYLE with unsupported value warns and merge still succeeds" {
+  git -C "${TEST_REPO_DIR}" checkout development
+  CGW_MERGE_CONFLICT_STYLE=bogus run _run_merge "--non-interactive"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"[WARN]"* ]]
+  [[ "${output}" == *"CGW_MERGE_CONFLICT_STYLE"* ]]
+}
+
 @test "UD conflict: merge exits 1 with deleted-by-them message" {
   # todelete.txt on both branches; development deletes it (theirs), main modifies it (us)
   git -C "${TEST_REPO_DIR}" checkout main

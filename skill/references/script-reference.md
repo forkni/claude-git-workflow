@@ -567,7 +567,7 @@ Computes GitHub-compatible heading slugs locally (offline port of `gh-md-toc` â€
 | `CGW_SOURCE_BRANCH=<name>` | Override source branch |
 | `CGW_TARGET_BRANCH=<name>` | Override target branch |
 | `CGW_REMOTE=<name>` | Remote name for fetch/push (default: `origin`; set to `upstream` for forks) |
-| `CGW_MERGE_CONFLICT_STYLE=diff3` | Show base version in merge conflict markers |
+| `CGW_MERGE_CONFLICT_STYLE=diff3\|zdiff3` | Show common-ancestor version in merge conflict markers (`zdiff3` needs git >= 2.35, falls back to `diff3`) |
 | `CGW_MERGE_IGNORE_WHITESPACE=1` | Ignore whitespace differences during merge |
 | `CGW_LINT_CMD=<tool>` | Override lint tool (default: `ruff`; `""` = disable lint) |
 | `CGW_FORMAT_CMD=<tool>` | Override format tool (default: `ruff`; `""` = disable format) |

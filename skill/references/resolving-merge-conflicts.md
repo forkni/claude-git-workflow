@@ -13,12 +13,17 @@ Don't edit blind. Establish what is in progress and what conflicts:
 
 ```bash
 git status                       # merge vs rebase in progress; conflicted paths
+git status -sb                   # same info, one line per file (XY code + path)
 git diff --name-only --diff-filter=U   # just the unmerged files
 ```
 
 `git status` tells you whether you are in a merge (`MERGE_HEAD` exists) or a
 rebase (`rebase-merge/`/`rebase-apply/` exists) — the two are completed
-differently (step 5).
+differently (step 6). `git status -sb`'s two-letter `XY` code per file is the
+same conflict taxonomy documented in
+[branch-and-merge-rules.md](branch-and-merge-rules.md#conflict-resolution)
+(`UU`, `DU`, `AA`, …) — useful when you have many conflicted files and want a
+quick scan rather than `git status`'s full-page output.
 
 ## 2. Find each side's intent before you touch a hunk
 
@@ -33,7 +38,38 @@ git log --oneline --left-right --merge   # which side each conflicting commit ca
 Read the commit messages (and the PR/issue they reference) for the conflicting
 commits. The goal is to know the *purpose* of each change, not just its text.
 
-## 3. Resolve each hunk
+## 3. Read the three-way view, not just ours/theirs
+
+By default git's conflict markers only show two sides (`<<<<<<< HEAD` /
+`=======` / `>>>>>>> branch`), which tells you *what* differs but not *which
+side actually changed it* relative to the common history. Re-materialize the
+conflict with the common ancestor included:
+
+```bash
+git -c merge.conflictStyle=zdiff3 checkout --merge -- <file>   # per-file, one-off
+# or for the whole operation: git config merge.conflictStyle zdiff3
+```
+
+This produces a third section:
+
+```text
+<<<<<<< HEAD
+(your side)
+||||||| <base-sha>
+(the common ancestor -- what both sides started from)
+=======
+(their side)
+>>>>>>> branch
+```
+
+Comparing each side against the `|||||||` base — not against each other — is
+what tells you which side actually changed the line and which side just
+carried it forward unchanged; that's usually the one to keep.
+`CGW_MERGE_CONFLICT_STYLE=zdiff3` (or `diff3`) in `.cgw.conf` makes this the
+default for every `merge_with_validation.sh` merge — see
+[script-reference.md](script-reference.md#environment-variables).
+
+## 4. Resolve each hunk
 
 - **Preserve both intents where they are compatible.** Most conflicts are two
   independent edits to nearby lines — keep both. Reach for `--ours`/`--theirs`
@@ -48,7 +84,15 @@ commits. The goal is to know the *purpose* of each change, not just its text.
 available for whole-file decisions, but a per-hunk edit is usually the right
 resolution.
 
-## 4. Re-run the project's checks before completing
+**Escape hatch for whole-side, no-judgment-needed conflicts:** when you know
+*before* merging that one side should win entirely for certain paths (a
+generated file, a lockfile, vendored code), skip the manual per-file step with
+`git merge --strategy-option=ours` / `--strategy-option=theirs`. This decides
+the *whole merge* by side, not per-path — only use it when every conflicted
+path in the merge genuinely belongs to that bucket, not as a shortcut for a
+mixed conflict set.
+
+## 5. Re-run the project's checks before completing
 
 A resolved-but-broken merge is worse than a stopped one. Verify:
 
@@ -61,7 +105,7 @@ A resolved-but-broken merge is worse than a stopped one. Verify:
 The pre-commit hook also lints on the concluding commit, but run the check now so
 you find problems before finalizing, not after.
 
-## 5. Complete the operation (the CGW-correct way)
+## 6. Complete the operation (the CGW-correct way)
 
 Stage the resolved files, then finish via the wrapper for the operation in
 progress — **not** raw `git`:

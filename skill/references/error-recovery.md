@@ -11,6 +11,7 @@
 - Rebase Issues (rebase_safe.sh)
 - Bisect Stuck Session
 - Undo Operations
+- Committed a Secret or Local-Only File
 - No Changes to Commit
 - Lock File Auto-Recovery
 - Log Files
@@ -21,7 +22,7 @@ If Claude Code blocks a command with `BLOCKED: ...`, the CGW harness guardrail i
 
 **Block message format:**
 
-```
+```text
 BLOCKED: Command matched dangerous pattern "<pattern>".
 <redirect — the CGW wrapper to use instead>
 The user has prevented you from doing this.
@@ -253,6 +254,19 @@ Use `undo_last.sh` to recover from common commit mistakes:
 ```
 
 Each operation creates a backup tag (`pre-undo-commit-*`) before acting.
+
+---
+
+## Committed a Secret or Local-Only File
+
+SKILL.md Rule 3 (`CGW_LOCAL_FILES`) and the pre-commit hook only prevent this
+*going forward* — if a secret or a local-only file already made it into a
+commit (predates CGW, or the rule was bypassed), the recovery procedure
+differs by whether it was pushed. See
+[removing-sensitive-data.md](removing-sensitive-data.md) for the full
+decision tree (rotate-first policy, `git rm --cached`, and the last-resort
+history rewrite with its force-push implications). Do not attempt to just
+`git rm -f` or edit history ad hoc — see that doc first.
 
 ---
 

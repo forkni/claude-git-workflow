@@ -4,6 +4,7 @@
 
 - Branch Configuration
 - Branch Policies
+  - Naming and Lifecycle for Short-Lived Work Branches
 - Conflict Resolution
 - Merge Workflow Detail
 - Rollback Policy
@@ -60,6 +61,44 @@ Where active development occurs. All changes are committed here first, then merg
 `configure.sh` writes `CGW_SOURCE_BRANCH` to `.cgw.conf` only when a canonical dev-family
 branch name is found; otherwise pass `--source <branch>` on every merge/cherry-pick/docs-merge
 invocation.
+
+### Naming and Lifecycle for Short-Lived Work Branches
+
+CGW's two-branch model (`development` → `main`) doesn't dictate naming for the
+short-lived feature/fix branches you create off `development`. Adopt a
+consistent convention and document it (Git for Teams): `[ticket-id]-[terse-title]`,
+e.g. `1234-fixing-broken-link`. The point is that the branch name alone tells
+the next reader what it's for and where to find the ticket — not any
+particular separator style.
+
+**Update cadence — rebase early and often:** pull `development` into your work
+branch (or rebase onto it) at least daily, not just right before merging. The
+earlier you integrate a conflicting upstream change, the smaller the conflict
+— resolving a same-day rename is trivial; resolving one after two weeks of
+divergence is not. `sync_branches.sh` already implements fetch+rebase; this is
+about cadence, not new behavior.
+
+**Merge vs. rebase, the practical test:** *if you started your work right now,
+would the change you're about to incorporate already be in place?* If yes,
+rebase onto it — you're just replaying your commits on top of what would have
+been the starting point anyway. If no (the other side's work is genuinely
+concurrent, not something you'd have started from), merge, and prefer a
+CGW-driven merge (`merge_with_validation.sh`) so it gets a backup tag. The
+same branch name existing on a different remote (e.g. your fork vs.
+upstream) is also a rebase case, not a merge case.
+
+**Keep interactive rebase (`rebase_safe.sh` without `--continue`/`--abort`,
+i.e. `--squash-last`) scoped to branches nobody else has fetched.** Once a
+branch is shared, rewriting its history forces every other holder to
+re-sync — the same caveat as SKILL.md's force-push rule.
+
+**First push and cleanup:** `git push --set-upstream ${CGW_REMOTE} <branch>`
+on a new branch's first push sets up tracking so subsequent
+`push_validated.sh` runs need no arguments. After the branch is merged,
+`branch_cleanup.sh` prunes the *local* merged branch and stale
+remote-tracking refs; deleting the branch on the remote itself is
+`git push ${CGW_REMOTE} --delete <branch>` (or the "Delete branch" button in
+a merged PR).
 
 ### Standard Workflow (CGW_MERGE_MODE="direct", default)
 
