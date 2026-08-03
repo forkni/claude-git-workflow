@@ -20,6 +20,7 @@ For branch rules and merge workflow, see [references/branch-and-merge-rules.md](
 For non-obvious git techniques not covered by a wrapper (pickaxe search, merge-base discovery, back-dated tags, PR diff URLs), see [references/git-recipes.md](references/git-recipes.md).
 For the full promotion pipeline (commit → push → merge/PR → push, run by `/auto-git-workflow-cmd` option 1), see [references/full-promotion.md](references/full-promotion.md).
 For the mandatory post-push CI verification gate (subscribe, wait, fix-until-green), see [references/ci-verification.md](references/ci-verification.md).
+For removing a secret or local-only file that was **already committed** (rotate, diagnose, strip from history if pushed), see [references/removing-sensitive-data.md](references/removing-sensitive-data.md).
 When a merge or rebase **stops on a conflict that needs manual resolution** (`UU`, `AA`, `AU`, `UD`, `AD`, `DA`), follow the step-by-step procedure in [references/resolving-merge-conflicts.md](references/resolving-merge-conflicts.md) — investigate both sides' intent, preserve both where compatible, re-run checks, then conclude through the wrapper. **Before touching a hunk:** run `git log --merge -p -- <file>` and `git log --oneline --left-right --merge` to understand which commits on each side caused the conflict. Never blindly `git checkout --ours/--theirs`; resolve by default — abort only to deliberately abandon the operation, not to dodge a difficult conflict.
 
 ## When to use this skill
@@ -79,11 +80,13 @@ git diff --cached --name-only | grep -E "(CLAUDE\.md|MEMORY\.md|\.claude/|logs/)
 
 This protection is **commit-scoped only** — CGW unstages local-only files before a commit, but nothing stops you from *deleting* them from disk. Never run `git rm -f` or `git clean -f` on a local-only or git-ignored path; for git-ignored files this is unrecoverable. See the split cherry-pick recipe below for the safe way to strip unwanted paths.
 
+If a local-only file or a secret has **already been committed** (this rule failed to catch it, or it predates CGW), see [removing-sensitive-data.md](references/removing-sensitive-data.md) — the fix differs depending on whether it was pushed yet.
+
 ### Rule 4: Stale Lock Auto-Recovery
 
 CGW scripts automatically detect and remove stale `.git/index.lock` files left by crashed or killed git processes (the most common Claude Code failure mode). When this happens you will see:
 
-```
+```text
 [cgw-lock] Removing stale index.lock (age 47s): /path/to/.git/index.lock
 ```
 
@@ -190,13 +193,38 @@ prints an advisory tip between 50–72 chars and **blocks the commit** past 72 c
 extra detail in the commit body, not a long subject line. Tune via `CGW_COMMIT_SUBJECT_SOFT_LEN`
 / `CGW_COMMIT_SUBJECT_HARD_LEN` / `CGW_ENFORCE_SUBJECT_LENGTH` in `.cgw.conf`.
 
+**Commit body (Git for Teams — "Constructing the Perfect Commit"):** `commit_enhanced.sh`
+accepts a multi-line `-m` message and only length-checks the first line, so use the body for
+anything the subject can't carry. A good body covers, as needed:
+
+- **Why** the current code is a problem — not a restatement of what the diff shows.
+- The **rationale** for this approach and a high-level **how**.
+- **Side effects** or who/what else is affected, and any docs that now need updating.
+- A ticket/issue reference (`Resolves #321`) if one exists.
+
+```text
+fix: guard against nil response in retry loop
+
+The retry loop assumed every failed request returned a response object,
+but timeouts return nil. This crashed the whole batch job on any single
+timeout instead of just failing that request.
+
+Treat nil the same as a non-2xx response: log and continue the loop.
+
+Resolves #482
+```
+
+**Scope discipline** applies regardless of body length: a commit contains only related code —
+no scope creep, no "just fixing whitespace too" bundled into an unrelated fix. If a change turns
+up something else worth fixing, make it a separate commit.
+
 ---
 
 ## Quick Decision Tree
 
 **Committing code:**
 
-```
+```text
 Is .venv directory present?
 ├─ Yes → ./scripts/git/commit_enhanced.sh "feat: message"
 └─ No  → ./scripts/git/commit_enhanced.sh --no-venv "feat: message"

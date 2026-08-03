@@ -298,11 +298,16 @@ main() {
   # [4/7] Perform merge
   log_section_start "GIT MERGE" "$logfile"
 
-  # Build optional merge strategy flags from config
-  local merge_extra_args=()
+  # Build optional merge strategy flags from config.
+  # NOTE: merge.conflictStyle is a git-config setting, not a `git merge` flag --
+  # `git merge --conflict=<style>` does not exist and errors with "unknown
+  # option". It must be passed as `-c merge.conflictStyle=<style>` *before* the
+  # `merge` subcommand (see run_git_with_logging call below).
+  local merge_cfg_args=()
   if [[ -n "${CGW_MERGE_CONFLICT_STYLE:-}" ]]; then
-    merge_extra_args+=("--conflict=${CGW_MERGE_CONFLICT_STYLE}")
+    merge_cfg_args+=(-c "merge.conflictStyle=${CGW_MERGE_CONFLICT_STYLE}")
   fi
+  local merge_extra_args=()
   if [[ "${CGW_MERGE_IGNORE_WHITESPACE:-0}" == "1" ]]; then
     merge_extra_args+=("-Xignore-space-change")
   fi
@@ -317,7 +322,7 @@ main() {
   fi
 
   # shellcheck disable=SC2068  # Intentional: empty array expands to zero words (${arr[@]+...} is Bash 3.x portable)
-  if run_git_with_logging "GIT MERGE SOURCE" "$logfile" merge "${src_branch}" --no-ff -m "Merge ${src_branch} into ${tgt_branch}" ${merge_extra_args[@]+"${merge_extra_args[@]}"}; then
+  if run_git_with_logging "GIT MERGE SOURCE" "$logfile" ${merge_cfg_args[@]+"${merge_cfg_args[@]}"} merge "${src_branch}" --no-ff -m "Merge ${src_branch} into ${tgt_branch}" ${merge_extra_args[@]+"${merge_extra_args[@]}"}; then
     echo "[OK] Merge completed without conflicts" | tee -a "$logfile"
     log_section_end "GIT MERGE" "$logfile" "0"
 

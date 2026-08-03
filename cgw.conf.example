@@ -208,11 +208,14 @@ CGW_ENFORCE_SUBJECT_LENGTH="1"
 # ============================================================================
 # MERGE STRATEGY OPTIONS (merge_with_validation.sh)
 # ============================================================================
-# CGW_MERGE_CONFLICT_STYLE: Set to "diff3" to show the base version in conflict
-# markers (recommended — makes manual resolution easier).
-# Empty = git default two-way markers.
+# CGW_MERGE_CONFLICT_STYLE: Set to "merge" for git's default two-way markers
+# (same as leaving this empty), "diff3" to show the common-ancestor version
+# in conflict markers (recommended -- makes manual resolution easier), or
+# "zdiff3" (git >= 2.35) for the same view with non-conflicting hunks
+# collapsed. Falls back to "diff3" with a warning if the installed git is
+# older than 2.35. Empty = git default two-way markers (same as "merge").
 CGW_MERGE_CONFLICT_STYLE=""
-# CGW_MERGE_CONFLICT_STYLE="diff3"
+# CGW_MERGE_CONFLICT_STYLE="zdiff3"
 
 # CGW_MERGE_IGNORE_WHITESPACE: Set to "1" to add -Xignore-space-change to merge.
 # Prevents false conflicts from whitespace-only differences (tabs/spaces, line endings).
