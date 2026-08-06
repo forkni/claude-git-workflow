@@ -211,7 +211,7 @@ main() {
   echo "Running final verification..." | tee -a "$logfile"
 
   local verify_output verify_status
-  verify_output=$("${SCRIPT_DIR}/check_lint.sh" 2>&1)
+  verify_output=$(bash "${SCRIPT_DIR}/check_lint.sh" 2>&1)
   verify_status=$?
   echo "${verify_output}" | tee -a "$logfile"
 

@@ -196,7 +196,7 @@ main() {
     local lint_args=()
     [[ ${skip_md_lint} -eq 1 ]] && lint_args+=("--skip-md-lint")
     [[ ${no_venv} -eq 1 ]] && lint_args+=("--no-venv")
-    if "${SCRIPT_DIR}/check_lint.sh" "${lint_args[@]}" >>"$logfile" 2>&1; then
+    if bash "${SCRIPT_DIR}/check_lint.sh" "${lint_args[@]}" >>"$logfile" 2>&1; then
       echo "[OK] Lint check passed" | tee -a "$logfile"
       log_section_end "PRE-PUSH LINT CHECK" "$logfile" "0"
     else
