@@ -53,7 +53,7 @@ No manual config editing required for common setups. `configure.sh` auto-detects
 | `commit_enhanced.sh` | Lint validation + local-only file protection + commit message format check; `--sign` for GPG/SSH-signed commits |
 | `merge_with_validation.sh` | Safe merge source→target: backup tag, auto-resolve DU/DD conflicts, stop on UU. `--source`/`--target` override the configured branch pair per-invocation. |
 | `rollback_merge.sh` | Emergency rollback to pre-merge backup tag; `--revert` for safe history-preserving mode |
-| `cherry_pick_commits.sh` | Cherry-pick with source branch validation and backup tag |
+| `cherry_pick_commits.sh` | Cherry-pick with source branch validation and backup tag; `--only <pathspec>` (repeatable) for partial picks |
 | `merge_docs.sh` | Documentation-only merge from source to target |
 | `push_validated.sh` | Push with remote reachability check + force-push protection |
 | `sync_branches.sh` | Sync local branches via fetch + rebase; auto-protects diverged `skip-worktree` local files across the pull |

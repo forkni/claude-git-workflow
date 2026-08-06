@@ -244,6 +244,7 @@ script with `--help` to confirm rather than inventing it.
 | `check_lint.sh` | `--no-venv`, `--modified-only`, `--skip-lint`, `--skip-md-lint` — **nothing else** |
 | `fix_lint.sh` | `--non-interactive`, `--no-venv`, `--modified-only`, `--skip-md-lint`, `--md-only` — **no `--skip-lint`** |
 | `push_validated.sh` | `--non-interactive`, `--dry-run`, `--skip-lint`, `--skip-md-lint`, `--no-venv`, `--force`, `--branch <name>` |
+| `cherry_pick_commits.sh` | `--non-interactive`, `--commit <hash>`, `--only <pathspec>` (repeatable; partial pick), `--dry-run`, `--source <branch>`, `--target <branch>` |
 
 Asymmetries that trip people up:
 
@@ -386,6 +387,7 @@ silently discarding local edits. No-op when no skip-worktree file has diverged (
 ./scripts/git/cherry_pick_commits.sh --commit abc1234      # non-interactive
 ./scripts/git/cherry_pick_commits.sh --dry-run --commit abc1234
 ./scripts/git/cherry_pick_commits.sh --source feature/hotfix --target release/1.2 --commit abc1234
+./scripts/git/cherry_pick_commits.sh --commit abc1234 --only src/a.py --only docs/  # partial pick
 ```
 
 **When a cherry-pick hits a conflict:** `cherry_pick_commits.sh` exiting 1 with conflict
@@ -406,8 +408,19 @@ markers in the tree is a **hand-over, not a crash** — the pick is paused mid-f
 
 **Cherry-picking only some files from a commit (split/partial cherry-pick):**
 
-There is no wrapper for this — `cherry_pick_commits.sh` picks the whole commit. To take only
-a subset of files:
+`cherry_pick_commits.sh` supports this natively with `--only <pathspec>` (repeatable, one
+pathspec per flag — same convention as `commit_enhanced.sh --only`):
+
+```bash
+./scripts/git/cherry_pick_commits.sh --commit <hash> --only src/a.py --only docs/
+```
+
+It applies the commit with `--no-commit`, drops the unselected paths from index and working
+tree, and commits the selected subset under the original message plus a
+`(partial cherry-pick of <hash> -- only: ...)` note. Two behavioral differences from a full
+pick: `--only` matching **no** files in the commit is an error (exit 1, nothing applied), and
+a **conflict aborts the partial pick entirely** — there is no paused hand-over in partial
+mode. When a partial pick conflicts, fall back to the manual recipe:
 
 ```bash
 git cherry-pick -n <hash>      # stage the commit's changes without auto-committing

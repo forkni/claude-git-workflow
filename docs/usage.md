@@ -154,6 +154,8 @@ by hand. No-op when nothing has diverged.
 ```bash
 ./scripts/git/cherry_pick_commits.sh                   # interactive
 ./scripts/git/cherry_pick_commits.sh --commit abc1234  # non-interactive
+# Partial pick: only files matching the pathspecs (repeatable --only)
+./scripts/git/cherry_pick_commits.sh --commit abc1234 --only src/a.py --only docs/
 ```
 
 ### Stash work in progress

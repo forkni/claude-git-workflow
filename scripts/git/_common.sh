@@ -632,7 +632,7 @@ cgw_filter_local_files() {
   return ${any}
 }
 
-# cgw_guard_incoming_local_files <mode> <ref>
+# cgw_guard_incoming_local_files <mode> <ref-or-paths...>
 #   Guards commit-producing paths that don't go through commit_enhanced.sh
 #   (which already unstages CGW_LOCAL_FILES) against propagating a local-only
 #   file into shared history. <mode> selects how the incoming change set is
@@ -643,15 +643,22 @@ cgw_filter_local_files() {
 #                    change in the merge-base..tip tree diff
 #     cherry-pick  — files touched by commit <ref>
 #     amend        — files in commit <ref> (default HEAD)
+#     list         — the paths themselves, passed as args 2..N (e.g. a partial
+#                    cherry-pick's selected file subset)
 #   Returns 0 = proceed (nothing matched, or override set); 1 = abort.
 #   Non-interactive aborts unless CGW_ALLOW_LOCAL_FILES_IN_MERGE=1; interactive
 #   prompts (default no). Reuses cgw_filter_local_files / cgw_is_local_file.
 cgw_guard_incoming_local_files() {
   local mode="$1" ref="${2:-HEAD}"
+  local label="${mode}"
   local -a incoming=() _src_cmd=()
   case "${mode}" in
     merge) _src_cmd=(git log --name-only --pretty=format: "HEAD..${ref}") ;;
     cherry-pick | amend) _src_cmd=(git show --name-only --format= "${ref}") ;;
+    list)
+      _src_cmd=(printf '%s\n' "${@:2}")
+      label="change set"
+      ;;
     *)
       err "cgw_guard_incoming_local_files: unknown mode '${mode}'"
       return 2
@@ -664,7 +671,7 @@ cgw_guard_incoming_local_files() {
 
   [[ ${#incoming[@]} -eq 0 ]] && return 0
 
-  err_tee "[!] Incoming ${mode} carries local-only file(s) that must not enter shared history:"
+  err_tee "[!] Incoming ${label} carries local-only file(s) that must not enter shared history:"
   local f
   for f in "${incoming[@]}"; do
     err_tee "      ${f}"
