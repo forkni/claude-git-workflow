@@ -131,13 +131,15 @@ Override with `--all` to always bulk-stage, or `--only <path>` to explicitly sel
 **`check_lint.sh`** — Pre-commit validation (read-only)
 
 ```bash
-./scripts/git/check_lint.sh [--modified-only] [--no-venv] [--skip-lint] [--skip-md-lint]
+./scripts/git/check_lint.sh [--modified-only] [--no-venv] [--skip-lint] [--skip-md-lint] [--md-only]
 ```
 
 - Default: checks all files
 - `--modified-only`: checks only git-modified files
 - `--skip-lint`: skip all lint checks
 - `--skip-md-lint`: skip markdown lint only
+- `--md-only`: check markdown only (skip code lint + format); mutually exclusive with
+  `--skip-md-lint` and with `--modified-only`
 - Skipped automatically if `CGW_LINT_CMD` is empty
 
 **`fix_lint.sh`** — Auto-fix lint issues (code + Markdown)

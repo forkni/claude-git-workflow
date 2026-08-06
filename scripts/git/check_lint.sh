@@ -21,6 +21,7 @@ main() {
   local modified_only=0
   local skip_lint=0
   local skip_md_lint=0
+  local md_only=0
 
   [[ "${CGW_SKIP_LINT:-0}" == "1" ]] && skip_lint=1 && skip_md_lint=1
   [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]] && skip_md_lint=1
@@ -37,6 +38,7 @@ main() {
         echo "  --no-venv         Use system lint tool instead of .venv"
         echo "  --skip-lint       Skip all lint checks"
         echo "  --skip-md-lint    Skip markdown lint only (CGW_MARKDOWNLINT_CMD step)"
+        echo "  --md-only         Only check markdown (skip code lint + format)"
         echo "  -h, --help        Show this help"
         echo ""
         echo "Environment:"
@@ -65,12 +67,26 @@ main() {
         skip_md_lint=1
         shift
         ;;
+      --md-only)
+        md_only=1
+        shift
+        ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2
         exit 1
         ;;
     esac
   done
+
+  if [[ ${skip_md_lint} -eq 1 ]] && [[ ${md_only} -eq 1 ]]; then
+    echo "[ERROR] --skip-md-lint and --md-only are mutually exclusive" >&2
+    exit 1
+  fi
+
+  if [[ ${modified_only} -eq 1 ]] && [[ ${md_only} -eq 1 ]]; then
+    echo "[ERROR] --modified-only and --md-only are not supported together (--modified-only has no markdown-only path)" >&2
+    exit 1
+  fi
 
   if [[ ${skip_lint} -eq 1 ]]; then
     echo "[OK] All lint checks skipped (--skip-lint)"
@@ -79,6 +95,11 @@ main() {
 
   if [[ -z "${CGW_LINT_CMD}" ]] && [[ -z "${CGW_FORMAT_CMD}" ]] && [[ -z "${CGW_MARKDOWNLINT_CMD}" ]]; then
     echo "[OK] All lint checks skipped (CGW_LINT_CMD, CGW_FORMAT_CMD, and CGW_MARKDOWNLINT_CMD not set)"
+    exit 0
+  fi
+
+  if [[ ${md_only} -eq 1 ]] && [[ -z "${CGW_MARKDOWNLINT_CMD}" ]]; then
+    echo "[OK] Markdown lint skipped (CGW_MARKDOWNLINT_CMD not set)"
     exit 0
   fi
 
@@ -151,32 +172,36 @@ main() {
   local -a results=()
   local lint_status=0 format_status=0 md_lint_status=0
 
-  # LINT CHECK
-  local lint_start lint_end lint_duration lint_status_str
-  lint_start=$(date +%s)
-  cgw_run_lint_check || lint_status=1
-  lint_end=$(date +%s)
-  lint_duration=$((lint_end - lint_start))
-  if [[ -n "${CGW_LINT_CMD}" ]]; then
-    lint_status_str="PASSED"
-    [[ ${lint_status} -ne 0 ]] && lint_status_str="FAILED"
-    results+=("Lint:${lint_status_str}:${TOOL_ERROR_COUNT}:${lint_duration}")
-  fi
+  if [[ ${md_only} -eq 0 ]]; then
+    # LINT CHECK
+    local lint_start lint_end lint_duration lint_status_str
+    lint_start=$(date +%s)
+    cgw_run_lint_check || lint_status=1
+    lint_end=$(date +%s)
+    lint_duration=$((lint_end - lint_start))
+    if [[ -n "${CGW_LINT_CMD}" ]]; then
+      lint_status_str="PASSED"
+      [[ ${lint_status} -ne 0 ]] && lint_status_str="FAILED"
+      results+=("Lint:${lint_status_str}:${TOOL_ERROR_COUNT}:${lint_duration}")
+    fi
 
-  # FORMAT CHECK
-  # Non-blocking: mirrors the CI workflow's `continue-on-error: true` on the
-  # shfmt step (.github/workflows/branch-protection.yml), present since that
-  # workflow's introduction. A format diff is reported but never gates
-  # overall_status or the exit code -- only lint and markdown-lint do.
-  local format_start format_end format_duration format_status_str
-  format_start=$(date +%s)
-  CGW_FORMAT_CHECK_NONBLOCKING=1 cgw_run_format_check || format_status=1
-  format_end=$(date +%s)
-  format_duration=$((format_end - format_start))
-  if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-    format_status_str="PASSED"
-    [[ ${format_status} -ne 0 ]] && format_status_str="WARN"
-    results+=("Format:${format_status_str}:${TOOL_ERROR_COUNT}:${format_duration}")
+    # FORMAT CHECK
+    # Non-blocking: mirrors the CI workflow's `continue-on-error: true` on the
+    # shfmt step (.github/workflows/branch-protection.yml), present since that
+    # workflow's introduction. A format diff is reported but never gates
+    # overall_status or the exit code -- only lint and markdown-lint do.
+    local format_start format_end format_duration format_status_str
+    format_start=$(date +%s)
+    CGW_FORMAT_CHECK_NONBLOCKING=1 cgw_run_format_check || format_status=1
+    format_end=$(date +%s)
+    format_duration=$((format_end - format_start))
+    if [[ -n "${CGW_FORMAT_CMD}" ]]; then
+      format_status_str="PASSED"
+      [[ ${format_status} -ne 0 ]] && format_status_str="WARN"
+      results+=("Format:${format_status_str}:${TOOL_ERROR_COUNT}:${format_duration}")
+    fi
+  else
+    echo "  (code lint + format skipped -- --md-only)" | tee -a "$logfile"
   fi
 
   # MARKDOWN LINT

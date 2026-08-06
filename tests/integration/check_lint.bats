@@ -207,6 +207,60 @@ EOF
     ! grep -q "markdownlint" "${MOCK_BIN_DIR}/mdlint.log" 2>/dev/null
 }
 
+# ── --md-only ─────────────────────────────────────────────────────────────────
+
+@test "--md-only checks markdown only, code lint does not run" {
+  install_mock_lint
+  install_mock_markdownlint
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=markdownlint-cli2
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --md-only
+  "
+  [ "${status}" -eq 0 ]
+  [ ! -f "${MOCK_BIN_DIR}/ruff.log" ]
+  [ -f "${MOCK_BIN_DIR}/mdlint.log" ]
+}
+
+@test "--md-only with empty CGW_MARKDOWNLINT_CMD exits 0 and skips" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --md-only
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"skip"* ]] || [[ "${output}" == *"Skip"* ]]
+}
+
+@test "--md-only and --skip-md-lint together is an error" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --md-only --skip-md-lint
+  "
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"mutually exclusive"* ]]
+}
+
+@test "--md-only and --modified-only together is an error" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --md-only --modified-only
+  "
+  [ "${status}" -ne 0 ]
+}
+
 # ── --modified-only ────────────────────────────────────────────────────────────
 
 @test "--modified-only with no modified files exits 0" {

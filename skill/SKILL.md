@@ -241,7 +241,7 @@ script with `--help` to confirm rather than inventing it.
 | Script | Accepted flags |
 |---|---|
 | `commit_enhanced.sh` | `--non-interactive`, `--interactive`, `--staged-only`, `--all`, `--only <path>` (repeatable), `--skip-lint`, `--skip-md-lint`, `--no-venv`, `--sign`, `--no-sign` |
-| `check_lint.sh` | `--no-venv`, `--modified-only`, `--skip-lint`, `--skip-md-lint` — **nothing else** |
+| `check_lint.sh` | `--no-venv`, `--modified-only`, `--skip-lint`, `--skip-md-lint`, `--md-only` |
 | `fix_lint.sh` | `--non-interactive`, `--no-venv`, `--modified-only`, `--skip-md-lint`, `--md-only` — **no `--skip-lint`** |
 | `push_validated.sh` | `--non-interactive`, `--dry-run`, `--skip-lint`, `--skip-md-lint`, `--no-venv`, `--force`, `--branch <name>` |
 | `cherry_pick_commits.sh` | `--non-interactive`, `--commit <hash>`, `--only <pathspec>` (repeatable; partial pick), `--dry-run`, `--source <branch>`, `--target <branch>` |
@@ -249,11 +249,13 @@ script with `--help` to confirm rather than inventing it.
 Asymmetries that trip people up:
 
 - **Markdown-only work:** `fix_lint.sh --md-only` auto-fixes markdown only, leaving code lint
-  completely untouched. There is **no markdown-only *check* mode anywhere**: `check_lint.sh`
-  has no `--md-only`, and `check_lint.sh --skip-lint` is not a workaround — it skips
-  *everything including markdown* and early-exits with a success-shaped
-  `[OK] All lint checks skipped (--skip-lint)` line. To verify markdown after a fix, run
-  `check_lint.sh` (full check) or the markdownlint command directly.
+  completely untouched, and forwards `--md-only` to its own final `check_lint.sh`
+  verification. `check_lint.sh --md-only` checks markdown only (code lint + format skipped).
+  `check_lint.sh --skip-lint` is a different thing — it skips *everything including markdown*
+  and early-exits with a success-shaped `[OK] All lint checks skipped (--skip-lint)` line.
+  `--md-only` and `--skip-md-lint` are mutually exclusive on both scripts; `--md-only` and
+  `--modified-only` cannot be combined on `check_lint.sh` (`--modified-only` has no
+  markdown-only path).
 - **`--non-interactive` is not universal.** `commit_enhanced.sh`, `fix_lint.sh`,
   `push_validated.sh`, `merge_with_validation.sh`, and `create_pr.sh` accept it;
   `check_lint.sh` does **not** — it is read-only and never prompts, so a skip-prompts flag

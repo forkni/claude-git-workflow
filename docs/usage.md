@@ -343,6 +343,10 @@ Markdown auto-fix uses `CGW_MARKDOWNLINT_CMD` (auto-detected at runtime — see
 Only auto-fixable rules are corrected in place; manual-only violations (e.g. `MD013`,
 `MD041`) still require a hand fix and are reported by `check_lint.sh`.
 
+`check_lint.sh` accepts the matching `--md-only` flag to verify markdown alone
+(`./scripts/git/check_lint.sh --md-only`) — `fix_lint.sh --md-only` forwards it
+automatically to its own final verification step.
+
 ---
 
 ## Environment Variables
