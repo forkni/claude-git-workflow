@@ -210,10 +210,37 @@ main() {
   echo "" | tee -a "$logfile"
   echo "Running final verification..." | tee -a "$logfile"
 
-  if "${SCRIPT_DIR}/check_lint.sh" 2>&1 | tee -a "$logfile"; then
+  # check_lint.sh runs in a separate process; this shell's CGW_NO_VENV/SKIP_VENV
+  # and skip choices are unexported assignments and do not cross that boundary.
+  # Forward them as explicit flags (same pattern as push_validated.sh).
+  local -a verify_args=()
+  if [[ "${CGW_NO_VENV:-0}" == "1" ]] || [[ "${SKIP_VENV:-0}" == "1" ]]; then
+    verify_args+=("--no-venv")
+  fi
+  [[ ${skip_md_lint} -eq 1 ]] && verify_args+=("--skip-md-lint")
+  [[ ${md_only} -eq 1 ]] && verify_args+=("--md-only")
+
+  local verify_output verify_status
+  verify_output=$(bash "${SCRIPT_DIR}/check_lint.sh" "${verify_args[@]+"${verify_args[@]}"}" 2>&1)
+  verify_status=$?
+  printf '%s\n' "${verify_output}" | tee -a "$logfile"
+
+  if [[ ${verify_status} -eq 0 ]]; then
     echo "[OK] All lint checks pass!" | tee -a "$logfile"
   else
     echo "[!] Some issues remain -- manual fixes may be required" | tee -a "$logfile"
+    # Surface the unfixable diagnostics (file:line[:col] rule) as a distilled
+    # list so the next manual step is visible without digging through the
+    # full log -- "cannot auto-fix" with no target list is a dead end.
+    local remaining
+    remaining=$(printf '%s\n' "${verify_output}" | grep -E "^[^:]+:[0-9]+(:[0-9]+)?[: ]" | head -20)
+    if [[ -n "${remaining}" ]]; then
+      {
+        echo ""
+        echo "Remaining issues needing manual fixes:"
+        printf '%s\n' "${remaining}" | sed 's/^/  /'
+      } | tee -a "$logfile"
+    fi
   fi
 
   local script_end total_duration

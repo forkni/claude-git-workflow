@@ -482,6 +482,13 @@ _install_markdownlint_config() {
 
   cp "${template_src}/markdownlint.json" "${PROJECT_ROOT}/.markdownlint.json"
   echo "  [OK] Markdown lint baseline installed (.markdownlint.json)"
+
+  # Tool config (gitignore-skip) is a separate file from the rule set above --
+  # optional so a stale staging area missing it still installs the rules.
+  if [[ -f "${template_src}/markdownlint-cli2.jsonc" ]]; then
+    cp "${template_src}/markdownlint-cli2.jsonc" "${PROJECT_ROOT}/.markdownlint-cli2.jsonc"
+    echo "  [OK] Markdown lint tool config installed (.markdownlint-cli2.jsonc -- auto-skips gitignored files)"
+  fi
 }
 
 _install_guardrail_nojq() {
@@ -873,6 +880,8 @@ main() {
         echo ""
       fi
       echo "# Local-only files (space-separated; never committed)"
+      echo "# Options: any files/dirs (trailing \"/\" for dirs); commit_enhanced.sh"
+      echo "# unstages these before every commit."
       echo "CGW_LOCAL_FILES=\"${local_files}\""
       echo ""
       echo "# Lint configuration (auto-detected)"
@@ -882,14 +891,19 @@ main() {
       _build_typecheck_config "${detected_typecheck}"
       echo ""
       echo "# Commit message prefix extras (pipe-separated, e.g. \"cuda|tensorrt\")"
+      echo "# Options: \"\" (standard prefixes only: feat fix docs chore test refactor"
+      echo "# style perf) or extra words pipe-separated. Not needed for scopes or \"!\""
+      echo "# -- type(scope)!: is accepted natively."
       echo "CGW_EXTRA_PREFIXES=\"\""
       echo ""
       echo "# Docs CI pattern (empty = skip; set to enable doc filename validation)"
+      echo "# Options: \"\" (skip) or a bash ERE matching allowed docs/ filenames."
       echo "# Example: CGW_DOCS_PATTERN=\"^(README\\.md|.*_GUIDE\\.md|.*_REFERENCE\\.md)$\""
       echo "CGW_DOCS_PATTERN=\"\""
       echo ""
       echo "# Dev-only files warning for cherry-pick (space-separated; empty = skip)"
-      echo "# Example: CGW_DEV_ONLY_FILES=\"tests/ pytest.ini\""
+      echo "# Options: \"\" (no check) or paths; a cherry-pick touching them warns"
+      echo "# (aborts in non-interactive). Example: CGW_DEV_ONLY_FILES=\"tests/ pytest.ini\""
       echo "CGW_DEV_ONLY_FILES=\"\""
       echo ""
       echo "# Markdown lint tool is auto-detected at runtime (markdownlint-cli2 ->"
@@ -906,7 +920,17 @@ main() {
       echo "# CGW_ALLOW_LOCAL_FILES_IN_MERGE=\"0\""
       echo ""
       echo "# Remove tests/ from target branch if gitignored (0=disabled, 1=enabled)"
+      echo "# Options: \"0\" (leave tests/ alone -- default) | \"1\" (merge_with_validation.sh"
+      echo "# removes tests/ from target when \"tests/\" is gitignored)."
       echo "CGW_CLEANUP_TESTS=\"0\""
+      echo ""
+      echo "# Merge mode for promoting source -> target (agent-facing; read by the"
+      echo "# skill's full-promotion flow, not by the scripts)."
+      echo "# Options: \"direct\" (merge locally via merge_with_validation.sh, no review)"
+      echo "#        | \"pr\"     (create_pr.sh -> GitHub PR + CI agent review;"
+      echo "#                    requires gh CLI installed + authenticated)"
+      echo "CGW_MERGE_MODE=\"direct\""
+      echo "# CGW_MERGE_MODE=\"pr\""
     } >".cgw.conf"
 
     echo "  [OK] .cgw.conf generated"

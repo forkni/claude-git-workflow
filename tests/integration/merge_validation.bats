@@ -423,3 +423,28 @@ _seed_add_then_delete_local_file_on_source() {
   # main must not have advanced (no merge commit).
   [ "$(git -C "${TEST_REPO_DIR}" rev-parse main)" = "${before}" ]
 }
+
+# ── Dirty working-tree preflight ──────────────────────────────────────────────
+# Uncommitted tracked changes used to surface only mid-merge as a raw git
+# checkout error; the preflight must fail fast with stash recovery steps.
+
+@test "dirty working tree aborts merge with stash recovery steps" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  echo "uncommitted local change" >> "${TEST_REPO_DIR}/README.md"
+  local before
+  before=$(git -C "${TEST_REPO_DIR}" rev-parse main)
+  run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"uncommitted changes"* ]]
+  [[ "${output}" == *"stash_work.sh push"* ]]
+  # main must not have advanced (no merge commit).
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse main)" = "${before}" ]
+}
+
+@test "untracked files do not block the merge preflight" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  echo "scratch" > "${TEST_REPO_DIR}/untracked_scratch.txt"
+  run _run_merge "--non-interactive"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"uncommitted changes"* ]]
+}

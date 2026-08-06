@@ -114,6 +114,14 @@ _run_configure() {
   diff -q "${CGW_PROJECT_ROOT}/templates/markdownlint.json" "${TEST_REPO_DIR}/.markdownlint.json"
 }
 
+@test "fresh install copies templates/markdownlint-cli2.jsonc to .markdownlint-cli2.jsonc" {
+  # Tool config (gitignore-skip), installed alongside the rule set above so
+  # gitignored files (local CLAUDE.md, session logs, ...) are auto-excluded.
+  _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.markdownlint-cli2.jsonc" ]
+  diff -q "${CGW_PROJECT_ROOT}/templates/markdownlint-cli2.jsonc" "${TEST_REPO_DIR}/.markdownlint-cli2.jsonc"
+}
+
 @test "existing .markdownlint.json is never overwritten" {
   echo '{"custom": true}' > "${TEST_REPO_DIR}/.markdownlint.json"
   _run_configure "--non-interactive"
@@ -124,6 +132,12 @@ _run_configure() {
   echo '{"custom": true}' > "${TEST_REPO_DIR}/.markdownlint-cli2.jsonc"
   _run_configure "--non-interactive"
   [ ! -f "${TEST_REPO_DIR}/.markdownlint.json" ]
+  grep -q '"custom": true' "${TEST_REPO_DIR}/.markdownlint-cli2.jsonc"
+}
+
+@test "existing .markdownlint-cli2.jsonc is never overwritten" {
+  echo '{"custom": true}' > "${TEST_REPO_DIR}/.markdownlint-cli2.jsonc"
+  _run_configure "--non-interactive"
   grep -q '"custom": true' "${TEST_REPO_DIR}/.markdownlint-cli2.jsonc"
 }
 

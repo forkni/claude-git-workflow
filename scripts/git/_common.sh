@@ -215,7 +215,14 @@ run_tool_with_logging() {
   TOOL_OUTPUT=$("$@" 2>&1)
   local exit_code=$?
 
-  TOOL_ERROR_COUNT=$(echo "$TOOL_OUTPUT" | grep -cE "^[^:]+:[0-9]+:[0-9]+:" || true)
+  # Diagnostic-line pattern: the default matches ruff/flake8-style
+  # "file:line:col: ". Tools that emit a different shape (markdownlint-cli2:
+  # "file:line[:col] MDxxx/rule ...") never match it, so their real errors
+  # counted as 0 while the section still FAILED -- a self-contradicting
+  # summary ("Lint FAILED 0 errors ... STATUS: FAILED"). Callers override via
+  # a dynamically scoped CGW_TOOL_ERROR_REGEX local (same pattern as
+  # CGW_SECTION_FAIL_LABEL).
+  TOOL_ERROR_COUNT=$(echo "$TOOL_OUTPUT" | grep -cE "${CGW_TOOL_ERROR_REGEX:-^[^:]+:[0-9]+:[0-9]+:}" || true)
 
   if [[ -n "$TOOL_OUTPUT" ]]; then
     echo "$TOOL_OUTPUT" | tee -a "$log_path"
@@ -625,7 +632,7 @@ cgw_filter_local_files() {
   return ${any}
 }
 
-# cgw_guard_incoming_local_files <mode> <ref>
+# cgw_guard_incoming_local_files <mode> <ref-or-paths...>
 #   Guards commit-producing paths that don't go through commit_enhanced.sh
 #   (which already unstages CGW_LOCAL_FILES) against propagating a local-only
 #   file into shared history. <mode> selects how the incoming change set is
@@ -636,15 +643,22 @@ cgw_filter_local_files() {
 #                    change in the merge-base..tip tree diff
 #     cherry-pick  — files touched by commit <ref>
 #     amend        — files in commit <ref> (default HEAD)
+#     list         — the paths themselves, passed as args 2..N (e.g. a partial
+#                    cherry-pick's selected file subset)
 #   Returns 0 = proceed (nothing matched, or override set); 1 = abort.
 #   Non-interactive aborts unless CGW_ALLOW_LOCAL_FILES_IN_MERGE=1; interactive
 #   prompts (default no). Reuses cgw_filter_local_files / cgw_is_local_file.
 cgw_guard_incoming_local_files() {
   local mode="$1" ref="${2:-HEAD}"
+  local label="${mode}"
   local -a incoming=() _src_cmd=()
   case "${mode}" in
     merge) _src_cmd=(git log --name-only --pretty=format: "HEAD..${ref}") ;;
     cherry-pick | amend) _src_cmd=(git show --name-only --format= "${ref}") ;;
+    list)
+      _src_cmd=(printf '%s\n' "${@:2}")
+      label="change set"
+      ;;
     *)
       err "cgw_guard_incoming_local_files: unknown mode '${mode}'"
       return 2
@@ -657,7 +671,7 @@ cgw_guard_incoming_local_files() {
 
   [[ ${#incoming[@]} -eq 0 ]] && return 0
 
-  err_tee "[!] Incoming ${mode} carries local-only file(s) that must not enter shared history:"
+  err_tee "[!] Incoming ${label} carries local-only file(s) that must not enter shared history:"
   local f
   for f in "${incoming[@]}"; do
     err_tee "      ${f}"
@@ -1140,6 +1154,11 @@ cgw_run_markdownlint_check() {
     return 0
   fi
   [[ -z "${CGW_MARKDOWNLINT_CMD:-}" ]] && return 0
+  # markdownlint-cli2 diagnostics are "file:line[:col] MDxxx/rule ..." -- no
+  # trailing colon after the position, so the default file:line:col: pattern
+  # counts them as 0 errors.
+  # shellcheck disable=SC2034  # read via dynamic scope by run_tool_with_logging
+  local CGW_TOOL_ERROR_REGEX='^[^:]+:[0-9]+(:[0-9]+)? [A-Za-z]'
   local -a _md_cmd=()
   read -r -a _md_cmd <<<"${CGW_MARKDOWNLINT_CMD}"
   if [[ $# -gt 0 ]]; then
@@ -1175,6 +1194,10 @@ cgw_run_markdownlint_fix() {
     return 0
   fi
   [[ -z "${CGW_MARKDOWNLINT_CMD:-}" ]] && return 0
+  # Same diagnostic shape as cgw_run_markdownlint_check -- unfixable errors
+  # print as "file:line[:col] MDxxx/rule ..." and must count.
+  # shellcheck disable=SC2034  # read via dynamic scope by run_tool_with_logging
+  local CGW_TOOL_ERROR_REGEX='^[^:]+:[0-9]+(:[0-9]+)? [A-Za-z]'
   local -a _md_cmd=()
   read -r -a _md_cmd <<<"${CGW_MARKDOWNLINT_CMD}"
   if [[ $# -gt 0 ]]; then
@@ -1346,7 +1369,12 @@ cgw_run_typecheck() {
 
 cgw_validate_commit_message() {
   local msg="$1"
-  echo "${msg}" | grep -qE "^(${CGW_ALL_PREFIXES}):"
+  # Conventional-commits prefix with an optional scope and optional breaking-
+  # change marker: "type:", "type(scope):", "type!:", "type(scope)!:". The
+  # bare "type:"-only pattern rejected valid scoped prefixes (fix(pyccsl):)
+  # with a generic warning, sending agents into the wrapper source to find
+  # this regex and then stripping the scope to get through.
+  echo "${msg}" | grep -qE "^(${CGW_ALL_PREFIXES})(\([A-Za-z0-9._/-]+\))?!?:"
 }
 
 # ── interactive prompts module ─────────────────────────────────────────────────

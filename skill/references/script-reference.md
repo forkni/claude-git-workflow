@@ -131,13 +131,15 @@ Override with `--all` to always bulk-stage, or `--only <path>` to explicitly sel
 **`check_lint.sh`** — Pre-commit validation (read-only)
 
 ```bash
-./scripts/git/check_lint.sh [--modified-only] [--no-venv] [--skip-lint] [--skip-md-lint]
+./scripts/git/check_lint.sh [--modified-only] [--no-venv] [--skip-lint] [--skip-md-lint] [--md-only]
 ```
 
 - Default: checks all files
 - `--modified-only`: checks only git-modified files
 - `--skip-lint`: skip all lint checks
 - `--skip-md-lint`: skip markdown lint only
+- `--md-only`: check markdown only (skip code lint + format); mutually exclusive with
+  `--skip-md-lint` and with `--modified-only`
 - Skipped automatically if `CGW_LINT_CMD` is empty
 
 **`fix_lint.sh`** — Auto-fix lint issues (code + Markdown)
@@ -200,17 +202,20 @@ Must be on target branch. Requires typing `ROLLBACK` to confirm in interactive m
 ```bash
 ./scripts/git/cherry_pick_commits.sh [--non-interactive] [--commit <hash>] [--dry-run]
 ./scripts/git/cherry_pick_commits.sh --source feature/hotfix --target release/1.2 --commit abc1234
+./scripts/git/cherry_pick_commits.sh --commit abc1234 --only src/a.py --only docs/   # partial pick
 ```
 
 | Flag | Purpose |
 |------|---------|
 | `--non-interactive` | Skip prompts; requires `--commit` |
 | `--commit <hash>` | Specify commit hash to cherry-pick |
+| `--only <pathspec>` | Partial pick: keep only matching files (repeatable, one pathspec per flag). Commits under the original message + a partial-pick note; no match = error; conflicts abort (no hand-over) |
 | `--dry-run` | Show commit details without cherry-picking |
 | `--source <branch>` | Override source branch for this invocation |
 | `--target <branch>` | Override target branch for this invocation |
 
 Validates commit is on source branch before picking. Creates `pre-cherry-pick-<timestamp>-<pid>` backup tag.
+With `--only`, the dev-only and local-only file guards check the selected subset, not the whole commit.
 
 **`merge_docs.sh`** — Documentation-only merge from source to target
 

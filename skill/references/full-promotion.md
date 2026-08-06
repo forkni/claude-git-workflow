@@ -34,7 +34,7 @@ or `;`. Check exit codes between steps.
 
 ## Section A: Git Bash / Linux / macOS
 
-**Phase 1 — Pre-commit validation**
+### Phase 1 — Pre-commit validation
 
 1. `git checkout "${CGW_SOURCE_BRANCH:-development}" >/dev/null 2>&1`
 2. `git diff --quiet && git diff --cached --quiet`
@@ -46,7 +46,7 @@ or `;`. Check exit codes between steps.
    — local-only files (CLAUDE.md, MEMORY.md, etc.) failing lint is safe to ignore
      (SKILL.md Rule 3). Still fails otherwise: stop. Passes: continue to Phase 2.
 
-**Phase 2 — Commit to source branch**
+### Phase 2 — Commit to source branch
 
 Stage per SKILL.md Rule 5 (staging intent), then:
 
@@ -61,7 +61,7 @@ Stage per SKILL.md Rule 5 (staging intent), then:
 git log -1 --format="%h %s"
 ```
 
-**Phase 3 — Push source branch**
+### Phase 3 — Push source branch
 
 ```bash
 ./scripts/git/push_validated.sh --non-interactive --skip-lint >/dev/null 2>&1
@@ -69,7 +69,7 @@ git log -1 --format="%h %s"
 
 exit 0: continue. exit ≠0: rerun without suppression to show the error, stop.
 
-**Phase 3b — CI gate on source (blocking)**
+### Phase 3b — CI gate on source (blocking)
 
 SKILL.md Rule 6 is a hard gate here, not a courtesy: apply
 [references/ci-verification.md](ci-verification.md) against `CGW_SOURCE_BRANCH`. Resolve the
@@ -80,7 +80,7 @@ Red and unfixable within `CGW_CI_MAX_FIX_ROUNDS` → **stop here, do not enter P
 is what stops a broken commit from ever reaching `CGW_TARGET_BRANCH`. Report the failing
 workflow/job and the `gh run view` URL, and hand back to the user.
 
-**Phase 4 — Merge or PR**
+### Phase 4 — Merge or PR
 
 ```bash
 [[ -f .cgw.conf ]] && . ./.cgw.conf
@@ -104,7 +104,7 @@ echo "${CGW_MERGE_MODE:-direct}"
   Bounded by `CGW_CI_MAX_FIX_ROUNDS`; exhausted → stop and hand back to the user. Green →
   `git checkout "${CGW_SOURCE_BRANCH:-development}" >/dev/null 2>&1` and report:
 
-  ```
+  ```text
   Workflow complete (PR mode)
   Source branch: [hash] "[message]" pushed
   PR: [url] — checks: green, Charlie review: [pending|approved|changes requested]
@@ -115,7 +115,7 @@ echo "${CGW_MERGE_MODE:-direct}"
   `CGW_TARGET_BRANCH` happens on GitHub once the PR is approved and merged, outside this
   pipeline, so Phase 5/5b do not apply in PR mode.
 
-**Phase 5 — Push target branch (direct mode only)**
+### Phase 5 — Push target branch (direct mode only)
 
 ```bash
 ./scripts/git/push_validated.sh --non-interactive --skip-lint >/dev/null 2>&1
@@ -124,7 +124,7 @@ git checkout "${CGW_SOURCE_BRANCH:-development}" >/dev/null 2>&1
 
 exit ≠0 on the push: rerun without suppression, stop.
 
-**Phase 5b — CI gate on target**
+### Phase 5b — CI gate on target
 
 Apply [references/ci-verification.md](ci-verification.md) again, this time against
 `CGW_TARGET_BRANCH`. `merge_with_validation.sh`'s `--no-ff` merge gives `CGW_TARGET_BRANCH`
@@ -140,14 +140,14 @@ Red and unfixable → do **not** report success. A fix here is still authored on
 `CGW_SOURCE_BRANCH` and hand back to the user with the failing workflow/job and the
 `gh run view` URL.
 
-**Final report (direct mode)**
+### Final report (direct mode)
 
 ```bash
 git log "${CGW_SOURCE_BRANCH:-development}" -1 --format="%h %s"
 git log "${CGW_TARGET_BRANCH:-main}" -1 --format="%h"
 ```
 
-```
+```text
 Workflow complete
 
 Source branch: [hash] "[message]"  CI: [green|n/a]

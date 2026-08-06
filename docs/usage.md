@@ -19,7 +19,7 @@ Keep `main` as the GitHub default branch. Charlie reads its config from the defa
 
 Conventional commit format (enforced by `commit_enhanced.sh`):
 
-```
+```text
 feat: add user authentication
 fix: resolve memory leak in pipeline
 docs: update API reference
@@ -154,6 +154,8 @@ by hand. No-op when nothing has diverged.
 ```bash
 ./scripts/git/cherry_pick_commits.sh                   # interactive
 ./scripts/git/cherry_pick_commits.sh --commit abc1234  # non-interactive
+# Partial pick: only files matching the pathspecs (repeatable --only)
+./scripts/git/cherry_pick_commits.sh --commit abc1234 --only src/a.py --only docs/
 ```
 
 ### Stash work in progress
@@ -340,6 +342,13 @@ Markdown auto-fix uses `CGW_MARKDOWNLINT_CMD` (auto-detected at runtime — see
 [Configuration](configuration.md)) with `CGW_MARKDOWNLINT_FIX_ARGS` (default `--fix`).
 Only auto-fixable rules are corrected in place; manual-only violations (e.g. `MD013`,
 `MD041`) still require a hand fix and are reported by `check_lint.sh`.
+
+`check_lint.sh` accepts the matching `--md-only` flag to verify markdown alone
+(`./scripts/git/check_lint.sh --md-only`) — `fix_lint.sh --md-only` forwards it
+automatically to its own final verification step.
+
+Gitignored `.md` files (local `CLAUDE.md`, session logs, ...) are skipped automatically via
+`.markdownlint-cli2.jsonc` — see [Configuration](configuration.md#key-options-reference).
 
 ---
 

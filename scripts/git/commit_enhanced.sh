@@ -222,6 +222,18 @@ main() {
         exit 1
         ;;
       *)
+        # A second bare positional used to silently overwrite the first --
+        # the classic victim being `--only path1 path2 "msg"`, where path2
+        # became a briefly held "commit message" and was then dropped without
+        # any warning. Fail loudly instead.
+        if [[ -n "${commit_msg_param}" ]]; then
+          echo "[ERROR] Unexpected extra positional argument: $1" >&2
+          echo "  Already have a commit message: \"${commit_msg_param}\"" >&2
+          echo "  The commit message must be ONE quoted argument. To stage several paths," >&2
+          echo "  repeat --only per path:" >&2
+          echo "    ./scripts/git/commit_enhanced.sh --only path1 --only path2 \"feat: msg\"" >&2
+          exit 1
+        fi
         commit_msg_param="$1"
         shift
         ;;
@@ -423,7 +435,8 @@ main() {
   echo "[3/6] Checking code quality..."
 
   if [[ ${skip_lint} -eq 1 ]]; then
-    echo "  (all lint checks skipped -- --skip-lint)"
+    echo "[skip-lint] Lint gate BYPASSED for this commit -- code + markdown checks not run"
+    echo "  (the gate exists to keep CI green; prefer fixing lint over skipping it)"
   else
     # Scope code-quality checks to the staged files being committed. A bare call
     # scans the whole repo, so an unrelated file's lint error blocks the commit
@@ -703,6 +716,10 @@ main() {
     echo "Commit: $(git log -1 --oneline)"
     echo "Branch: ${current_branch}"
     echo "Files:  ${staged_count}"
+    if [[ ${skip_lint} -eq 1 ]]; then
+      echo ""
+      echo "[skip-lint] Lint gate was bypassed for this commit -- CI may still flag it"
+    fi
     echo ""
     echo "Next steps:"
     if [[ "${current_branch}" == "${CGW_SOURCE_BRANCH}" ]]; then

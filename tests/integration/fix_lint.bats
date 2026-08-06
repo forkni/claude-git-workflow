@@ -99,9 +99,8 @@ teardown() {
 }
 
 @test "--skip-md-lint: code lint fix runs, markdown fix does not" {
-  # fix_lint.sh always re-verifies with check_lint.sh at the end (a separate,
-  # unflagged invocation), so mdlint.log still gets a CHECK entry -- the
-  # distinguishing signal is that no FIX (--fix) invocation was ever logged.
+  # fix_lint.sh now forwards --skip-md-lint to the final check_lint.sh
+  # verification too, so markdownlint is never invoked at all -- no mdlint.log.
   install_mock_lint
   install_mock_markdownlint
   run bash -c "
@@ -116,15 +115,12 @@ teardown() {
   [ "${status}" -eq 0 ]
   [ -f "${MOCK_BIN_DIR}/ruff.log" ]
   grep -q -- "--fix" "${MOCK_BIN_DIR}/ruff.log"
-  if [ -f "${MOCK_BIN_DIR}/mdlint.log" ]; then
-    ! grep -q "FIX_FLAG_SEEN" "${MOCK_BIN_DIR}/mdlint.log"
-  fi
+  [ ! -f "${MOCK_BIN_DIR}/mdlint.log" ]
 }
 
 @test "--md-only: markdown fix runs, code lint fix does not" {
-  # Same caveat as above: check_lint.sh's final verification always re-checks
-  # code lint too, so ruff.log exists either way -- assert it was never
-  # invoked with the FIX args (--fix), only the CHECK args.
+  # fix_lint.sh now forwards --md-only to the final check_lint.sh verification
+  # too, so ruff is never invoked at all -- no ruff.log.
   install_mock_lint
   install_mock_markdownlint
   run bash -c "
@@ -139,9 +135,7 @@ teardown() {
     bash '${CGW_PROJECT_ROOT}/scripts/git/fix_lint.sh' --md-only
   "
   [ "${status}" -eq 0 ]
-  if [ -f "${MOCK_BIN_DIR}/ruff.log" ]; then
-    ! grep -q -- "--fix" "${MOCK_BIN_DIR}/ruff.log"
-  fi
+  [ ! -f "${MOCK_BIN_DIR}/ruff.log" ]
   [ -f "${MOCK_BIN_DIR}/mdlint.log" ]
   grep -q "FIX_FLAG_SEEN" "${MOCK_BIN_DIR}/mdlint.log"
 }
@@ -174,4 +168,79 @@ teardown() {
   [ "${status}" -eq 0 ]
   run grep -x "MDLINT-BAD" "${TEST_REPO_DIR}/README.md"
   [ "${status}" -ne 0 ]
+}
+
+# ── Unfixable-remainder listing ───────────────────────────────────────────────
+# When auto-fix can't clear everything, the final verification must distill the
+# surviving file:line diagnostics into an actionable list instead of ending on
+# a bare "manual fixes may be required".
+
+# ── --no-venv reaches final verification (Copilot PR #16 review) ─────────────
+# check_lint.sh runs as a separate `bash` process (fix_lint.sh:214) so the
+# unexported CGW_NO_VENV/SKIP_VENV chosen via --no-venv never crosses that
+# boundary unless explicitly forwarded as a flag.
+
+@test "--no-venv is forwarded to the final verification step" {
+  install_mock_lint
+  mkdir -p "${TEST_REPO_DIR}/.venv/bin"
+  cat > "${TEST_REPO_DIR}/.venv/bin/ruff" << EOF
+#!/usr/bin/env bash
+touch "${TEST_REPO_DIR}/venv_ruff_called"
+exit 1
+EOF
+  chmod +x "${TEST_REPO_DIR}/.venv/bin/ruff"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/fix_lint.sh' --no-venv
+  "
+  [ ! -f "${TEST_REPO_DIR}/venv_ruff_called" ]
+  [[ "${output}" == *"All lint checks pass!"* ]]
+}
+
+@test "without --no-venv, verification uses .venv (negative control)" {
+  install_mock_lint
+  mkdir -p "${TEST_REPO_DIR}/.venv/bin"
+  cat > "${TEST_REPO_DIR}/.venv/bin/ruff" << EOF
+#!/usr/bin/env bash
+touch "${TEST_REPO_DIR}/venv_ruff_called"
+exit 0
+EOF
+  chmod +x "${TEST_REPO_DIR}/.venv/bin/ruff"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/fix_lint.sh'
+  "
+  [ -f "${TEST_REPO_DIR}/venv_ruff_called" ]
+}
+
+@test "unfixable errors are listed as remaining issues after verification" {
+  cat > "${MOCK_BIN_DIR}/markdownlint-cli2" << 'MOCK'
+#!/usr/bin/env bash
+echo "README.md:3 MD041/first-line-heading First line in a file should be a top-level heading"
+exit 1
+MOCK
+  chmod +x "${MOCK_BIN_DIR}/markdownlint-cli2"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD='markdownlint-cli2'
+    export CGW_MARKDOWNLINT_ARGS=''
+    export CGW_MARKDOWNLINT_FIX_ARGS='--fix'
+    bash '${CGW_PROJECT_ROOT}/scripts/git/fix_lint.sh'
+  "
+  [[ "${output}" == *"Remaining issues needing manual fixes:"* ]]
+  [[ "${output}" == *"README.md:3 MD041"* ]]
 }

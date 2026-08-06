@@ -186,6 +186,16 @@ Conventional commit format (enforced by `commit_enhanced.sh`):
 
 Additional project-specific prefixes can be configured via `CGW_EXTRA_PREFIXES` in `.cgw.conf`.
 
+**Scopes and the breaking-change marker are accepted natively.** For every prefix in the table
+above, the format check accepts the full Conventional Commits subject shape — `type: ...`,
+`type(scope): ...`, `type!: ...`, and `type(scope)!: ...` — e.g. `fix(parser): handle empty
+input`, `feat!: drop legacy export API`, `feat(api)!: drop legacy export API`. Commit with the
+scope and the `!` breaking-change marker **intact**: do not strip them, do not demote the
+breaking note into subject prose as a workaround, and do not reach for `CGW_EXTRA_PREFIXES`
+for a scoped or `!`-marked standard type — that setting adds *extra prefix words*, it is not
+needed for scoping or `!`. Put any breaking-change detail in a `BREAKING CHANGE:` paragraph in
+the commit body.
+
 **Subject length (Pro Git recommendation):** keep the summary after the prefix to **≤50 chars**
 — draft it that way up front rather than relying on the script to catch it. `commit_enhanced.sh`
 prints an advisory tip between 50–72 chars and **blocks the commit** past 72 chars (the point
@@ -219,6 +229,43 @@ no scope creep, no "just fixing whitespace too" bundled into an unrelated fix. I
 up something else worth fixing, make it a separate commit.
 
 ---
+
+## Wrapper Flag Reference
+
+Each wrapper accepts ONLY the flags listed below. Never guess a flag or transfer one from a
+sibling script — the lint and push wrappers reject anything unrecognized with
+`[ERROR] Unknown flag` and exit 1, and `commit_enhanced.sh` treats an unrecognized token as a
+positional commit message. If a flag you expect isn't listed here, it does not exist; run the
+script with `--help` to confirm rather than inventing it.
+
+| Script | Accepted flags |
+|---|---|
+| `commit_enhanced.sh` | `--non-interactive`, `--interactive`, `--staged-only`, `--all`, `--only <path>` (repeatable), `--skip-lint`, `--skip-md-lint`, `--no-venv`, `--sign`, `--no-sign` |
+| `check_lint.sh` | `--no-venv`, `--modified-only`, `--skip-lint`, `--skip-md-lint`, `--md-only` |
+| `fix_lint.sh` | `--non-interactive`, `--no-venv`, `--modified-only`, `--skip-md-lint`, `--md-only` — **no `--skip-lint`** |
+| `push_validated.sh` | `--non-interactive`, `--dry-run`, `--skip-lint`, `--skip-md-lint`, `--no-venv`, `--force`, `--branch <name>` |
+| `cherry_pick_commits.sh` | `--non-interactive`, `--commit <hash>`, `--only <pathspec>` (repeatable; partial pick), `--dry-run`, `--source <branch>`, `--target <branch>` |
+
+Asymmetries that trip people up:
+
+- **Markdown-only work:** `fix_lint.sh --md-only` auto-fixes markdown only, leaving code lint
+  completely untouched, and forwards `--md-only` to its own final `check_lint.sh`
+  verification. `check_lint.sh --md-only` checks markdown only (code lint + format skipped).
+  `check_lint.sh --skip-lint` is a different thing — it skips *everything including markdown*
+  and early-exits with a success-shaped `[OK] All lint checks skipped (--skip-lint)` line.
+  `--md-only` and `--skip-md-lint` are mutually exclusive on both scripts; `--md-only` and
+  `--modified-only` cannot be combined on `check_lint.sh` (`--modified-only` has no
+  markdown-only path).
+- **`--non-interactive` is not universal.** `commit_enhanced.sh`, `fix_lint.sh`,
+  `push_validated.sh`, `merge_with_validation.sh`, and `create_pr.sh` accept it;
+  `check_lint.sh` does **not** — it is read-only and never prompts, so a skip-prompts flag
+  doesn't exist there and passing one error-exits.
+- **`--unsafe-fixes` belongs to ruff, not to any wrapper.** No CGW script accepts it. Preview
+  ruff's unsafe fixes read-only with `ruff check --unsafe-fixes --diff`; apply them by running
+  ruff directly or via the `CGW_LINT_FIX_ARGS` env override — never by passing the flag to a
+  wrapper.
+- `commit_enhanced.sh` lints **staged files only** — a failing unstaged file elsewhere in the
+  tree does not block an `--only`-scoped commit.
 
 ## Quick Decision Tree
 
@@ -275,7 +322,7 @@ is phrased)
 
 Handles: pre-merge validation, backup tag, modify/delete/both-deleted conflict auto-resolution, content conflict detection (stops for manual review).
 
-**After manual conflict resolution:** when the script pauses for a content conflict (`UU`/`AA`/`AU`), resolve the markers, run `git add <file>`, then conclude the merge with `commit_enhanced.sh` — Rule 1 applies to merge-conclusion commits too. Do NOT re-run `merge_with_validation.sh`; there is no `--continue` flag.
+**After manual conflict resolution:** when the script pauses for a content conflict (`UU`/`AA`/`AU`), resolve the markers, run `git add <file>`, then conclude the merge with `commit_enhanced.sh` — Rule 1 applies to merge-conclusion commits too. Do NOT re-run `merge_with_validation.sh`; there is no `--continue` flag. This conclude-with-the-wrapper rule is **merge-specific**: a merge commit has no message of its own yet, so you author one. A paused **cherry-pick** is the opposite case — it already carries the original commit's message — and concludes with `git cherry-pick --continue` instead (see *When a cherry-pick hits a conflict*, below).
 
 Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Creating a PR below).
 
@@ -342,12 +389,40 @@ silently discarding local edits. No-op when no skip-worktree file has diverged (
 ./scripts/git/cherry_pick_commits.sh --commit abc1234      # non-interactive
 ./scripts/git/cherry_pick_commits.sh --dry-run --commit abc1234
 ./scripts/git/cherry_pick_commits.sh --source feature/hotfix --target release/1.2 --commit abc1234
+./scripts/git/cherry_pick_commits.sh --commit abc1234 --only src/a.py --only docs/  # partial pick
 ```
+
+**When a cherry-pick hits a conflict:** `cherry_pick_commits.sh` exiting 1 with conflict
+markers in the tree is a **hand-over, not a crash** — the pick is paused mid-flight
+(`.git/CHERRY_PICK_HEAD` exists) and git is waiting for you. Finish it in place:
+
+1. Inspect both sides before editing — `git status` for the conflicted paths, then
+   `git log --merge -p <file>` (and/or `git diff`) to see the competing changes in context.
+2. Resolve the markers, then `git add <file>` for each resolved path.
+3. Conclude with **`git cherry-pick --continue`**. This is the one commit the wrappers do
+   NOT make for you: the paused pick already carries the original commit's message and
+   authorship, and `--continue` commits with them preserved. Do **not** conclude via
+   `commit_enhanced.sh` (that abandons the pick's metadata and authors a brand-new commit —
+   the merge-conclusion rule above does not apply here) and do **not** re-run
+   `cherry_pick_commits.sh` (it would start a second pick on top of the paused one).
+4. `git cherry-pick --abort` exists only for genuinely abandoning the pick — never use it
+   just to dodge a resolvable conflict and retry.
 
 **Cherry-picking only some files from a commit (split/partial cherry-pick):**
 
-There is no wrapper for this — `cherry_pick_commits.sh` picks the whole commit. To take only
-a subset of files:
+`cherry_pick_commits.sh` supports this natively with `--only <pathspec>` (repeatable, one
+pathspec per flag — same convention as `commit_enhanced.sh --only`):
+
+```bash
+./scripts/git/cherry_pick_commits.sh --commit <hash> --only src/a.py --only docs/
+```
+
+It applies the commit with `--no-commit`, drops the unselected paths from index and working
+tree, and commits the selected subset under the original message plus a
+`(partial cherry-pick of <hash> -- only: ...)` note. Two behavioral differences from a full
+pick: `--only` matching **no** files in the commit is an error (exit 1, nothing applied), and
+a **conflict aborts the partial pick entirely** — there is no paused hand-over in partial
+mode. When a partial pick conflicts, fall back to the manual recipe:
 
 ```bash
 git cherry-pick -n <hash>      # stage the commit's changes without auto-committing

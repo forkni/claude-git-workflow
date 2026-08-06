@@ -252,6 +252,24 @@ main() {
     exit 0
   fi
 
+  # [0.5/7] Preflight: a dirty working tree makes the target-branch checkout
+  # (or the merge itself) fail with a raw git error mid-flow -- the observed
+  # pattern is a first-attempt failure that succeeds only after a manual
+  # stash. Fail fast here, with the exact wrapper-native recovery sequence.
+  # Untracked files are excluded: they rarely block checkout/merge, and
+  # git's own overwrite protection still guards the rare case.
+  if [[ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]]; then
+    err_tee "[FAIL] Working tree has uncommitted changes -- merge needs a clean tree"
+    {
+      echo "  Recovery:"
+      echo "    1. ./scripts/git/stash_work.sh push   # set aside local changes"
+      echo "    2. re-run this merge"
+      echo "    3. ./scripts/git/stash_work.sh pop    # restore your changes"
+      echo "  Or commit them first: ./scripts/git/commit_enhanced.sh \"<type>: <msg>\""
+    } | tee -a "$logfile"
+    exit 1
+  fi
+
   # [1/7] Run validation
   cgw_run_pre_op_validation "merge" "${src_branch}" "${tgt_branch}" "$logfile" || exit 1
   echo "" | tee -a "$logfile"

@@ -241,6 +241,11 @@ CGW_MERGE_IGNORE_WHITESPACE="0"
 # ("**/*.md !CLAUDE.md !MEMORY.md"). Move the "**/*.md" glob to
 # CGW_MARKDOWNLINT_PATHS and keep only exclusions in CGW_MARKDOWNLINT_ARGS.
 #
+# The !CLAUDE.md !MEMORY.md default below is belt-and-suspenders: configure.sh
+# also installs .markdownlint-cli2.jsonc ("gitignore": ".gitignore"), which
+# makes markdownlint-cli2 skip any gitignored .md file automatically -- no ARGS
+# edit needed when a project adds a new local-only markdown file.
+#
 # Skip at runtime with --skip-md-lint flag or CGW_SKIP_MD_LINT=1.
 
 CGW_MARKDOWNLINT_CMD=""
