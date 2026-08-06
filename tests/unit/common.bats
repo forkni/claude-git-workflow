@@ -659,6 +659,41 @@ UU b.py
   [ "${status}" -eq 1 ]
 }
 
+# Regression: the bare "type:" pattern rejected valid conventional-commits
+# scoped prefixes (fix(pyccsl):) with a generic warning; agents then grepped
+# the wrapper source for the regex and stripped the scope to get through.
+
+@test "cgw_validate_commit_message accepts scoped prefix" {
+  run cgw_validate_commit_message "fix(pyccsl): repair budget formula"
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_validate_commit_message accepts scopes with dots, slashes, dashes" {
+  for msg in "feat(SKILL.md): x" "fix(scripts/git): y" "docs(my-scope): z"; do
+    run cgw_validate_commit_message "${msg}"
+    [ "${status}" -eq 0 ]
+  done
+}
+
+@test "cgw_validate_commit_message accepts breaking-change marker" {
+  run cgw_validate_commit_message "feat!: drop legacy flags"
+  [ "${status}" -eq 0 ]
+  run cgw_validate_commit_message "feat(api)!: drop legacy flags"
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_validate_commit_message rejects empty and unclosed scopes" {
+  run cgw_validate_commit_message "fix(): empty scope"
+  [ "${status}" -eq 1 ]
+  run cgw_validate_commit_message "fix(pyccsl: unclosed scope"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_validate_commit_message rejects scope on unknown prefix" {
+  run cgw_validate_commit_message "wip(pyccsl): still not a valid type"
+  [ "${status}" -eq 1 ]
+}
+
 # ── cgw_resolve_lint_binary() ─────────────────────────────────────────────────
 
 @test "cgw_resolve_lint_binary: returns venv path when binary exists in PYTHON_BIN" {

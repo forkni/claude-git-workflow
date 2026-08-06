@@ -875,3 +875,30 @@ _run_commit() {
   [[ "${output}" != *"hard cap"* ]]
   [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
 }
+
+# ── Extra positional arguments ────────────────────────────────────────────────
+# A second bare positional used to silently replace the commit message (the
+# classic shape: `--only path1 path2 "msg"`, where path2 became the message
+# and the real message overwrote it unnoticed). It must be a hard error with
+# per-path guidance instead.
+
+@test "second bare positional errors instead of silently replacing the message" {
+  echo "content" > "${TEST_REPO_DIR}/extra_pos.txt"
+  git -C "${TEST_REPO_DIR}" add extra_pos.txt
+  run _run_commit "--only extra_pos.txt stray_path.txt \"feat: message\""
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Unexpected extra positional argument"* ]]
+  [[ "${output}" == *"repeat --only per path"* ]]
+}
+
+# ── --skip-lint visibility ────────────────────────────────────────────────────
+
+@test "--skip-lint prints a prominent bypass notice at gate and in summary" {
+  echo "content" > "${TEST_REPO_DIR}/skip_notice.txt"
+  git -C "${TEST_REPO_DIR}" add skip_notice.txt
+  run _run_commit "--skip-lint \"feat: bypass notice check\""
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"[skip-lint] Lint gate BYPASSED for this commit"* ]]
+  [[ "${output}" == *"[skip-lint] Lint gate was bypassed for this commit"* ]]
+  [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+}

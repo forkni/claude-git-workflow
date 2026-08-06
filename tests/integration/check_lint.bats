@@ -262,3 +262,50 @@ EOF
   [[ "${output}" == *"[FORMAT CHECK]"* ]]
   [[ "${output}" == *"non-blocking"* ]]
 }
+
+# ── Error-count / status consistency ──────────────────────────────────────────
+# The summary's Errors column comes from a diagnostic regex while Status comes
+# from the tool's exit code. markdownlint-cli2 output (file:line[:col] MDxxx)
+# previously matched nothing, producing "FAILED ... 0 errors" contradictions.
+
+@test "markdownlint diagnostics are counted in the error summary" {
+  cat > "${MOCK_BIN_DIR}/markdownlint-cli2" << 'MOCK'
+#!/usr/bin/env bash
+echo "README.md:3 MD013/line-length Line length [Expected: 80; Actual: 200]"
+exit 1
+MOCK
+  chmod +x "${MOCK_BIN_DIR}/markdownlint-cli2"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=markdownlint-cli2
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Total: 1 errors"* ]]
+  [[ "${output}" != *"no lint diagnostics were parsed"* ]]
+}
+
+@test "FAILED step with zero parsed diagnostics is named a tool/config failure" {
+  cat > "${MOCK_BIN_DIR}/markdownlint-cli2" << 'MOCK'
+#!/usr/bin/env bash
+echo "Cannot find configuration file .markdownlint-cli2.jsonc" >&2
+exit 2
+MOCK
+  chmod +x "${MOCK_BIN_DIR}/markdownlint-cli2"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=markdownlint-cli2
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Total: 0 errors"* ]]
+  [[ "${output}" == *"tool exited non-zero but no lint diagnostics were parsed"* ]]
+}

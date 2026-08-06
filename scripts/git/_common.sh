@@ -215,7 +215,14 @@ run_tool_with_logging() {
   TOOL_OUTPUT=$("$@" 2>&1)
   local exit_code=$?
 
-  TOOL_ERROR_COUNT=$(echo "$TOOL_OUTPUT" | grep -cE "^[^:]+:[0-9]+:[0-9]+:" || true)
+  # Diagnostic-line pattern: the default matches ruff/flake8-style
+  # "file:line:col: ". Tools that emit a different shape (markdownlint-cli2:
+  # "file:line[:col] MDxxx/rule ...") never match it, so their real errors
+  # counted as 0 while the section still FAILED -- a self-contradicting
+  # summary ("Lint FAILED 0 errors ... STATUS: FAILED"). Callers override via
+  # a dynamically scoped CGW_TOOL_ERROR_REGEX local (same pattern as
+  # CGW_SECTION_FAIL_LABEL).
+  TOOL_ERROR_COUNT=$(echo "$TOOL_OUTPUT" | grep -cE "${CGW_TOOL_ERROR_REGEX:-^[^:]+:[0-9]+:[0-9]+:}" || true)
 
   if [[ -n "$TOOL_OUTPUT" ]]; then
     echo "$TOOL_OUTPUT" | tee -a "$log_path"
@@ -1140,6 +1147,11 @@ cgw_run_markdownlint_check() {
     return 0
   fi
   [[ -z "${CGW_MARKDOWNLINT_CMD:-}" ]] && return 0
+  # markdownlint-cli2 diagnostics are "file:line[:col] MDxxx/rule ..." -- no
+  # trailing colon after the position, so the default file:line:col: pattern
+  # counts them as 0 errors.
+  # shellcheck disable=SC2034  # read via dynamic scope by run_tool_with_logging
+  local CGW_TOOL_ERROR_REGEX='^[^:]+:[0-9]+(:[0-9]+)? [A-Za-z]'
   local -a _md_cmd=()
   read -r -a _md_cmd <<<"${CGW_MARKDOWNLINT_CMD}"
   if [[ $# -gt 0 ]]; then
@@ -1175,6 +1187,10 @@ cgw_run_markdownlint_fix() {
     return 0
   fi
   [[ -z "${CGW_MARKDOWNLINT_CMD:-}" ]] && return 0
+  # Same diagnostic shape as cgw_run_markdownlint_check -- unfixable errors
+  # print as "file:line[:col] MDxxx/rule ..." and must count.
+  # shellcheck disable=SC2034  # read via dynamic scope by run_tool_with_logging
+  local CGW_TOOL_ERROR_REGEX='^[^:]+:[0-9]+(:[0-9]+)? [A-Za-z]'
   local -a _md_cmd=()
   read -r -a _md_cmd <<<"${CGW_MARKDOWNLINT_CMD}"
   if [[ $# -gt 0 ]]; then
@@ -1346,7 +1362,12 @@ cgw_run_typecheck() {
 
 cgw_validate_commit_message() {
   local msg="$1"
-  echo "${msg}" | grep -qE "^(${CGW_ALL_PREFIXES}):"
+  # Conventional-commits prefix with an optional scope and optional breaking-
+  # change marker: "type:", "type(scope):", "type!:", "type(scope)!:". The
+  # bare "type:"-only pattern rejected valid scoped prefixes (fix(pyccsl):)
+  # with a generic warning, sending agents into the wrapper source to find
+  # this regex and then stripping the scope to get through.
+  echo "${msg}" | grep -qE "^(${CGW_ALL_PREFIXES})(\([A-Za-z0-9._/-]+\))?!?:"
 }
 
 # ── interactive prompts module ─────────────────────────────────────────────────

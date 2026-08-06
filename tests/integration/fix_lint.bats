@@ -175,3 +175,30 @@ teardown() {
   run grep -x "MDLINT-BAD" "${TEST_REPO_DIR}/README.md"
   [ "${status}" -ne 0 ]
 }
+
+# ── Unfixable-remainder listing ───────────────────────────────────────────────
+# When auto-fix can't clear everything, the final verification must distill the
+# surviving file:line diagnostics into an actionable list instead of ending on
+# a bare "manual fixes may be required".
+
+@test "unfixable errors are listed as remaining issues after verification" {
+  cat > "${MOCK_BIN_DIR}/markdownlint-cli2" << 'MOCK'
+#!/usr/bin/env bash
+echo "README.md:3 MD041/first-line-heading First line in a file should be a top-level heading"
+exit 1
+MOCK
+  chmod +x "${MOCK_BIN_DIR}/markdownlint-cli2"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD='markdownlint-cli2'
+    export CGW_MARKDOWNLINT_ARGS=''
+    export CGW_MARKDOWNLINT_FIX_ARGS='--fix'
+    bash '${CGW_PROJECT_ROOT}/scripts/git/fix_lint.sh'
+  "
+  [[ "${output}" == *"Remaining issues needing manual fixes:"* ]]
+  [[ "${output}" == *"README.md:3 MD041"* ]]
+}

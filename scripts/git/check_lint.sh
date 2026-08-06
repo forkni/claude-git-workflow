@@ -197,6 +197,18 @@ main() {
 
   log_summary_table "$logfile" "${results[@]}"
 
+  # A FAILED row with 0 parsed errors means the tool exited non-zero without
+  # emitting any file:line diagnostics -- a tool/config failure (missing
+  # binary, bad flags, crash), not counted lint errors. Name that explicitly
+  # instead of leaving "FAILED ... 0 errors" to self-contradict.
+  local _row _row_name _row_status _row_errors _row_rest
+  for _row in "${results[@]}"; do
+    IFS=':' read -r _row_name _row_status _row_errors _row_rest <<<"${_row}"
+    if [[ "${_row_status}" == "FAILED" ]] && [[ "${_row_errors}" == "0" ]]; then
+      echo "[!] ${_row_name}: tool exited non-zero but no lint diagnostics were parsed -- likely a tool/config failure, not code errors (see log)" | tee -a "$logfile"
+    fi
+  done
+
   local script_end total_duration overall_status
   script_end=$(date +%s)
   total_duration=$((script_end - script_start))

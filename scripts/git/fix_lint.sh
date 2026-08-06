@@ -210,10 +210,27 @@ main() {
   echo "" | tee -a "$logfile"
   echo "Running final verification..." | tee -a "$logfile"
 
-  if "${SCRIPT_DIR}/check_lint.sh" 2>&1 | tee -a "$logfile"; then
+  local verify_output verify_status
+  verify_output=$("${SCRIPT_DIR}/check_lint.sh" 2>&1)
+  verify_status=$?
+  echo "${verify_output}" | tee -a "$logfile"
+
+  if [[ ${verify_status} -eq 0 ]]; then
     echo "[OK] All lint checks pass!" | tee -a "$logfile"
   else
     echo "[!] Some issues remain -- manual fixes may be required" | tee -a "$logfile"
+    # Surface the unfixable diagnostics (file:line[:col] rule) as a distilled
+    # list so the next manual step is visible without digging through the
+    # full log -- "cannot auto-fix" with no target list is a dead end.
+    local remaining
+    remaining=$(echo "${verify_output}" | grep -E "^[^:]+:[0-9]+(:[0-9]+)?[: ]" | head -20)
+    if [[ -n "${remaining}" ]]; then
+      {
+        echo ""
+        echo "Remaining issues needing manual fixes:"
+        echo "${remaining}" | sed 's/^/  /'
+      } | tee -a "$logfile"
+    fi
   fi
 
   local script_end total_duration
