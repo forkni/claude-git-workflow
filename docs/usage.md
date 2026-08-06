@@ -19,7 +19,7 @@ Keep `main` as the GitHub default branch. Charlie reads its config from the defa
 
 Conventional commit format (enforced by `commit_enhanced.sh`):
 
-```
+```text
 feat: add user authentication
 fix: resolve memory leak in pipeline
 docs: update API reference
