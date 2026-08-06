@@ -415,6 +415,7 @@ if exist "!TARGET_DIR!\.git\hooks\pre-commit"                      echo(  Git ho
 if exist "!TARGET_DIR!\.claude\skills\auto-git-workflow\SKILL.md"  echo(  Claude skill: !TARGET_DIR!\.claude\skills\auto-git-workflow\
 if exist "!TARGET_DIR!\.claude\commands\auto-git-workflow-cmd.md"  echo(  Slash cmd:    !TARGET_DIR!\.claude\commands\auto-git-workflow-cmd.md
 if exist "!TARGET_DIR!\.markdownlint.json"                         echo(  Markdown cfg: !TARGET_DIR!\.markdownlint.json
+if exist "!TARGET_DIR!\.markdownlint-cli2.jsonc"                   echo(  Markdown tool: !TARGET_DIR!\.markdownlint-cli2.jsonc ^(gitignore-skip^)
 
 echo.
 echo   Quick start (from your project root in Git Bash):

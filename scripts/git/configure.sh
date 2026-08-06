@@ -482,6 +482,13 @@ _install_markdownlint_config() {
 
   cp "${template_src}/markdownlint.json" "${PROJECT_ROOT}/.markdownlint.json"
   echo "  [OK] Markdown lint baseline installed (.markdownlint.json)"
+
+  # Tool config (gitignore-skip) is a separate file from the rule set above --
+  # optional so a stale staging area missing it still installs the rules.
+  if [[ -f "${template_src}/markdownlint-cli2.jsonc" ]]; then
+    cp "${template_src}/markdownlint-cli2.jsonc" "${PROJECT_ROOT}/.markdownlint-cli2.jsonc"
+    echo "  [OK] Markdown lint tool config installed (.markdownlint-cli2.jsonc -- auto-skips gitignored files)"
+  fi
 }
 
 _install_guardrail_nojq() {

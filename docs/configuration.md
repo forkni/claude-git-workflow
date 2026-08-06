@@ -103,6 +103,14 @@ cp cgw.conf.example .cgw.conf
 | `CGW_CI_MAX_FIX_ROUNDS` | `3` | Fix → push → re-watch attempts before the CI gate stops and hands back to the user |
 | `CGW_CI_REQUIRED_WORKFLOWS` | `` | Space-separated workflow-name allow-list for the CI gate; empty = judge every triggered workflow |
 
+`configure.sh` also installs a `.markdownlint-cli2.jsonc` alongside `.markdownlint.json`
+(`templates/markdownlint-cli2.jsonc`), setting `"gitignore": ".gitignore"` so markdownlint-cli2
+automatically skips gitignored `.md` files (local `CLAUDE.md`, session logs, etc.) without needing
+manual `!file` exclusions in `CGW_MARKDOWNLINT_ARGS`. It's a separate file because
+`.markdownlint.json`'s rules take precedence over a `config` block in `.markdownlint-cli2.jsonc`
+in the same directory — the two files are additive, not competing. Never overwritten if either
+already exists (same rule as `.markdownlint.json`).
+
 If a `CGW_LOCAL_FILES` entry (or any other local file) is also given the git **skip-worktree**
 bit, `sync_branches.sh` protects it across a sync: a diverged skip-worktree file no longer causes
 `pull --rebase` to silently fail or `[1/4]` to misreport "clean" — the script backs it up, resets

@@ -347,6 +347,9 @@ Only auto-fixable rules are corrected in place; manual-only violations (e.g. `MD
 (`./scripts/git/check_lint.sh --md-only`) — `fix_lint.sh --md-only` forwards it
 automatically to its own final verification step.
 
+Gitignored `.md` files (local `CLAUDE.md`, session logs, ...) are skipped automatically via
+`.markdownlint-cli2.jsonc` — see [Configuration](configuration.md#key-options-reference).
+
 ---
 
 ## Environment Variables
