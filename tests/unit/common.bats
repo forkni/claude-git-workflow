@@ -1027,6 +1027,194 @@ UU b.py
   [ "${output}" = "f.py" ]
 }
 
+# ── cgw_paths_diverging_from_index() ──────────────────────────────────────────
+# The general core cgw_lint_files_diverging_from_index (above) now wraps.
+# Exercises the stdin contract directly: mixed input, multi-path input, and
+# the fail-closed "staged path missing from disk" branch that the lint-only
+# wrapper's tests never reach (a lint-eligible file being deleted is covered
+# end-to-end by commit_enhanced.bats' Mode 3 instead).
+
+@test "cgw_paths_diverging_from_index: with mixed input, emits only the diverging path" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'a = 1\n' > \"\${tmp}/a.py\"
+    printf 'b = 1\n' > \"\${tmp}/b.py\"
+    git -C \"\${tmp}\" add a.py b.py
+    printf 'a = 2\n' > \"\${tmp}/a.py\"
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    printf 'a.py\nb.py\n' | cgw_paths_diverging_from_index; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "a.py" ]
+}
+
+@test "cgw_paths_diverging_from_index: returns 1 and emits nothing when every input path matches the index" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'a = 1\n' > \"\${tmp}/a.py\"
+    printf 'b = 1\n' > \"\${tmp}/b.py\"
+    git -C \"\${tmp}\" add a.py b.py
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    printf 'a.py\nb.py\n' | cgw_paths_diverging_from_index; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 1 ]
+  [ -z "${output}" ]
+}
+
+@test "cgw_paths_diverging_from_index: a staged path deleted from disk is reported (fails closed)" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'a = 1\n' > \"\${tmp}/a.py\"
+    git -C \"\${tmp}\" add a.py
+    rm \"\${tmp}/a.py\"
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    printf 'a.py\n' | cgw_paths_diverging_from_index; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "a.py" ]
+}
+
+# ── cgw_staged_paths_diverging_from_index() ───────────────────────────────────
+# Unlike cgw_lint_files_diverging_from_index, this scopes to ALL staged paths,
+# not just CGW_LINT_EXTENSIONS -- it backs commit_enhanced.sh's up-front
+# partial-stage snapshot, which must catch a partially-staged .txt/.json/.md
+# just as readily as a partially-staged .py.
+
+@test "cgw_staged_paths_diverging_from_index: detects divergence in a staged file regardless of extension" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'line1\n' > \"\${tmp}/note.txt\"
+    git -C \"\${tmp}\" add note.txt
+    printf 'line1\nline2\n' > \"\${tmp}/note.txt\"
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_staged_paths_diverging_from_index; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "note.txt" ]
+}
+
+@test "cgw_staged_paths_diverging_from_index: emits nothing when every staged path matches disk" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\n' > \"\${tmp}/a.py\"
+    printf 'line1\n' > \"\${tmp}/note.txt\"
+    git -C \"\${tmp}\" add a.py note.txt
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_staged_paths_diverging_from_index; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 1 ]
+  [ -z "${output}" ]
+}
+
+# ── cgw_validated_path_set() ──────────────────────────────────────────────────
+# Backs the widened [3.5] congruence guard: this is the exact set of staged
+# paths CGW's code-quality gate validated this run, so divergence outside it
+# is ordinary partial staging CGW never inspected -- not a validation gap.
+
+@test "cgw_validated_path_set: includes staged lint-extension files and excludes .md when markdown lint is skipped" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\n' > \"\${tmp}/f.py\"
+    printf '# Title\n' > \"\${tmp}/f.md\"
+    git -C \"\${tmp}\" add f.py f.md
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export CGW_SKIP_MD_LINT=1
+    export CGW_MARKDOWNLINT_CMD='markdownlint'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_validated_path_set
+    rm -rf \"\${tmp}\"
+  "
+  [ "${output}" = "f.py" ]
+}
+
+@test "cgw_validated_path_set: includes staged .md files when markdown lint genuinely runs" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\n' > \"\${tmp}/f.py\"
+    printf '# Title\n' > \"\${tmp}/f.md\"
+    git -C \"\${tmp}\" add f.py f.md
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export CGW_SKIP_MD_LINT=0
+    export CGW_MARKDOWNLINT_CMD='markdownlint'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_validated_path_set
+    rm -rf \"\${tmp}\"
+  "
+  [ "${lines[0]}" = "f.py" ]
+  [ "${lines[1]}" = "f.md" ]
+}
+
+@test "cgw_validated_path_set: excludes staged .md files when CGW_MARKDOWNLINT_CMD is empty even if not skipped" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\n' > \"\${tmp}/f.py\"
+    printf '# Title\n' > \"\${tmp}/f.md\"
+    git -C \"\${tmp}\" add f.py f.md
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export CGW_SKIP_MD_LINT=0
+    export CGW_MARKDOWNLINT_CMD=''
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_validated_path_set
+    rm -rf \"\${tmp}\"
+  "
+  [ "${output}" = "f.py" ]
+}
+
 # ── cgw_crlf_in_index_files() ─────────────────────────────────────────────────
 
 @test "cgw_crlf_in_index_files: emits a path whose index blob retains CRLF under autocrlf=true" {

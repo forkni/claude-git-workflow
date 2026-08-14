@@ -79,25 +79,47 @@ unstage_local_only_files() {
   done < <(git diff --cached --name-only --diff-filter=AM | cgw_filter_local_files)
 }
 
-# Re-stage files after lint auto-fix, then remove any local-only files that
-# the fixer may have touched. Takes explicit params because main() locals are
-# not visible to script-level functions in bash.
+# Re-stage files after lint/markdown auto-fix, then remove any local-only
+# files the fixer may have touched. Takes explicit params because main()
+# locals are not visible to script-level functions in bash.
+#
+# Re-stages every originally-staged path EXCEPT ones already flagged
+# partially staged (index differs from working tree at snapshot time --
+# the moral equivalent of `git add -p` picking one hunk). Whole-file
+# re-staging one of those would silently promote unstaged content into the
+# index, defeating the user's selection. This applies uniformly in bulk and
+# staged-only mode: bulk mode's originally_staged_files already reflects the
+# post `git add -u` index (see the snapshot site in main()), so replaying it
+# here -- rather than issuing a second `git add -u` -- also avoids sweeping
+# in any file a concurrent process modified in the gap since that snapshot.
 _restage_after_fix() {
-  local effective_staged_only="$1"
-  local originally_staged_files="$2"
-  if [[ ${effective_staged_only} -eq 1 ]]; then
-    if [[ -n "${originally_staged_files}" ]]; then
-      local f
-      while IFS= read -r f; do
-        # -f: these paths came from a prior `git diff --cached` snapshot, so
-        # they're already tracked/staged -- force-add survives a .gitignore
-        # added between staging and this re-stage (see --only loop above).
-        [[ -n "${f}" ]] && git add -f -- "${f}" 2>/dev/null || true
-      done <<<"${originally_staged_files}"
+  local originally_staged_files="$1"
+  local partially_staged_files="$2"
+
+  local -A _partial=()
+  local _pf
+  while IFS= read -r _pf; do
+    [[ -n "${_pf}" ]] && _partial["${_pf}"]=1
+  done <<<"${partially_staged_files}"
+
+  local f
+  local -a _skipped=()
+  while IFS= read -r f; do
+    [[ -z "${f}" ]] && continue
+    if [[ -n "${_partial[${f}]:-}" ]]; then
+      _skipped+=("${f}")
+      continue
     fi
-  else
-    git add -u
+    # -f: these paths came from a prior `git diff --cached` snapshot, so
+    # they're already tracked/staged -- force-add survives a .gitignore
+    # added between staging and this re-stage (see --only loop above).
+    git add -f -- "${f}" 2>/dev/null || true
+  done <<<"${originally_staged_files}"
+
+  if [[ ${#_skipped[@]} -gt 0 ]]; then
+    echo "[!] Auto-fix touched a partially-staged file; leaving it as-is to preserve your staged hunks: ${_skipped[*]}"
   fi
+
   unstage_local_only_files
 }
 
@@ -279,6 +301,24 @@ main() {
   # Apply --only: reset index and stage only the listed paths
   if [[ ${#only_paths[@]} -gt 0 ]]; then
     echo "[--only] Resetting index and staging ${#only_paths[@]} path(s)..."
+    # Show what the reset below is about to discard from the index. --only's
+    # contract is "reset, then stage exactly these paths", which silently
+    # unstages anything pre-staged outside them -- the second half of the
+    # incident this guard exists for (a prior session's staged files had to
+    # be manually reconstructed because the wipe gave no warning).
+    local -a _only_discard_pathspec=(".")
+    local _only_p
+    for _only_p in "${only_paths[@]}"; do
+      _only_discard_pathspec+=(":(exclude)${_only_p}")
+    done
+    local -a _will_unstage=()
+    local _wu_f
+    while IFS= read -r _wu_f; do
+      [[ -n "${_wu_f}" ]] && _will_unstage+=("${_wu_f}")
+    done < <(git diff --cached --name-only -- "${_only_discard_pathspec[@]}" 2>/dev/null)
+    if [[ ${#_will_unstage[@]} -gt 0 ]]; then
+      echo "[--only] Currently staged but not matched by --only (will be unstaged): ${_will_unstage[*]}"
+    fi
     # Reset only when HEAD exists. An unborn HEAD (fresh repo, no commits) has
     # nothing to reset, so skip. A real reset failure (e.g. stale index.lock)
     # must abort — swallowing it would let pre-staged extras ride along, breaking
@@ -392,11 +432,20 @@ main() {
   fi
   echo ""
 
-  # Capture originally-staged file list for re-stage after lint auto-fix
-  local originally_staged_files=""
-  if [[ ${effective_staged_only} -eq 1 ]]; then
-    originally_staged_files=$(git diff --cached --name-only)
-  fi
+  # Snapshot the staged-file set now that staging is final for this run (the
+  # bulk `git add -u` above, or the user's own pre-staging in staged-only /
+  # --only mode). _restage_after_fix replays THIS list rather than issuing a
+  # fresh `git add -u` -- a fresh sweep would also pick up any file a
+  # concurrent process modified in the gap between here and the auto-fix.
+  local originally_staged_files
+  originally_staged_files=$(git diff --cached --name-only)
+
+  # Snapshot which of those are PARTIALLY staged -- index differs from the
+  # working tree, the moral equivalent of `git add -p` picking one hunk.
+  # _restage_after_fix must never promote these whole; see
+  # cgw_staged_paths_diverging_from_index.
+  local partially_staged_files
+  partially_staged_files=$(cgw_staged_paths_diverging_from_index)
 
   # [2] Validate staged files -- unstage and verify local-only files
   echo "[2/6] Validating staged files..."
@@ -462,7 +511,7 @@ main() {
       if [[ ${non_interactive} -eq 1 ]]; then
         echo "[Non-interactive] Auto-fixing code quality issues..."
         cgw_run_lint_fix "${staged_lint[@]}"
-        _restage_after_fix "${effective_staged_only}" "${originally_staged_files}"
+        _restage_after_fix "${originally_staged_files}" "${partially_staged_files}"
 
         # Re-check after fix (same staged scope)
         python_lint_error=0
@@ -478,7 +527,7 @@ main() {
         case "${fix_lint}" in
           yes | y)
             cgw_run_lint_fix "${staged_lint[@]}"
-            _restage_after_fix "${effective_staged_only}" "${originally_staged_files}"
+            _restage_after_fix "${originally_staged_files}" "${partially_staged_files}"
             ;;
           skip | s)
             echo "[!] Proceeding with code quality warnings (CI may flag these)"
@@ -491,48 +540,6 @@ main() {
       fi
     else
       echo "[OK] Code quality checks passed"
-    fi
-
-    # [3.5] Congruence guard: the checks above validated the WORKING TREE, but
-    # `git commit` records the INDEX. If a staged lint file's blob differs from
-    # what's on disk, CGW would commit content it never validated -- silently.
-    # Covers both the gate-skip case (working tree already clean, stale staged
-    # blob) and a re-stage that silently failed to update the index.
-    local -a _diverged_lint_files=()
-    local _div_f
-    while IFS= read -r _div_f; do
-      [[ -n "${_div_f}" ]] && _diverged_lint_files+=("${_div_f}")
-    done < <(cgw_lint_files_diverging_from_index)
-
-    if [[ ${#_diverged_lint_files[@]} -gt 0 ]]; then
-      # Re-staging the whole file is safe only when staging intent is
-      # whole-file: bulk/--all (effective_staged_only==0) or --only <paths>
-      # (only_paths non-empty; --only forces staged_only=1 above). Genuine
-      # partial staging (--staged-only, or auto-detected pre-stage+unstaged,
-      # with no --only) may intentionally leave index != working tree --
-      # never silently re-stage there.
-      if [[ ${effective_staged_only} -eq 0 || ${#only_paths[@]} -gt 0 ]]; then
-        echo "[!] Validated working tree diverges from staged blob; re-staging: ${_diverged_lint_files[*]}"
-        local _div_rf
-        for _div_rf in "${_diverged_lint_files[@]}"; do
-          git add -f -- "${_div_rf}"
-        done
-        unstage_local_only_files
-        # Re-verify: a path that still can't be re-staged (e.g. assume-unchanged/
-        # skip-worktree) stays divergent -- fail closed rather than commit
-        # unvalidated content.
-        if cgw_lint_files_diverging_from_index >/dev/null; then
-          err "Staged content still diverges from the validated working tree; aborting."
-          exit 1
-        fi
-      elif [[ "${CGW_ALLOW_STAGED_DIVERGENCE:-0}" == "1" ]]; then
-        echo "[!] staged-only: committing staged blob that differs from the validated working tree (CGW_ALLOW_STAGED_DIVERGENCE=1)"
-      else
-        err "Staged content differs from the validated working tree for: ${_diverged_lint_files[*]}"
-        err "CGW validated the working tree but would commit a different staged blob."
-        err "Re-stage the file(s) with 'git add', or set CGW_ALLOW_STAGED_DIVERGENCE=1 to commit the staged blob as-is."
-        exit 1
-      fi
     fi
 
     # Markdown lint step (skipped if --skip-md-lint or CGW_MARKDOWNLINT_CMD not set).
@@ -557,7 +564,7 @@ main() {
           if [[ ${non_interactive} -eq 1 ]]; then
             echo "[Non-interactive] Auto-fixing markdown lint issues..."
             cgw_run_markdownlint_fix "${staged_md[@]}"
-            _restage_after_fix "${effective_staged_only}" "${originally_staged_files}"
+            _restage_after_fix "${originally_staged_files}" "${partially_staged_files}"
 
             # Re-check after fix (same staged scope)
             md_lint_error=0
@@ -572,7 +579,7 @@ main() {
             case "${fix_md_lint}" in
               yes | y)
                 cgw_run_markdownlint_fix "${staged_md[@]}"
-                _restage_after_fix "${effective_staged_only}" "${originally_staged_files}"
+                _restage_after_fix "${originally_staged_files}" "${partially_staged_files}"
 
                 # Re-check after fix (same staged scope)
                 md_lint_error=0
@@ -598,6 +605,54 @@ main() {
       fi
     else
       echo "  (markdown lint skipped -- --skip-md-lint)"
+    fi
+
+    # [3.5] Congruence guard: the checks above validated the WORKING TREE, but
+    # `git commit` records the INDEX. If a staged file CGW actually validated
+    # (a lint-eligible file, or a *.md file when markdownlint genuinely ran)
+    # has a blob that differs from what's on disk, CGW would commit content
+    # it never validated -- silently. Covers both the gate-skip case (working
+    # tree already clean, stale staged blob) and a re-stage that silently
+    # failed to update the index. Runs once here, after both the lint/format
+    # auto-fix above and the markdown auto-fix just above, so one check
+    # covers both paths -- see cgw_validated_path_set.
+    local -a _diverged_validated_files=()
+    local _div_f
+    while IFS= read -r _div_f; do
+      [[ -n "${_div_f}" ]] && _diverged_validated_files+=("${_div_f}")
+    done < <(cgw_validated_path_set | cgw_paths_diverging_from_index)
+
+    if [[ ${#_diverged_validated_files[@]} -gt 0 ]]; then
+      # Re-staging the whole file is safe only when staging intent is
+      # whole-file: bulk/--all (effective_staged_only==0) or --only <paths>
+      # (only_paths non-empty; --only forces staged_only=1 above). Genuine
+      # partial staging (--staged-only, or auto-detected pre-stage+unstaged,
+      # with no --only) may intentionally leave index != working tree --
+      # never silently re-stage there.
+      if [[ ${effective_staged_only} -eq 0 || ${#only_paths[@]} -gt 0 ]]; then
+        echo "[!] Validated working tree diverges from staged blob; re-staging: ${_diverged_validated_files[*]}"
+        local _div_rf
+        for _div_rf in "${_diverged_validated_files[@]}"; do
+          git add -f -- "${_div_rf}"
+        done
+        unstage_local_only_files
+        # Re-verify: a path that still can't be re-staged (e.g. assume-unchanged/
+        # skip-worktree) stays divergent -- fail closed rather than commit
+        # unvalidated content.
+        if cgw_validated_path_set | cgw_paths_diverging_from_index >/dev/null; then
+          err "Staged content still diverges from the validated working tree; aborting."
+          exit 1
+        fi
+      elif [[ "${CGW_ALLOW_STAGED_DIVERGENCE:-0}" == "1" ]]; then
+        echo "[!] staged-only: committing staged blob that differs from the validated working tree (CGW_ALLOW_STAGED_DIVERGENCE=1)"
+      else
+        err "Staged content differs from the validated working tree for: ${_diverged_validated_files[*]}"
+        err "CGW validated the working tree but would commit a different staged blob."
+        err "  - To commit exactly your staged hunks:  CGW_ALLOW_STAGED_DIVERGENCE=1"
+        err "  - To bypass the checks entirely:        --skip-lint"
+        err "  - To commit the full working-tree file: git add ${_diverged_validated_files[*]}  (DISCARDS your hunk selection)"
+        exit 1
+      fi
     fi
   fi
   echo ""

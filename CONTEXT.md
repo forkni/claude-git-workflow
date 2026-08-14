@@ -49,11 +49,46 @@ The shared module responsible for running lint, format, and markdownlint tool bi
 - `cgw_run_markdownlint_check [files…]` — runs `CGW_MARKDOWNLINT_CMD` with `CGW_MARKDOWNLINT_ARGS` via `run_tool_with_logging`. Skips silently when `CGW_SKIP_MD_LINT=1` or `CGW_MARKDOWNLINT_CMD` is empty.
 - `cgw_strip_path_arg <args-string>` — strips the trailing path token from a CGW args string (the `${ARGS% *}` idiom). Used when a file list is passed explicitly so the default path token doesn't conflict.
 - `cgw_modified_files_for_lint` — returns the space-separated list of `.py` files modified vs HEAD (for `--modified-only` mode in `check_lint.sh` / `fix_lint.sh`).
-- `cgw_lint_files_diverging_from_index` — pure git-plumbing predicate: emits any staged lint-eligible file whose working-tree content (what the checks above validate) differs from its staged blob (what `git commit` records). Primary detection via `git hash-object --path=<f> <f>` vs `git rev-parse :<f>` — immune to skip-worktree/assume-unchanged, unlike `git diff`. But `hash-object` never reads the index, so on a file whose index blob already has CRLF (`git add` preserves that forever — see `cgw_crlf_in_index_files`), it renormalizes to LF and permanently disagrees with a byte-identical, `git add`-clean disk file. A hash-object mismatch is arbitrated via index-aware `git diff --quiet` (using `cgw_path_is_diff_blind` to skip that arbitration on skip-worktree/assume-unchanged paths, where `git diff` can't see the truth) before being reported. Backs the `[3.5]` congruence guard in `commit_enhanced.sh` that closes the "validated the working tree, committed a different blob" bug class. `CGW_ALLOW_STAGED_DIVERGENCE=1` opts a genuine `--staged-only` commit out of the guard's fail-closed default.
+- `cgw_paths_diverging_from_index` — the general divergence core, reading paths from stdin. Emits the subset whose working-tree content (what the checks above validate) differs from its staged blob (what `git commit` records). Primary detection via `git hash-object --path=<f> <f>` vs `git rev-parse :<f>` — immune to skip-worktree/assume-unchanged, unlike `git diff`. But `hash-object` never reads the index, so on a file whose index blob already has CRLF (`git add` preserves that forever — see `cgw_crlf_in_index_files`), it renormalizes to LF and permanently disagrees with a byte-identical, `git add`-clean disk file. A hash-object mismatch is arbitrated via index-aware `git diff --quiet` (using `cgw_path_is_diff_blind` to skip that arbitration on skip-worktree/assume-unchanged paths, where `git diff` can't see the truth) before being reported. Fails closed: a staged path missing from the working tree is reported as diverged, not skipped.
+- `cgw_lint_files_diverging_from_index` — thin wrapper: `cgw_staged_files_for_lint | cgw_paths_diverging_from_index`. Scoped to lint-eligible files only.
+- `cgw_staged_paths_diverging_from_index` — wrapper over `cgw_paths_diverging_from_index` scoped to ALL staged (add/copy/modify/rename) paths, not just lint-eligible ones. Backs `commit_enhanced.sh`'s up-front **partial stage** snapshot (see below).
+- `cgw_validated_path_set` — see **validated path set** below.
 - `cgw_path_is_diff_blind <path>` — true when `git ls-files -v` tags `<path>` assume-unchanged (lowercase) or skip-worktree (`S`), meaning `git diff`/`git status` report it clean regardless of disk content.
 - `cgw_crlf_in_index_files` — advisory scan (used by `repo_health.sh`, not the commit gate): emits tracked paths whose index blob still holds CRLF the repo's current filters would strip, i.e. `git add --renormalize` has never been run on them.
 
-**Callers**: `commit_enhanced.sh` (lint check, format check, markdownlint, auto-fix loop, `[3.5]` congruence guard), `check_lint.sh`, `fix_lint.sh`, `.githooks/pre-commit` (non-blocking advisory check).
+Backs the `[3.5]` congruence guard in `commit_enhanced.sh`, which runs once after both the lint/format and markdown auto-fix blocks and closes the "validated the working tree, committed a different blob" bug class. `CGW_ALLOW_STAGED_DIVERGENCE=1` opts a genuine `--staged-only` commit out of the guard's fail-closed default; see **whole-file staging intent** below for when the guard re-stages instead of failing.
+
+**Callers**: `commit_enhanced.sh` (lint check, format check, markdownlint, auto-fix loop, partial-stage snapshot, `[3.5]` congruence guard), `check_lint.sh`, `fix_lint.sh`, `.githooks/pre-commit` (non-blocking advisory check).
+
+---
+
+## partial stage
+
+A staged file whose index blob deliberately differs from its working-tree content — the moral equivalent of `git add --patch` picking one hunk and leaving the rest unstaged. CGW must never collapse one whole onto the working tree: doing so would silently absorb unstaged content (including another process's concurrent, deliberately-unstaged edits) into the commit.
+
+**Implementation seam**: detected via `cgw_staged_paths_diverging_from_index` in `scripts/git/_common.sh`. `commit_enhanced.sh` snapshots the result once staging is final for the run (`partially_staged_files`), alongside the full staged-file snapshot (`originally_staged_files`), so a later auto-fix re-stage can skip exactly those paths instead of promoting them whole.
+
+**Callers**: `commit_enhanced.sh`'s `_restage_after_fix` (skips every path in the snapshot, printing which ones it left alone).
+
+---
+
+## validated path set
+
+The exact staged paths a `commit_enhanced.sh` run's code-quality gate actually validated this run: staged `CGW_LINT_EXTENSIONS` files, plus staged `*.md` files when markdownlint genuinely ran (`CGW_SKIP_MD_LINT` != 1 and `CGW_MARKDOWNLINT_CMD` set). Divergence in a staged file *outside* this set is ordinary partial staging CGW never inspected, not a validation gap — it must not be re-staged or reported.
+
+**Implementation seam**: `cgw_validated_path_set` in `scripts/git/_common.sh`.
+
+**Callers**: the `[3.5]` congruence guard in `commit_enhanced.sh`, run once after both the lint/format and markdown auto-fix blocks so one check covers both paths.
+
+---
+
+## whole-file staging intent
+
+The assumption that a path is meant to be staged in full, not by hunk — true of `--only <pathspec>` (explicit whole-path `git add`) and bulk/`--all` mode (`git add -u`), false of a genuine `--staged-only` commit where the user (or a concurrent process) ran `git add --patch` on purpose. The `[3.5]` congruence guard uses this to decide its response to a diverging validated file: whole-file-intent modes get an automatic re-stage and re-verify (`effective_staged_only == 0 || only_paths non-empty`); staged-only mode without `--only` fails closed instead, since re-staging there would defeat a deliberate **partial stage**.
+
+**Implementation seam**: the `effective_staged_only` / `only_paths` predicate at the `[3.5]` guard in `commit_enhanced.sh`.
+
+**Callers**: `commit_enhanced.sh`'s `[3.5]` congruence guard only — `_restage_after_fix` does not need this distinction because it already skips partial stages unconditionally via its own snapshot.
 
 ---
 
