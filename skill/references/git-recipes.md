@@ -219,8 +219,11 @@ guard fails the commit closed if a lint-eligible (or linted `.md`) file
 still diverges from what CGW validated. If that's genuinely what you want —
 commit exactly the hunk you staged, unvalidated content and all — opt in
 explicitly with `CGW_ALLOW_STAGED_DIVERGENCE=1`, or bypass validation
-entirely with `--skip-lint`. See `cgw.conf.example`'s "STAGED-BLOB CONGRUENCE
-GUARD" section for the full contract.
+entirely with `--skip-lint`. `--skip-md-lint` narrows the guard's scope too:
+a partially-staged `.md` file is no longer "validated" for that run, so it
+commits exactly the staged hunk instead of aborting. See
+`cgw.conf.example`'s "STAGED-BLOB CONGRUENCE GUARD" section for the full
+contract.
 
 ---
 

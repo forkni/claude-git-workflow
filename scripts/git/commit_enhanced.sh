@@ -609,18 +609,26 @@ main() {
 
     # [3.5] Congruence guard: the checks above validated the WORKING TREE, but
     # `git commit` records the INDEX. If a staged file CGW actually validated
-    # (a lint-eligible file, or a *.md file when markdownlint genuinely ran)
-    # has a blob that differs from what's on disk, CGW would commit content
-    # it never validated -- silently. Covers both the gate-skip case (working
-    # tree already clean, stale staged blob) and a re-stage that silently
-    # failed to update the index. Runs once here, after both the lint/format
-    # auto-fix above and the markdown auto-fix just above, so one check
-    # covers both paths -- see cgw_validated_path_set.
+    # (a lint-eligible file when a code checker is configured, or a *.md file
+    # when markdownlint genuinely ran) has a blob that differs from what's on
+    # disk, CGW would commit content it never validated -- silently. Covers
+    # both the gate-skip case (working tree already clean, stale staged
+    # blob) and a re-stage that silently failed to update the index. Runs
+    # once here, after both the lint/format auto-fix above and the markdown
+    # auto-fix just above, so one check covers both paths -- see
+    # cgw_validated_path_set.
+    #
+    # skip_md_lint is a main() local, invisible to a script-level function --
+    # forward it explicitly rather than exporting it into CGW_SKIP_MD_LINT
+    # (see cgw_validated_path_set's header for why). It must be forwarded
+    # identically at BOTH call sites below (detection and re-verify): if they
+    # drift, the re-verify sees a different validated set than detection did,
+    # and can abort after a re-stage that actually succeeded.
     local -a _diverged_validated_files=()
     local _div_f
     while IFS= read -r _div_f; do
       [[ -n "${_div_f}" ]] && _diverged_validated_files+=("${_div_f}")
-    done < <(cgw_validated_path_set | cgw_paths_diverging_from_index)
+    done < <(cgw_validated_path_set "${skip_md_lint}" | cgw_paths_diverging_from_index)
 
     if [[ ${#_diverged_validated_files[@]} -gt 0 ]]; then
       # Re-staging the whole file is safe only when staging intent is
@@ -639,7 +647,7 @@ main() {
         # Re-verify: a path that still can't be re-staged (e.g. assume-unchanged/
         # skip-worktree) stays divergent -- fail closed rather than commit
         # unvalidated content.
-        if cgw_validated_path_set | cgw_paths_diverging_from_index >/dev/null; then
+        if cgw_validated_path_set "${skip_md_lint}" | cgw_paths_diverging_from_index >/dev/null; then
           err "Staged content still diverges from the validated working tree; aborting."
           exit 1
         fi

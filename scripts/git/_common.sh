@@ -1331,19 +1331,46 @@ cgw_staged_paths_diverging_from_index() {
   git diff --cached --name-only --diff-filter=ACMR | cgw_paths_diverging_from_index
 }
 
-# cgw_validated_path_set
+# cgw_validated_path_set [md_skipped]
 #   Stdout: newline-separated staged paths this run's code-quality gate
-#   actually validates -- staged CGW_LINT_EXTENSIONS files (lint and/or
-#   format may check these; extension match alone decides scope, same as
-#   cgw_staged_files_for_lint, so this still covers a format-only run with
-#   CGW_LINT_CMD unset) plus staged *.md when markdownlint genuinely runs
-#   (CGW_SKIP_MD_LINT != 1 and CGW_MARKDOWNLINT_CMD set). Backs the [3.5]
-#   congruence guard: divergence outside this set is ordinary partial
-#   staging CGW never inspected, not a validation gap, so it must not be
-#   re-staged or reported.
+#   actually validated -- staged CGW_LINT_EXTENSIONS files when a code
+#   checker is actually configured (CGW_LINT_CMD or CGW_FORMAT_CMD non-empty;
+#   extension match alone decides scope, same as cgw_staged_files_for_lint,
+#   so this still covers a format-only run with CGW_LINT_CMD unset) plus
+#   staged *.md when markdownlint genuinely runs. Markdown is EXCLUDED when
+#   any of: the caller passes md_skipped=1, CGW_SKIP_MD_LINT=1, or
+#   CGW_MARKDOWNLINT_CMD is empty.
+#
+#   The argument exists because commit_enhanced.sh's --skip-md-lint /
+#   --skip-lint set only a main() local -- an unexported, function-scoped
+#   decision this script-level function cannot see. Forwarding it explicitly
+#   follows the repo convention (fix_lint.sh's check_lint.sh flag
+#   forwarding): a runtime decision is never written back into a CGW_* config
+#   var. The CGW_SKIP_MD_LINT clause is load-bearing for callers with no flag
+#   parser -- do not drop it as "redundant" with the argument.
+#
+#   Omitting the argument defaults to 0 ("markdown ran"), deliberately the
+#   conservative direction: over-reporting divergence fails a commit closed
+#   (noisy but safe), under-reporting would commit unvalidated content
+#   silently.
+#
+#   Returns 0 unconditionally -- both call sites in commit_enhanced.sh pipe
+#   this under `set -o pipefail`, where a non-zero status is read as
+#   "diverged". Do not "simplify" the md clause to a trailing
+#   `[[ cond ]] && cgw_staged_files_for_md`; that returns 1 whenever markdown
+#   is skipped and poisons the pipeline.
+#
+#   Backs the [3.5] congruence guard: divergence outside this set is ordinary
+#   partial staging CGW never inspected, not a validation gap, so it must not
+#   be re-staged or reported.
 cgw_validated_path_set() {
-  cgw_staged_files_for_lint
-  if [[ "${CGW_SKIP_MD_LINT:-0}" != "1" ]] && [[ -n "${CGW_MARKDOWNLINT_CMD:-}" ]]; then
+  local _md_skipped="${1:-0}"
+  if [[ -n "${CGW_LINT_CMD:-}" ]] || [[ -n "${CGW_FORMAT_CMD:-}" ]]; then
+    cgw_staged_files_for_lint
+  fi
+  if [[ "${_md_skipped}" != "1" ]] &&
+    [[ "${CGW_SKIP_MD_LINT:-0}" != "1" ]] &&
+    [[ -n "${CGW_MARKDOWNLINT_CMD:-}" ]]; then
     cgw_staged_files_for_md
   fi
 }

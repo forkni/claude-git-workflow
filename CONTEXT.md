@@ -74,11 +74,11 @@ A staged file whose index blob deliberately differs from its working-tree conten
 
 ## validated path set
 
-The exact staged paths a `commit_enhanced.sh` run's code-quality gate actually validated this run: staged `CGW_LINT_EXTENSIONS` files, plus staged `*.md` files when markdownlint genuinely ran (`CGW_SKIP_MD_LINT` != 1 and `CGW_MARKDOWNLINT_CMD` set). Divergence in a staged file *outside* this set is ordinary partial staging CGW never inspected, not a validation gap — it must not be re-staged or reported.
+The exact staged paths a `commit_enhanced.sh` run's code-quality gate actually validated this run: staged `CGW_LINT_EXTENSIONS` files, but only when a code checker is actually configured (`CGW_LINT_CMD` or `CGW_FORMAT_CMD` non-empty), plus staged `*.md` files when markdownlint genuinely ran. Markdown is excluded when any of: the caller's `md_skipped` argument is `1`, `CGW_SKIP_MD_LINT` is `1`, or `CGW_MARKDOWNLINT_CMD` is empty. Divergence in a staged file *outside* this set is ordinary partial staging CGW never inspected, not a validation gap — it must not be re-staged or reported.
 
-**Implementation seam**: `cgw_validated_path_set` in `scripts/git/_common.sh`.
+**Implementation seam**: `cgw_validated_path_set [md_skipped]` in `scripts/git/_common.sh`. `md_skipped` defaults to `0` ("markdown ran") when omitted — the conservative direction, since over-reporting divergence fails a commit closed while under-reporting would commit unvalidated content silently.
 
-**Callers**: the `[3.5]` congruence guard in `commit_enhanced.sh`, run once after both the lint/format and markdown auto-fix blocks so one check covers both paths.
+**Callers**: the `[3.5]` congruence guard in `commit_enhanced.sh`, run once after both the lint/format and markdown auto-fix blocks so one check covers both paths. `commit_enhanced.sh` passes its `skip_md_lint` local explicitly at both call sites (detection and re-verify) rather than writing it back into `CGW_SKIP_MD_LINT` — the local is invisible to this script-level function otherwise, and a writeback risks leaking into `git commit`'s subprocess/hooks if the caller's environment already exported the var.
 
 ---
 

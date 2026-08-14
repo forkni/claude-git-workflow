@@ -1150,6 +1150,13 @@ UU b.py
 # Backs the widened [3.5] congruence guard: this is the exact set of staged
 # paths CGW's code-quality gate validated this run, so divergence outside it
 # is ordinary partial staging CGW never inspected -- not a validation gap.
+#
+# The three tests below call with no argument, pinning the `${1:-0}` default
+# ("markdown ran") for callers with no flag parser -- they rely on the
+# CGW_SKIP_MD_LINT env clause alone, exactly like commit_enhanced.sh's own
+# --skip-lint seeding path. The tests immediately below cover the explicit
+# md_skipped argument and the lint-half "no code checker configured" gate
+# added for PR #18's review fix.
 
 @test "cgw_validated_path_set: includes staged lint-extension files and excludes .md when markdown lint is skipped" {
   run bash -c "
@@ -1208,6 +1215,116 @@ UU b.py
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     export CGW_SKIP_MD_LINT=0
     export CGW_MARKDOWNLINT_CMD=''
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_validated_path_set
+    rm -rf \"\${tmp}\"
+  "
+  [ "${output}" = "f.py" ]
+}
+
+@test "cgw_validated_path_set: explicit md_skipped=1 excludes .md even when CGW_SKIP_MD_LINT=0 and CGW_MARKDOWNLINT_CMD is set" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\n' > \"\${tmp}/f.py\"
+    printf '# Title\n' > \"\${tmp}/f.md\"
+    git -C \"\${tmp}\" add f.py f.md
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export CGW_SKIP_MD_LINT=0
+    export CGW_MARKDOWNLINT_CMD='markdownlint'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_validated_path_set 1
+    rm -rf \"\${tmp}\"
+  "
+  [ "${output}" = "f.py" ]
+}
+
+@test "cgw_validated_path_set: explicit md_skipped=0 still includes .md (argument is not inverted)" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\n' > \"\${tmp}/f.py\"
+    printf '# Title\n' > \"\${tmp}/f.md\"
+    git -C \"\${tmp}\" add f.py f.md
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export CGW_SKIP_MD_LINT=0
+    export CGW_MARKDOWNLINT_CMD='markdownlint'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_validated_path_set 0
+    rm -rf \"\${tmp}\"
+  "
+  [ "${lines[0]}" = "f.py" ]
+  [ "${lines[1]}" = "f.md" ]
+}
+
+@test "cgw_validated_path_set: returns exit status 0 when markdown is skipped (pipefail safety)" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\n' > \"\${tmp}/f.py\"
+    printf '# Title\n' > \"\${tmp}/f.md\"
+    git -C \"\${tmp}\" add f.py f.md
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export CGW_SKIP_MD_LINT=0
+    export CGW_MARKDOWNLINT_CMD='markdownlint'
+    set -o pipefail
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_validated_path_set 1 > /dev/null; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_validated_path_set: excludes staged lint-extension files when both CGW_LINT_CMD and CGW_FORMAT_CMD are empty" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\n' > \"\${tmp}/f.py\"
+    printf '# Title\n' > \"\${tmp}/f.md\"
+    git -C \"\${tmp}\" add f.py f.md
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_SKIP_MD_LINT=1
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_validated_path_set
+    rm -rf \"\${tmp}\"
+  "
+  [ -z "${output}" ]
+}
+
+@test "cgw_validated_path_set: still includes staged lint-extension files when only CGW_FORMAT_CMD is configured (format-only run)" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" config core.autocrlf false
+    git -C \"\${tmp}\" config user.email t@t.com
+    git -C \"\${tmp}\" config user.name T
+    printf 'x = 1\n' > \"\${tmp}/f.py\"
+    printf '# Title\n' > \"\${tmp}/f.md\"
+    git -C \"\${tmp}\" add f.py f.md
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD='ruff'
+    export CGW_SKIP_MD_LINT=1
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
     cgw_validated_path_set
     rm -rf \"\${tmp}\"

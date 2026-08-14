@@ -73,7 +73,7 @@ cp cgw.conf.example .cgw.conf
 | `CGW_MARKDOWNLINT_FIX_ARGS` | `--fix` | Arguments for markdown auto-fix (`fix_lint.sh`, commit-gate auto-fix) |
 | `CGW_MARKDOWNLINT_NPX_FALLBACK` | `1` | Set to `0` to disable the `npx --yes markdownlint-cli2` fallback when no markdownlint binary is on `PATH` |
 | `CGW_SKIP_LINT` | `0` | Set to `1` to skip all lint checks at runtime |
-| `CGW_SKIP_MD_LINT` | `0` | Set to `1` to skip only the markdown lint step |
+| `CGW_SKIP_MD_LINT` | `0` | Set to `1` to skip only the markdown lint step; also narrows the `[3.5]` staged-blob congruence guard's scope, excluding `*.md` from what it considers "validated" this run |
 | `CGW_TYPECHECK_CMD` | `` | Typecheck tool; set to e.g. `pyrefly` to enable (`""` to disable) |
 | `CGW_TYPECHECK_CHECK_ARGS` | `check` | Arguments passed to the typecheck tool |
 | `CGW_TYPECHECK_EXCLUDES` | `` | Exclusion flags appended to the typecheck command |

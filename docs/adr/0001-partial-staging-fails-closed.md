@@ -29,7 +29,9 @@ CGW never silently re-stages a partial stage, and never silently commits one eit
   skips those paths outright — it only ever replays files that were congruent (index ==
   working tree) when the snapshot was taken.
 - After both auto-fix blocks run, the `[3.5]` guard checks the **validated path set** (staged
-  lint-eligible files, plus staged `*.md` when markdownlint ran) for any remaining divergence.
+  lint-eligible files when a code checker is actually configured, plus staged `*.md` when
+  markdownlint genuinely ran — not skipped via `--skip-md-lint`/`CGW_SKIP_MD_LINT`, and
+  `CGW_MARKDOWNLINT_CMD` set) for any remaining divergence.
   In a whole-file-staging-intent mode (bulk/`--all`, or `--only <paths>`) it re-stages and
   re-verifies. In a genuine staged-only commit it fails the commit closed instead, with guidance
   that leads with the non-destructive options: `CGW_ALLOW_STAGED_DIVERGENCE=1` to commit the
@@ -65,3 +67,8 @@ during a commit that also needs auto-fix) that is comparatively rare.
   auto-fix re-stage.
 - `CGW_ALLOW_STAGED_DIVERGENCE=1` remains the one supported way to commit a staged blob CGW
   validated something different from — an explicit, logged opt-out rather than a default.
+- `--skip-md-lint` (and, symmetrically, an unconfigured code checker — both `CGW_LINT_CMD` and
+  `CGW_FORMAT_CMD` empty) removes that file class from the guard's scope for the run, the same
+  treatment already granted to a `.json` file with no configured linter above: a check that never
+  ran cannot have a divergence opinion, so a partial stage of that file class commits exactly the
+  staged hunk instead of false-aborting.
