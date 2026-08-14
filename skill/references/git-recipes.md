@@ -212,8 +212,18 @@ a change you want to commit now with one you don't:
 git add --patch <file>     # y/n/s/e per hunk; 's' to split a hunk further
 ```
 
-Then continue with `commit_enhanced.sh` as usual — it commits whatever is
-staged, regardless of how it got staged.
+Then continue with `commit_enhanced.sh` as usual. It never silently widens
+a partial stage: an auto-fix re-stage skips any file whose staged blob was
+already deliberately different from disk, and the staged-blob congruence
+guard fails the commit closed if a lint-eligible (or linted `.md`) file
+still diverges from what CGW validated. If that's genuinely what you want —
+commit exactly the hunk you staged, unvalidated content and all — opt in
+explicitly with `CGW_ALLOW_STAGED_DIVERGENCE=1`, or bypass validation
+entirely with `--skip-lint`. `--skip-md-lint` narrows the guard's scope too:
+a partially-staged `.md` file is no longer "validated" for that run, so it
+commits exactly the staged hunk instead of aborting. See
+`cgw.conf.example`'s "STAGED-BLOB CONGRUENCE GUARD" section for the full
+contract.
 
 ---
 

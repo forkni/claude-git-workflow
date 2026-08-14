@@ -306,6 +306,69 @@ MOCK_EOF
   chmod +x "${MOCK_BIN_DIR}/ruff"
 }
 
+# install_mock_ruff_lint_reformatter
+# The LINT-path mirror of install_mock_ruff_reformatter: drives `check` /
+# `check --fix` (CGW_LINT_CHECK_ARGS / CGW_LINT_FIX_ARGS defaults) instead of
+# `format` / `format --check`. A file is "lint-dirty" iff it contains a line
+# exactly equal to the marker "#LINTDIRTY#"; `check --fix` REWRITES disk to
+# strip that line, matching a real auto-fixing linter. `check` (no --fix)
+# fails (exit 1) iff any given file still holds the marker -- it reads disk.
+# `format [--check]` is an intentional no-op so tests can isolate the LINT
+# auto-fix / re-stage path without a format pass also firing. Portable: no
+# `sed -i`, writes a temp file then `mv -f`. Logs argv to
+# $MOCK_BIN_DIR/ruff.log.
+install_mock_ruff_lint_reformatter() {
+  cat > "${MOCK_BIN_DIR}/ruff" << 'MOCK_EOF'
+#!/usr/bin/env bash
+echo "mock ruff $*" >> "${0%/*}/ruff.log"
+
+subcmd=""
+is_fix=0
+files=()
+for a in "$@"; do
+  case "$a" in
+    --fix) is_fix=1 ;;
+    --check) : ;; # format-check flag; mock format is a no-op here
+    check | format)
+      if [[ -z "$subcmd" ]]; then subcmd="$a"; else files+=("$a"); fi
+      ;;
+    -*) : ;; # ignore any other flags/excludes
+    *) files+=("$a") ;; # a path
+  esac
+done
+
+marker='#LINTDIRTY#'
+
+# LINT FIX: rewrite each file to its fixed form (strip the marker line).
+if [[ "$subcmd" == "check" && $is_fix -eq 1 ]]; then
+  for f in "${files[@]}"; do
+    [[ -f "$f" ]] || continue
+    tmp="${f}.cgwmock.$$"
+    grep -v -x "$marker" "$f" > "$tmp"
+    mv -f "$tmp" "$f"
+  done
+  exit 0
+fi
+
+# LINT CHECK: fail iff any file still contains the marker (reads DISK).
+if [[ "$subcmd" == "check" && $is_fix -eq 0 ]]; then
+  rc=0
+  for f in "${files[@]}"; do
+    [[ -f "$f" ]] || continue
+    if grep -q -x "$marker" "$f"; then
+      echo "$f: LINTDIRTY"
+      rc=1
+    fi
+  done
+  exit $rc
+fi
+
+# FORMAT check / format fix: intentionally inert for these tests.
+exit 0
+MOCK_EOF
+  chmod +x "${MOCK_BIN_DIR}/ruff"
+}
+
 # ── gh CLI absence helper ──────────────────────────────────────────────────────
 
 # hide_gh

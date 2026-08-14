@@ -544,6 +544,309 @@ _run_commit() {
   [[ "${output}" != *"mock ruff format clean.py"* ]]
 }
 
+# ── Partial staging (hunk-level) survives auto-fix ────────────────────────────
+# Regression coverage for the incident where a concurrent session's unstaged
+# hunks were silently absorbed by the lint-autofix re-stage. Construct the
+# partial stage without `git add -p` (agent/CI-friendly): write hunk A, stage
+# it, then write hunk B on top -- index holds hunk A only, worktree holds A+B.
+
+@test "partially-staged .py + lint auto-fix: unstaged hunk stays out; commit aborts with the new guidance" {
+  install_mock_lint_fixable
+  printf 'x = 1\n' > "${TEST_REPO_DIR}/partial.py"
+  git -C "${TEST_REPO_DIR}" add partial.py
+  printf 'x = 1\ny = 2  # concurrent unstaged hunk\n' > "${TEST_REPO_DIR}/partial.py"
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'feat: partial py'
+  "
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Auto-fix touched a partially-staged file; leaving it as-is"* ]]
+  [[ "${output}" == *"Staged content differs from the validated working tree for: partial.py"* ]]
+  [[ "${output}" == *"CGW_ALLOW_STAGED_DIVERGENCE=1"* ]]
+  [[ "${output}" == *"--skip-lint"* ]]
+  [[ "${output}" == *"DISCARDS your hunk selection"* ]]
+  # No commit landed -- the branch tip is still the pre-existing dev commit.
+  last_msg=$(git -C "${TEST_REPO_DIR}" log -1 --format="%s")
+  [ "${last_msg}" = "feat: dev commit" ]
+  # The unstaged hunk is still sitting in the working tree, untouched.
+  run cat "${TEST_REPO_DIR}/partial.py"
+  [[ "${output}" == *"concurrent unstaged hunk"* ]]
+}
+
+@test "partially-staged .py + CGW_ALLOW_STAGED_DIVERGENCE=1 commits exactly the staged hunk" {
+  install_mock_lint_fixable
+  printf 'x = 1\n' > "${TEST_REPO_DIR}/partial.py"
+  git -C "${TEST_REPO_DIR}" add partial.py
+  printf 'x = 1\ny = 2  # concurrent unstaged hunk\n' > "${TEST_REPO_DIR}/partial.py"
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_NON_INTERACTIVE=1
+    export CGW_ALLOW_STAGED_DIVERGENCE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'feat: partial py override'
+  "
+  [ "${status}" -eq 0 ]
+  run git -C "${TEST_REPO_DIR}" show HEAD:partial.py
+  [[ "${output}" != *"concurrent unstaged hunk"* ]]
+  # The unstaged hunk is still only on disk, never committed.
+  run cat "${TEST_REPO_DIR}/partial.py"
+  [[ "${output}" == *"concurrent unstaged hunk"* ]]
+}
+
+@test "partially-staged .py + --skip-lint commits exactly the staged hunk" {
+  MOCK_LINT_EXIT=1 install_mock_lint
+  printf 'x = 1\n' > "${TEST_REPO_DIR}/partial.py"
+  git -C "${TEST_REPO_DIR}" add partial.py
+  printf 'x = 1\ny = 2  # concurrent unstaged hunk\n' > "${TEST_REPO_DIR}/partial.py"
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --skip-lint 'feat: partial py skip-lint'
+  "
+  [ "${status}" -eq 0 ]
+  # --skip-lint bypasses the checks entirely -- the always-failing mock must
+  # never have been invoked (proves this commits without touching the guard).
+  [ ! -f "${MOCK_BIN_DIR}/ruff.log" ]
+  run git -C "${TEST_REPO_DIR}" show HEAD:partial.py
+  [[ "${output}" != *"concurrent unstaged hunk"* ]]
+}
+
+@test "partially-staged .md + markdown auto-fix: no silent collapse (previously zero coverage)" {
+  install_mock_markdownlint_fixable
+  printf 'title\n\nMDLINT-BAD\n' > "${TEST_REPO_DIR}/partial.md"
+  git -C "${TEST_REPO_DIR}" add partial.md
+  printf 'title\n\nMDLINT-BAD\nconcurrent unstaged line\n' > "${TEST_REPO_DIR}/partial.md"
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD='markdownlint-cli2'
+    export CGW_MARKDOWNLINT_FIX_ARGS='--fix'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'docs: partial md'
+  "
+  # Before this guard covered markdown too, this exact scenario is the
+  # "zero coverage" gap: the fix-then-restage collapse would have silently
+  # committed the concurrent unstaged line. It must abort instead.
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Staged content differs from the validated working tree for: partial.md"* ]]
+  last_msg=$(git -C "${TEST_REPO_DIR}" log -1 --format="%s")
+  [ "${last_msg}" = "feat: dev commit" ]
+  run cat "${TEST_REPO_DIR}/partial.md"
+  [[ "${output}" == *"concurrent unstaged line"* ]]
+}
+
+# ── [3.5] validated-set narrowing: --skip-md-lint / no code checker configured ─
+# PR #18 review (Charlie + Copilot): cgw_validated_path_set read CGW_SKIP_MD_LINT
+# from the environment, but --skip-md-lint only ever sets a main() local. A
+# partially-staged .md was therefore counted as "validated" (and the guard
+# aborted) even though markdownlint never ran for this invocation. Same bug
+# class on the code-checker side: with both CGW_LINT_CMD and CGW_FORMAT_CMD
+# empty (the documented "no linter configured yet" disable), a staged
+# lint-extension file was still counted as validated by extension match alone.
+
+@test "partially-staged .md + --skip-md-lint commits exactly the staged hunk (skipped md is not 'validated')" {
+  install_mock_markdownlint
+  printf 'title\n' > "${TEST_REPO_DIR}/partial.md"
+  git -C "${TEST_REPO_DIR}" add partial.md
+  printf 'title\nconcurrent unstaged line\n' > "${TEST_REPO_DIR}/partial.md"
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD='markdownlint-cli2'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --skip-md-lint 'docs: partial md skip-md-lint'
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"(markdown lint skipped -- --skip-md-lint)"* ]]
+  [[ "${output}" != *"Staged content differs from the validated working tree"* ]]
+  # markdownlint genuinely never ran -- the mock logs only when invoked.
+  [ ! -f "${MOCK_BIN_DIR}/mdlint.log" ]
+  run git -C "${TEST_REPO_DIR}" show HEAD:partial.md
+  [[ "${output}" != *"concurrent unstaged line"* ]]
+  run cat "${TEST_REPO_DIR}/partial.md"
+  [[ "${output}" == *"concurrent unstaged line"* ]]
+}
+
+@test "--skip-md-lint does not disarm the [3.5] guard for a partially-staged lint-eligible file" {
+  printf 'x = 1\n' > "${TEST_REPO_DIR}/partial.py"
+  git -C "${TEST_REPO_DIR}" add partial.py
+  printf 'x = 1\ny = 2  # concurrent unstaged hunk\n' > "${TEST_REPO_DIR}/partial.py"
+
+  run _run_commit "--skip-md-lint \"feat: partial py skip-md-lint\""
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Staged content differs from the validated working tree for: partial.py"* ]]
+  last_msg=$(git -C "${TEST_REPO_DIR}" log -1 --format="%s")
+  [ "${last_msg}" = "feat: dev commit" ]
+}
+
+@test "--skip-md-lint narrows the validated set per file: partial .py still aborts, partial .md is not named" {
+  printf 'x = 1\n' > "${TEST_REPO_DIR}/partial.py"
+  printf 'title\n' > "${TEST_REPO_DIR}/partial.md"
+  git -C "${TEST_REPO_DIR}" add partial.py partial.md
+  printf 'x = 1\ny = 2  # concurrent unstaged hunk\n' > "${TEST_REPO_DIR}/partial.py"
+  printf 'title\nconcurrent unstaged line\n' > "${TEST_REPO_DIR}/partial.md"
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD='markdownlint-cli2'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --skip-md-lint 'feat: mixed partial stage'
+  "
+  [ "${status}" -eq 1 ]
+  # Scope the assertion to the error line: the "PRE-STAGED FILES DETECTED"
+  # banner prints `git diff --name-status`, which lists partial.md too -- a
+  # bare [[ "${output}" != *"partial.md"* ]] would be vacuously false.
+  err_line=$(printf '%s\n' "${output}" | grep 'Staged content differs from the validated working tree for:')
+  [[ "${err_line}" == *"partial.py"* ]]
+  [[ "${err_line}" != *"partial.md"* ]]
+}
+
+@test "--skip-md-lint + a .md the guard cannot re-stage: excluded from validated scope, no false abort" {
+  install_mock_markdownlint
+  printf 'title\n' > "${TEST_REPO_DIR}/latent.md"
+  git -C "${TEST_REPO_DIR}" add latent.md
+  # Model a real restage no-op: assume-unchanged makes `git add -u`/`git add -f`
+  # skip this path even when explicitly named (same trick as "Mode 2 (latent)").
+  git -C "${TEST_REPO_DIR}" update-index --assume-unchanged latent.md
+  printf 'title\nnever staged\n' > "${TEST_REPO_DIR}/latent.md"
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD='markdownlint-cli2'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --skip-md-lint 'docs: latent md skip-md-lint'
+  "
+  # Bulk mode (effective_staged_only==0) is the only path that reaches the
+  # :642 re-verify call site -- this is the drift catcher for that site.
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"re-staging: latent.md"* ]]
+  [[ "${output}" != *"still diverges from the validated working tree"* ]]
+  last_msg=$(git -C "${TEST_REPO_DIR}" log -1 --format="%s")
+  [ "${last_msg}" = "docs: latent md skip-md-lint" ]
+}
+
+@test "partially-staged .py with no linter configured: commits exactly the staged hunk (no linter is not 'validated')" {
+  printf 'x = 1\n' > "${TEST_REPO_DIR}/partial.py"
+  git -C "${TEST_REPO_DIR}" add partial.py
+  printf 'x = 1\ny = 2  # concurrent unstaged hunk\n' > "${TEST_REPO_DIR}/partial.py"
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'feat: partial py no linter configured'
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"[OK] Code quality checks passed"* ]]
+  [[ "${output}" != *"Staged content differs from the validated working tree"* ]]
+  run git -C "${TEST_REPO_DIR}" show HEAD:partial.py
+  [[ "${output}" != *"concurrent unstaged hunk"* ]]
+  run cat "${TEST_REPO_DIR}/partial.py"
+  [[ "${output}" == *"concurrent unstaged hunk"* ]]
+}
+
+@test "partially-staged .json alongside a .py autofix: json not collapsed, commits staged blob, no abort" {
+  install_mock_lint_fixable
+  printf 'x = 1\n#LINTDIRTY#\n' > "${TEST_REPO_DIR}/needs_fix.py"
+  git -C "${TEST_REPO_DIR}" add needs_fix.py
+  printf '{"a": 1}\n' > "${TEST_REPO_DIR}/config.json"
+  git -C "${TEST_REPO_DIR}" add config.json
+  printf '{"a": 1, "b": "concurrent unstaged key"}\n' > "${TEST_REPO_DIR}/config.json"
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'feat: py fix plus partial json'
+  "
+  # .json is not a CGW_LINT_EXTENSIONS file and markdownlint never ran, so it
+  # is outside cgw_validated_path_set -- the guard must not even look at it,
+  # and the partial-stage-aware re-stage must leave it exactly as staged.
+  [ "${status}" -eq 0 ]
+  run git -C "${TEST_REPO_DIR}" show HEAD:config.json
+  [[ "${output}" == *'"a": 1'* ]]
+  [[ "${output}" != *"concurrent unstaged key"* ]]
+  run cat "${TEST_REPO_DIR}/config.json"
+  [[ "${output}" == *"concurrent unstaged key"* ]]
+}
+
+@test "fully-staged .py + lint auto-fix still gets re-staged (guards against over-correcting the partial-stage fix)" {
+  install_mock_ruff_lint_reformatter
+  printf 'x = 1\n#LINTDIRTY#\n' > "${TEST_REPO_DIR}/dirty.py"
+  git -C "${TEST_REPO_DIR}" add dirty.py    # staged == disk == lint-dirty, no partial stage
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'feat: fully staged autofix'
+  "
+  [ "${status}" -eq 0 ]
+  run git -C "${TEST_REPO_DIR}" show HEAD:dirty.py
+  [[ "${output}" != *"#LINTDIRTY#"* ]]
+  run cat "${TEST_REPO_DIR}/dirty.py"
+  [[ "${output}" != *"#LINTDIRTY#"* ]]
+}
+
+@test "--only prints the staged paths it is about to discard" {
+  echo "one" > "${TEST_REPO_DIR}/only_a.txt"
+  echo "two" > "${TEST_REPO_DIR}/only_b.txt"
+  git -C "${TEST_REPO_DIR}" add only_a.txt only_b.txt
+  echo "three" > "${TEST_REPO_DIR}/only_c.txt"
+
+  run _run_commit "--only only_c.txt \"feat: only c\""
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Currently staged but not matched by --only (will be unstaged): only_a.txt only_b.txt"* ]]
+  # Behavior unchanged: exactly the --only path is committed.
+  run git -C "${TEST_REPO_DIR}" ls-tree -r --name-only HEAD
+  [[ "${output}" == *"only_c.txt"* ]]
+  [[ "${output}" != *"only_a.txt"* ]]
+  [[ "${output}" != *"only_b.txt"* ]]
+  # a.txt/b.txt are unstaged (discarded from the index), not deleted.
+  [ -f "${TEST_REPO_DIR}/only_a.txt" ]
+  [ -f "${TEST_REPO_DIR}/only_b.txt" ]
+}
+
 @test "guard: auto-fix re-stage never pulls in a dirty local-only file" {
   install_mock_ruff_reformatter
   printf 'x = 1\n#UNFORMATTED#\n' > "${TEST_REPO_DIR}/needs_fmt.py"

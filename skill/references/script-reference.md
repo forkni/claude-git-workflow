@@ -105,7 +105,7 @@ Exits 1 if any `CGW_LOCAL_FILES` entry is tracked in git. Used by `branch-protec
 | `--all` | Force bulk-stage all tracked changes | Override pre-stage respect; commit everything |
 | `--interactive` | Force interactive mode | Debugging, manual control |
 | `--skip-lint` | Skip all lint checks | When lint is handled separately |
-| `--skip-md-lint` | Skip markdown lint only | When only markdown lint causes noise |
+| `--skip-md-lint` | Skip markdown lint only; also excludes `*.md` from the `[3.5]` congruence guard's validated scope for this run | When only markdown lint causes noise |
 | `--sign` | GPG/SSH-sign the commit (`git commit -S`); overrides `CGW_SIGN_COMMITS` | Signing this specific commit |
 | `--no-sign` | Unsigned commit even if `CGW_SIGN_COMMITS=1` | Skip signing for a single commit |
 

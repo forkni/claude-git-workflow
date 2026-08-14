@@ -184,6 +184,12 @@ CGW_LINT_EXTENSIONS="*.py"
 # matters for a genuine --staged-only commit where index != working tree is
 # deliberate.
 #
+# Scope: the guard only inspects files this run actually validated (staged
+# lint-extension files when a code checker is configured, plus staged *.md
+# when markdownlint genuinely ran). --skip-md-lint, or leaving both
+# CGW_LINT_CMD and CGW_FORMAT_CMD unset, removes that file class from scope
+# for the run -- a partial stage there commits exactly the staged hunk.
+#
 # 0 = abort on divergence (default, safe). 1 = commit the staged blob as-is
 # with a warning.
 CGW_ALLOW_STAGED_DIVERGENCE="0"

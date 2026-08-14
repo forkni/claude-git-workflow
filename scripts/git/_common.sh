@@ -1256,28 +1256,32 @@ cgw_path_is_diff_blind() {
   [[ "${_tag}" == [a-z] || "${_tag}" == "S" ]]
 }
 
-# cgw_lint_files_diverging_from_index
-#   Stdout: newline-separated staged lint-eligible files whose WORKING-TREE
-#   content differs from what is currently staged. Exists because the commit
-#   gate's lint/format checks read files from disk (working tree) while
-#   `git commit` records the index -- when the two differ, CGW can validate
-#   one thing and commit another, silently. Primary detection uses pure git
-#   plumbing (tool-agnostic): `git hash-object --path=<f> <f>` computes the
-#   blob `git add` would produce from a CLEAN file, and is immune to
-#   skip-worktree/assume-unchanged (unlike `git diff`, which reads the index
-#   and skips those paths). BUT hash-object never reads the index, while
-#   `git add` does: for text=auto/core.autocrlf, git add preserves CRLF
-#   verbatim once the index blob already contains CRLF (convert.c:
-#   has_crlf_in_index() -- cleared only by an explicit `git add --renormalize`).
-#   On such a file hash-object permanently disagrees with a byte-identical,
-#   `git add`-clean disk file. So a hash-object mismatch is arbitrated with an
-#   index-aware `git diff --quiet` before being reported -- except on
-#   diff-blind paths, where hash-object is the only honest signal. Returns 0 if
-#   any file diverges, 1 if none do. Fails closed: a staged path that's missing
-#   from the working tree, or whose blob can't be hashed, is reported as
-#   diverged rather than skipped -- lint validated nothing for that path, so a
-#   stale staged blob must not commit silently.
-cgw_lint_files_diverging_from_index() {
+# cgw_paths_diverging_from_index
+#   Stdin: newline-separated staged paths to check. Stdout: the subset whose
+#   WORKING-TREE content differs from what is currently staged. Exists
+#   because the commit gate's lint/format checks read files from disk
+#   (working tree) while `git commit` records the index -- when the two
+#   differ, CGW can validate one thing and commit another, silently. Primary
+#   detection uses pure git plumbing (tool-agnostic): `git hash-object
+#   --path=<f> <f>` computes the blob `git add` would produce from a CLEAN
+#   file, and is immune to skip-worktree/assume-unchanged (unlike `git diff`,
+#   which reads the index and skips those paths). BUT hash-object never reads
+#   the index, while `git add` does: for text=auto/core.autocrlf, git add
+#   preserves CRLF verbatim once the index blob already contains CRLF
+#   (convert.c: has_crlf_in_index() -- cleared only by an explicit
+#   `git add --renormalize`). On such a file hash-object permanently
+#   disagrees with a byte-identical, `git add`-clean disk file. So a
+#   hash-object mismatch is arbitrated with an index-aware `git diff --quiet`
+#   before being reported -- except on diff-blind paths, where hash-object is
+#   the only honest signal. Returns 0 if any path diverges, 1 if none do.
+#   Fails closed: a staged path that's missing from the working tree, or
+#   whose blob can't be hashed, is reported as diverged rather than skipped --
+#   nothing validated that path's content, so a stale staged blob must not
+#   commit silently.
+#   Generalized from a lint-only predicate so every caller (the lint gate,
+#   commit_enhanced.sh's partial-stage snapshot, the [3.5] congruence guard)
+#   shares one arbitration instead of re-deriving the CRLF landmine handling.
+cgw_paths_diverging_from_index() {
   local _f _staged _disk _any=1
   while IFS= read -r _f; do
     [[ -z "${_f}" ]] && continue
@@ -1301,8 +1305,74 @@ cgw_lint_files_diverging_from_index() {
       printf '%s\n' "${_f}"
       _any=0
     fi
-  done < <(cgw_staged_files_for_lint)
+  done
   return "${_any}"
+}
+
+# cgw_lint_files_diverging_from_index
+#   Stdout: newline-separated staged lint-eligible files whose WORKING-TREE
+#   content differs from what is currently staged. Thin wrapper over
+#   cgw_paths_diverging_from_index scoped to cgw_staged_files_for_lint (see
+#   that function's header for the divergence-detection rationale). Returns 0
+#   if any file diverges, 1 if none do.
+cgw_lint_files_diverging_from_index() {
+  cgw_staged_files_for_lint | cgw_paths_diverging_from_index
+}
+
+# cgw_staged_paths_diverging_from_index
+#   Stdout: ALL staged (add/copy/modify/rename) paths whose working-tree
+#   content differs from what is staged -- not just lint-eligible ones. Used
+#   by commit_enhanced.sh to snapshot which originally-staged files are
+#   PARTIALLY staged (the moral equivalent of `git add -p` picking one hunk),
+#   so an auto-fix re-stage can skip them instead of promoting the whole
+#   working-tree file -- and silently absorbing unstaged content -- into the
+#   index. Returns 0 if any path diverges, 1 if none do.
+cgw_staged_paths_diverging_from_index() {
+  git diff --cached --name-only --diff-filter=ACMR | cgw_paths_diverging_from_index
+}
+
+# cgw_validated_path_set [md_skipped]
+#   Stdout: newline-separated staged paths this run's code-quality gate
+#   actually validated -- staged CGW_LINT_EXTENSIONS files when a code
+#   checker is actually configured (CGW_LINT_CMD or CGW_FORMAT_CMD non-empty;
+#   extension match alone decides scope, same as cgw_staged_files_for_lint,
+#   so this still covers a format-only run with CGW_LINT_CMD unset) plus
+#   staged *.md when markdownlint genuinely runs. Markdown is EXCLUDED when
+#   any of: the caller passes md_skipped=1, CGW_SKIP_MD_LINT=1, or
+#   CGW_MARKDOWNLINT_CMD is empty.
+#
+#   The argument exists because commit_enhanced.sh's --skip-md-lint /
+#   --skip-lint set only a main() local -- an unexported, function-scoped
+#   decision this script-level function cannot see. Forwarding it explicitly
+#   follows the repo convention (fix_lint.sh's check_lint.sh flag
+#   forwarding): a runtime decision is never written back into a CGW_* config
+#   var. The CGW_SKIP_MD_LINT clause is load-bearing for callers with no flag
+#   parser -- do not drop it as "redundant" with the argument.
+#
+#   Omitting the argument defaults to 0 ("markdown ran"), deliberately the
+#   conservative direction: over-reporting divergence fails a commit closed
+#   (noisy but safe), under-reporting would commit unvalidated content
+#   silently.
+#
+#   Returns 0 unconditionally -- both call sites in commit_enhanced.sh pipe
+#   this under `set -o pipefail`, where a non-zero status is read as
+#   "diverged". Do not "simplify" the md clause to a trailing
+#   `[[ cond ]] && cgw_staged_files_for_md`; that returns 1 whenever markdown
+#   is skipped and poisons the pipeline.
+#
+#   Backs the [3.5] congruence guard: divergence outside this set is ordinary
+#   partial staging CGW never inspected, not a validation gap, so it must not
+#   be re-staged or reported.
+cgw_validated_path_set() {
+  local _md_skipped="${1:-0}"
+  if [[ -n "${CGW_LINT_CMD:-}" ]] || [[ -n "${CGW_FORMAT_CMD:-}" ]]; then
+    cgw_staged_files_for_lint
+  fi
+  if [[ "${_md_skipped}" != "1" ]] &&
+    [[ "${CGW_SKIP_MD_LINT:-0}" != "1" ]] &&
+    [[ -n "${CGW_MARKDOWNLINT_CMD:-}" ]]; then
+    cgw_staged_files_for_md
+  fi
 }
 
 # cgw_crlf_in_index_files
