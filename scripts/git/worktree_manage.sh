@@ -10,6 +10,7 @@
 # Subcommands:
 #   list              List all worktrees (main + linked)
 #   add  <path> [<branch>]   Add a linked worktree (creates branch if needed)
+#   link [<path>]            Link scripts/git and .githooks from the main worktree
 #   remove <path>            Remove a linked worktree (dry-run default)
 #   prune                    Remove stale administrative files (dry-run default)
 #
@@ -27,6 +28,204 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
 
 init_logging "worktree_manage"
+
+# ---------------------------------------------------------------------------
+# Worktree-tooling link helpers
+# ---------------------------------------------------------------------------
+# scripts/git/ and .githooks/ are gitignored, so a linked worktree never gets
+# them checked out. These helpers create a real link so both are reachable at
+# their normal path from inside the worktree: scripts/git for direct script
+# invocation (`./scripts/git/check_lint.sh`), and .githooks so install_hooks.sh
+# has a template source to install from without cd-ing back to the main
+# worktree. Actual hook execution doesn't depend on this link — hooks/pre-*
+# already resolve _common.sh via their own main-worktree fallback regardless
+# (see commit 1) — but install_hooks.sh (see below) still needs a source to
+# copy from when reinstalling into the shared $GIT_COMMON_DIR/hooks.
+
+# True if $1 is a symlink (POSIX) or an NTFS junction/reparse point (Windows).
+# `test -L` alone is not reliable for junctions under Git Bash/MSYS, so fall
+# back to `fsutil reparsepoint query`, which is authoritative on Windows.
+_cgw_is_link() {
+  local p="$1"
+  [[ -L "${p}" ]] && return 0
+  if [[ -d "${p}" ]] && command -v fsutil >/dev/null 2>&1; then
+    fsutil reparsepoint query "${p}" >/dev/null 2>&1 && return 0
+  fi
+  return 1
+}
+
+# Create a directory link at $1 pointing at existing directory $2.
+# POSIX symlink where supported; NTFS directory junction on Windows (`mklink
+# /J` needs no admin rights, unlike a symlink or `/D`, and Git Bash reads a
+# junction as an ordinary directory).
+_cgw_link_dir() {
+  local link_path="$1" target_dir="$2"
+  case "$(uname -s 2>/dev/null)" in
+    MINGW* | MSYS* | CYGWIN*)
+      local win_link win_target
+      win_link="$(cygpath -w "${link_path}" 2>/dev/null || echo "${link_path}")"
+      win_target="$(cygpath -w "${target_dir}" 2>/dev/null || echo "${target_dir}")"
+      # Both flags use a doubled leading slash ("//c", "//J"): MSYS's bash
+      # auto-converts any bare "/X" argument (single letter after a leading
+      # slash) passed to a native Windows binary into a drive-letter path
+      # before cmd.exe ever sees it -- an un-doubled "/J" gets silently
+      # mangled and mklink fails with "Invalid switch". Doubling the slash is
+      # MSYS's own escape convention: it de-mangles "//X" back down to a
+      # literal "/X" instead of converting it. (MSYS_NO_PATHCONV=1 is NOT a
+      # substitute here -- it disables ALL conversion including that
+      # de-mangling step, which breaks "//c" too: cmd.exe doesn't recognize a
+      # literal two-slash "//c" as /c and silently drops into an interactive
+      # shell instead of running the command, so the whole call becomes a
+      # silent no-op that still exits 0.)
+      cmd //c mklink //J "${win_link}" "${win_target}" >/dev/null
+      ;;
+    *)
+      ln -s "${target_dir}" "${link_path}"
+      ;;
+  esac
+}
+
+# Remove a link created by _cgw_link_dir. Refuses to touch anything that
+# isn't itself a link/junction — this is the guard from A3: a
+# `git worktree remove` recursive delete must never be able to follow a
+# junction into the MAIN worktree's scripts/git, so we always unlink first,
+# and we never unlink (or fall through to deleting) a real directory.
+_cgw_unlink_dir() {
+  local link_path="$1"
+  [[ -e "${link_path}" ]] || return 0
+  if ! _cgw_is_link "${link_path}"; then
+    echo "  [WARN] ${link_path} is a real directory, not a link — leaving it alone" >&2
+    return 1
+  fi
+  case "$(uname -s 2>/dev/null)" in
+    MINGW* | MSYS* | CYGWIN*)
+      # A junction is a reparse-point directory; rmdir removes the junction
+      # itself without touching its target. Some setups (WSL interop, admin
+      # mode) create a real symlink instead — fall back to rm -f for that.
+      rmdir "${link_path}" 2>/dev/null || rm -f "${link_path}"
+      ;;
+    *)
+      rm -f "${link_path}"
+      ;;
+  esac
+}
+
+# Links scripts/git and .githooks from the main worktree into $1. Idempotent
+# (skips entries already linked) and refuses to overwrite a real directory. A
+# no-op, non-error, when $1 IS the main worktree.
+# $2: 1 for dry-run (preview only), 0 (default) to actually link.
+# Returns 0 if every entry linked/skipped cleanly, 1 if any entry failed.
+_cgw_do_link() {
+  local target_path="$1" dry_run="${2:-0}"
+
+  local main_root
+  main_root="$(cgw_main_worktree_root "${target_path}")"
+  if [[ -z "${main_root}" ]]; then
+    echo "[ERROR] '${target_path}' is not part of a git worktree." >&2
+    return 1
+  fi
+
+  # Normalize target_path through git itself (not caller's `cd && pwd`) before
+  # comparing to main_root: on Windows/MSYS, `cd && pwd` yields an MSYS-style
+  # path ("/tmp/...") while `git worktree list` emits a git-format path
+  # ("C:/Users/..."), so a naive string comparison misses even when the two
+  # ARE the same directory.
+  local target_norm
+  target_norm="$(git -C "${target_path}" rev-parse --show-toplevel 2>/dev/null)"
+  [[ -z "${target_norm}" ]] && target_norm="${target_path}"
+
+  if [[ "${target_norm}" == "${main_root}" ]]; then
+    echo "  '${target_path}' is the main worktree — nothing to link."
+    return 0
+  fi
+
+  echo "  Main worktree:   ${main_root}"
+  echo "  Target worktree: ${target_path}"
+
+  local rel status=0
+  for rel in "scripts/git" ".githooks"; do
+    if [[ ! -e "${main_root}/${rel}" ]]; then
+      echo "  [SKIP] ${rel} not found in main worktree"
+      continue
+    fi
+    if [[ -e "${target_path}/${rel}" ]]; then
+      if _cgw_is_link "${target_path}/${rel}"; then
+        echo "  [OK]   ${rel} already linked"
+      else
+        echo "  [WARN] ${rel} exists as a real directory in target — not overwriting" >&2
+        status=1
+      fi
+      continue
+    fi
+    if [[ "${dry_run}" -eq 1 ]]; then
+      echo "  Would link: ${target_path}/${rel} -> ${main_root}/${rel}"
+      continue
+    fi
+    mkdir -p "$(dirname "${target_path}/${rel}")"
+    if _cgw_link_dir "${target_path}/${rel}" "${main_root}/${rel}"; then
+      echo "  [OK]   linked ${rel}"
+    else
+      echo "  [ERROR] failed to link ${rel}" >&2
+      status=1
+    fi
+  done
+  return "${status}"
+}
+
+# ---------------------------------------------------------------------------
+# Subcommand: link
+# ---------------------------------------------------------------------------
+_cmd_link() {
+  local target_path="" dry_run=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run)
+        dry_run=1
+        shift
+        ;;
+      -*)
+        echo "[ERROR] Unknown option: $1" >&2
+        exit 1
+        ;;
+      *)
+        if [[ -n "${target_path}" ]]; then
+          echo "[ERROR] Unexpected argument: $1" >&2
+          exit 1
+        fi
+        target_path="$1"
+        shift
+        ;;
+    esac
+  done
+
+  # No argument: link the worktree the caller is standing in.
+  if [[ -z "${target_path}" ]]; then
+    target_path="$(git rev-parse --show-toplevel 2>/dev/null)"
+  fi
+  if [[ -z "${target_path}" ]]; then
+    echo "[ERROR] Not inside a git worktree; pass a path explicitly." >&2
+    exit 1
+  fi
+  target_path="$(cd "${target_path}" 2>/dev/null && pwd)" || {
+    echo "[ERROR] Path not found: ${target_path}" >&2
+    exit 1
+  }
+
+  echo "=== Link CGW Tooling ==="
+  echo ""
+
+  if _cgw_do_link "${target_path}" "${dry_run}"; then
+    echo ""
+    if [[ "${dry_run}" -eq 1 ]]; then
+      echo "--- Dry run: no changes made ---"
+    else
+      echo "[OK] Link complete."
+    fi
+  else
+    exit 1
+  fi
+}
 
 # ---------------------------------------------------------------------------
 # Subcommand: list
@@ -156,6 +355,19 @@ _cmd_add() {
     echo ""
     echo "[OK] Worktree added: ${path}"
     echo "  cd ${path} to work in this worktree"
+
+    # Link scripts/git and .githooks (best-effort). Both are gitignored, so
+    # the new worktree doesn't have them; direct script invocation
+    # (./scripts/git/check_lint.sh) and install_hooks.sh need the link. A
+    # failure here doesn't fail the add — the worktree is already usable,
+    # just re-run `link` later.
+    echo ""
+    echo "--- Linking CGW tooling ---"
+    local abs_path
+    abs_path="$(cd "${path}" 2>/dev/null && pwd)"
+    if [[ -n "${abs_path}" ]]; then
+      _cgw_do_link "${abs_path}" 0 || echo "  [WARN] Linking failed — run: ./scripts/git/worktree_manage.sh link ${path}" >&2
+    fi
   else
     echo "[ERROR] Failed to add worktree" >&2
     exit 1
@@ -215,6 +427,36 @@ _cmd_remove() {
   if ! cgw_confirm "Remove worktree '${path}'?" --non-interactive accept; then
     echo "Cancelled"
     exit 0
+  fi
+
+  # Unlink CGW tooling first (A3). scripts/git and .githooks may be NTFS
+  # junctions; `git worktree remove`'s recursive delete stats reparse points
+  # as ordinary directories, so an unremoved junction could be walked into
+  # and delete the MAIN worktree's scripts/git or .githooks. Unlinking first
+  # removes that possibility — _cgw_unlink_dir refuses to touch anything
+  # that isn't itself a link, so this is a no-op for worktrees that were
+  # never linked.
+  #
+  # Fail CLOSED: if a link can't be verified/removed, ABORT the worktree
+  # removal rather than proceeding. The asymmetry is decisive — a refused
+  # removal is a one-line manual fix, whereas git following a junction into
+  # the main checkout deletes scripts/git or .githooks, which are gitignored
+  # and therefore not recoverable from git.
+  local abs_path
+  abs_path="$(cd "${path}" 2>/dev/null && pwd)"
+  if [[ -n "${abs_path}" ]]; then
+    local rel unlink_failed=0
+    for rel in "scripts/git" ".githooks"; do
+      _cgw_unlink_dir "${abs_path}/${rel}" || unlink_failed=1
+    done
+    if [[ "${unlink_failed}" -eq 1 ]]; then
+      err_tee "[ERROR] Could not verify/unlink CGW tooling under '${abs_path}' — refusing to remove."
+      err_tee "  git worktree remove's recursive delete could otherwise follow a stray junction"
+      err_tee "  into the MAIN worktree's scripts/git or .githooks and delete it."
+      err_tee "  Resolve manually (remove the offending link/directory), then retry:"
+      err_tee "    ./scripts/git/worktree_manage.sh remove --execute '${path}'"
+      exit 1
+    fi
   fi
 
   if git worktree remove "${path}" 2>&1 | tee -a "${logfile}"; then
@@ -296,12 +538,16 @@ _show_help() {
   echo "Subcommands:"
   echo "  list                      List all worktrees (main + linked)"
   echo "  add  <path> [<branch>]    Add a linked worktree; creates branch if needed"
+  echo "  link [<path>]             Link scripts/git and .githooks from the main worktree"
   echo "  remove [--execute] <path> Remove a linked worktree (dry-run by default)"
   echo "  prune  [--execute]        Remove stale admin files (dry-run by default)"
   echo ""
   echo "Options (add):"
   echo "  --dry-run           Preview without adding"
   echo "  --non-interactive   Skip confirmation prompt"
+  echo ""
+  echo "Options (link):"
+  echo "  --dry-run           Preview without linking"
   echo ""
   echo "Options (remove / prune):"
   echo "  --execute           Actually remove (default is dry-run preview)"
@@ -311,6 +557,8 @@ _show_help() {
   echo "Examples:"
   echo "  ./scripts/git/worktree_manage.sh list"
   echo "  ./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent-fix"
+  echo "  ./scripts/git/worktree_manage.sh link          # link the current worktree"
+  echo "  ./scripts/git/worktree_manage.sh link ../hotfix"
   echo "  ./scripts/git/worktree_manage.sh remove --execute ../hotfix"
   echo "  ./scripts/git/worktree_manage.sh prune --execute"
 }
@@ -325,6 +573,7 @@ main() {
   case "${subcmd}" in
     list) _cmd_list "$@" ;;
     add) _cmd_add "$@" ;;
+    link) _cmd_link "$@" ;;
     remove) _cmd_remove "$@" ;;
     prune) _cmd_prune "$@" ;;
     --help | -h | help | "") _show_help ;;

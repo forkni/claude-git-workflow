@@ -438,8 +438,12 @@ ensure_no_stale_index_lock() {
   # Use -C PROJECT_ROOT so the result is independent of the caller's cwd.
   local git_dir
   git_dir="$(git -C "${PROJECT_ROOT:-.}" rev-parse --git-dir 2>/dev/null)" || return 2
-  # Absolutise if relative (git outputs relative paths when cwd == PROJECT_ROOT).
-  [[ "${git_dir}" != /* ]] && git_dir="${PROJECT_ROOT:-.}/${git_dir}"
+  # Absolutise if relative (git outputs relative paths when cwd == PROJECT_ROOT,
+  # e.g. ".git"; from a linked worktree it's already absolute -- and on
+  # Windows/MSYS that means a drive-letter path like "C:/…", which does NOT
+  # match a bare "/*" glob, so both forms must be checked or this wrongly
+  # re-prefixes an already-absolute Windows path with PROJECT_ROOT).
+  [[ "${git_dir}" != /* && "${git_dir}" != [A-Za-z]:/* ]] && git_dir="${PROJECT_ROOT:-.}/${git_dir}"
 
   local lock_file="${git_dir}/index.lock"
   [[ -f "${lock_file}" ]] || return 0 # fast path: nothing to do

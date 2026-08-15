@@ -76,7 +76,7 @@ No manual config editing required for common setups. `configure.sh` auto-detects
 | `md_toc.sh` | Offline Markdown table-of-contents generator/inserter with GitHub-compatible heading slugs; `--insert`/`--check`/`--all` |
 | `undo_last.sh` | Undo last commit (keep staged), unstage files, discard changes, amend message |
 | `recover.sh` | Reflog browsing, dangling-commit discovery (`git fsck`), and safe branch restore from any SHA |
-| `worktree_manage.sh` | Linked worktree management: list, add, remove (with dry-run default), prune stale admin files |
+| `worktree_manage.sh` | Linked worktree management: list, add, link CGW tooling into a worktree, remove (with dry-run default), prune stale admin files |
 | `check_local_files.sh` | Verify no local-only files are tracked in git (used by CI branch-protection workflow) |
 
 Internal modules (not user-facing): `_common.sh` (shared utilities, sourced by every script), `_config.sh` (three-tier config resolution, sourced by `_common.sh`).

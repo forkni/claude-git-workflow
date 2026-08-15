@@ -588,10 +588,14 @@ too before considering the release done, per ci-verification.md.
 ```bash
 ./scripts/git/worktree_manage.sh list                          # show all worktrees
 ./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent   # add linked worktree
+./scripts/git/worktree_manage.sh link                          # link CGW tooling into this worktree
 ./scripts/git/worktree_manage.sh remove --execute ../hotfix    # remove worktree
 ./scripts/git/worktree_manage.sh prune                         # dry-run: show stale admin files
 ./scripts/git/worktree_manage.sh prune --execute               # remove stale admin files
 ```
+
+If a hook reports `CGW not found` inside a linked worktree, run `link` — see
+[error-recovery.md](references/error-recovery.md#cgw-not-found-linked-worktree).
 
 **Project setup & hygiene:**
 

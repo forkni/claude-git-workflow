@@ -28,6 +28,7 @@ main() {
     echo "  pre-rebase  — refuses rebasing commits already pushed to remote"
     echo ""
     echo "The hook files must exist at: \$PROJECT_ROOT/.githooks/"
+    echo "(from a linked worktree, falls back to the main worktree's .githooks/)"
     echo "Run configure.sh first to generate them from the templates."
     echo ""
     echo "Options:"
@@ -54,40 +55,67 @@ main() {
     exit 1
   }
 
-  if [[ ! -d ".git" ]]; then
-    err ".git directory not found. Run from repository root."
+  # `-d ".git"` hard-fails in a linked worktree, where .git is a FILE (a
+  # gitdir pointer), not a directory. Ask git itself instead.
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    err "Not a git repository. Run from repository root or a worktree of it."
     exit 1
   fi
 
-  if [[ ! -d ".githooks" ]]; then
+  # .githooks/ is gitignored, so a linked worktree never gets it checked out.
+  # Fall back to the main worktree's copy — same repo, just a different
+  # checkout, same reasoning as the .cgw.conf fallback in _config.sh.
+  local githooks_src=".githooks"
+  if [[ ! -d "${githooks_src}" ]]; then
+    local _main_root
+    _main_root="$(cgw_main_worktree_root "${PROJECT_ROOT}" 2>/dev/null)" || _main_root=""
+    if [[ -n "${_main_root}" ]] && [[ -d "${_main_root}/.githooks" ]]; then
+      githooks_src="${_main_root}/.githooks"
+    fi
+  fi
+
+  if [[ ! -d "${githooks_src}" ]]; then
     err ".githooks directory not found."
     echo "Run configure.sh first to generate hook files, or create .githooks/ manually." >&2
+    echo "Or link it from the main worktree: ./scripts/git/worktree_manage.sh link" >&2
     exit 1
   fi
 
   log_section_start "INSTALL HOOKS" "$logfile"
 
   # Resolve the active hooks directory: honour core.hooksPath if configured,
-  # otherwise fall back to the standard .git/hooks/ location.
+  # otherwise fall back to the shared hooks dir git itself resolves. Using
+  # `git rev-parse --git-common-dir` (not ".git/hooks") is what makes this
+  # worktree-correct: .git is a FILE in a linked worktree (mkdir -p on it
+  # would fail ENOTDIR), and hooks live in one location shared by every
+  # worktree, resolved via the common dir. Same idiom as
+  # ensure_no_stale_index_lock() in _common.sh.
   local hooks_dir
   hooks_dir="$(git config --get core.hooksPath 2>/dev/null || true)"
-  [[ -z "${hooks_dir}" ]] && hooks_dir=".git/hooks"
+  if [[ -z "${hooks_dir}" ]]; then
+    hooks_dir="$(git rev-parse --git-common-dir 2>/dev/null)/hooks"
+    # Absolutise if relative. On Windows/MSYS an already-absolute path from
+    # git is drive-letter form ("C:/…"), which a bare "/*" glob does not
+    # match -- check both forms or this wrongly re-prefixes it with
+    # PROJECT_ROOT (see the same fix in ensure_no_stale_index_lock, _common.sh).
+    [[ "${hooks_dir}" != /* && "${hooks_dir}" != [A-Za-z]:/* ]] && hooks_dir="${PROJECT_ROOT}/${hooks_dir}"
+  fi
   mkdir -p "${hooks_dir}"
 
-  # Determine whether the resolved hooks dir is already .githooks/ so we can
+  # Determine whether the resolved hooks dir is already githooks_src so we can
   # skip the copy and just ensure the files are executable.
   local githooks_abs hooks_dir_abs
-  githooks_abs="$(cd .githooks && pwd)"
+  githooks_abs="$(cd "${githooks_src}" && pwd)"
   hooks_dir_abs="$(cd "${hooks_dir}" 2>/dev/null && pwd || true)"
 
   local hooks_ok=0
 
-  if [[ -f ".githooks/pre-commit" ]]; then
+  if [[ -f "${githooks_src}/pre-commit" ]]; then
     echo "Installing pre-commit hook..." | tee -a "$logfile"
     if [[ "${hooks_dir_abs}" == "${githooks_abs}" ]]; then
-      chmod +x ".githooks/pre-commit" >>"$logfile" 2>&1
+      chmod +x "${githooks_src}/pre-commit" >>"$logfile" 2>&1
       echo "  [OK] core.hooksPath=${hooks_dir} — pre-commit already in place" | tee -a "$logfile"
-    elif cp ".githooks/pre-commit" "${hooks_dir}/pre-commit" >>"$logfile" 2>&1; then
+    elif cp "${githooks_src}/pre-commit" "${hooks_dir}/pre-commit" >>"$logfile" 2>&1; then
       chmod +x "${hooks_dir}/pre-commit" >>"$logfile" 2>&1
       echo "  [OK] pre-commit installed at ${hooks_dir}/pre-commit" | tee -a "$logfile"
     else
@@ -95,18 +123,18 @@ main() {
       hooks_ok=1
     fi
   else
-    err "pre-commit template not found at .githooks/pre-commit"
+    err "pre-commit template not found at ${githooks_src}/pre-commit"
     echo "Run configure.sh to generate the hook from your CGW_LOCAL_FILES config." >&2
     log_section_end "INSTALL HOOKS" "$logfile" "1"
     exit 1
   fi
 
-  if [[ -f ".githooks/pre-push" ]]; then
+  if [[ -f "${githooks_src}/pre-push" ]]; then
     echo "Installing pre-push hook..." | tee -a "$logfile"
     if [[ "${hooks_dir_abs}" == "${githooks_abs}" ]]; then
-      chmod +x ".githooks/pre-push" >>"$logfile" 2>&1
+      chmod +x "${githooks_src}/pre-push" >>"$logfile" 2>&1
       echo "  [OK] core.hooksPath=${hooks_dir} — pre-push already in place" | tee -a "$logfile"
-    elif cp ".githooks/pre-push" "${hooks_dir}/pre-push" >>"$logfile" 2>&1; then
+    elif cp "${githooks_src}/pre-push" "${hooks_dir}/pre-push" >>"$logfile" 2>&1; then
       chmod +x "${hooks_dir}/pre-push" >>"$logfile" 2>&1
       echo "  [OK] pre-push installed at ${hooks_dir}/pre-push" | tee -a "$logfile"
     else
@@ -114,12 +142,12 @@ main() {
     fi
   fi
 
-  if [[ -f ".githooks/pre-rebase" ]]; then
+  if [[ -f "${githooks_src}/pre-rebase" ]]; then
     echo "Installing pre-rebase hook..." | tee -a "$logfile"
     if [[ "${hooks_dir_abs}" == "${githooks_abs}" ]]; then
-      chmod +x ".githooks/pre-rebase" >>"$logfile" 2>&1
+      chmod +x "${githooks_src}/pre-rebase" >>"$logfile" 2>&1
       echo "  [OK] core.hooksPath=${hooks_dir} — pre-rebase already in place" | tee -a "$logfile"
-    elif cp ".githooks/pre-rebase" "${hooks_dir}/pre-rebase" >>"$logfile" 2>&1; then
+    elif cp "${githooks_src}/pre-rebase" "${hooks_dir}/pre-rebase" >>"$logfile" 2>&1; then
       chmod +x "${hooks_dir}/pre-rebase" >>"$logfile" 2>&1
       echo "  [OK] pre-rebase installed at ${hooks_dir}/pre-rebase" | tee -a "$logfile"
     else
