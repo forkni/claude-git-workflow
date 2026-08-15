@@ -6,8 +6,29 @@
 set -uo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# scripts/git/ is gitignored in some installs, so git never checks it out into a
+# linked worktree. Hooks are shared across worktrees ($GIT_COMMON_DIR/hooks), so
+# fall back to the MAIN worktree for the tooling. Only the TOOLING comes from
+# there — _config.sh still derives PROJECT_ROOT from the cwd, so every git
+# operation stays scoped to the worktree the caller is standing in.
+CGW_HOME="${REPO_ROOT}"
+if [[ ! -f "${CGW_HOME}/scripts/git/_common.sh" ]]; then
+  _cgw_main="$(git worktree list --porcelain 2>/dev/null | head -1)"
+  _cgw_main="${_cgw_main#worktree }"
+  [[ -n "${_cgw_main}" ]] && CGW_HOME="${_cgw_main}"
+fi
+
+# Fail CLOSED. Without _common.sh, cgw_filter_local_files is undefined and the
+# `|| true` swallows it — the local-only-file guard then reports a false pass.
+# A blocked commit is recoverable; a silent bypass is not.
+if [[ ! -f "${CGW_HOME}/scripts/git/_common.sh" ]]; then
+  echo "ERROR [pre-commit]: CGW not found at ${CGW_HOME}/scripts/git/_common.sh" >&2
+  echo "  Re-run scripts/git/configure.sh, or bypass once with --no-verify." >&2
+  exit 1
+fi
 # shellcheck source=scripts/git/_common.sh
-source "${REPO_ROOT}/scripts/git/_common.sh"
+source "${CGW_HOME}/scripts/git/_common.sh"
 
 echo "Checking for local-only files..."
 
