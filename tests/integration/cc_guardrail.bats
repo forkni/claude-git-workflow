@@ -186,6 +186,97 @@ _run_configure() {
   [ "${status}" -eq 0 ]
 }
 
+# ── Guardrail script: single-invocation scoping (PR #32 review) ─────────────
+# Regression tests for the reported bypass: `--cached` was matched against the
+# whole command line, so an exemption belonging to a different command could
+# satisfy the check for an earlier `git rm -f`. Same defect class covered flags
+# not adjacent to their subcommand (tabs, repeated spaces, split clusters).
+
+@test "blocks git rm -f when --cached belongs to a later command" {
+  _require_jq
+  run _run_guardrail "git rm -f victim.txt; echo --cached"
+  [ "${status}" -eq 2 ]
+  [[ "${output}" == *"--cached"* ]]
+}
+
+@test "blocks git rm -f separated by a tab" {
+  _require_jq
+  # Literal \t (backslash-t), not a real tab byte: the helper embeds this raw
+  # into the JSON text, where \t is a valid JSON escape; jq decodes it to an
+  # actual tab in COMMAND. A real tab byte here would be invalid JSON (control
+  # chars must be escaped) and make jq fail closed-to-open (empty COMMAND).
+  run _run_guardrail 'git rm\t-f victim.txt'
+  [ "${status}" -eq 2 ]
+}
+
+@test "blocks git rm -f separated by repeated spaces" {
+  _require_jq
+  run _run_guardrail "git rm  -f victim.txt"
+  [ "${status}" -eq 2 ]
+}
+
+@test "blocks git rm -f as a non-first command in a chain" {
+  _require_jq
+  run _run_guardrail "echo ok && git rm -f victim.txt"
+  [ "${status}" -eq 2 ]
+}
+
+@test "blocks git push --force when the flag is not adjacent to push" {
+  _require_jq
+  run _run_guardrail "git push origin main --force"
+  [ "${status}" -eq 2 ]
+  [[ "${output}" == *"push_validated.sh"* ]]
+}
+
+@test "blocks git checkout -- . (split from the discard-all check)" {
+  _require_jq
+  run _run_guardrail "git checkout -- ."
+  [ "${status}" -eq 2 ]
+}
+
+@test "blocks git clean -df (reordered flag cluster)" {
+  _require_jq
+  run _run_guardrail "git clean -df"
+  [ "${status}" -eq 2 ]
+}
+
+@test "blocks rm -r -f .git (split flags)" {
+  _require_jq
+  run _run_guardrail "rm -r -f .git"
+  [ "${status}" -eq 2 ]
+}
+
+@test "blocks git restore --staged --worktree . (worktree still discards)" {
+  _require_jq
+  run _run_guardrail "git restore --staged --worktree ."
+  [ "${status}" -eq 2 ]
+}
+
+@test "allows git push --force-with-lease when not adjacent to push" {
+  run _run_guardrail "git push origin main --force-with-lease"
+  [ "${status}" -eq 0 ]
+}
+
+@test "allows rm -rf build && ls .git (segmentation removes the false positive)" {
+  run _run_guardrail "rm -rf build && ls .git"
+  [ "${status}" -eq 0 ]
+}
+
+@test "allows git rm --cached a.txt && echo done (cached still works in a chain)" {
+  run _run_guardrail "git rm --cached a.txt && echo done"
+  [ "${status}" -eq 0 ]
+}
+
+@test "allows git clean -nfd (dry run)" {
+  run _run_guardrail "git clean -nfd"
+  [ "${status}" -eq 0 ]
+}
+
+@test "allows git restore --staged . (index-only, non-destructive)" {
+  run _run_guardrail "git restore --staged ."
+  [ "${status}" -eq 0 ]
+}
+
 # ── Guardrail script: fail-open behavior ─────────────────────────────────────
 
 @test "allows command when input JSON is empty" {
