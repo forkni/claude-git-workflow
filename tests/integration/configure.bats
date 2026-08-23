@@ -66,6 +66,37 @@ _run_configure() {
   fi
 }
 
+# ── .cgw.conf preservation (no --reconfigure) ─────────────────────────────────
+# Pins the contract cgw-batch-install.cmd relies on: re-running configure.sh
+# without --reconfigure must never touch an existing .cgw.conf.
+
+@test "without --reconfigure, existing .cgw.conf is preserved byte-for-byte" {
+  printf 'CGW_LINT_CMD="my-custom-lint"\nCGW_MERGE_MODE="pr"\n' > "${TEST_REPO_DIR}/.cgw.conf"
+  cp "${TEST_REPO_DIR}/.cgw.conf" "${TEST_REPO_DIR}/.cgw.conf.orig"
+  _run_configure "--non-interactive"
+  cmp -s "${TEST_REPO_DIR}/.cgw.conf" "${TEST_REPO_DIR}/.cgw.conf.orig"
+}
+
+@test "without --reconfigure, no .cgw.conf.bak is created" {
+  printf 'CGW_LINT_CMD="my-custom-lint"\n' > "${TEST_REPO_DIR}/.cgw.conf"
+  _run_configure "--non-interactive"
+  [ ! -f "${TEST_REPO_DIR}/.cgw.conf.bak" ]
+}
+
+@test "--reconfigure backs up the previous .cgw.conf to .cgw.conf.bak" {
+  printf 'CGW_LINT_CMD="my-custom-lint"\n' > "${TEST_REPO_DIR}/.cgw.conf"
+  _run_configure "--non-interactive --reconfigure"
+  [ -f "${TEST_REPO_DIR}/.cgw.conf.bak" ]
+  grep -q 'CGW_LINT_CMD="my-custom-lint"' "${TEST_REPO_DIR}/.cgw.conf.bak"
+  ! grep -q 'CGW_LINT_CMD="my-custom-lint"' "${TEST_REPO_DIR}/.cgw.conf"
+}
+
+@test "fresh install (no prior .cgw.conf) produces no .cgw.conf.bak" {
+  _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.cgw.conf" ]
+  [ ! -f "${TEST_REPO_DIR}/.cgw.conf.bak" ]
+}
+
 # ── Lint tool detection ───────────────────────────────────────────────────────
 
 @test "detects ruff when available in PATH" {

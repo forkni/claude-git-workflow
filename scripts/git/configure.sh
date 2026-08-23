@@ -681,16 +681,25 @@ _install_cc_guardrail() {
   fi
 }
 
-_update_gitignore() {
+# Append a single entry to .gitignore if it isn't already present (exact-line match).
+# Returns 0 and echoes nothing itself -- callers report what was added.
+_ensure_gitignore_entry() {
+  local entry="$1"
   local gitignore="${PROJECT_ROOT}/.gitignore"
-  local entries=("logs/" ".cgw.conf")
+
+  if [[ ! -f "${gitignore}" ]] || ! grep -qxF "${entry}" "${gitignore}" 2>/dev/null; then
+    echo "${entry}" >>"${gitignore}"
+    return 0
+  fi
+  return 1
+}
+
+_update_gitignore() {
+  local entries=("logs/" ".cgw.conf" ".cgw.conf.bak")
   local added=()
 
   for entry in "${entries[@]}"; do
-    if [[ ! -f "${gitignore}" ]] || ! grep -qxF "${entry}" "${gitignore}" 2>/dev/null; then
-      echo "${entry}" >>"${gitignore}"
-      added+=("${entry}")
-    fi
+    _ensure_gitignore_entry "${entry}" && added+=("${entry}")
   done
 
   if [[ ${#added[@]} -gt 0 ]]; then
@@ -783,7 +792,10 @@ main() {
   # Check if .cgw.conf already exists
   if [[ -f ".cgw.conf" ]] && [[ ${reconfigure} -eq 0 ]]; then
     echo "[OK] .cgw.conf already exists."
-    if cgw_confirm "Reconfigure?" --default no --non-interactive deny; then
+    echo "     Answering yes regenerates it from auto-detection and discards any"
+    echo "     manually-edited settings (a .cgw.conf.bak backup is made first)."
+    echo "     Scripts, hooks, and the skill are refreshed either way."
+    if cgw_confirm "Regenerate .cgw.conf from auto-detection (discards manual edits)?" --default no --non-interactive deny; then
       reconfigure=1
     else
       echo ""
@@ -859,6 +871,16 @@ main() {
   # -- Generate .cgw.conf ----------------------------------------------------
 
   if [[ ! -f ".cgw.conf" ]] || [[ ${reconfigure} -eq 1 ]]; then
+    # Back up the existing config before it is regenerated -- this only runs on the
+    # --reconfigure path (the fresh-install path has no ".cgw.conf" to back up), so a
+    # run that preserves the config never produces a stray .bak.
+    if [[ -f ".cgw.conf" ]]; then
+      cp ".cgw.conf" ".cgw.conf.bak"
+      echo "  [OK] Backed up existing .cgw.conf -> .cgw.conf.bak"
+      # _update_gitignore only runs on fresh installs (see below); an existing project
+      # being reconfigured still needs .cgw.conf.bak kept out of git status.
+      _ensure_gitignore_entry ".cgw.conf.bak" >/dev/null || true
+    fi
     echo "Generating .cgw.conf..."
     echo "  This config file controls branch names, lint settings, and local-only"
     echo "  file protection. It is git-ignored so each developer can have their own."
