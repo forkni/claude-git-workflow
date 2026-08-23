@@ -97,7 +97,16 @@ main() {
   local hooks_dir
   hooks_dir="$(git config --get core.hooksPath 2>/dev/null || true)"
   if [[ -z "${hooks_dir}" ]]; then
-    hooks_dir="$(git rev-parse --git-common-dir 2>/dev/null)/hooks"
+    local common_dir
+    common_dir="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+    # git < 2.5 doesn't know --git-common-dir: it either echoes the option
+    # back verbatim or exits with empty output, and linked worktrees (the
+    # only case where common-dir differs from git-dir) require 2.5+ anyway.
+    # Fall back to --git-dir, which is correct for a non-worktree checkout.
+    if [[ -z "${common_dir}" || "${common_dir}" == "--git-common-dir" ]]; then
+      common_dir="$(git rev-parse --git-dir 2>/dev/null)"
+    fi
+    hooks_dir="${common_dir}/hooks"
     # Absolutise if relative. On Windows/MSYS an already-absolute path from
     # git is drive-letter form ("C:/…"), which a bare "/*" glob does not
     # match -- check both forms or this wrongly re-prefixes it with
