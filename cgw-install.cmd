@@ -382,7 +382,7 @@ echo(    !TARGET_DIR!\skill\
 echo(    !TARGET_DIR!\command\
 echo(    !TARGET_DIR!\templates\
 echo.
-set /p "CLEANUP=Remove temporary install files? (yes\no) [yes]: "
+set /p "CLEANUP=Remove temporary install files? (yes/no) [yes]: "
 if /i "!CLEANUP!"=="n"  goto :cleanup_skip
 if /i "!CLEANUP!"=="no" goto :cleanup_skip
 set "REMOVED_DIRS="

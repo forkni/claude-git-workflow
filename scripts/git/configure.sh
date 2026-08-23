@@ -682,30 +682,49 @@ _install_cc_guardrail() {
 }
 
 # Append a single entry to .gitignore if it isn't already present (exact-line match).
-# Returns 0 and echoes nothing itself -- callers report what was added.
+# Returns 0 if the entry was added, 1 if it was already present, 2 if the write failed.
+# Echoes nothing itself -- callers report what was added or failed.
 _ensure_gitignore_entry() {
   local entry="$1"
   local gitignore="${PROJECT_ROOT}/.gitignore"
 
-  if [[ ! -f "${gitignore}" ]] || ! grep -qxF "${entry}" "${gitignore}" 2>/dev/null; then
-    echo "${entry}" >>"${gitignore}"
-    return 0
+  if [[ -f "${gitignore}" ]] && grep -qxF "${entry}" "${gitignore}" 2>/dev/null; then
+    return 1
   fi
-  return 1
+
+  # A file missing its final newline would otherwise glue this entry onto the last
+  # line (e.g. "node_modules/" + "logs/" -> "node_modules/logs/"), silently
+  # corrupting an existing rule instead of adding a new one.
+  if [[ -s "${gitignore}" ]] && [[ -n "$(tail -c 1 "${gitignore}")" ]]; then
+    printf '\n' >>"${gitignore}" || return 2
+  fi
+  echo "${entry}" >>"${gitignore}" || return 2
+  return 0
 }
 
 _update_gitignore() {
   local entries=("logs/" ".cgw.conf" ".cgw.conf.bak")
   local added=()
+  local failed=()
+  local status
 
   for entry in "${entries[@]}"; do
-    _ensure_gitignore_entry "${entry}" && added+=("${entry}")
+    _ensure_gitignore_entry "${entry}"
+    status=$?
+    if [[ ${status} -eq 0 ]]; then
+      added+=("${entry}")
+    elif [[ ${status} -eq 2 ]]; then
+      failed+=("${entry}")
+    fi
   done
 
   if [[ ${#added[@]} -gt 0 ]]; then
     echo "  [OK] Added to .gitignore: ${added[*]}"
-  else
+  elif [[ ${#failed[@]} -eq 0 ]]; then
     echo "  [OK] .gitignore already up to date"
+  fi
+  if [[ ${#failed[@]} -gt 0 ]]; then
+    echo "  [WARN] Could not write to .gitignore: ${failed[*]}" >&2
   fi
 }
 
@@ -875,11 +894,20 @@ main() {
     # --reconfigure path (the fresh-install path has no ".cgw.conf" to back up), so a
     # run that preserves the config never produces a stray .bak.
     if [[ -f ".cgw.conf" ]]; then
-      cp ".cgw.conf" ".cgw.conf.bak"
+      if ! cp ".cgw.conf" ".cgw.conf.bak"; then
+        echo "[ERROR] Could not back up .cgw.conf -> .cgw.conf.bak." >&2
+        echo "        Refusing to regenerate .cgw.conf without a backup; config left untouched." >&2
+        exit 1
+      fi
       echo "  [OK] Backed up existing .cgw.conf -> .cgw.conf.bak"
       # _update_gitignore only runs on fresh installs (see below); an existing project
       # being reconfigured still needs .cgw.conf.bak kept out of git status.
-      _ensure_gitignore_entry ".cgw.conf.bak" >/dev/null || true
+      local gitignore_status
+      _ensure_gitignore_entry ".cgw.conf.bak"
+      gitignore_status=$?
+      if [[ ${gitignore_status} -eq 2 ]]; then
+        echo "  [WARN] Could not write to .gitignore: .cgw.conf.bak" >&2
+      fi
     fi
     echo "Generating .cgw.conf..."
     echo "  This config file controls branch names, lint settings, and local-only"

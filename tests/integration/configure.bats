@@ -97,6 +97,24 @@ _run_configure() {
   [ ! -f "${TEST_REPO_DIR}/.cgw.conf.bak" ]
 }
 
+@test "--reconfigure aborts without touching .cgw.conf when the backup cannot be written" {
+  printf 'CGW_LINT_CMD="my-custom-lint"\n' > "${TEST_REPO_DIR}/.cgw.conf"
+  # Force the backup cp to fail portably: make .cgw.conf.bak a directory containing
+  # a .cgw.conf directory, so `cp` refuses to write over it on every platform.
+  mkdir -p "${TEST_REPO_DIR}/.cgw.conf.bak/.cgw.conf"
+  run _run_configure "--non-interactive --reconfigure"
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"Could not back up"* ]]
+  grep -q 'CGW_LINT_CMD="my-custom-lint"' "${TEST_REPO_DIR}/.cgw.conf"
+}
+
+@test "gitignore entries land on their own line even without a trailing newline" {
+  printf 'node_modules/' > "${TEST_REPO_DIR}/.gitignore"
+  _run_configure "--non-interactive"
+  grep -qxF 'node_modules/' "${TEST_REPO_DIR}/.gitignore"
+  grep -qxF 'logs/' "${TEST_REPO_DIR}/.gitignore"
+}
+
 # ── Lint tool detection ───────────────────────────────────────────────────────
 
 @test "detects ruff when available in PATH" {
