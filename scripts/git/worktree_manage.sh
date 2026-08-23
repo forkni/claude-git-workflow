@@ -207,8 +207,9 @@ _cmd_link() {
     echo "[ERROR] Not inside a git worktree; pass a path explicitly." >&2
     exit 1
   fi
+  local target_path_input="${target_path}"
   target_path="$(cd "${target_path}" 2>/dev/null && pwd)" || {
-    echo "[ERROR] Path not found: ${target_path}" >&2
+    echo "[ERROR] Path not found: ${target_path_input}" >&2
     exit 1
   }
 
@@ -444,19 +445,22 @@ _cmd_remove() {
   # and therefore not recoverable from git.
   local abs_path
   abs_path="$(cd "${path}" 2>/dev/null && pwd)"
-  if [[ -n "${abs_path}" ]]; then
-    local rel unlink_failed=0
-    for rel in "scripts/git" ".githooks"; do
-      _cgw_unlink_dir "${abs_path}/${rel}" || unlink_failed=1
-    done
-    if [[ "${unlink_failed}" -eq 1 ]]; then
-      err_tee "[ERROR] Could not verify/unlink CGW tooling under '${abs_path}' — refusing to remove."
-      err_tee "  git worktree remove's recursive delete could otherwise follow a stray junction"
-      err_tee "  into the MAIN worktree's scripts/git or .githooks and delete it."
-      err_tee "  Resolve manually (remove the offending link/directory), then retry:"
-      err_tee "    ./scripts/git/worktree_manage.sh remove --execute '${path}'"
-      exit 1
-    fi
+  if [[ -z "${abs_path}" ]]; then
+    err_tee "[ERROR] Could not resolve worktree path '${path}' — refusing to remove without verifying CGW tooling links."
+    err_tee "  If the worktree directory is already gone, use: ./scripts/git/worktree_manage.sh prune --execute"
+    exit 1
+  fi
+  local rel unlink_failed=0
+  for rel in "scripts/git" ".githooks"; do
+    _cgw_unlink_dir "${abs_path}/${rel}" || unlink_failed=1
+  done
+  if [[ "${unlink_failed}" -eq 1 ]]; then
+    err_tee "[ERROR] Could not verify/unlink CGW tooling under '${abs_path}' — refusing to remove."
+    err_tee "  git worktree remove's recursive delete could otherwise follow a stray junction"
+    err_tee "  into the MAIN worktree's scripts/git or .githooks and delete it."
+    err_tee "  Resolve manually (remove the offending link/directory), then retry:"
+    err_tee "    ./scripts/git/worktree_manage.sh remove --execute '${path}'"
+    exit 1
   fi
 
   if git worktree remove "${path}" 2>&1 | tee -a "${logfile}"; then
