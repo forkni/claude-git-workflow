@@ -343,16 +343,20 @@ empty, e.g. because the worktree's `.cgw.conf`/tooling was never linked at all.
 
 **Fix — link the current worktree's tooling to the main worktree's:**
 
+`scripts/git/worktree_manage.sh` isn't reachable from inside this worktree (that's the whole
+problem), so invoke the main worktree's copy by path — `git worktree list --porcelain`'s first
+entry is always the main worktree:
+
 ```bash
-./scripts/git/worktree_manage.sh link
+"$(git worktree list --porcelain | head -1 | cut -d' ' -f2-)/scripts/git/worktree_manage.sh" link
 ```
 
 This creates a directory link (`ln -s` on POSIX, an NTFS junction on Windows) so
 `scripts/git` and `.githooks` resolve locally without duplicating files. It's safe to re-run
-(idempotent) and refuses to overwrite a real, non-linked directory if one already exists at
-either path. Worktrees created via `worktree_manage.sh add` are linked automatically; this is
-only needed for worktrees created directly with `git worktree add`, or ones set up before
-this feature existed.
+(idempotent) and refuses to overwrite a real, non-linked directory, or a link that doesn't
+resolve to the main worktree, if one already exists at either path. Worktrees created via
+`worktree_manage.sh add` are linked automatically; this is only needed for worktrees created
+directly with `git worktree add`, or ones set up before this feature existed.
 
 **Do not reach for `--no-verify`** as the fix — it's a one-time bypass, not a solution; the
 next commit or push in that worktree will fail the same way.

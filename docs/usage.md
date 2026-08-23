@@ -300,18 +300,24 @@ CGW-installed hook now detects this and fails closed (it will not silently skip 
 printing a `CGW not found` error instead of running. Fix it with:
 
 ```bash
-./scripts/git/worktree_manage.sh link             # from inside the linked worktree
-./scripts/git/worktree_manage.sh link ../hotfix    # or by path, from anywhere
+./scripts/git/worktree_manage.sh link ../hotfix    # from the main worktree, by path
+# From inside the linked worktree itself, ./scripts/git/ isn't there to run --
+# invoke the main worktree's copy instead (git worktree list's first entry is
+# always the main worktree):
+"$(git worktree list --porcelain | head -1 | cut -d' ' -f2-)/scripts/git/worktree_manage.sh" link
 ```
 
 This creates a directory link (`ln -s` on POSIX, an NTFS junction via `mklink /J` on Windows —
 no admin rights required) from the linked worktree's `scripts/git` and `.githooks` back to the
 main worktree's copies, so both worktrees always share one set of tooling. It's idempotent
-(safe to re-run) and refuses to touch either path if something other than its own link is
-already there. `worktree_manage.sh add` runs `link` automatically for newly created worktrees;
-`remove` unlinks both before removing a worktree, and refuses to proceed at all if it can't
-verify the unlink succeeded — a stray real directory under `scripts/git` could otherwise put
-the *main* worktree's tooling in the path of `git worktree remove`'s recursive delete.
+(safe to re-run) and refuses to touch either path if something other than its own link, already
+resolving to the main worktree, is there. `worktree_manage.sh add` runs `link` automatically for
+newly created worktrees; `remove` unlinks both before removing a worktree, and refuses to
+proceed at all if an existing *link* can't be verified as removed — a stray junction under
+`scripts/git` could otherwise put the *main* worktree's tooling in the path of `git worktree
+remove`'s recursive delete. A real (non-link) directory there isn't such a risk — it has no
+reparse point to redirect that delete anywhere — so it's left for `git worktree remove`'s own
+cleanup instead of blocking removal.
 
 ### Diff your branch against the default branch
 
