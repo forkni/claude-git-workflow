@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install_hooks.sh - Install git hooks from .githooks/ to .git/hooks/
+# install_hooks.sh - Install git hooks from .githooks/ to the active hooks dir
 # Purpose: Install pre-commit, pre-push, and pre-rebase hooks
 # Usage: ./scripts/git/install_hooks.sh [OPTIONS]
 #
@@ -21,7 +21,10 @@ main() {
   if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
     echo "Usage: ./scripts/git/install_hooks.sh"
     echo ""
-    echo "Install git hooks from .githooks/ to .git/hooks/."
+    echo "Install git hooks from .githooks/ into the active git hooks directory"
+    echo "(core.hooksPath if set, otherwise the shared hooks dir resolved via"
+    echo "'git rev-parse --git-common-dir' — worktree-safe, so this works the"
+    echo "same from the main worktree or a linked one)."
     echo "Installs:"
     echo "  pre-commit  — blocks local-only files, optional lint/typecheck"
     echo "  pre-push    — validates conventional commit format on unpushed commits"
@@ -34,7 +37,8 @@ main() {
     echo "Options:"
     echo "  -h, --help   Show this help"
     echo ""
-    echo "To uninstall: rm .git/hooks/pre-commit .git/hooks/pre-push .git/hooks/pre-rebase"
+    echo "To uninstall: rm <hooks-dir>/pre-commit <hooks-dir>/pre-push <hooks-dir>/pre-rebase"
+    echo "  (run without --help to see the resolved <hooks-dir> for this worktree)"
     echo "To bypass temporarily (not recommended): git commit --no-verify / git push --no-verify"
     exit 0
   fi
