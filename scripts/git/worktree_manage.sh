@@ -85,17 +85,31 @@ _cgw_link_dir() {
   esac
 }
 
+# True if $1 and $2 resolve to the same directory. Used to validate an
+# existing link at a tooling path actually points at the main worktree
+# before accepting it as "already linked". `cd && pwd -P` follows an NTFS
+# junction's reparse point on Windows/MSYS (unlike `stat`, whose device:inode
+# on a junction identifies the reparse point itself, not its target).
+_cgw_same_dir() {
+  local a b
+  a="$(cd "$1" 2>/dev/null && pwd -P)" || return 1
+  b="$(cd "$2" 2>/dev/null && pwd -P)" || return 1
+  [[ "${a}" == "${b}" ]]
+}
+
 # Remove a link created by _cgw_link_dir. Refuses to touch anything that
 # isn't itself a link/junction — this is the guard from A3: a
 # `git worktree remove` recursive delete must never be able to follow a
-# junction into the MAIN worktree's scripts/git, so we always unlink first,
-# and we never unlink (or fall through to deleting) a real directory.
+# junction into the MAIN worktree's scripts/git, so we always unlink first.
+# A real (non-link) directory has no reparse point to redirect that delete
+# anywhere, so it's not a risk to A3 — leave it alone and return success;
+# `git worktree remove`'s own recursive delete handles it normally.
 _cgw_unlink_dir() {
   local link_path="$1"
   [[ -e "${link_path}" ]] || return 0
   if ! _cgw_is_link "${link_path}"; then
-    echo "  [WARN] ${link_path} is a real directory, not a link — leaving it alone" >&2
-    return 1
+    echo "  [OK]   ${link_path} is a real (tracked) directory — left for git worktree remove"
+    return 0
   fi
   case "$(uname -s 2>/dev/null)" in
     MINGW* | MSYS* | CYGWIN*)
@@ -150,7 +164,12 @@ _cgw_do_link() {
     fi
     if [[ -e "${target_path}/${rel}" ]]; then
       if _cgw_is_link "${target_path}/${rel}"; then
-        echo "  [OK]   ${rel} already linked"
+        if _cgw_same_dir "${target_path}/${rel}" "${main_root}/${rel}"; then
+          echo "  [OK]   ${rel} already linked"
+        else
+          echo "  [WARN] ${rel} is a link but does not resolve to the main worktree — not touching it" >&2
+          status=1
+        fi
       else
         echo "  [WARN] ${rel} exists as a real directory in target — not overwriting" >&2
         status=1
@@ -216,7 +235,12 @@ _cmd_link() {
   echo "=== Link CGW Tooling ==="
   echo ""
 
-  if _cgw_do_link "${target_path}" "${dry_run}"; then
+  local link_status=0
+  log_section_start "LINK TOOLING" "${logfile}"
+  _cgw_do_link "${target_path}" "${dry_run}" | tee -a "${logfile}" || link_status=1
+  log_section_end "LINK TOOLING" "${logfile}" "${link_status}"
+
+  if [[ "${link_status}" -eq 0 ]]; then
     echo ""
     if [[ "${dry_run}" -eq 1 ]]; then
       echo "--- Dry run: no changes made ---"
@@ -367,7 +391,11 @@ _cmd_add() {
     local abs_path
     abs_path="$(cd "${path}" 2>/dev/null && pwd)"
     if [[ -n "${abs_path}" ]]; then
-      _cgw_do_link "${abs_path}" 0 || echo "  [WARN] Linking failed — run: ./scripts/git/worktree_manage.sh link ${path}" >&2
+      local link_status=0
+      log_section_start "LINK TOOLING" "${logfile}"
+      _cgw_do_link "${abs_path}" 0 | tee -a "${logfile}" || link_status=1
+      log_section_end "LINK TOOLING" "${logfile}" "${link_status}"
+      [[ "${link_status}" -ne 0 ]] && echo "  [WARN] Linking failed — run: ./scripts/git/worktree_manage.sh link ${path}" >&2
     fi
   else
     echo "[ERROR] Failed to add worktree" >&2

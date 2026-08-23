@@ -102,6 +102,7 @@ create_test_worktree() {
   cat > "${TEST_REPO_DIR}/.gitignore" <<'EOF'
 scripts/git/
 .githooks/
+logs/
 EOF
   git -C "${TEST_REPO_DIR}" add .gitignore
   git -C "${TEST_REPO_DIR}" commit --quiet --no-verify -m "chore: gitignore CGW tooling"

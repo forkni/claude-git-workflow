@@ -89,6 +89,28 @@ _install_hook_direct() {
   [ -f "${TEST_WORKTREE_DIR}/scripts/git/placeholder.txt" ]
 }
 
+@test "link rejects a stale link that doesn't resolve to the main worktree" {
+  # A link exists at the tooling path, but points somewhere other than the
+  # main worktree's scripts/git -- must not be accepted as "already linked".
+  # Plain `ln -s` on a directory silently falls back to a real directory on
+  # Windows/MSYS without admin rights, so create the stale link the same way
+  # production code does (_cgw_link_dir: NTFS junction on MINGW/MSYS/CYGWIN,
+  # symlink elsewhere) rather than hardcoding `ln -s`.
+  mkdir -p "${TEST_WORKTREE_DIR}/scripts" "${BATS_TEST_TMPDIR}/elsewhere"
+  case "$(uname -s 2>/dev/null)" in
+    MINGW* | MSYS* | CYGWIN*)
+      cmd //c mklink //J "$(cygpath -w "${TEST_WORKTREE_DIR}/scripts/git")" "$(cygpath -w "${BATS_TEST_TMPDIR}/elsewhere")" >/dev/null
+      ;;
+    *)
+      ln -s "${BATS_TEST_TMPDIR}/elsewhere" "${TEST_WORKTREE_DIR}/scripts/git"
+      ;;
+  esac
+
+  run run_script_at "${TEST_WORKTREE_DIR}" worktree_manage.sh link
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"does not resolve to the main worktree"* ]]
+}
+
 @test "link is a clean no-op from the main worktree itself (F2: path-format mismatch)" {
   # Regression: cgw_main_worktree_root() returns a git-format path
   # ("C:/Users/...") while the caller's `cd && pwd` yielded an MSYS path
@@ -156,27 +178,19 @@ _install_hook_direct() {
   [ -f "${TEST_REPO_DIR}/.githooks/pre-commit" ]
 }
 
-@test "remove: fails closed when the tooling link cannot be verified; nothing is removed" {
-  # A REAL directory (not a link) at scripts/git -- _cgw_unlink_dir refuses to
-  # touch it, so the remove guard (F3) must ABORT rather than let
-  # `git worktree remove`'s recursive delete anywhere near it.
+@test "remove: a real (non-linked) tooling directory no longer blocks removal" {
+  # A REAL directory (not a link) at scripts/git has no reparse point for
+  # git worktree remove's recursive delete to follow into the main
+  # worktree, so it's not an A3 risk -- _cgw_unlink_dir leaves it alone and
+  # git worktree remove's own recursive delete handles it normally.
   mkdir -p "${TEST_WORKTREE_DIR}/scripts/git"
   echo "real" > "${TEST_WORKTREE_DIR}/scripts/git/placeholder.txt"
 
   run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove --execute --non-interactive "${TEST_WORKTREE_DIR}"
-  [ "${status}" -ne 0 ]
-  [[ "${output}" == *"Could not verify/unlink CGW tooling"* ]]
+  [ "${status}" -eq 0 ]
+  [ ! -d "${TEST_WORKTREE_DIR}" ]
 
-  # Nothing removed: the worktree, its real directory, and the main
-  # worktree's own scripts/git all survive.
-  [ -d "${TEST_WORKTREE_DIR}" ]
-  [ -f "${TEST_WORKTREE_DIR}/scripts/git/placeholder.txt" ]
+  # The MAIN worktree's own tooling must be completely untouched.
   [ -f "${TEST_REPO_DIR}/scripts/git/_common.sh" ]
-  # `git worktree list` prints git's own path form (drive-letter on
-  # Windows/MSYS), which never textually matches TEST_WORKTREE_DIR's
-  # MSYS-style "/tmp/…" form (F2) -- ask git itself for its idea of this
-  # worktree's path and grep for that instead.
-  local wt_git_path
-  wt_git_path="$(git -C "${TEST_WORKTREE_DIR}" rev-parse --show-toplevel)"
-  git -C "${TEST_REPO_DIR}" worktree list | grep -qF "${wt_git_path}"
+  [ -f "${TEST_REPO_DIR}/.githooks/pre-commit" ]
 }
