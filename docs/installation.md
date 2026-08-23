@@ -170,6 +170,20 @@ bash scripts/git/configure.sh
 
 To remove CGW from a project:
 
+**If this is a linked worktree** (created via `worktree_manage.sh add`, or any
+`git worktree add` on a project where `scripts/git`/`.githooks` are gitignored), `scripts/git`
+and `.githooks` are a link back to the main worktree's copies (a symlink on POSIX, an NTFS
+junction on Windows) — not real directories. `rm -rf` recurses *through* a junction like an
+ordinary directory, so running it here would delete the **main worktree's** tooling, not just
+this worktree's link. Remove the link itself instead:
+
+```bash
+rmdir scripts/git .githooks   # removes the link only; main worktree's copies are untouched
+```
+
+**Otherwise** (the main worktree, or CGW installed without worktree linking), `scripts/git` and
+`.githooks` are real directories — safe to remove recursively:
+
 ```bash
 # Remove scripts
 rm -rf scripts/git/

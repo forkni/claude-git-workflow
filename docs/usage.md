@@ -286,12 +286,38 @@ Linked worktrees let you check out multiple branches simultaneously in separate 
 ./scripts/git/worktree_manage.sh list                            # show all worktrees
 ./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent     # add linked worktree (creates branch)
 ./scripts/git/worktree_manage.sh add ../review existing-branch   # check out existing branch
+./scripts/git/worktree_manage.sh link                            # link CGW tooling into the current worktree
 ./scripts/git/worktree_manage.sh remove --execute ../hotfix      # remove worktree link
 ./scripts/git/worktree_manage.sh prune                           # dry-run: show stale admin files
 ./scripts/git/worktree_manage.sh prune --execute                 # remove stale admin files
 ```
 
 `remove` and `prune` default to dry-run; pass `--execute` to apply.
+
+`scripts/git/` and `.githooks/` are commonly gitignored, so `git worktree add` — which only
+checks out tracked content — leaves a linked worktree without CGW's scripts or hooks. Any
+CGW-installed hook now detects this and fails closed (it will not silently skip its check),
+printing a `CGW not found` error instead of running. Fix it with:
+
+```bash
+./scripts/git/worktree_manage.sh link ../hotfix    # from the main worktree, by path
+# From inside the linked worktree itself, ./scripts/git/ isn't there to run --
+# invoke the main worktree's copy instead (git worktree list's first entry is
+# always the main worktree):
+"$(git worktree list --porcelain | head -1 | cut -d' ' -f2-)/scripts/git/worktree_manage.sh" link
+```
+
+This creates a directory link (`ln -s` on POSIX, an NTFS junction via `mklink /J` on Windows —
+no admin rights required) from the linked worktree's `scripts/git` and `.githooks` back to the
+main worktree's copies, so both worktrees always share one set of tooling. It's idempotent
+(safe to re-run) and refuses to touch either path if something other than its own link, already
+resolving to the main worktree, is there. `worktree_manage.sh add` runs `link` automatically for
+newly created worktrees; `remove` unlinks both before removing a worktree, and refuses to
+proceed at all if an existing *link* can't be verified as removed — a stray junction under
+`scripts/git` could otherwise put the *main* worktree's tooling in the path of `git worktree
+remove`'s recursive delete. A real (non-link) directory there isn't such a risk — it has no
+reparse point to redirect that delete anywhere — so it's left for `git worktree remove`'s own
+cleanup instead of blocking removal.
 
 ### Diff your branch against the default branch
 

@@ -383,6 +383,7 @@ Protects `CGW_SOURCE_BRANCH`, `CGW_TARGET_BRANCH`, and `CGW_PROTECTED_BRANCHES` 
 ./scripts/git/worktree_manage.sh list                            # list all worktrees
 ./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent     # add with new branch
 ./scripts/git/worktree_manage.sh add ../review review-feature    # add with existing branch
+./scripts/git/worktree_manage.sh link                            # link CGW tooling into this worktree
 ./scripts/git/worktree_manage.sh remove --execute ../hotfix      # remove (--execute required)
 ./scripts/git/worktree_manage.sh prune                           # dry-run: show stale admin files
 ./scripts/git/worktree_manage.sh prune --execute                 # remove stale admin files
@@ -391,9 +392,18 @@ Protects `CGW_SOURCE_BRANCH`, `CGW_TARGET_BRANCH`, and `CGW_PROTECTED_BRANCHES` 
 | Subcommand | Purpose |
 |------------|---------|
 | `list` | All worktrees via `git worktree list --porcelain` |
-| `add <path> [<branch>]` | Add linked worktree; creates branch with `-b` if new |
-| `remove [--execute] <path>` | Remove worktree link (dry-run default) |
+| `add <path> [<branch>]` | Add linked worktree; creates branch with `-b` if new; auto-links CGW tooling |
+| `link [<path>]` | Link `scripts/git` and `.githooks` from the main worktree (default: current dir) |
+| `remove [--execute] <path>` | Unlink CGW tooling, then remove worktree (dry-run default) |
 | `prune [--execute]` | Remove stale admin files for missing paths (dry-run default) |
+
+`scripts/git/` and `.githooks/` are commonly gitignored, so `git worktree add` doesn't check
+them out into new worktrees; `link` creates a directory link (`ln -s` / an NTFS junction on
+Windows) back to the main worktree's copies instead of duplicating them. Idempotent, and
+refuses to overwrite a real, non-linked directory. `add` runs it automatically; `remove`
+unlinks before removing and refuses to proceed if it can't verify the unlink succeeded. See
+[error-recovery.md](error-recovery.md#cgw-not-found-linked-worktree) for the hook-side
+`CGW not found` error this closes.
 
 **`changelog_generate.sh`** — Generate changelog from conventional commits
 

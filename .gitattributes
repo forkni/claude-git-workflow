@@ -6,7 +6,12 @@
 *.sh text eol=lf
 *.bats text eol=lf
 *.bash text eol=lf
+# Extensionless hook scripts aren't matched by *.sh — pin them explicitly so
+# configure.sh never deploys a CRLF hook into a Linux/macOS consumer project.
 hooks/pre-commit text eol=lf
+hooks/pre-push text eol=lf
+hooks/pre-rebase text eol=lf
+.githooks/* text eol=lf
 
 # Text files — normalize to LF
 .shellcheckrc text eol=lf

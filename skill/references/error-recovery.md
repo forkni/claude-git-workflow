@@ -14,6 +14,7 @@
 - Committed a Secret or Local-Only File
 - No Changes to Commit
 - Lock File Auto-Recovery
+- CGW Not Found (Linked Worktree)
 - Log Files
 
 ## PreToolUse Guardrail
@@ -320,6 +321,45 @@ rm -f "$(git rev-parse --git-dir)/index.lock"
 ```
 
 If the script still reports "lock held by another process", find and stop the other git session or wait for it to complete.
+
+---
+
+## CGW Not Found (Linked Worktree)
+
+`scripts/git/` and `.githooks/` are commonly gitignored, so `git worktree add` — which only
+checks out tracked content — leaves a linked worktree without them. Every CGW-installed hook
+detects this and fails **closed** rather than silently skipping its check:
+
+```text
+ERROR [pre-commit]: CGW not found at <path>/scripts/git/_common.sh
+  Re-run scripts/git/configure.sh, or bypass once with --no-verify.
+```
+
+(`pre-push` and `pre-rebase` print the equivalent, with their own hook name.)
+
+Hooks already try the main worktree's copy of `scripts/git` first (`git worktree list
+--porcelain`'s first entry) before failing — this error means even that fallback came up
+empty, e.g. because the worktree's `.cgw.conf`/tooling was never linked at all.
+
+**Fix — link the current worktree's tooling to the main worktree's:**
+
+`scripts/git/worktree_manage.sh` isn't reachable from inside this worktree (that's the whole
+problem), so invoke the main worktree's copy by path — `git worktree list --porcelain`'s first
+entry is always the main worktree:
+
+```bash
+"$(git worktree list --porcelain | head -1 | cut -d' ' -f2-)/scripts/git/worktree_manage.sh" link
+```
+
+This creates a directory link (`ln -s` on POSIX, an NTFS junction on Windows) so
+`scripts/git` and `.githooks` resolve locally without duplicating files. It's safe to re-run
+(idempotent) and refuses to overwrite a real, non-linked directory, or a link that doesn't
+resolve to the main worktree, if one already exists at either path. Worktrees created via
+`worktree_manage.sh add` are linked automatically; this is only needed for worktrees created
+directly with `git worktree add`, or ones set up before this feature existed.
+
+**Do not reach for `--no-verify`** as the fix — it's a one-time bypass, not a solution; the
+next commit or push in that worktree will fail the same way.
 
 ---
 

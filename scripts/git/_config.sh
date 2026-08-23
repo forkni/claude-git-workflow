@@ -44,6 +44,32 @@ _detect_project_root() {
   return 1
 }
 
+# cgw_main_worktree_root — resolve the MAIN worktree's absolute path, usable
+# from any worktree of the repo.
+#
+# `git worktree list --porcelain`'s first entry is always the main worktree
+# (documented git behavior) — this holds for --separate-git-dir clones and
+# submodules too, unlike deriving it from `dirname "$(git rev-parse
+# --git-common-dir)"`, which assumes the common dir's parent is the worktree
+# root and breaks for those layouts. Callers needing the main worktree's
+# scripts/git or .cgw.conf (both gitignored, so absent from linked worktrees)
+# should use this rather than re-deriving it. Lives here (not _common.sh)
+# because the .cgw.conf fallback below runs during _config.sh's own
+# evaluation, before _common.sh has sourced it.
+#
+# Args:
+#   $1 (optional) — resolve relative to this path instead of the caller's cwd.
+#     Lets a caller validate an arbitrary target path before cd-ing into it.
+# Output: absolute path to the main worktree, on stdout.
+# Returns: 0 on success; 1 if $1 (or cwd) is not inside a git worktree.
+cgw_main_worktree_root() {
+  local from="${1:-.}"
+  local raw
+  raw="$(git -C "${from}" worktree list --porcelain 2>/dev/null | head -1)" || return 1
+  [[ -z "${raw}" ]] && return 1
+  echo "${raw#worktree }"
+}
+
 # Allow tests (and CI overrides) to pin PROJECT_ROOT via env var, skipping auto-detection.
 if [[ -z "${PROJECT_ROOT:-}" ]]; then
   PROJECT_ROOT="$(_detect_project_root)" || exit 1
@@ -58,6 +84,25 @@ fi
 # We achieve true "env wins" by only sourcing variables the env hasn't set yet.
 
 _CGW_CONF="${PROJECT_ROOT}/.cgw.conf"
+
+# Linked-worktree fallback: .cgw.conf is gitignored, so git never checks it
+# out into a linked worktree. Without this, a worktree of a project that
+# gitignores it would silently run with built-in defaults instead of the
+# project's real CGW_LOCAL_FILES / CGW_EXTRA_PREFIXES / etc. This does NOT
+# violate the anti-goal in the block comment above (never resolve against
+# wherever the scripts happen to live) -- the main worktree is the SAME
+# repository as PROJECT_ROOT, just a different checkout of it, not some
+# other repo's shared/symlinked install. Only attempted when PROJECT_ROOT is
+# itself a linked worktree (main root differs), so the common case --
+# PROJECT_ROOT IS the main worktree, e.g. the run_script test helper pinning
+# PROJECT_ROOT to its own temp repo -- never invokes this.
+if [[ ! -f "${_CGW_CONF}" ]]; then
+  _cgw_main_root="$(cgw_main_worktree_root "${PROJECT_ROOT}" 2>/dev/null)" || _cgw_main_root=""
+  if [[ -n "${_cgw_main_root}" ]] && [[ "${_cgw_main_root}" != "${PROJECT_ROOT}" ]] && [[ -f "${_cgw_main_root}/.cgw.conf" ]]; then
+    _CGW_CONF="${_cgw_main_root}/.cgw.conf"
+  fi
+  unset _cgw_main_root
+fi
 
 if [[ -f "${_CGW_CONF}" ]]; then
   # Read .cgw.conf line-by-line, only applying variables not already set in the environment.

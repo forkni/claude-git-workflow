@@ -85,6 +85,40 @@ cleanup_test_repo() {
   cleanup_temp_dir
 }
 
+# create_test_worktree [<branch>]
+# Requires create_test_repo (or create_test_repo_with_remote) to have already
+# run. Reproduces a real gitignored-tooling install (F5): commits a .gitignore
+# for scripts/git/ and .githooks/ on `development`, then drops REAL, UNTRACKED
+# copies of both into the main worktree (TEST_REPO_DIR) -- exactly what a
+# `configure.sh` install that gitignores them looks like on disk. Because
+# neither is ever `git add`ed, `git worktree add` (which only checks out
+# TRACKED content) naturally does NOT create them in the new worktree,
+# reproducing the original bug scenario without any extra fakery.
+# Sets TEST_WORKTREE_DIR to the new linked worktree's absolute path.
+create_test_worktree() {
+  local branch="${1:-worktree-topic}"
+
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  cat > "${TEST_REPO_DIR}/.gitignore" <<'EOF'
+scripts/git/
+.githooks/
+logs/
+EOF
+  git -C "${TEST_REPO_DIR}" add .gitignore
+  git -C "${TEST_REPO_DIR}" commit --quiet --no-verify -m "chore: gitignore CGW tooling"
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+
+  mkdir -p "${TEST_REPO_DIR}/scripts/git"
+  cp -r "${CGW_PROJECT_ROOT}/scripts/git/." "${TEST_REPO_DIR}/scripts/git/"
+  mkdir -p "${TEST_REPO_DIR}/.githooks"
+  cp "${CGW_PROJECT_ROOT}/hooks/"* "${TEST_REPO_DIR}/.githooks/"
+  chmod +x "${TEST_REPO_DIR}/.githooks/"*
+
+  TEST_WORKTREE_DIR="${TEST_TMPDIR}/wt"
+  export TEST_WORKTREE_DIR
+  git -C "${TEST_REPO_DIR}" worktree add --quiet -b "${branch}" "${TEST_WORKTREE_DIR}" development
+}
+
 # ── File-scoped repo helpers (setup_file / teardown_file) ────────────────────
 # Use these when every test in a .bats file needs the same starting repo state
 # and no test mutates the repo destructively (branch renames, reset --hard).
@@ -181,6 +215,26 @@ run_script() {
     # 'development' branch, so default to it here the same way a real configure.sh run
     # would (only when the caller hasn't already set/exported a different value or
     # passed --source), keeping tests that never touch branches unaffected.
+    export CGW_SOURCE_BRANCH="${CGW_SOURCE_BRANCH:-development}"
+    bash "${script_file}" "$@"
+  )
+}
+
+# run_script_at <dir> <name> [args...]
+# Like run_script, but runs from an explicit <dir> instead of TEST_REPO_DIR,
+# and deliberately does NOT pin PROJECT_ROOT/SCRIPT_DIR env vars. Worktree
+# tests need the script's OWN auto-detection (git rev-parse --show-toplevel,
+# main-worktree fallback, etc.) to run for real against <dir> -- pinning
+# PROJECT_ROOT the way run_script does would bypass exactly the logic being
+# tested.
+run_script_at() {
+  local work_dir="$1" script_name="$2"
+  shift 2
+  local script_file
+  script_file="$(script_path "${script_name}")"
+
+  (
+    cd "${work_dir}" || exit 1
     export CGW_SOURCE_BRANCH="${CGW_SOURCE_BRANCH:-development}"
     bash "${script_file}" "$@"
   )
