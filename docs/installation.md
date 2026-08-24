@@ -59,7 +59,7 @@ cd your-project && ./scripts/git/configure.sh
 |------|--------|
 | *(none)* | Interactive: shows detected values, prompts to confirm or override |
 | `--non-interactive` | Accept all auto-detected defaults without prompting |
-| `--reconfigure` | Overwrite an existing `.cgw.conf` (re-run detection + confirmation) |
+| `--reconfigure` | Overwrite an existing `.cgw.conf` (re-run detection + confirmation); the previous file is saved to `.cgw.conf.bak` first |
 | `--skip-hooks` | Skip hook installation |
 | `--skip-skill` | Skip Claude Code skill installation |
 | `--global` | Install skill to `~/.claude/` (available in every project) instead of `.claude/` |

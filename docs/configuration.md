@@ -24,6 +24,9 @@ The easiest way to configure CGW:
 ./scripts/git/configure.sh --reconfigure      # overwrite existing config
 ```
 
+`--reconfigure` saves the previous file to `.cgw.conf.bak` before regenerating it, so manual edits
+are recoverable.
+
 **What it auto-detects:**
 
 - Branch names (from `git remote HEAD`, common names: main/master, development/develop/dev)
