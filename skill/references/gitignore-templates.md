@@ -118,9 +118,14 @@ and `Python.gitignore`'s pixi block:
 | `CGW_LOCAL_FILES` (`.cgw.conf`) | n/a — not a `.gitignore` mechanism | n/a | Commit-scoped protection, see below |
 
 `CGW_LOCAL_FILES` is not an ignore layer — it doesn't touch git's ignore machinery at all. It is
-enforced by `cgw_is_local_file` in `_common.sh` and checked by `commit_enhanced.sh` plus the
-pre-commit/pre-push hooks, which unstage any configured path before a commit lands. The two
-mechanisms are complementary, not redundant:
+enforced by `cgw_is_local_file` in `_common.sh` and checked at three points, which don't all
+respond the same way: `commit_enhanced.sh` auto-unstages any configured path (`git reset HEAD`)
+and continues the commit; the pre-commit hook instead exits 1 and tells you to run
+`git reset HEAD <file>` yourself; the pre-push hook exits 1 and tells you to
+`git rebase -i` the offending commit. Only the wrapper fixes staging for you — the hooks are a
+backstop that rejects and points at the fix, for the case where someone bypasses the wrapper
+and runs `git commit`/`git push` directly. The two ignore mechanisms are complementary, not
+redundant:
 
 - `.gitignore` stops an **untracked** path from being added in the first place (`git add .`
   silently skips it).
@@ -135,13 +140,20 @@ Put a path in both when it should never be committed under any circumstance (CGW
 
 ## The CGW Baseline Block
 
-`configure.sh` appends three entries automatically, but **only on a fresh install** (`_update_gitignore`, not run on `--reconfigure`):
+`configure.sh` appends three entries automatically, but only via `_update_gitignore`, which
+runs on a **fresh install only** (not on `--reconfigure`):
 
 ```gitignore
 logs/
 .cgw.conf
 .cgw.conf.bak
 ```
+
+`--reconfigure` doesn't run `_update_gitignore`, but it isn't a no-op for `.gitignore` either:
+when it backs up an existing `.cgw.conf` to `.cgw.conf.bak`, it appends that one entry
+(`.cgw.conf.bak`) via the same `_ensure_gitignore_entry` helper, so the backup file doesn't show
+up dirty in `git status`. That's the only write a reconfigure performs — it never rewrites or
+reorders your existing `.gitignore` rules.
 
 The `CGW_LOCAL_FILES` defaults (`CLAUDE.md`, `MEMORY.md`, `.claude/`) are deliberately **not**
 auto-appended to `.gitignore` — they're often team-shared (hence `CGW_LOCAL_FILES_EXEMPT` for
@@ -705,6 +717,9 @@ commit the raw source:
 *.back
 *.backup
 
+# Norton Ghost backup files
+*.gho
+
 # Generic original files
 *.ori
 *.orig
@@ -734,6 +749,7 @@ Read-only inspection — always safe to run directly, no CGW wrapper needed:
 
 ```bash
 git check-ignore -v <path>                          # names the file:line:pattern that matched
+git check-ignore --no-index -v <path>                # same, but also checks already-tracked paths
 git status --ignored                                # ignored files alongside tracked/modified
 git ls-files --others --ignored --exclude-standard  # every ignored path, one per line
 git config --get core.excludesFile                  # is a personal global file even configured?
@@ -747,7 +763,12 @@ negation trap — if you expected the `!` line to win but the tool reports the p
 line instead (e.g. `.gitignore:1:.vscode/` instead of `.gitignore:2:!.vscode/settings.json`),
 a parent directory is swallowing the file before your negation ever gets a chance to apply. No
 match at all (exit 1, no output) means the path isn't ignored by any layer — a different, simpler
-case than the trap.
+case than the trap — **but only for a path that isn't already tracked.** By default
+`git check-ignore` skips anything already in the index, so a tracked path that matches a
+`.gitignore` rule still exits 1 with no output, and reads exactly like "not ignored" when it
+actually is (see [The Already-Tracked
+Trap](#the-already-tracked-trap-and-the-cgw-correct-fix) below). Pass `--no-index` to check the
+pattern regardless of tracked state.
 
 ---
 

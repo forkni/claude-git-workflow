@@ -615,8 +615,9 @@ If a hook reports `CGW not found` inside a linked worktree, run `link` — see
 ```
 
 There is no `setup_gitignore.sh` — unlike `.gitattributes`, `.gitignore` is hand-composed.
-Only `configure.sh` touches it, and only on a fresh install (three entries: `logs/`,
-`.cgw.conf`, `.cgw.conf.bak`). See
+Only `configure.sh` touches it, and only two ways: a fresh install appends three entries
+(`logs/`, `.cgw.conf`, `.cgw.conf.bak`); `--reconfigure` appends just `.cgw.conf.bak` when it
+backs up an existing config. Neither path rewrites or reorders your existing rules. See
 [references/gitignore-templates.md](references/gitignore-templates.md) for stack templates,
 `Global` OS/editor rules, and the CGW baseline block to compose one.
 
