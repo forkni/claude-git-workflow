@@ -18,6 +18,7 @@ For script flags and environment variables, see [references/script-reference.md]
 For error recovery procedures, see [references/error-recovery.md](references/error-recovery.md).
 For branch rules and merge workflow, see [references/branch-and-merge-rules.md](references/branch-and-merge-rules.md).
 For non-obvious git techniques not covered by a wrapper (pickaxe search, merge-base discovery, back-dated tags, PR diff URLs), see [references/git-recipes.md](references/git-recipes.md).
+For choosing or composing a `.gitignore` — stack templates, OS/editor `Global` rules, pattern precedence and negation, and the trap where ignoring an already-tracked path does nothing — see [references/gitignore-templates.md](references/gitignore-templates.md).
 For the full promotion pipeline (commit → push → merge/PR → push, run by `/auto-git-workflow-cmd` option 1), see [references/full-promotion.md](references/full-promotion.md).
 For the mandatory post-push CI verification gate (subscribe, wait, fix-until-green), see [references/ci-verification.md](references/ci-verification.md).
 For removing a secret or local-only file that was **already committed** (rotate, diagnose, strip from history if pushed), see [references/removing-sensitive-data.md](references/removing-sensitive-data.md).
@@ -612,6 +613,13 @@ If a hook reports `CGW not found` inside a linked worktree, run `link` — see
 ./scripts/git/repo_health.sh                  # integrity check + size report
 ./scripts/git/repo_health.sh --gc             # also run garbage collection
 ```
+
+There is no `setup_gitignore.sh` — unlike `.gitattributes`, `.gitignore` is hand-composed.
+Only `configure.sh` touches it, and only two ways: a fresh install appends three entries
+(`logs/`, `.cgw.conf`, `.cgw.conf.bak`); `--reconfigure` appends just `.cgw.conf.bak` when it
+backs up an existing config. Neither path rewrites or reorders your existing rules. See
+[references/gitignore-templates.md](references/gitignore-templates.md) for stack templates,
+`Global` OS/editor rules, and the CGW baseline block to compose one.
 
 **Checking what changed on your branch:**
 
