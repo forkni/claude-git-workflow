@@ -1126,6 +1126,93 @@ _run_commit() {
   [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
 }
 
+# ── CGW_FREEFORM_MESSAGE_BRANCHES ───────────────────────────────────────────
+
+@test "freeform branch: non-conventional message succeeds and skips the format check" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b up/x
+  echo "content" > "${TEST_REPO_DIR}/freeform_file.txt"
+  git -C "${TEST_REPO_DIR}" add freeform_file.txt
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_NON_INTERACTIVE=1
+    export CGW_FREEFORM_MESSAGE_BRANCHES='up/*'
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --skip-lint \"Present track_anything count as a one-channel CHOP\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"matches CGW_FREEFORM_MESSAGE_BRANCHES"* ]]
+  [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+}
+
+@test "same non-conventional message still blocked on a non-freeform branch (regression)" {
+  # Stays on 'development' (per setup()) -- up/* does not match it.
+  echo "content" > "${TEST_REPO_DIR}/freeform_regress.txt"
+  git -C "${TEST_REPO_DIR}" add freeform_regress.txt
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_NON_INTERACTIVE=1
+    export CGW_FREEFORM_MESSAGE_BRANCHES='up/*'
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --skip-lint \"Present track_anything count as a one-channel CHOP\"
+  "
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"conventional format"* ]] || [[ "${output}" == *"conventional"* ]]
+}
+
+@test "freeform branch: 120-char subject containing a colon is not blocked by the hard cap" {
+  # Regression for the mis-measure bug: stripping at the first colon (the
+  # non-freeform "type:" strip) would cut this subject down to whatever
+  # follows "Detail:", silently under-counting it. On a freeform branch the
+  # WHOLE line must be measured instead, so the tip reports the true length.
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b up/y
+  echo "content" > "${TEST_REPO_DIR}/freeform_long_subject.txt"
+  git -C "${TEST_REPO_DIR}" add freeform_long_subject.txt
+  local subject
+  subject="Detail: $(printf 'a%.0s' {1..112})"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_NON_INTERACTIVE=1
+    export CGW_FREEFORM_MESSAGE_BRANCHES='up/*'
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --skip-lint \"${subject}\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Tip: subject is 120 chars"* ]]
+  [[ "${output}" != *"over the 72-char hard cap"* ]]
+  [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+}
+
+@test "same 120-char subject still blocked on a non-freeform branch (regression)" {
+  # Stays on 'development' -- the freeform exemption (format skip AND the
+  # advisory-only hard cap) must not leak to a branch that doesn't match
+  # CGW_FREEFORM_MESSAGE_BRANCHES, even with the setting configured.
+  echo "content" > "${TEST_REPO_DIR}/regress_long_subject.txt"
+  git -C "${TEST_REPO_DIR}" add regress_long_subject.txt
+  local subject
+  subject="Detail: $(printf 'a%.0s' {1..112})"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_NON_INTERACTIVE=1
+    export CGW_FREEFORM_MESSAGE_BRANCHES='up/*'
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --skip-lint \"${subject}\"
+  "
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"conventional format"* ]] || [[ "${output}" == *"conventional"* ]]
+}
+
 # Regression: length must be measured from the subject LINE only, not the
 # whole multi-line message. commit_msg is "subject\n\nbody...trailers", and
 # stripping "*: " against the full string previously swallowed the body into

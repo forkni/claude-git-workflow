@@ -694,6 +694,89 @@ UU b.py
   [ "${status}" -eq 1 ]
 }
 
+# ── cgw_branch_is_freeform() ──────────────────────────────────────────────────
+
+@test "cgw_branch_is_freeform: empty CGW_FREEFORM_MESSAGE_BRANCHES returns 1" {
+  CGW_FREEFORM_MESSAGE_BRANCHES=""
+  run cgw_branch_is_freeform "up/x"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_branch_is_freeform: exact branch name matches" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="up-exact"
+  cgw_branch_is_freeform "up-exact"
+}
+
+@test "cgw_branch_is_freeform: glob matches nested branch names" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="up/*"
+  cgw_branch_is_freeform "up/x"
+  cgw_branch_is_freeform "up/a/b"
+}
+
+@test "cgw_branch_is_freeform: glob does NOT match unrelated or non-prefixed branches" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="up/*"
+  run cgw_branch_is_freeform "upstream"
+  [ "${status}" -eq 1 ]
+  run cgw_branch_is_freeform "feature/up/x"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_branch_is_freeform: multiple space-separated patterns" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="up/* release/*"
+  cgw_branch_is_freeform "up/x"
+  cgw_branch_is_freeform "release/1.0"
+  run cgw_branch_is_freeform "development"
+  [ "${status}" -eq 1 ]
+}
+
+# ── cgw_freeform_message_check() ──────────────────────────────────────────────
+
+@test "cgw_freeform_message_check: unset CGW_FREEFORM_MESSAGE_CHECK returns 0" {
+  CGW_FREEFORM_MESSAGE_CHECK=""
+  cgw_freeform_message_check "any message"
+}
+
+@test "cgw_freeform_message_check: passing command returns 0" {
+  local check_script
+  check_script="$(mktemp)"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"${check_script}"
+  chmod +x "${check_script}"
+  CGW_FREEFORM_MESSAGE_CHECK="${check_script}"
+  cgw_freeform_message_check "Present track_anything count as a one-channel CHOP"
+}
+
+@test "cgw_freeform_message_check: failing command returns 1" {
+  local check_script
+  check_script="$(mktemp)"
+  printf '#!/usr/bin/env bash\nexit 1\n' >"${check_script}"
+  chmod +x "${check_script}"
+  CGW_FREEFORM_MESSAGE_CHECK="${check_script}"
+  run cgw_freeform_message_check "bad message"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_freeform_message_check: message reaches the command via a file argument" {
+  local check_script
+  check_script="$(mktemp)"
+  printf '#!/usr/bin/env bash\ncat "$1"\n' >"${check_script}"
+  chmod +x "${check_script}"
+  CGW_FREEFORM_MESSAGE_CHECK="${check_script}"
+  run cgw_freeform_message_check "Co-Authored-By: Claude <noreply@anthropic.com>"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Co-Authored-By: Claude"* ]]
+}
+
+@test "cgw_freeform_message_check: missing command fails closed" {
+  # Same [[ ! -x "${cmd}" ]] guard also covers "exists but not executable" --
+  # not separately testable here since this platform's temp/project mounts
+  # mark every regular file executable regardless of chmod (verified: chmod -x
+  # is a no-op in this environment), so there is no way to construct a
+  # present-but-non-executable file to exercise that branch distinctly.
+  CGW_FREEFORM_MESSAGE_CHECK="does-not-exist.sh"
+  run cgw_freeform_message_check "any message"
+  [ "${status}" -eq 1 ]
+}
+
 # ── cgw_resolve_lint_binary() ─────────────────────────────────────────────────
 
 @test "cgw_resolve_lint_binary: returns venv path when binary exists in PYTHON_BIN" {

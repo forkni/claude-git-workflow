@@ -57,6 +57,29 @@ CGW_LOCAL_FILES_EXEMPT=""
 CGW_EXTRA_PREFIXES=""
 
 # ============================================================================
+# FREEFORM-MESSAGE BRANCHES
+# ============================================================================
+# Branches whose commit MESSAGE FORMAT is not checked (conventional-commit
+# grammar, subject-length hard cap). Space-separated bash glob patterns.
+# Everything else still applies: lint, local-only files, protected branches.
+# Use for branches that target another project with its own commit-message
+# style, e.g. an upstream PR branch.
+#
+# Opt-in, no default. On an ALREADY-INSTALLED project, cgw-batch-install.cmd
+# never touches .cgw.conf, so adding this to cgw.conf.example does not turn
+# it on anywhere -- add these two lines to that project's .cgw.conf by hand,
+# or run configure.sh --reconfigure there.
+# CGW_FREEFORM_MESSAGE_BRANCHES="up/* upstream/*"
+CGW_FREEFORM_MESSAGE_BRANCHES=""
+
+# Optional: run this command against the message on a freeform branch instead
+# of skipping validation entirely, e.g. the target project's own commit-msg
+# hook. Receives the message as a file path in $1. Relative paths resolve
+# against the project root.
+# CGW_FREEFORM_MESSAGE_CHECK="hooks/commit-msg"
+CGW_FREEFORM_MESSAGE_CHECK=""
+
+# ============================================================================
 # LINT CONFIGURATION
 # ============================================================================
 # Set CGW_LINT_CMD="" to disable lint checks entirely.

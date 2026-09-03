@@ -6,7 +6,9 @@
 #
 # Checks all commits about to be pushed:
 #   1. No local-only files tracked in any unpushed commit
-#   2. All commit messages follow conventional format
+#   2. All commit messages follow conventional format, unless the branch
+#      matches CGW_FREEFORM_MESSAGE_BRANCHES (e.g. an upstream PR branch
+#      that answers to another project's message style)
 #
 # This complements push_validated.sh (CGW wrapper) by catching issues
 # even when users bypass the wrapper and run git push directly.
@@ -85,7 +87,30 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   done
 
   # ── [2] Conventional commit format check ──────────────────────────────
-  if [[ -n "${CGW_ALL_PREFIXES}" ]]; then
+  # Derive the branch being pushed TO from REMOTE_REF, falling back to the
+  # local ref, so both `git push origin up/x` and
+  # `git push origin HEAD:up/x` resolve to `up/x`. refs/tags/... never
+  # matches a branch glob in CGW_FREEFORM_MESSAGE_BRANCHES, so tag pushes
+  # are unaffected.
+  _BRANCH="${REMOTE_REF#refs/heads/}"
+  [[ "${_BRANCH}" == "${REMOTE_REF}" ]] && _BRANCH="${LOCAL_REF#refs/heads/}"
+
+  if cgw_branch_is_freeform "${_BRANCH}"; then
+    echo "pre-push: ${_BRANCH} matches CGW_FREEFORM_MESSAGE_BRANCHES, commit-format check skipped"
+    for COMMIT in ${COMMITS}; do
+      # Skip merge commits (they often have non-conventional messages)
+      PARENT_COUNT=$(git cat-file -p "${COMMIT}" 2>/dev/null | grep -c "^parent " || true)
+      [[ "${PARENT_COUNT}" -ge 2 ]] && continue
+
+      MSG_FULL=$(git log -1 --format="%B" "${COMMIT}" 2>/dev/null || true)
+      if ! cgw_freeform_message_check "${MSG_FULL}"; then
+        echo ""
+        echo "ERROR [pre-push]: Commit ${COMMIT} rejected by CGW_FREEFORM_MESSAGE_CHECK"
+        echo ""
+        exit 1
+      fi
+    done
+  elif [[ -n "${CGW_ALL_PREFIXES}" ]]; then
     for COMMIT in ${COMMITS}; do
       MSG=$(git log -1 --format="%s" "${COMMIT}" 2>/dev/null || true)
 

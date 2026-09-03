@@ -196,6 +196,20 @@ else
 fi
 export CGW_ALL_PREFIXES # consumed by commit_enhanced.sh (cross-file, not detectable by shellcheck)
 
+# --- Freeform-message branches ---
+# Space-separated bash glob patterns of branch names whose commit MESSAGE
+# FORMAT is not checked (conventional-commit grammar, subject-length hard
+# cap). Everything else still applies: lint, local-only files, protected
+# branches. Use for branches that target another project with its own
+# commit-message style (e.g. an upstream PR branch). Example: "up/* upstream/*"
+CGW_FREEFORM_MESSAGE_BRANCHES="${CGW_FREEFORM_MESSAGE_BRANCHES:-}"
+# Optional: a command run against the message on a freeform branch instead of
+# skipping validation entirely, e.g. the target project's own commit-msg hook.
+# Receives the message as a file path in $1. Relative paths resolve against
+# PROJECT_ROOT. Empty (default): no check runs.
+CGW_FREEFORM_MESSAGE_CHECK="${CGW_FREEFORM_MESSAGE_CHECK:-}"
+export CGW_FREEFORM_MESSAGE_BRANCHES CGW_FREEFORM_MESSAGE_CHECK # consumed by commit_enhanced.sh, undo_last.sh, hooks/pre-push (cross-file, not detectable by shellcheck)
+
 # --- Lint configuration ---
 # Set CGW_LINT_CMD="" to disable lint checks entirely (e.g. non-Python projects
 # that haven't configured a linter yet).

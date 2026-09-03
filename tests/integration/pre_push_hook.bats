@@ -106,3 +106,103 @@ _bypass_commit() {
   run git -C "${TEST_REPO_DIR}" push origin development
   [ "${status}" -eq 0 ]
 }
+
+# ── CGW_FREEFORM_MESSAGE_BRANCHES ───────────────────────────────────────────
+
+@test "pre-push allows a freeform-branch commit with a non-conventional message" {
+  echo 'CGW_FREEFORM_MESSAGE_BRANCHES="up/*"' > "${TEST_REPO_DIR}/.cgw.conf"
+  git -C "${TEST_REPO_DIR}" add .cgw.conf
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: configure freeform branches"
+  git -C "${TEST_REPO_DIR}" push --quiet origin development
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b up/x
+  echo "feature" > "${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  _bypass_commit "Present track_anything count as a one-channel CHOP"
+
+  run git -C "${TEST_REPO_DIR}" push origin up/x
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"CGW_FREEFORM_MESSAGE_BRANCHES"* ]]
+}
+
+@test "pre-push still blocks the same non-conventional message on a non-freeform branch (regression)" {
+  echo 'CGW_FREEFORM_MESSAGE_BRANCHES="up/*"' > "${TEST_REPO_DIR}/.cgw.conf"
+  git -C "${TEST_REPO_DIR}" add .cgw.conf
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: configure freeform branches"
+  echo "feature" > "${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  _bypass_commit "Present track_anything count as a one-channel CHOP"
+
+  run git -C "${TEST_REPO_DIR}" push origin development
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"non-conventional"* ]] || [[ "${output}" == *"format"* ]]
+}
+
+@test "pre-push still blocks CLAUDE.md on a freeform branch (check [1] stays enforced)" {
+  echo 'CGW_FREEFORM_MESSAGE_BRANCHES="up/*"' > "${TEST_REPO_DIR}/.cgw.conf"
+  git -C "${TEST_REPO_DIR}" add .cgw.conf
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: configure freeform branches"
+  git -C "${TEST_REPO_DIR}" push --quiet origin development
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b up/x
+  echo "# Claude" > "${TEST_REPO_DIR}/CLAUDE.md"
+  git -C "${TEST_REPO_DIR}" add CLAUDE.md
+  _bypass_commit "Leak CLAUDE.md on an upstream branch"
+
+  run git -C "${TEST_REPO_DIR}" push origin up/x
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"local-only"* ]] || [[ "${output}" == *"CLAUDE.md"* ]]
+}
+
+@test "pre-push resolves the freeform branch from REMOTE_REF when the local branch name differs" {
+  echo 'CGW_FREEFORM_MESSAGE_BRANCHES="up/*"' > "${TEST_REPO_DIR}/.cgw.conf"
+  git -C "${TEST_REPO_DIR}" add .cgw.conf
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: configure freeform branches"
+  git -C "${TEST_REPO_DIR}" push --quiet origin development
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b local-topic
+  echo "feature" > "${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  _bypass_commit "Present track_anything count as a one-channel CHOP"
+
+  run git -C "${TEST_REPO_DIR}" push origin HEAD:refs/heads/up/x
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"CGW_FREEFORM_MESSAGE_BRANCHES"* ]]
+}
+
+@test "pre-push freeform exemption applies from a linked worktree via the .cgw.conf fallback" {
+  create_test_worktree "up/x"
+  # .cgw.conf is gitignored by configure.sh itself, so it exists ONLY in the
+  # main worktree -- a linked worktree never gets its own copy checked out.
+  echo 'CGW_FREEFORM_MESSAGE_BRANCHES="up/*"' > "${TEST_REPO_DIR}/.cgw.conf"
+  [ ! -e "${TEST_WORKTREE_DIR}/.cgw.conf" ] # confirm the worktree really lacks its own copy
+
+  echo "feature" > "${TEST_WORKTREE_DIR}/feature.txt"
+  git -C "${TEST_WORKTREE_DIR}" add feature.txt
+  git -C "${TEST_WORKTREE_DIR}" commit --quiet --no-verify -m "Present track_anything count as a one-channel CHOP"
+
+  run git -C "${TEST_WORKTREE_DIR}" push origin up/x
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"CGW_FREEFORM_MESSAGE_BRANCHES"* ]]
+}
+
+@test "pre-push CGW_FREEFORM_MESSAGE_CHECK blocks a message rejected by the delegated command" {
+  cat > "${TEST_REPO_DIR}/reject-ai-trailer.sh" <<'HOOK'
+#!/usr/bin/env bash
+grep -qi 'co-authored-by:.*claude' "$1" && exit 1
+exit 0
+HOOK
+  chmod +x "${TEST_REPO_DIR}/reject-ai-trailer.sh"
+  cat > "${TEST_REPO_DIR}/.cgw.conf" <<'CONF'
+CGW_FREEFORM_MESSAGE_BRANCHES="up/*"
+CGW_FREEFORM_MESSAGE_CHECK="reject-ai-trailer.sh"
+CONF
+  git -C "${TEST_REPO_DIR}" add .cgw.conf reject-ai-trailer.sh
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: configure freeform message check"
+  git -C "${TEST_REPO_DIR}" push --quiet origin development
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b up/x
+  echo "feature" > "${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet --no-verify -m "$(printf 'Present track_anything count as a one-channel CHOP\n\nCo-Authored-By: Claude <noreply@anthropic.com>')"
+
+  run git -C "${TEST_REPO_DIR}" push origin up/x
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"CGW_FREEFORM_MESSAGE_CHECK"* ]]
+}
