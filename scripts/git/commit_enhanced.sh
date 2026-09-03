@@ -689,7 +689,21 @@ main() {
 
   local commit_msg="${commit_msg_param}"
 
-  if ! cgw_validate_commit_message "${commit_msg}"; then
+  # A freeform branch (CGW_FREEFORM_MESSAGE_BRANCHES) answers to another
+  # project's commit-message style -- e.g. an upstream PR branch. Skip the
+  # conventional-format check and the hard subject-length cap on it, but
+  # still run CGW_FREEFORM_MESSAGE_CHECK when configured (the target
+  # project's own gate, e.g. its commit-msg hook) so the branch is not left
+  # with no message gate at all.
+  local _freeform=0
+  if cgw_branch_is_freeform "${current_branch}"; then
+    _freeform=1
+    echo "  [i] ${current_branch} matches CGW_FREEFORM_MESSAGE_BRANCHES; conventional format not enforced"
+    if ! cgw_freeform_message_check "${commit_msg}"; then
+      err "Commit message rejected by CGW_FREEFORM_MESSAGE_CHECK"
+      exit 1
+    fi
+  elif ! cgw_validate_commit_message "${commit_msg}"; then
     echo "[!] WARNING: Message doesn't follow conventional format"
     echo "  Configured types: ${CGW_ALL_PREFIXES/|/, }"
     if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
@@ -702,7 +716,10 @@ main() {
   # for the summary line after the prefix; git log --oneline / GitHub UI
   # commonly truncate around 72). Soft threshold: advisory tip, non-blocking.
   # Hard threshold: blocks via cgw_confirm (non-interactive: abort) unless
-  # CGW_ENFORCE_SUBJECT_LENGTH=0.
+  # CGW_ENFORCE_SUBJECT_LENGTH=0. On a freeform branch the hard cap is
+  # advisory only (a tip, never a block) -- the target project's own style
+  # sets the real limit, and CGW_FREEFORM_MESSAGE_CHECK is the place to
+  # enforce it if desired.
   # NOTE: measure the first line only -- commit_msg is the full multi-line
   # message (subject + body + trailers); stripping "*: " against the whole
   # string would swallow the body into the "summary" and false-positive on
@@ -710,13 +727,20 @@ main() {
   # NOTE: cgw_validate_commit_message only requires "type:" (colon, no
   # mandatory space) -- strip on the bare colon, then trim one optional
   # leading space, so "type:subject" (no space) isn't measured with the
-  # prefix still attached.
+  # prefix still attached. On a freeform branch there is no "type:" prefix
+  # to strip -- a colon in freeform prose is part of the subject, so the
+  # whole subject line is measured instead.
   local _subject_line="${commit_msg%%$'\n'*}"
-  local _summary_part="${_subject_line#*:}"
-  _summary_part="${_summary_part# }"
+  local _summary_part
+  if [[ ${_freeform} -eq 1 ]]; then
+    _summary_part="${_subject_line}"
+  else
+    _summary_part="${_subject_line#*:}"
+    _summary_part="${_summary_part# }"
+  fi
   local _summary_len=${#_summary_part}
   if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_SOFT_LEN} ]]; then
-    if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_HARD_LEN} ]]; then
+    if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_HARD_LEN} ]] && [[ ${_freeform} -eq 0 ]]; then
       echo "[!] Subject after prefix is ${_summary_len} chars, over the ${CGW_COMMIT_SUBJECT_HARD_LEN}-char hard cap (Pro Git recommends ~${CGW_COMMIT_SUBJECT_SOFT_LEN})"
       echo "  Move detail into the commit body instead of a long summary line."
       if [[ "${CGW_ENFORCE_SUBJECT_LENGTH}" == "1" ]]; then
@@ -725,11 +749,13 @@ main() {
           exit 0
         fi
       fi
+    elif [[ ${_freeform} -eq 1 ]]; then
+      echo "[!] Tip: subject is ${_summary_len} chars (target project's style; not enforced here)"
     else
       echo "[!] Tip: subject after prefix is ${_summary_len} chars (Pro Git recommends ≤${CGW_COMMIT_SUBJECT_SOFT_LEN})"
     fi
   fi
-  unset _subject_line _summary_part _summary_len
+  unset _subject_line _summary_part _summary_len _freeform
 
   echo "Commit message: ${commit_msg}"
   echo ""

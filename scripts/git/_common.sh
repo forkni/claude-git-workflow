@@ -1451,6 +1451,52 @@ cgw_validate_commit_message() {
   echo "${msg}" | grep -qE "^(${CGW_ALL_PREFIXES})(\([A-Za-z0-9._/-]+\))?!?:"
 }
 
+# cgw_branch_is_freeform <branch>
+#   Returns 0 if <branch> matches any glob in CGW_FREEFORM_MESSAGE_BRANCHES.
+#   Pure predicate, no output. Empty setting: always 1.
+cgw_branch_is_freeform() {
+  local branch="$1" pat
+  local -a _pats=()
+  read -r -a _pats <<<"${CGW_FREEFORM_MESSAGE_BRANCHES:-}" || true
+  for pat in "${_pats[@]+"${_pats[@]}"}"; do
+    # shellcheck disable=SC2053  # unquoted RHS is the point: glob match
+    [[ "${branch}" == ${pat} ]] && return 0
+  done
+  return 1
+}
+
+# cgw_freeform_message_check <msg>
+#   Delegated gate for a freeform branch's commit message, e.g. the target
+#   project's own commit-msg hook. Returns 0 (nothing to enforce) when
+#   CGW_FREEFORM_MESSAGE_CHECK is unset. Otherwise writes <msg> to a temp
+#   file and runs CGW_FREEFORM_MESSAGE_CHECK with that file as $1; returns
+#   the command's exit status. A relative command resolves against
+#   PROJECT_ROOT. Fails closed (returns 1) if the command cannot be found or
+#   is not executable -- a silently-skipped delegated gate is worse than a
+#   blocked commit. The command's own stdout/stderr passes through; this
+#   function prints nothing itself.
+cgw_freeform_message_check() {
+  local msg="$1"
+  [[ -z "${CGW_FREEFORM_MESSAGE_CHECK:-}" ]] && return 0
+
+  local cmd="${CGW_FREEFORM_MESSAGE_CHECK}"
+  if [[ "${cmd}" != /* ]]; then
+    cmd="${PROJECT_ROOT}/${cmd}"
+  fi
+  if [[ ! -x "${cmd}" ]]; then
+    err "CGW_FREEFORM_MESSAGE_CHECK is set to '${CGW_FREEFORM_MESSAGE_CHECK}' but '${cmd}' is not an executable file"
+    return 1
+  fi
+
+  local msgfile
+  msgfile="$(mktemp)" || return 1
+  printf '%s\n' "${msg}" >"${msgfile}"
+  "${cmd}" "${msgfile}"
+  local status=$?
+  rm -f "${msgfile}"
+  return ${status}
+}
+
 # ── interactive prompts module ─────────────────────────────────────────────────
 # Unified confirmation prompt. Centralises all yes/no and literal-token
 # prompts so non-interactive policy, grammar, and default-value handling

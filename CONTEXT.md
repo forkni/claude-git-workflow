@@ -96,9 +96,42 @@ The assumption that a path is meant to be staged in full, not by hunk — true o
 
 The conventional-commit grammar enforced on every `commit_enhanced.sh` invocation and every commit in the pre-push hook range. Format: `<type>: <description>` where `<type>` is drawn from the built-in set (`feat|fix|docs|chore|test|refactor|style|perf`) plus any `CGW_EXTRA_PREFIXES` configured in `.cgw.conf`.
 
-**Implementation seam**: `cgw_validate_commit_message <msg>` in `scripts/git/_common.sh`. Pure predicate — returns 0 on match, 1 otherwise. No output: each caller owns its own user-facing message and merge-commit skipping logic.
+**Implementation seam**: `cgw_validate_commit_message <msg>` in `scripts/git/_common.sh`. Pure predicate — returns 0 on match, 1 otherwise. No output: each caller owns its own user-facing message and merge-commit skipping logic. Skipped on [[freeform-message branch|#freeform-message-branch]]es — see below.
 
-**Callers**: `commit_enhanced.sh` (step [5]), `undo_last.sh` (amend-message path), `.githooks/pre-push` (all commits in push range).
+**Callers**: `commit_enhanced.sh` (step [5]), `undo_last.sh` (amend-message path), `hooks/pre-push` and `.githooks/pre-push` (byte-identical copies; all commits in push range).
+
+---
+
+## freeform-message branch
+
+A branch whose name matches `CGW_FREEFORM_MESSAGE_BRANCHES` (space-separated bash globs, e.g.
+`"up/*"`) — typically a branch that targets another project's own commit-message convention,
+such as an upstream PR branch on a fork. On a matching branch, the conventional-commit-format
+check and the subject hard-length cap above are not enforced (the hard cap becomes an advisory
+tip instead of a block; the soft-length tip still prints). Everything else stays fully
+enforced: local-only-file guard, lint/format, protected-branch rules, backup tags, force-push
+protection. `commit_enhanced.sh` remains the only sanctioned commit path — `--no-verify` and
+raw `git commit`/`git push` are not re-permitted.
+
+Optionally, `CGW_FREEFORM_MESSAGE_CHECK` names a command (e.g. the target project's own
+`commit-msg` hook) run against the full message instead of skipping validation outright — the
+command receives the message as a file path in `$1` and its own exit code/output governs
+accept or reject.
+
+**Implementation seam**: `cgw_branch_is_freeform <branch>` and `cgw_freeform_message_check
+<msg>` in `scripts/git/_common.sh`, settings in `scripts/git/_config.sh`.
+
+**Callers**: same four call sites as [[commit-message format]] above — each checks
+`cgw_branch_is_freeform` first and branches to `cgw_freeform_message_check` instead of
+`cgw_validate_commit_message` when it matches. `hooks/pre-push` and `.githooks/pre-push`
+derive the branch from the remote ref being pushed to (falling back to the local ref) so both
+`git push origin HEAD:up/x` and `git push -u origin up/x` resolve correctly.
+
+**Rollout note**: opt-in, no default (see `cgw.conf.example`). The code path (updated scripts +
+hooks) reaches every consumer project via `cgw-install.cmd` / `cgw-batch-install.cmd`
+automatically, but `cgw-batch-install.cmd` never writes `.cgw.conf` — an already-installed
+project only gets these two variables if added to its `.cgw.conf` by hand, or via
+`configure.sh --reconfigure`. See "Batch-updating multiple projects" in `docs/installation.md`.
 
 ---
 

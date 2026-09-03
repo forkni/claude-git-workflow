@@ -587,6 +587,8 @@ Computes GitHub-compatible heading slugs locally (offline port of `gh-md-toc` â€
 | `CGW_LINT_CMD=<tool>` | Override lint tool (default: `ruff`; `""` = disable lint) |
 | `CGW_FORMAT_CMD=<tool>` | Override format tool (default: `ruff`; `""` = disable format) |
 | `CGW_EXTRA_PREFIXES=<list>` | Pipe-separated extra commit prefixes (e.g. `"cuda\|tensorrt"`) |
+| `CGW_FREEFORM_MESSAGE_BRANCHES=<globs>` | Space-separated bash globs of branches whose commit format is not checked (e.g. `"up/*"` for an upstream PR branch) |
+| `CGW_FREEFORM_MESSAGE_CHECK=<cmd>` | Command run against a freeform branch's message instead of skipping validation (e.g. the target project's own `commit-msg` hook); receives the message as a file path in `$1` |
 | `CGW_LOCAL_FILES=<paths>` | Space-separated files never committed (default: `CLAUDE.md MEMORY.md .claude/ logs/`) |
 | `CGW_LOCAL_FILES_EXEMPT=<paths>` | Space-separated paths exempt from the block (e.g. `.claude/settings.json` inside the blocked `.claude/`) |
 | `CGW_PROTECTED_BRANCHES=<list>` | Space-separated branches requiring `--force` confirmation for force-push |

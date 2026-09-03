@@ -24,6 +24,8 @@ _source_config() {
     echo \"CGW_LINT_CMD=\${CGW_LINT_CMD}\"
     echo \"CGW_MERGE_MODE=\${CGW_MERGE_MODE}\"
     echo \"CGW_ALL_PREFIXES=\${CGW_ALL_PREFIXES}\"
+    echo \"CGW_FREEFORM_MESSAGE_BRANCHES=\${CGW_FREEFORM_MESSAGE_BRANCHES}\"
+    echo \"CGW_FREEFORM_MESSAGE_CHECK=\${CGW_FREEFORM_MESSAGE_CHECK}\"
     echo \"CGW_NON_INTERACTIVE=\${CGW_NON_INTERACTIVE}\"
     echo \"CGW_NO_VENV=\${CGW_NO_VENV}\"
     echo \"CGW_STAGED_ONLY=\${CGW_STAGED_ONLY}\"
@@ -394,6 +396,43 @@ teardown() {
   result=$(_source_config "export CGW_EXTRA_PREFIXES=myprefix")
   prefix_line=$(echo "${result}" | grep "^CGW_ALL_PREFIXES=")
   [[ "${prefix_line}" == *"|myprefix"* ]]
+}
+
+# ── CGW_FREEFORM_MESSAGE_BRANCHES / CGW_FREEFORM_MESSAGE_CHECK ────────────────
+
+@test "CGW_FREEFORM_MESSAGE_BRANCHES has no default (empty when unconfigured)" {
+  result=$(_source_config)
+  branches_line=$(echo "${result}" | grep "^CGW_FREEFORM_MESSAGE_BRANCHES=")
+  [[ "${branches_line}" == "CGW_FREEFORM_MESSAGE_BRANCHES=" ]]
+}
+
+@test "CGW_FREEFORM_MESSAGE_CHECK has no default (empty when unconfigured)" {
+  result=$(_source_config)
+  check_line=$(echo "${result}" | grep "^CGW_FREEFORM_MESSAGE_CHECK=")
+  [[ "${check_line}" == "CGW_FREEFORM_MESSAGE_CHECK=" ]]
+}
+
+@test "CGW_FREEFORM_MESSAGE_BRANCHES env var overrides default" {
+  result=$(_source_config "export CGW_FREEFORM_MESSAGE_BRANCHES='up/* release/*'")
+  [[ "${result}" == *"CGW_FREEFORM_MESSAGE_BRANCHES=up/* release/*"* ]]
+}
+
+@test "CGW_FREEFORM_MESSAGE_CHECK env var overrides default" {
+  result=$(_source_config "export CGW_FREEFORM_MESSAGE_CHECK=hooks/commit-msg")
+  [[ "${result}" == *"CGW_FREEFORM_MESSAGE_CHECK=hooks/commit-msg"* ]]
+}
+
+@test ".cgw.conf CGW_FREEFORM_MESSAGE_BRANCHES and CGW_FREEFORM_MESSAGE_CHECK are honoured" {
+  cp "${FIXTURES_DIR}/sample.cgw.conf" "${TEST_REPO_DIR}/.cgw.conf"
+  result=$(_source_config)
+  [[ "${result}" == *"CGW_FREEFORM_MESSAGE_BRANCHES=up/*"* ]]
+  [[ "${result}" == *"CGW_FREEFORM_MESSAGE_CHECK=hooks/commit-msg"* ]]
+}
+
+@test "env var takes priority over .cgw.conf for CGW_FREEFORM_MESSAGE_BRANCHES" {
+  cp "${FIXTURES_DIR}/sample.cgw.conf" "${TEST_REPO_DIR}/.cgw.conf"
+  result=$(_source_config "export CGW_FREEFORM_MESSAGE_BRANCHES=release/*")
+  [[ "${result}" == *"CGW_FREEFORM_MESSAGE_BRANCHES=release/*"* ]]
 }
 
 # ── Environment variable override ─────────────────────────────────────────────

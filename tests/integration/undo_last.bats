@@ -164,3 +164,18 @@ teardown() {
   run run_script undo_last.sh amend-message --non-interactive
   [ "${status}" -eq 1 ]
 }
+
+@test "amend-message: freeform branch accepts a non-conventional message without a warning" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b up/x
+  echo "new" > "${TEST_REPO_DIR}/new.txt"
+  git -C "${TEST_REPO_DIR}" add new.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: original message"
+
+  export CGW_FREEFORM_MESSAGE_BRANCHES='up/*'
+  run run_script undo_last.sh amend-message "Present track_anything count as a one-channel CHOP" --non-interactive
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"matches CGW_FREEFORM_MESSAGE_BRANCHES"* ]]
+  [[ "${output}" != *"does not follow conventional format"* ]]
+
+  git -C "${TEST_REPO_DIR}" log -1 --format="%s" | grep -q "Present track_anything count as a one-channel CHOP"
+}
