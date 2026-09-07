@@ -9,6 +9,11 @@
 #   logfile                - Set by init_logging
 #   CGW_SOURCE_BRANCH      - Head branch for the PR (default: development)
 #   CGW_TARGET_BRANCH      - Base branch for the PR (default: main)
+#
+# Passes gh an explicit --repo resolved from CGW_REMOTE's own URL (see
+# cgw_remote_owner_repo in _common.sh). Without this, `gh pr create` resolves
+# its own target repo and -- when CGW_REMOTE is a fork -- defaults to the
+# fork's parent/upstream repo instead of CGW_REMOTE itself.
 # Arguments:
 #   --title <title>        Override auto-generated PR title
 #   --draft                Create PR as draft (not ready for review)
@@ -71,6 +76,10 @@ main() {
         echo ""
         echo "Prerequisites:"
         echo "  gh CLI installed and authenticated (gh auth login)"
+        echo ""
+        echo "Note:"
+        echo "  Passes gh an explicit --repo resolved from \${CGW_REMOTE}'s URL, so a fork"
+        echo "  remote targets itself instead of gh's default (the fork's parent repo)."
         exit 0
         ;;
       --title)
@@ -265,11 +274,23 @@ ${formatted_log}
   log_section_end "PR CONTENT" "$logfile" "0"
   echo "" | tee -a "$logfile"
 
+  # Resolve an explicit --repo for gh from ${CGW_REMOTE}'s own URL. Without
+  # it, `gh pr create` resolves the target repo itself and -- when the remote
+  # is a fork -- defaults to the fork's parent/upstream repo, opening (or
+  # failing to open) the PR against the wrong repository.
+  local pr_repo=""
+  if pr_repo=$(cgw_remote_owner_repo "${CGW_REMOTE}"); then
+    echo "Repo: ${pr_repo} (explicit -- avoids gh defaulting to a parent repo if ${CGW_REMOTE} is a fork)" | tee -a "$logfile"
+  else
+    echo "[!] WARNING: could not determine ${CGW_REMOTE}'s owner/repo from its URL -- gh will use its own default repo resolution, which targets the parent repo if ${CGW_REMOTE} is a fork" | tee -a "$logfile"
+  fi
+
   # [4/4] Create PR
   if [[ ${dry_run} -eq 1 ]]; then
     echo "=== DRY RUN -- PR not created ===" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
     echo "Would create:" | tee -a "$logfile"
+    [[ -n "${pr_repo}" ]] && echo "  Repo:   ${pr_repo}" | tee -a "$logfile"
     echo "  Title:  ${pr_title}" | tee -a "$logfile"
     echo "  Head:   ${src_branch}" | tee -a "$logfile"
     echo "  Base:   ${tgt_branch}" | tee -a "$logfile"
@@ -282,6 +303,7 @@ ${formatted_log}
   log_section_start "CREATE PR" "$logfile"
 
   local gh_flags=()
+  [[ -n "${pr_repo}" ]] && gh_flags+=(--repo "${pr_repo}")
   gh_flags+=(--base "${tgt_branch}")
   gh_flags+=(--head "${src_branch}")
   gh_flags+=(--title "${pr_title}")

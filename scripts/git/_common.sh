@@ -374,6 +374,44 @@ cgw_remote_branch_exists() {
   git ls-remote --exit-code "${1}" "refs/heads/${2}" >/dev/null 2>&1
 }
 
+# cgw_remote_owner_repo <remote>
+# Echoes "<owner>/<repo>" parsed from <remote>'s configured URL, for github.com
+# SSH/HTTPS remotes only. Returns 1 and prints nothing if <remote> is unset or
+# its URL isn't a recognizable github.com URL.
+#
+# Reads the RAW config value (`git config --get remote.<remote>.url`), not
+# `git remote get-url` -- the latter expands any `url.<base>.insteadOf`
+# rewrite and would report the rewritten transport (e.g. a corporate mirror
+# or, in tests, a local bare repo) instead of the remote's real GitHub
+# identity. Used by create_pr.sh to pass gh CLI an explicit `--repo`: without
+# it, `gh pr create` resolves the target repo itself and -- when the remote is
+# a fork -- defaults to the fork's parent/upstream repo, silently opening (or
+# failing to open) the PR against the wrong repository.
+cgw_remote_owner_repo() {
+  local remote="$1"
+  local url
+  url=$(git config --get "remote.${remote}.url" 2>/dev/null) || return 1
+  [[ -z "${url}" ]] && return 1
+
+  local owner repo
+  if [[ "${url}" =~ ^(git@|ssh://git@)github\.com[:/]([^/]+)/(.+)$ ]]; then
+    owner="${BASH_REMATCH[2]}"
+    repo="${BASH_REMATCH[3]}"
+  elif [[ "${url}" =~ ^https://github\.com/([^/]+)/(.+)$ ]]; then
+    owner="${BASH_REMATCH[1]}"
+    repo="${BASH_REMATCH[2]}"
+  else
+    return 1
+  fi
+
+  repo="${repo%.git}"
+  repo="${repo%/}"
+  if [[ -z "${owner}" ]] || [[ -z "${repo}" ]]; then
+    return 1
+  fi
+  echo "${owner}/${repo}"
+}
+
 # cgw_default_branch [--refresh]
 # Echoes the repository's default branch name (no remote prefix).
 # Resolution order:

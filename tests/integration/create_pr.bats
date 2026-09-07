@@ -184,3 +184,46 @@ _run_create_pr() {
   run _run_create_pr
   [[ "${output}" == *"github.com"* ]] || [[ "${output}" == *"pull/"* ]]
 }
+
+# ── Explicit --repo (fork/upstream default-resolution bug) ──────────────────
+# Reproduces the fork/upstream repo shape offline: origin's *configured* URL
+# is rewritten to a fake github.com URL, but `url.<bare-dir>.insteadOf` sends
+# all real git transport (fetch/push/ls-remote) transparently to the local
+# bare remote already set up by create_test_repo_with_remote. This lets
+# cgw_remote_owner_repo "see" a github.com URL and parse it, while the rest of
+# the script still runs fully offline against the local bare repo.
+#
+# Without --repo, `gh pr create` resolves its own target repo and -- when the
+# remote is a fork -- defaults to the fork's parent/upstream repo instead of
+# origin itself. Asserting the exact --repo value in gh.log is red-capable:
+# before the fix, create_pr.sh never passed --repo at all.
+
+_use_fake_github_origin() {
+  local fake_url="https://github.com/forkni/claude-git-workflow.git"
+  git -C "${TEST_REPO_DIR}" config remote.origin.url "${fake_url}"
+  git -C "${TEST_REPO_DIR}" config "url.${TEST_REMOTE_DIR}.insteadOf" "${fake_url}"
+}
+
+@test "fork-shaped origin: passes explicit --repo resolved from origin's URL" {
+  install_mock_gh
+  _use_fake_github_origin
+  run _run_create_pr
+  [ "${status}" -eq 0 ]
+  grep -q -- "--repo forkni/claude-git-workflow" "${MOCK_BIN_DIR}/gh.log"
+}
+
+@test "fork-shaped origin: --dry-run preview shows the resolved repo" {
+  install_mock_gh
+  _use_fake_github_origin
+  run _run_create_pr "--dry-run"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"forkni/claude-git-workflow"* ]]
+}
+
+@test "non-github origin: falls back to no --repo (gh's own resolution)" {
+  install_mock_gh
+  # Default fixture remote is a local bare path, not a github.com URL.
+  run _run_create_pr
+  [ "${status}" -eq 0 ]
+  ! grep -q -- "--repo" "${MOCK_BIN_DIR}/gh.log"
+}

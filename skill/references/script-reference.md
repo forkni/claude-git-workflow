@@ -250,6 +250,8 @@ Merges only `docs/` changes. Warns if non-docs changes exist. Creates `pre-docs-
 
 Requires `gh` CLI authenticated (`gh auth login`). Checks ahead/behind status, then opens a PR. Charlie CI auto-reviews on PR open.
 
+Passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own `github.com` URL. Without this, `gh pr create` resolves its own target repo and — when `CGW_REMOTE` is a fork — defaults to the fork's parent/upstream repo instead of `CGW_REMOTE` itself. Falls back to no `--repo` (gh's own resolution) when the remote isn't a recognizable `github.com` URL.
+
 ---
 
 ## Advanced Operations

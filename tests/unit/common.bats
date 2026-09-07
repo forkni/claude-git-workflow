@@ -2502,3 +2502,139 @@ UU b.py
   "
   [ "${status}" -ne 0 ]
 }
+
+# ── cgw_remote_owner_repo() ────────────────────────────────────────────────────
+# Uses `git config --get remote.<remote>.url`, which does NOT need the remote
+# to be reachable or even valid -- only configured. No bare remote needed.
+
+@test "cgw_remote_owner_repo: https github.com URL parses owner/repo" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" remote add origin 'https://github.com/forkni/claude-git-workflow.git'
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    out=\$(cgw_remote_owner_repo origin); ec=\$?
+    rm -rf \"\${tmp}\"
+    echo \"\${out}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "forkni/claude-git-workflow" ]
+}
+
+@test "cgw_remote_owner_repo: https URL without .git suffix parses owner/repo" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" remote add origin 'https://github.com/forkni/claude-git-workflow'
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    out=\$(cgw_remote_owner_repo origin); ec=\$?
+    rm -rf \"\${tmp}\"
+    echo \"\${out}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "forkni/claude-git-workflow" ]
+}
+
+@test "cgw_remote_owner_repo: https URL with trailing slash parses owner/repo" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" remote add origin 'https://github.com/forkni/claude-git-workflow/'
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    out=\$(cgw_remote_owner_repo origin); ec=\$?
+    rm -rf \"\${tmp}\"
+    echo \"\${out}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "forkni/claude-git-workflow" ]
+}
+
+@test "cgw_remote_owner_repo: git@ SSH URL parses owner/repo" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" remote add origin 'git@github.com:forkni/claude-git-workflow.git'
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    out=\$(cgw_remote_owner_repo origin); ec=\$?
+    rm -rf \"\${tmp}\"
+    echo \"\${out}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "forkni/claude-git-workflow" ]
+}
+
+@test "cgw_remote_owner_repo: ssh:// git@ URL parses owner/repo" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" remote add origin 'ssh://git@github.com/forkni/claude-git-workflow.git'
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    out=\$(cgw_remote_owner_repo origin); ec=\$?
+    rm -rf \"\${tmp}\"
+    echo \"\${out}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "forkni/claude-git-workflow" ]
+}
+
+@test "cgw_remote_owner_repo: non-github.com host returns 1" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" remote add origin 'https://gitlab.com/forkni/claude-git-workflow.git'
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_remote_owner_repo origin; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -ne 0 ]
+}
+
+@test "cgw_remote_owner_repo: unknown remote returns 1" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_remote_owner_repo no-such-remote; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -ne 0 ]
+}
+
+@test "cgw_remote_owner_repo: reports raw configured URL, ignoring insteadOf rewrites" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" remote add origin 'https://github.com/forkni/claude-git-workflow.git'
+    git -C \"\${tmp}\" config 'url./some/local/mirror.insteadOf' 'https://github.com/forkni/claude-git-workflow.git'
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    out=\$(cgw_remote_owner_repo origin); ec=\$?
+    rm -rf \"\${tmp}\"
+    echo \"\${out}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "forkni/claude-git-workflow" ]
+}
