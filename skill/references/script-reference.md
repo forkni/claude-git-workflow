@@ -477,7 +477,7 @@ token at a real terminal.
 | `--skip-lint` | Skip all pre-push lint checks |
 | `--skip-md-lint` | Skip markdown lint only in pre-push check |
 | `--no-venv` | Forward to `check_lint.sh`: use system lint tool (no .venv) |
-| `--force` | Allow force-push (uses `--force-with-lease`; blocks for protected branches) |
+| `--force` | Allow force-push (uses an explicit `--force-with-lease=<ref>:<sha>`; blocks for protected branches) |
 | `--branch <name>` | Override push target branch |
 
 Safety checks: verifies remote reachability, warns if behind remote, blocks unguarded force-push to protected branches.

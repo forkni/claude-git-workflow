@@ -344,7 +344,8 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 ./scripts/git/push_validated.sh --skip-lint           # skip lint check entirely
 ./scripts/git/push_validated.sh --no-venv --skip-lint # both
 # One call is enough on its own -- no pre-check needed, regardless of urgency or stakes in
-# the request; --force-with-lease + the protected-branch guard already cover what an extra
+# the request; an explicit --force-with-lease=<ref>:<sha> (resolved from a freshly-fetched
+# tracking ref, not the bare form) + the protected-branch guard already cover what an extra
 # git status/log would verify. A post-check IS required, though: Rule 6 — subscribe to the
 # CI runs this push triggers and wait for green, see ci-verification.md.
 ```

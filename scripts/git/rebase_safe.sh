@@ -395,7 +395,7 @@ _cmd_rebase_onto() {
 
   if [[ "${pushed_count}" -gt 0 ]]; then
     echo "  [!] Your branch was previously pushed -- force-push required:"
-    echo "    ./scripts/git/push_validated.sh --force-with-lease"
+    echo "    ./scripts/git/push_validated.sh --force"
     echo ""
   fi
 
@@ -530,7 +530,7 @@ _cmd_squash_last() {
 
   if [[ "${pushed_count}" -gt 0 ]]; then
     echo "  [!] Your branch was previously pushed -- force-push required:"
-    echo "    ./scripts/git/push_validated.sh --force-with-lease"
+    echo "    ./scripts/git/push_validated.sh --force"
     echo ""
   fi
 
