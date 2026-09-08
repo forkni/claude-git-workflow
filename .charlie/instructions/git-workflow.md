@@ -17,7 +17,7 @@ All git operations: commits, merges, pushes, cherry-picks, rollbacks.
 ## Rules
 
 - [R1] Always use CGW wrapper scripts — never run raw `git commit`, `git push`, or `git merge` directly
-- [R2] Always use `commit_enhanced.sh` for commits — it enforces lint, local-file protection, and conventional message format
+- [R2] Always use `commit_enhanced.sh` for commits — it enforces lint, local-file protection, and conventional message format (waived on branches matching `CGW_FREEFORM_MESSAGE_BRANCHES`, but never on the source, target, or a protected branch)
 - [R3] Always use `push_validated.sh` for pushes — it checks remote reachability and blocks unguarded force-push to protected branches
 - [R4] Always use `merge_with_validation.sh` for merging `development` → `main` — it creates backup tags and auto-resolves DU/DD conflicts
 - [R5] Branch-changing scripts must register `trap cleanup INT TERM` to return to the original branch on interrupt

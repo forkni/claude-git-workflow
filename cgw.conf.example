@@ -65,6 +65,10 @@ CGW_EXTRA_PREFIXES=""
 # Use for branches that target another project with its own commit-message
 # style, e.g. an upstream PR branch.
 #
+# Guard-proof: the source, target, and any CGW_PROTECTED_BRANCHES entry can
+# never be exempted, even by a glob as broad as "*" -- a matching-but-guarded
+# branch prints a notice and falls back to the normal format check.
+#
 # Opt-in, no default. On an ALREADY-INSTALLED project, cgw-batch-install.cmd
 # never touches .cgw.conf, so adding this to cgw.conf.example does not turn
 # it on anywhere -- add these two lines to that project's .cgw.conf by hand,

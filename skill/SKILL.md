@@ -191,9 +191,12 @@ Additional project-specific prefixes can be configured via `CGW_EXTRA_PREFIXES` 
 (e.g. an `up/*` branch targeting another project's PR conventions) skip the conventional-format
 check and the hard length cap below — but `commit_enhanced.sh` is still the only sanctioned way
 to commit on them. Local-only-file, lint, and protected-branch guards stay fully enforced, and
-`--no-verify` / raw `git commit` remain forbidden, same as on every other branch. Optionally set
-`CGW_FREEFORM_MESSAGE_CHECK` to the target project's own message-validation command (e.g. its
-`commit-msg` hook) so that project's rules are enforced instead of skipping validation outright.
+`--no-verify` / raw `git commit` remain forbidden, same as on every other branch. The source,
+target, and any `CGW_PROTECTED_BRANCHES` entry can never be exempted this way — a glob as broad
+as `"*"` still has no effect on them, so the escape hatch cannot be used to silently disable the
+format check on the branches the policy protects. Optionally set `CGW_FREEFORM_MESSAGE_CHECK` to
+the target project's own message-validation command (e.g. its `commit-msg` hook) so that
+project's rules are enforced instead of skipping validation outright.
 
 **Scopes and the breaking-change marker are accepted natively.** For every prefix in the table
 above, the format check accepts the full Conventional Commits subject shape — `type: ...`,
