@@ -751,6 +751,11 @@ UU b.py
 }
 
 @test "cgw_branch_is_guarded: source branch is guarded" {
+  # CGW_SOURCE_BRANCH has no auto-detect (unlike CGW_TARGET_BRANCH) -- it is
+  # only ever populated from .cgw.conf, which is git-ignored and absent in a
+  # fresh checkout. Set it explicitly so this test doesn't depend on the
+  # ambient environment.
+  CGW_SOURCE_BRANCH="development"
   cgw_branch_is_guarded "${CGW_SOURCE_BRANCH}"
 }
 
@@ -767,6 +772,8 @@ UU b.py
 }
 
 @test "cgw_branch_is_freeform: source branch is never exempted even with a matching glob" {
+  # CGW_SOURCE_BRANCH has no auto-detect -- see note above.
+  CGW_SOURCE_BRANCH="development"
   CGW_FREEFORM_MESSAGE_BRANCHES="${CGW_SOURCE_BRANCH}"
   cgw_branch_matches_freeform_glob "${CGW_SOURCE_BRANCH}"
   run cgw_branch_is_freeform "${CGW_SOURCE_BRANCH}"
