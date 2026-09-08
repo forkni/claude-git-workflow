@@ -729,6 +729,63 @@ UU b.py
   [ "${status}" -eq 1 ]
 }
 
+@test "cgw_branch_is_freeform: empty branch name never matches, even a bare '*' glob" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="*"
+  run cgw_branch_is_freeform ""
+  [ "${status}" -eq 1 ]
+}
+
+# ── cgw_branch_matches_freeform_glob() / cgw_branch_is_guarded() ──────────────
+# CGW_SOURCE_BRANCH/CGW_TARGET_BRANCH/CGW_PROTECTED_BRANCHES are set by
+# _config.sh from the test repo (main/development), so a wildcard glob must
+# still never exempt them from cgw_branch_is_freeform.
+
+@test "cgw_branch_matches_freeform_glob: empty branch name never matches, even a bare '*' glob" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="*"
+  run cgw_branch_matches_freeform_glob ""
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_branch_is_guarded: target branch is guarded" {
+  cgw_branch_is_guarded "${CGW_TARGET_BRANCH}"
+}
+
+@test "cgw_branch_is_guarded: source branch is guarded" {
+  cgw_branch_is_guarded "${CGW_SOURCE_BRANCH}"
+}
+
+@test "cgw_branch_is_guarded: unrelated branch is not guarded" {
+  run cgw_branch_is_guarded "up/x"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_branch_is_freeform: a wildcard glob matches the glob but is still refused for a guarded branch" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="*"
+  cgw_branch_matches_freeform_glob "${CGW_TARGET_BRANCH}"
+  run cgw_branch_is_freeform "${CGW_TARGET_BRANCH}"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_branch_is_freeform: source branch is never exempted even with a matching glob" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="${CGW_SOURCE_BRANCH}"
+  cgw_branch_matches_freeform_glob "${CGW_SOURCE_BRANCH}"
+  run cgw_branch_is_freeform "${CGW_SOURCE_BRANCH}"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_branch_is_freeform: a CGW_PROTECTED_BRANCHES entry is never exempted even with a matching glob" {
+  CGW_PROTECTED_BRANCHES="staging"
+  CGW_FREEFORM_MESSAGE_BRANCHES="staging"
+  cgw_branch_matches_freeform_glob "staging"
+  run cgw_branch_is_freeform "staging"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_branch_is_freeform: an ordinary branch matching the glob is still exempt (guard doesn't overreach)" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="up/*"
+  cgw_branch_is_freeform "up/x"
+}
+
 # ── cgw_freeform_message_check() ──────────────────────────────────────────────
 
 @test "cgw_freeform_message_check: unset CGW_FREEFORM_MESSAGE_CHECK returns 0" {

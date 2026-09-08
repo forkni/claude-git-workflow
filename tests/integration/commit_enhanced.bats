@@ -1213,6 +1213,28 @@ _run_commit() {
   [[ "${output}" == *"conventional format"* ]] || [[ "${output}" == *"conventional"* ]]
 }
 
+@test "freeform branch: a protected/target branch is never exempted even with a wildcard glob (guard)" {
+  # main is CGW_TARGET_BRANCH (and thus CGW_PROTECTED_BRANCHES) here -- a
+  # careless CGW_FREEFORM_MESSAGE_BRANCHES="*" must not silently switch off
+  # the conventional-format check on the branch the policy exists to protect.
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+  echo "content" > "${TEST_REPO_DIR}/freeform_guard.txt"
+  git -C "${TEST_REPO_DIR}" add freeform_guard.txt
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_NON_INTERACTIVE=1
+    export CGW_FREEFORM_MESSAGE_BRANCHES='*'
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --skip-lint \"Present track_anything count as a one-channel CHOP\"
+  "
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"ignored"* ]]
+  [[ "${output}" == *"conventional format"* ]] || [[ "${output}" == *"conventional"* ]]
+}
+
 # Regression: length must be measured from the subject LINE only, not the
 # whole multi-line message. commit_msg is "subject\n\nbody...trailers", and
 # stripping "*: " against the full string previously swallowed the body into

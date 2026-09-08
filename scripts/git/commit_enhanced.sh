@@ -694,7 +694,10 @@ main() {
   # conventional-format check and the hard subject-length cap on it, but
   # still run CGW_FREEFORM_MESSAGE_CHECK when configured (the target
   # project's own gate, e.g. its commit-msg hook) so the branch is not left
-  # with no message gate at all.
+  # with no message gate at all. CGW_SOURCE_BRANCH, CGW_TARGET_BRANCH, and
+  # CGW_PROTECTED_BRANCHES are guard-proof: cgw_branch_is_freeform never
+  # exempts them even if a glob matches, so an overbroad pattern like "*"
+  # cannot silently turn off enforcement on the branches CGW protects.
   local _freeform=0
   if cgw_branch_is_freeform "${current_branch}"; then
     _freeform=1
@@ -703,12 +706,17 @@ main() {
       err "Commit message rejected by CGW_FREEFORM_MESSAGE_CHECK"
       exit 1
     fi
-  elif ! cgw_validate_commit_message "${commit_msg}"; then
-    echo "[!] WARNING: Message doesn't follow conventional format"
-    echo "  Configured types: ${CGW_ALL_PREFIXES/|/, }"
-    if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
-      echo "Commit cancelled"
-      exit 0
+  else
+    if cgw_branch_matches_freeform_glob "${current_branch}" && cgw_branch_is_guarded "${current_branch}"; then
+      echo "  [i] ${current_branch} is a protected/source/target branch; CGW_FREEFORM_MESSAGE_BRANCHES ignored"
+    fi
+    if ! cgw_validate_commit_message "${commit_msg}"; then
+      echo "[!] WARNING: Message doesn't follow conventional format"
+      echo "  Configured types: ${CGW_ALL_PREFIXES/|/, }"
+      if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
+        echo "Commit cancelled"
+        exit 0
+      fi
     fi
   fi
 

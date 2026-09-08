@@ -362,12 +362,17 @@ _cmd_amend_message() {
       err "Commit message rejected by CGW_FREEFORM_MESSAGE_CHECK"
       exit 1
     fi
-  elif ! cgw_validate_commit_message "${new_msg}"; then
-    echo "  [!] Message does not follow conventional format: ${new_msg}"
-    echo "  Expected: <type>: <description> (types: ${CGW_ALL_PREFIXES/|/, })"
-    if ! cgw_confirm "Continue anyway?" --non-interactive accept; then
-      echo "Cancelled"
-      exit 0
+  else
+    if cgw_branch_matches_freeform_glob "${current_branch}" && cgw_branch_is_guarded "${current_branch}"; then
+      echo "  [i] ${current_branch} is a protected/source/target branch; CGW_FREEFORM_MESSAGE_BRANCHES ignored"
+    fi
+    if ! cgw_validate_commit_message "${new_msg}"; then
+      echo "  [!] Message does not follow conventional format: ${new_msg}"
+      echo "  Expected: <type>: <description> (types: ${CGW_ALL_PREFIXES/|/, })"
+      if ! cgw_confirm "Continue anyway?" --non-interactive accept; then
+        echo "Cancelled"
+        exit 0
+      fi
     fi
   fi
 

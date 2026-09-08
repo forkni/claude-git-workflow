@@ -1489,16 +1489,54 @@ cgw_validate_commit_message() {
   echo "${msg}" | grep -qE "^(${CGW_ALL_PREFIXES})(\([A-Za-z0-9._/-]+\))?!?:"
 }
 
-# cgw_branch_is_freeform <branch>
+# cgw_branch_matches_freeform_glob <branch>
 #   Returns 0 if <branch> matches any glob in CGW_FREEFORM_MESSAGE_BRANCHES.
-#   Pure predicate, no output. Empty setting: always 1.
-cgw_branch_is_freeform() {
+#   Pure predicate, no output. Empty branch or empty setting: always 1 -- an
+#   empty branch (e.g. a non-refs/heads/* push target) must never match a
+#   bare "*" glob.
+cgw_branch_matches_freeform_glob() {
   local branch="$1" pat
+  [[ -z "${branch}" ]] && return 1
   local -a _pats=()
   read -r -a _pats <<<"${CGW_FREEFORM_MESSAGE_BRANCHES:-}" || true
   for pat in "${_pats[@]+"${_pats[@]}"}"; do
     # shellcheck disable=SC2053  # unquoted RHS is the point: glob match
     [[ "${branch}" == ${pat} ]] && return 0
+  done
+  return 1
+}
+
+# cgw_branch_is_freeform <branch>
+#   Returns 0 if <branch> matches CGW_FREEFORM_MESSAGE_BRANCHES AND is not a
+#   guarded branch (CGW_SOURCE_BRANCH, CGW_TARGET_BRANCH, or any entry of
+#   CGW_PROTECTED_BRANCHES). Guarded branches are exempt-proof by design: an
+#   overbroad glob (e.g. "*") must never silently turn off conventional-
+#   format enforcement on the branches CGW's own policy protects. Pure
+#   predicate, no output -- callers print their own "pattern ignored" notice
+#   once they know which case applies.
+cgw_branch_is_freeform() {
+  local branch="$1" _guarded
+  cgw_branch_matches_freeform_glob "${branch}" || return 1
+
+  local -a _guarded_arr=()
+  read -r -a _guarded_arr <<<"${CGW_PROTECTED_BRANCHES:-}" || true
+  for _guarded in "${CGW_SOURCE_BRANCH:-}" "${CGW_TARGET_BRANCH:-}" "${_guarded_arr[@]+"${_guarded_arr[@]}"}"; do
+    [[ -n "${_guarded}" && "${branch}" == "${_guarded}" ]] && return 1
+  done
+  return 0
+}
+
+# cgw_branch_is_guarded <branch>
+#   Returns 0 if <branch> exactly matches CGW_SOURCE_BRANCH, CGW_TARGET_BRANCH,
+#   or any entry of CGW_PROTECTED_BRANCHES -- i.e. the branch a freeform glob
+#   is not allowed to exempt. Pure predicate, no output. Used by callers to
+#   decide whether to print the "pattern ignored" notice.
+cgw_branch_is_guarded() {
+  local branch="$1" _guarded
+  local -a _guarded_arr=()
+  read -r -a _guarded_arr <<<"${CGW_PROTECTED_BRANCHES:-}" || true
+  for _guarded in "${CGW_SOURCE_BRANCH:-}" "${CGW_TARGET_BRANCH:-}" "${_guarded_arr[@]+"${_guarded_arr[@]}"}"; do
+    [[ -n "${_guarded}" && "${branch}" == "${_guarded}" ]] && return 0
   done
   return 1
 }
