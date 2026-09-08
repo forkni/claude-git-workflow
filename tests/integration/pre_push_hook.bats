@@ -206,3 +206,64 @@ CONF
   [ "${status}" -ne 0 ]
   [[ "${output}" == *"CGW_FREEFORM_MESSAGE_CHECK"* ]]
 }
+
+# ── Charlie CI findings: exemption must not leak, and must never widen ────────
+# .cgw.conf is written directly (not git add/commit) in the tests below so it
+# survives every branch checkout, matching the linked-worktree test above --
+# a tracked .cgw.conf disappears the moment `git checkout` lands on a branch
+# that never had it in its tree.
+
+@test "pre-push revalidates a freeform-branch commit once it reaches a non-freeform branch (leak regression)" {
+  echo 'CGW_FREEFORM_MESSAGE_BRANCHES="up/*"' > "${TEST_REPO_DIR}/.cgw.conf"
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b up/x
+  echo "feature" > "${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  _bypass_commit "Present track_anything count as a one-channel CHOP"
+  git -C "${TEST_REPO_DIR}" push --quiet origin up/x
+
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  git -C "${TEST_REPO_DIR}" merge --quiet --no-ff -m "chore: merge up/x" up/x
+
+  run git -C "${TEST_REPO_DIR}" push origin development
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"non-conventional"* ]] || [[ "${output}" == *"format"* ]]
+}
+
+@test "pre-push does not re-flag an already-vetted commit reaching main via merge, with the freeform feature enabled (no false positive)" {
+  echo 'CGW_FREEFORM_MESSAGE_BRANCHES="up/*"' > "${TEST_REPO_DIR}/.cgw.conf"
+  echo "feature" > "${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: add feature"
+  git -C "${TEST_REPO_DIR}" push --quiet origin development
+
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+  git -C "${TEST_REPO_DIR}" merge --quiet --no-ff -m "chore: merge development" development
+
+  run git -C "${TEST_REPO_DIR}" push origin main
+  [ "${status}" -eq 0 ]
+}
+
+@test "pre-push blocks a non-conventional commit pushed via a tag ref from an unpushed freeform branch (regression)" {
+  echo 'CGW_FREEFORM_MESSAGE_BRANCHES="up/*"' > "${TEST_REPO_DIR}/.cgw.conf"
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b up/x
+  echo "feature" > "${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  _bypass_commit "Present track_anything count as a one-channel CHOP"
+
+  run git -C "${TEST_REPO_DIR}" push origin up/x:refs/tags/v1
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"non-conventional"* ]] || [[ "${output}" == *"format"* ]]
+}
+
+@test "pre-push still blocks a non-conventional commit on main even with CGW_FREEFORM_MESSAGE_BRANCHES=\"*\" (guard)" {
+  echo 'CGW_FREEFORM_MESSAGE_BRANCHES="*"' > "${TEST_REPO_DIR}/.cgw.conf"
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+  echo "feature" > "${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  _bypass_commit "Present track_anything count as a one-channel CHOP"
+
+  run git -C "${TEST_REPO_DIR}" push origin main
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"ignored"* ]]
+  [[ "${output}" == *"non-conventional"* ]] || [[ "${output}" == *"format"* ]]
+}
