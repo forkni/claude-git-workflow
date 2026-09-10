@@ -250,6 +250,8 @@ Merges only `docs/` changes. Warns if non-docs changes exist. Creates `pre-docs-
 
 Requires `gh` CLI authenticated (`gh auth login`). Checks ahead/behind status, then opens a PR. Charlie CI auto-reviews on PR open.
 
+Passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own `github.com` URL. Without this, `gh pr create` resolves its own target repo and — when `CGW_REMOTE` is a fork — defaults to the fork's parent/upstream repo instead of `CGW_REMOTE` itself. Falls back to no `--repo` (gh's own resolution) when the remote isn't a recognizable `github.com` URL.
+
 ---
 
 ## Advanced Operations
@@ -477,7 +479,7 @@ token at a real terminal.
 | `--skip-lint` | Skip all pre-push lint checks |
 | `--skip-md-lint` | Skip markdown lint only in pre-push check |
 | `--no-venv` | Forward to `check_lint.sh`: use system lint tool (no .venv) |
-| `--force` | Allow force-push (uses `--force-with-lease`; blocks for protected branches) |
+| `--force` | Allow force-push (uses an explicit `--force-with-lease=<ref>:<sha>`; blocks for protected branches) |
 | `--branch <name>` | Override push target branch |
 
 Safety checks: verifies remote reachability, warns if behind remote, blocks unguarded force-push to protected branches.
@@ -587,6 +589,8 @@ Computes GitHub-compatible heading slugs locally (offline port of `gh-md-toc` �
 | `CGW_LINT_CMD=<tool>` | Override lint tool (default: `ruff`; `""` = disable lint) |
 | `CGW_FORMAT_CMD=<tool>` | Override format tool (default: `ruff`; `""` = disable format) |
 | `CGW_EXTRA_PREFIXES=<list>` | Pipe-separated extra commit prefixes (e.g. `"cuda\|tensorrt"`) |
+| `CGW_FREEFORM_MESSAGE_BRANCHES=<globs>` | Space-separated bash globs of branches whose commit format is not checked (e.g. `"up/*"` for an upstream PR branch). Never exempts the source, target, or a `CGW_PROTECTED_BRANCHES` entry, even with `"*"` |
+| `CGW_FREEFORM_MESSAGE_CHECK=<cmd>` | Command run against a freeform branch's message instead of skipping validation (e.g. the target project's own `commit-msg` hook); receives the message as a file path in `$1` |
 | `CGW_LOCAL_FILES=<paths>` | Space-separated files never committed (default: `CLAUDE.md MEMORY.md .claude/ logs/`) |
 | `CGW_LOCAL_FILES_EXEMPT=<paths>` | Space-separated paths exempt from the block (e.g. `.claude/settings.json` inside the blocked `.claude/`) |
 | `CGW_PROTECTED_BRANCHES=<list>` | Space-separated branches requiring `--force` confirmation for force-push |

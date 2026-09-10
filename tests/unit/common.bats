@@ -694,6 +694,153 @@ UU b.py
   [ "${status}" -eq 1 ]
 }
 
+# ── cgw_branch_is_freeform() ──────────────────────────────────────────────────
+
+@test "cgw_branch_is_freeform: empty CGW_FREEFORM_MESSAGE_BRANCHES returns 1" {
+  CGW_FREEFORM_MESSAGE_BRANCHES=""
+  run cgw_branch_is_freeform "up/x"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_branch_is_freeform: exact branch name matches" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="up-exact"
+  cgw_branch_is_freeform "up-exact"
+}
+
+@test "cgw_branch_is_freeform: glob matches nested branch names" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="up/*"
+  cgw_branch_is_freeform "up/x"
+  cgw_branch_is_freeform "up/a/b"
+}
+
+@test "cgw_branch_is_freeform: glob does NOT match unrelated or non-prefixed branches" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="up/*"
+  run cgw_branch_is_freeform "upstream"
+  [ "${status}" -eq 1 ]
+  run cgw_branch_is_freeform "feature/up/x"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_branch_is_freeform: multiple space-separated patterns" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="up/* release/*"
+  cgw_branch_is_freeform "up/x"
+  cgw_branch_is_freeform "release/1.0"
+  run cgw_branch_is_freeform "development"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_branch_is_freeform: empty branch name never matches, even a bare '*' glob" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="*"
+  run cgw_branch_is_freeform ""
+  [ "${status}" -eq 1 ]
+}
+
+# ── cgw_branch_matches_freeform_glob() / cgw_branch_is_guarded() ──────────────
+# CGW_SOURCE_BRANCH/CGW_TARGET_BRANCH/CGW_PROTECTED_BRANCHES are set by
+# _config.sh from the test repo (main/development), so a wildcard glob must
+# still never exempt them from cgw_branch_is_freeform.
+
+@test "cgw_branch_matches_freeform_glob: empty branch name never matches, even a bare '*' glob" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="*"
+  run cgw_branch_matches_freeform_glob ""
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_branch_is_guarded: target branch is guarded" {
+  cgw_branch_is_guarded "${CGW_TARGET_BRANCH}"
+}
+
+@test "cgw_branch_is_guarded: source branch is guarded" {
+  # CGW_SOURCE_BRANCH has no auto-detect (unlike CGW_TARGET_BRANCH) -- it is
+  # only ever populated from .cgw.conf, which is git-ignored and absent in a
+  # fresh checkout. Set it explicitly so this test doesn't depend on the
+  # ambient environment.
+  CGW_SOURCE_BRANCH="development"
+  cgw_branch_is_guarded "${CGW_SOURCE_BRANCH}"
+}
+
+@test "cgw_branch_is_guarded: unrelated branch is not guarded" {
+  run cgw_branch_is_guarded "up/x"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_branch_is_freeform: a wildcard glob matches the glob but is still refused for a guarded branch" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="*"
+  cgw_branch_matches_freeform_glob "${CGW_TARGET_BRANCH}"
+  run cgw_branch_is_freeform "${CGW_TARGET_BRANCH}"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_branch_is_freeform: source branch is never exempted even with a matching glob" {
+  # CGW_SOURCE_BRANCH has no auto-detect -- see note above.
+  CGW_SOURCE_BRANCH="development"
+  CGW_FREEFORM_MESSAGE_BRANCHES="${CGW_SOURCE_BRANCH}"
+  cgw_branch_matches_freeform_glob "${CGW_SOURCE_BRANCH}"
+  run cgw_branch_is_freeform "${CGW_SOURCE_BRANCH}"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_branch_is_freeform: a CGW_PROTECTED_BRANCHES entry is never exempted even with a matching glob" {
+  CGW_PROTECTED_BRANCHES="staging"
+  CGW_FREEFORM_MESSAGE_BRANCHES="staging"
+  cgw_branch_matches_freeform_glob "staging"
+  run cgw_branch_is_freeform "staging"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_branch_is_freeform: an ordinary branch matching the glob is still exempt (guard doesn't overreach)" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="up/*"
+  cgw_branch_is_freeform "up/x"
+}
+
+# ── cgw_freeform_message_check() ──────────────────────────────────────────────
+
+@test "cgw_freeform_message_check: unset CGW_FREEFORM_MESSAGE_CHECK returns 0" {
+  CGW_FREEFORM_MESSAGE_CHECK=""
+  cgw_freeform_message_check "any message"
+}
+
+@test "cgw_freeform_message_check: passing command returns 0" {
+  local check_script
+  check_script="$(mktemp)"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"${check_script}"
+  chmod +x "${check_script}"
+  CGW_FREEFORM_MESSAGE_CHECK="${check_script}"
+  cgw_freeform_message_check "Present track_anything count as a one-channel CHOP"
+}
+
+@test "cgw_freeform_message_check: failing command returns 1" {
+  local check_script
+  check_script="$(mktemp)"
+  printf '#!/usr/bin/env bash\nexit 1\n' >"${check_script}"
+  chmod +x "${check_script}"
+  CGW_FREEFORM_MESSAGE_CHECK="${check_script}"
+  run cgw_freeform_message_check "bad message"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_freeform_message_check: message reaches the command via a file argument" {
+  local check_script
+  check_script="$(mktemp)"
+  printf '#!/usr/bin/env bash\ncat "$1"\n' >"${check_script}"
+  chmod +x "${check_script}"
+  CGW_FREEFORM_MESSAGE_CHECK="${check_script}"
+  run cgw_freeform_message_check "Co-Authored-By: Claude <noreply@anthropic.com>"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Co-Authored-By: Claude"* ]]
+}
+
+@test "cgw_freeform_message_check: missing command fails closed" {
+  # Same [[ ! -x "${cmd}" ]] guard also covers "exists but not executable" --
+  # not separately testable here since this platform's temp/project mounts
+  # mark every regular file executable regardless of chmod (verified: chmod -x
+  # is a no-op in this environment), so there is no way to construct a
+  # present-but-non-executable file to exercise that branch distinctly.
+  CGW_FREEFORM_MESSAGE_CHECK="does-not-exist.sh"
+  run cgw_freeform_message_check "any message"
+  [ "${status}" -eq 1 ]
+}
+
 # ── cgw_resolve_lint_binary() ─────────────────────────────────────────────────
 
 @test "cgw_resolve_lint_binary: returns venv path when binary exists in PYTHON_BIN" {
@@ -2418,4 +2565,140 @@ UU b.py
     exit \${ec}
   "
   [ "${status}" -ne 0 ]
+}
+
+# ── cgw_remote_owner_repo() ────────────────────────────────────────────────────
+# Uses `git config --get remote.<remote>.url`, which does NOT need the remote
+# to be reachable or even valid -- only configured. No bare remote needed.
+
+@test "cgw_remote_owner_repo: https github.com URL parses owner/repo" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" remote add origin 'https://github.com/forkni/claude-git-workflow.git'
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    out=\$(cgw_remote_owner_repo origin); ec=\$?
+    rm -rf \"\${tmp}\"
+    echo \"\${out}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "forkni/claude-git-workflow" ]
+}
+
+@test "cgw_remote_owner_repo: https URL without .git suffix parses owner/repo" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" remote add origin 'https://github.com/forkni/claude-git-workflow'
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    out=\$(cgw_remote_owner_repo origin); ec=\$?
+    rm -rf \"\${tmp}\"
+    echo \"\${out}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "forkni/claude-git-workflow" ]
+}
+
+@test "cgw_remote_owner_repo: https URL with trailing slash parses owner/repo" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" remote add origin 'https://github.com/forkni/claude-git-workflow/'
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    out=\$(cgw_remote_owner_repo origin); ec=\$?
+    rm -rf \"\${tmp}\"
+    echo \"\${out}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "forkni/claude-git-workflow" ]
+}
+
+@test "cgw_remote_owner_repo: git@ SSH URL parses owner/repo" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" remote add origin 'git@github.com:forkni/claude-git-workflow.git'
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    out=\$(cgw_remote_owner_repo origin); ec=\$?
+    rm -rf \"\${tmp}\"
+    echo \"\${out}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "forkni/claude-git-workflow" ]
+}
+
+@test "cgw_remote_owner_repo: ssh:// git@ URL parses owner/repo" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" remote add origin 'ssh://git@github.com/forkni/claude-git-workflow.git'
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    out=\$(cgw_remote_owner_repo origin); ec=\$?
+    rm -rf \"\${tmp}\"
+    echo \"\${out}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "forkni/claude-git-workflow" ]
+}
+
+@test "cgw_remote_owner_repo: non-github.com host returns 1" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" remote add origin 'https://gitlab.com/forkni/claude-git-workflow.git'
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_remote_owner_repo origin; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -ne 0 ]
+}
+
+@test "cgw_remote_owner_repo: unknown remote returns 1" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_remote_owner_repo no-such-remote; ec=\$?
+    rm -rf \"\${tmp}\"
+    exit \${ec}
+  "
+  [ "${status}" -ne 0 ]
+}
+
+@test "cgw_remote_owner_repo: reports raw configured URL, ignoring insteadOf rewrites" {
+  run bash -c "
+    tmp=\$(mktemp -d)
+    git init --quiet \"\${tmp}\"
+    git -C \"\${tmp}\" remote add origin 'https://github.com/forkni/claude-git-workflow.git'
+    git -C \"\${tmp}\" config 'url./some/local/mirror.insteadOf' 'https://github.com/forkni/claude-git-workflow.git'
+    cd \"\${tmp}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    out=\$(cgw_remote_owner_repo origin); ec=\$?
+    rm -rf \"\${tmp}\"
+    echo \"\${out}\"
+    exit \${ec}
+  "
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "forkni/claude-git-workflow" ]
 }

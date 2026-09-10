@@ -374,6 +374,44 @@ cgw_remote_branch_exists() {
   git ls-remote --exit-code "${1}" "refs/heads/${2}" >/dev/null 2>&1
 }
 
+# cgw_remote_owner_repo <remote>
+# Echoes "<owner>/<repo>" parsed from <remote>'s configured URL, for github.com
+# SSH/HTTPS remotes only. Returns 1 and prints nothing if <remote> is unset or
+# its URL isn't a recognizable github.com URL.
+#
+# Reads the RAW config value (`git config --get remote.<remote>.url`), not
+# `git remote get-url` -- the latter expands any `url.<base>.insteadOf`
+# rewrite and would report the rewritten transport (e.g. a corporate mirror
+# or, in tests, a local bare repo) instead of the remote's real GitHub
+# identity. Used by create_pr.sh to pass gh CLI an explicit `--repo`: without
+# it, `gh pr create` resolves the target repo itself and -- when the remote is
+# a fork -- defaults to the fork's parent/upstream repo, silently opening (or
+# failing to open) the PR against the wrong repository.
+cgw_remote_owner_repo() {
+  local remote="$1"
+  local url
+  url=$(git config --get "remote.${remote}.url" 2>/dev/null) || return 1
+  [[ -z "${url}" ]] && return 1
+
+  local owner repo
+  if [[ "${url}" =~ ^(git@|ssh://git@)github\.com[:/]([^/]+)/(.+)$ ]]; then
+    owner="${BASH_REMATCH[2]}"
+    repo="${BASH_REMATCH[3]}"
+  elif [[ "${url}" =~ ^https://github\.com/([^/]+)/(.+)$ ]]; then
+    owner="${BASH_REMATCH[1]}"
+    repo="${BASH_REMATCH[2]}"
+  else
+    return 1
+  fi
+
+  repo="${repo%.git}"
+  repo="${repo%/}"
+  if [[ -z "${owner}" ]] || [[ -z "${repo}" ]]; then
+    return 1
+  fi
+  echo "${owner}/${repo}"
+}
+
 # cgw_default_branch [--refresh]
 # Echoes the repository's default branch name (no remote prefix).
 # Resolution order:
@@ -1449,6 +1487,90 @@ cgw_validate_commit_message() {
   # with a generic warning, sending agents into the wrapper source to find
   # this regex and then stripping the scope to get through.
   echo "${msg}" | grep -qE "^(${CGW_ALL_PREFIXES})(\([A-Za-z0-9._/-]+\))?!?:"
+}
+
+# cgw_branch_matches_freeform_glob <branch>
+#   Returns 0 if <branch> matches any glob in CGW_FREEFORM_MESSAGE_BRANCHES.
+#   Pure predicate, no output. Empty branch or empty setting: always 1 -- an
+#   empty branch (e.g. a non-refs/heads/* push target) must never match a
+#   bare "*" glob.
+cgw_branch_matches_freeform_glob() {
+  local branch="$1" pat
+  [[ -z "${branch}" ]] && return 1
+  local -a _pats=()
+  read -r -a _pats <<<"${CGW_FREEFORM_MESSAGE_BRANCHES:-}" || true
+  for pat in "${_pats[@]+"${_pats[@]}"}"; do
+    # shellcheck disable=SC2053  # unquoted RHS is the point: glob match
+    [[ "${branch}" == ${pat} ]] && return 0
+  done
+  return 1
+}
+
+# cgw_branch_is_freeform <branch>
+#   Returns 0 if <branch> matches CGW_FREEFORM_MESSAGE_BRANCHES AND is not a
+#   guarded branch (CGW_SOURCE_BRANCH, CGW_TARGET_BRANCH, or any entry of
+#   CGW_PROTECTED_BRANCHES). Guarded branches are exempt-proof by design: an
+#   overbroad glob (e.g. "*") must never silently turn off conventional-
+#   format enforcement on the branches CGW's own policy protects. Pure
+#   predicate, no output -- callers print their own "pattern ignored" notice
+#   once they know which case applies.
+cgw_branch_is_freeform() {
+  local branch="$1" _guarded
+  cgw_branch_matches_freeform_glob "${branch}" || return 1
+
+  local -a _guarded_arr=()
+  read -r -a _guarded_arr <<<"${CGW_PROTECTED_BRANCHES:-}" || true
+  for _guarded in "${CGW_SOURCE_BRANCH:-}" "${CGW_TARGET_BRANCH:-}" "${_guarded_arr[@]+"${_guarded_arr[@]}"}"; do
+    [[ -n "${_guarded}" && "${branch}" == "${_guarded}" ]] && return 1
+  done
+  return 0
+}
+
+# cgw_branch_is_guarded <branch>
+#   Returns 0 if <branch> exactly matches CGW_SOURCE_BRANCH, CGW_TARGET_BRANCH,
+#   or any entry of CGW_PROTECTED_BRANCHES -- i.e. the branch a freeform glob
+#   is not allowed to exempt. Pure predicate, no output. Used by callers to
+#   decide whether to print the "pattern ignored" notice.
+cgw_branch_is_guarded() {
+  local branch="$1" _guarded
+  local -a _guarded_arr=()
+  read -r -a _guarded_arr <<<"${CGW_PROTECTED_BRANCHES:-}" || true
+  for _guarded in "${CGW_SOURCE_BRANCH:-}" "${CGW_TARGET_BRANCH:-}" "${_guarded_arr[@]+"${_guarded_arr[@]}"}"; do
+    [[ -n "${_guarded}" && "${branch}" == "${_guarded}" ]] && return 0
+  done
+  return 1
+}
+
+# cgw_freeform_message_check <msg>
+#   Delegated gate for a freeform branch's commit message, e.g. the target
+#   project's own commit-msg hook. Returns 0 (nothing to enforce) when
+#   CGW_FREEFORM_MESSAGE_CHECK is unset. Otherwise writes <msg> to a temp
+#   file and runs CGW_FREEFORM_MESSAGE_CHECK with that file as $1; returns
+#   the command's exit status. A relative command resolves against
+#   PROJECT_ROOT. Fails closed (returns 1) if the command cannot be found or
+#   is not executable -- a silently-skipped delegated gate is worse than a
+#   blocked commit. The command's own stdout/stderr passes through; this
+#   function prints nothing itself.
+cgw_freeform_message_check() {
+  local msg="$1"
+  [[ -z "${CGW_FREEFORM_MESSAGE_CHECK:-}" ]] && return 0
+
+  local cmd="${CGW_FREEFORM_MESSAGE_CHECK}"
+  if [[ "${cmd}" != /* ]]; then
+    cmd="${PROJECT_ROOT}/${cmd}"
+  fi
+  if [[ ! -x "${cmd}" ]]; then
+    err "CGW_FREEFORM_MESSAGE_CHECK is set to '${CGW_FREEFORM_MESSAGE_CHECK}' but '${cmd}' is not an executable file"
+    return 1
+  fi
+
+  local msgfile
+  msgfile="$(mktemp)" || return 1
+  printf '%s\n' "${msg}" >"${msgfile}"
+  "${cmd}" "${msgfile}"
+  local status=$?
+  rm -f "${msgfile}"
+  return ${status}
 }
 
 # ── interactive prompts module ─────────────────────────────────────────────────

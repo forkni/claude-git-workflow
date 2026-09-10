@@ -347,19 +347,36 @@ _cmd_amend_message() {
     exit 1
   fi
 
-  # Validate conventional format
-  if ! cgw_validate_commit_message "${new_msg}"; then
-    echo "  [!] Message does not follow conventional format: ${new_msg}"
-    echo "  Expected: <type>: <description> (types: ${CGW_ALL_PREFIXES/|/, })"
-    if ! cgw_confirm "Continue anyway?" --non-interactive accept; then
-      echo "Cancelled"
-      exit 0
+  # Hoisted above the format validation below: a freeform branch (target
+  # project's own message style) needs the branch name before deciding
+  # whether to run cgw_validate_commit_message at all.
+  local current_branch upstream_ref
+  current_branch=$(git branch --show-current)
+
+  # Validate conventional format, unless this branch answers to another
+  # project's commit-message style (CGW_FREEFORM_MESSAGE_BRANCHES). Run the
+  # delegated gate instead when one is configured.
+  if cgw_branch_is_freeform "${current_branch}"; then
+    echo "  [i] ${current_branch} matches CGW_FREEFORM_MESSAGE_BRANCHES; conventional format not enforced"
+    if ! cgw_freeform_message_check "${new_msg}"; then
+      err "Commit message rejected by CGW_FREEFORM_MESSAGE_CHECK"
+      exit 1
+    fi
+  else
+    if cgw_branch_matches_freeform_glob "${current_branch}" && cgw_branch_is_guarded "${current_branch}"; then
+      echo "  [i] ${current_branch} is a protected/source/target branch; CGW_FREEFORM_MESSAGE_BRANCHES ignored"
+    fi
+    if ! cgw_validate_commit_message "${new_msg}"; then
+      echo "  [!] Message does not follow conventional format: ${new_msg}"
+      echo "  Expected: <type>: <description> (types: ${CGW_ALL_PREFIXES/|/, })"
+      if ! cgw_confirm "Continue anyway?" --non-interactive accept; then
+        echo "Cancelled"
+        exit 0
+      fi
     fi
   fi
 
   # Warn if commit has been pushed
-  local current_branch upstream_ref
-  current_branch=$(git branch --show-current)
   upstream_ref="refs/remotes/${CGW_REMOTE}/${current_branch}"
   if git show-ref --verify --quiet "${upstream_ref}" 2>/dev/null; then
     local ahead

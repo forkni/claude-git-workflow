@@ -187,6 +187,17 @@ Conventional commit format (enforced by `commit_enhanced.sh`):
 
 Additional project-specific prefixes can be configured via `CGW_EXTRA_PREFIXES` in `.cgw.conf`.
 
+**Freeform-message branches.** Branches matching `CGW_FREEFORM_MESSAGE_BRANCHES` in `.cgw.conf`
+(e.g. an `up/*` branch targeting another project's PR conventions) skip the conventional-format
+check and the hard length cap below — but `commit_enhanced.sh` is still the only sanctioned way
+to commit on them. Local-only-file, lint, and protected-branch guards stay fully enforced, and
+`--no-verify` / raw `git commit` remain forbidden, same as on every other branch. The source,
+target, and any `CGW_PROTECTED_BRANCHES` entry can never be exempted this way — a glob as broad
+as `"*"` still has no effect on them, so the escape hatch cannot be used to silently disable the
+format check on the branches the policy protects. Optionally set `CGW_FREEFORM_MESSAGE_CHECK` to
+the target project's own message-validation command (e.g. its `commit-msg` hook) so that
+project's rules are enforced instead of skipping validation outright.
+
 **Scopes and the breaking-change marker are accepted natively.** For every prefix in the table
 above, the format check accepts the full Conventional Commits subject shape — `type: ...`,
 `type(scope): ...`, `type!: ...`, and `type(scope)!: ...` — e.g. `fix(parser): handle empty
@@ -336,7 +347,8 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 ./scripts/git/push_validated.sh --skip-lint           # skip lint check entirely
 ./scripts/git/push_validated.sh --no-venv --skip-lint # both
 # One call is enough on its own -- no pre-check needed, regardless of urgency or stakes in
-# the request; --force-with-lease + the protected-branch guard already cover what an extra
+# the request; an explicit --force-with-lease=<ref>:<sha> (resolved from a freshly-fetched
+# tracking ref, not the bare form) + the protected-branch guard already cover what an extra
 # git status/log would verify. A post-check IS required, though: Rule 6 — subscribe to the
 # CI runs this push triggers and wait for green, see ci-verification.md.
 ```
@@ -353,6 +365,8 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 ```
 
 Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login`. Charlie CI auto-reviews on PR open. Rule 6 applies here too — watch the PR's checks (`gh pr checks <n> --watch`), not just Charlie's review, per ci-verification.md.
+
+Always passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own URL — bare `gh pr create` resolves its own target repo and, when `CGW_REMOTE` is a fork, defaults to the fork's parent/upstream repo instead. If this script ever fails or is unavailable, do not drop to raw `gh pr create` without `--repo`: it silently targets the wrong repo on a fork remote.
 
 **Syncing with remote:**
 

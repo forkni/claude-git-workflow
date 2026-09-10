@@ -94,11 +94,63 @@ The assumption that a path is meant to be staged in full, not by hunk — true o
 
 ## commit-message format
 
-The conventional-commit grammar enforced on every `commit_enhanced.sh` invocation and every commit in the pre-push hook range. Format: `<type>: <description>` where `<type>` is drawn from the built-in set (`feat|fix|docs|chore|test|refactor|style|perf`) plus any `CGW_EXTRA_PREFIXES` configured in `.cgw.conf`.
+The conventional-commit grammar enforced on every `commit_enhanced.sh` invocation and every commit in the pre-push hook range, except commits on a [[freeform-message branch]] — and even there, never on the source, target, or a protected branch. Format: `<type>: <description>` where `<type>` is drawn from the built-in set (`feat|fix|docs|chore|test|refactor|style|perf`) plus any `CGW_EXTRA_PREFIXES` configured in `.cgw.conf`.
 
-**Implementation seam**: `cgw_validate_commit_message <msg>` in `scripts/git/_common.sh`. Pure predicate — returns 0 on match, 1 otherwise. No output: each caller owns its own user-facing message and merge-commit skipping logic.
+**Implementation seam**: `cgw_validate_commit_message <msg>` in `scripts/git/_common.sh`. Pure predicate — returns 0 on match, 1 otherwise. No output: each caller owns its own user-facing message and merge-commit skipping logic. Skipped on [[freeform-message branch|#freeform-message-branch]]es — see below.
 
-**Callers**: `commit_enhanced.sh` (step [5]), `undo_last.sh` (amend-message path), `.githooks/pre-push` (all commits in push range).
+**Callers**: `commit_enhanced.sh` (step [5]), `undo_last.sh` (amend-message path), `hooks/pre-push` and `.githooks/pre-push` (byte-identical copies; all commits in push range).
+
+---
+
+## freeform-message branch
+
+A branch whose name matches `CGW_FREEFORM_MESSAGE_BRANCHES` (space-separated bash globs, e.g.
+`"up/*"`) — typically a branch that targets another project's own commit-message convention,
+such as an upstream PR branch on a fork. On a matching branch, the conventional-commit-format
+check and the subject hard-length cap above are not enforced (the hard cap becomes an advisory
+tip instead of a block; the soft-length tip still prints). Everything else stays fully
+enforced: local-only-file guard, lint/format, protected-branch rules, backup tags, force-push
+protection. `commit_enhanced.sh` remains the only sanctioned commit path — `--no-verify` and
+raw `git commit`/`git push` are not re-permitted.
+
+**Guard-proof, by design.** A glob match alone is never enough: the source, target, and any
+`CGW_PROTECTED_BRANCHES` entry are hard-refused regardless of how broad the glob is — even
+`CGW_FREEFORM_MESSAGE_BRANCHES="*"` has no effect on them. This is what keeps the escape hatch
+from silently disabling the policy it's meant to carve a narrow exception into. Each call site
+that hits the guard prints a one-line notice (`... is a protected/source/target branch;
+CGW_FREEFORM_MESSAGE_BRANCHES ignored`) and falls through to the normal
+`cgw_validate_commit_message` path.
+
+Optionally, `CGW_FREEFORM_MESSAGE_CHECK` names a command (e.g. the target project's own
+`commit-msg` hook) run against the full message instead of skipping validation outright — the
+command receives the message as a file path in `$1` and its own exit code/output governs
+accept or reject.
+
+**Implementation seam**: `cgw_branch_matches_freeform_glob <branch>` (pure glob predicate, no
+guard) and `cgw_branch_is_guarded <branch>` (exact match against `CGW_SOURCE_BRANCH`,
+`CGW_TARGET_BRANCH`, `CGW_PROTECTED_BRANCHES`) in `scripts/git/_common.sh` compose into
+`cgw_branch_is_freeform <branch>` (glob match AND NOT guarded) — the predicate call sites use
+directly. `cgw_freeform_message_check <msg>` runs the optional delegated check. Settings in
+`scripts/git/_config.sh`.
+
+**Callers**: same four call sites as [[commit-message format]] above — each checks
+`cgw_branch_is_freeform` first and branches to `cgw_freeform_message_check` instead of
+`cgw_validate_commit_message` when it matches (falling through to the guard notice above when
+the glob matched but the branch is guarded). `hooks/pre-push` and `.githooks/pre-push` derive
+the branch from the remote ref alone (`refs/heads/*` only) — a tag or other non-branch push
+target is never exempt, since falling back to the local ref would let a branch's exemption leak
+onto an unrelated tag push. The hook also narrows its "already pushed ⇒ already vetted"
+`--not --remotes` exclusion: when the push destination is not itself freeform, only
+remote-tracking refs whose branch name does *not* match a freeform glob are excluded from the
+check, so a non-conventional commit that only ever reached a protected branch by way of a
+freeform branch (e.g. merged from `up/x` into `development`) is still validated instead of
+silently inheriting `up/x`'s exemption.
+
+**Rollout note**: opt-in, no default (see `cgw.conf.example`). The code path (updated scripts +
+hooks) reaches every consumer project via `cgw-install.cmd` / `cgw-batch-install.cmd`
+automatically, but `cgw-batch-install.cmd` never writes `.cgw.conf` — an already-installed
+project only gets these two variables if added to its `.cgw.conf` by hand, or via
+`configure.sh --reconfigure`. See "Batch-updating multiple projects" in `docs/installation.md`.
 
 ---
 

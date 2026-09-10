@@ -30,7 +30,10 @@ style: fix formatting
 perf: optimize image resizing
 ```
 
-Add project-specific prefixes via `CGW_EXTRA_PREFIXES="cuda|tensorrt"` in `.cgw.conf`.
+Add project-specific prefixes via `CGW_EXTRA_PREFIXES="cuda|tensorrt"` in `.cgw.conf`. Branches
+that target another project with its own message style (e.g. an upstream PR branch) can skip
+this check entirely via `CGW_FREEFORM_MESSAGE_BRANCHES="up/*"`. The source, target, and any
+protected branch are never exempted this way, even by a glob as broad as `"*"`.
 
 ---
 
