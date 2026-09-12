@@ -3,6 +3,10 @@
 # Verifies: (a) no-op when disabled, (b) [PASS] on clean, (c) [WARN] on errors (non-blocking),
 #           (d) CGW_SKIP_TYPECHECK=1 skip path.
 # Runs: bats tests/integration/typecheck.bats
+#
+# NOTE: the pre-commit hook's typecheck is ADVISORY by design and must stay so.
+# The BLOCKING typecheck lives in check_lint.sh (see check_lint.bats) and
+# reaches pushes via push_validated.sh. Do not make this hook block.
 
 bats_require_minimum_version 1.5.0
 load '../helpers/setup'

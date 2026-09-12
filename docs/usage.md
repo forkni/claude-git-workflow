@@ -122,6 +122,7 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use PRs by default.
 ./scripts/git/push_validated.sh               # with lint check
 ./scripts/git/push_validated.sh --skip-lint   # skip all lint
 ./scripts/git/push_validated.sh --skip-md-lint  # skip markdown lint only
+./scripts/git/push_validated.sh --skip-typecheck  # skip typecheck only (blocking otherwise)
 ./scripts/git/push_validated.sh --dry-run     # preview
 ./scripts/git/push_validated.sh --no-venv     # use system lint tool (no .venv)
 ./scripts/git/push_validated.sh --branch hotfix/1.2  # push a different branch
@@ -376,6 +377,11 @@ Only auto-fixable rules are corrected in place; manual-only violations (e.g. `MD
 (`./scripts/git/check_lint.sh --md-only`) — `fix_lint.sh --md-only` forwards it
 automatically to its own final verification step.
 
+`check_lint.sh` and `push_validated.sh` also accept `--skip-typecheck` to bypass the whole-project
+typecheck (`CGW_TYPECHECK_CMD`) for a single run — e.g. `./scripts/git/check_lint.sh
+--skip-typecheck`. Unlike lint/format/markdown, a failing typecheck **blocks** both scripts by
+default (advisory only in the pre-commit hook); see [Configuration](configuration.md#typecheck).
+
 Gitignored `.md` files (local `CLAUDE.md`, session logs, ...) are skipped automatically via
 `.markdownlint-cli2.jsonc` — see [Configuration](configuration.md#key-options-reference).
 
@@ -392,6 +398,7 @@ CGW_LINT_CMD="" ./scripts/git/check_lint.sh   # skip lint for this run
 CGW_NO_VENV=1 ./scripts/git/commit_enhanced.sh "feat: message"  # system lint
 CGW_SKIP_LINT=1 ./scripts/git/commit_enhanced.sh "feat: message"  # skip all lint
 CGW_SKIP_MD_LINT=1 ./scripts/git/commit_enhanced.sh "docs: update"  # skip md lint only
+CGW_SKIP_TYPECHECK=1 ./scripts/git/push_validated.sh  # skip the blocking typecheck for this push
 CGW_ALL=1 ./scripts/git/commit_enhanced.sh "chore: bulk stage"  # force-stage all
 ```
 

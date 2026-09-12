@@ -1446,6 +1446,16 @@ cgw_crlf_in_index_files() {
 #   given). Honors CGW_SKIP_TYPECHECK=1 and empty CGW_TYPECHECK_CMD (returns 0,
 #   emits skip line). Reads ${logfile} from caller scope. Returns 0 = clean,
 #   1 = errors found.
+#
+#   Overrides CGW_TOOL_ERROR_REGEX (see run_tool_with_logging) because the
+#   default ruff-shaped `^[^:]+:[0-9]+:[0-9]+:` misses every supported
+#   typechecker's real output: mypy omits the column by default
+#   (`file.py:10: error:`), pyright indents and uses ` - error:`
+#   (`  /p/file.py:10:5 - error:`), and pyrefly's diagnostic line carries no
+#   file/line at all -- it prints `ERROR <msg> [<code>]` with the location on
+#   the *next* line (` --> file.py:10:8`). Verified against real 1.0.0/1.3.0
+#   pyrefly, mypy, and pyright output (2026-09-12); tsc's documented
+#   `file.ts(10,5): error TS2322:` form is covered by the first alternative.
 cgw_run_typecheck() {
   if [[ "${CGW_SKIP_TYPECHECK:-0}" == "1" ]]; then
     echo "  (typecheck skipped -- CGW_SKIP_TYPECHECK=1)"
@@ -1458,6 +1468,8 @@ cgw_run_typecheck() {
   get_python_path 2>/dev/null || true
   local tc_bin
   tc_bin=$(cgw_resolve_lint_binary "${CGW_TYPECHECK_CMD}")
+  # shellcheck disable=SC2034  # read via dynamic scope by run_tool_with_logging
+  local CGW_TOOL_ERROR_REGEX='^[[:space:]]*[^[:space:]]+[:(][0-9]+[,:)][^[:space:]]*[[:space:]]*(-[[:space:]]+)?error|^ERROR[[:space:]]'
   if [[ $# -gt 0 ]]; then
     local stripped_args
     stripped_args=$(cgw_strip_path_arg "${CGW_TYPECHECK_CHECK_ARGS-check}")

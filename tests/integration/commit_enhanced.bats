@@ -907,6 +907,32 @@ _run_commit() {
   [ ! -f "${MOCK_BIN_DIR}/ruff.log" ]
 }
 
+# ── Typecheck is deliberately NOT part of the commit-time gate ────────────────
+# Pins the design decision recorded at commit_enhanced.sh's "[3] Code quality
+# check" comment: typecheck is whole-project (no honest staged-scoped form)
+# and stays advisory-only via hooks/pre-commit; it must never block or even
+# run from commit_enhanced.sh itself. No pre-commit hook is installed by this
+# file's setup(), so a plain `git commit` here cannot invoke it either.
+
+@test "a failing typecheck tool never blocks or runs during commit_enhanced.sh" {
+  MOCK_TYPECHECK_EXIT=1 install_mock_typecheck
+  echo "feature content" > "${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    export CGW_TYPECHECK_CHECK_ARGS=''
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' \"feat: add feature file\"
+  "
+  [ "${status}" -eq 0 ]
+  [ ! -f "${MOCK_BIN_DIR}/typecheck.log" ]
+}
+
 # ── Markdownlint ──────────────────────────────────────────────────────────────
 
 @test "--skip-md-lint bypasses markdownlint step" {

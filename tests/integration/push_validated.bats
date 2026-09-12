@@ -80,6 +80,51 @@ _run_push() {
   [ "${status}" -eq 0 ]
 }
 
+# ── --skip-typecheck passthrough / typecheck gate wiring ──────────────────────
+
+@test "--skip-typecheck is accepted and exits 0 in dry-run" {
+  run _run_push "--skip-lint --skip-typecheck --dry-run"
+  [ "${status}" -eq 0 ]
+}
+
+@test "typecheck-only project (no lint/format/markdown) still runs the pre-push check and blocks on type errors" {
+  MOCK_TYPECHECK_EXIT=1 install_mock_typecheck
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    export CGW_TYPECHECK_CHECK_ARGS=''
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/push_validated.sh'
+  "
+  # Without CGW_TYPECHECK_CMD reaching the ':233' concatenation, the whole
+  # pre-push lint block would be skipped (no CGW_LINT_CMD/FORMAT/MARKDOWNLINT)
+  # and this push would succeed. It must instead abort on the type error.
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"Lint check failed"* ]] || [[ "${output}" == *"Typecheck"* ]]
+}
+
+@test "typecheck-only project with --skip-typecheck pushes successfully despite type errors" {
+  MOCK_TYPECHECK_EXIT=1 install_mock_typecheck
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    export CGW_TYPECHECK_CHECK_ARGS=''
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/push_validated.sh' --skip-typecheck
+  "
+  [ "${status}" -eq 0 ]
+}
+
 # ── Protected branch force-push protection ────────────────────────────────────
 
 @test "force-push to protected main branch aborts in non-interactive" {

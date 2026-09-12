@@ -481,6 +481,15 @@ main() {
   fi
 
   # [3] Code quality check
+  # Deliberately no typecheck here. Every check in this block is scoped to the
+  # staged files (see cgw_staged_files_for_lint / cgw_validated_path_set
+  # below); a typechecker has no honest staged-scoped form -- it resolves
+  # imports across the whole project. Running it whole-repo would let an
+  # untouched file's pre-existing type error block an unrelated commit, and
+  # would pull every repo path into cgw_validated_path_set, turning the [3.5]
+  # congruence guard below into an indiscriminate re-stager. Typecheck is
+  # advisory at commit time via hooks/pre-commit and BLOCKING at push time via
+  # check_lint.sh / push_validated.sh.
   echo "[3/6] Checking code quality..."
 
   if [[ ${skip_lint} -eq 1 ]]; then
