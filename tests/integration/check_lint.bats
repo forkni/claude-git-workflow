@@ -340,7 +340,7 @@ MOCK
   "
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"Total: 1 errors"* ]]
-  [[ "${output}" != *"no lint diagnostics were parsed"* ]]
+  [[ "${output}" != *"no diagnostics were parsed"* ]]
 }
 
 @test "FAILED step with zero parsed diagnostics is named a tool/config failure" {
@@ -361,14 +361,14 @@ MOCK
   "
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"Total: 0 errors"* ]]
-  [[ "${output}" == *"tool exited non-zero but no lint diagnostics were parsed"* ]]
+  [[ "${output}" == *"tool exited non-zero but no diagnostics were parsed"* ]]
 }
 
 # ── Typecheck (blocking) ───────────────────────────────────────────────────────
 # Unlike Format, a failing typecheck joins overall_status: it must gate the
 # exit code the same way Lint and Markdown do.
 
-@test "typecheck-only config, failing typecheck: check_lint exits 1 and reports Typecheck" {
+@test "typecheck-only config, failing typecheck: check_lint exits 2 and reports Typecheck" {
   install_mock_typecheck_with_errors mypy
   run bash -c "
     cd '${TEST_REPO_DIR}'
@@ -381,7 +381,9 @@ MOCK
     export CGW_TYPECHECK_CHECK_ARGS=''
     bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
   "
-  [ "${status}" -eq 1 ]
+  # Exit 2 (not the generic 1) specifically marks a typecheck failure --
+  # push_validated.sh uses this to refuse the interactive override.
+  [ "${status}" -eq 2 ]
   [[ "${output}" == *"Typecheck"* ]]
   [[ "${output}" == *"FAILED"* ]]
 }
@@ -517,7 +519,7 @@ MOCK
     export CGW_TYPECHECK_CMD=mock-typecheck
     bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
   "
-  [ "${status}" -eq 1 ]
+  [ "${status}" -eq 2 ]
   [[ "${output}" != *"All lint checks skipped"* ]]
 }
 
@@ -550,7 +552,7 @@ MOCK
     bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
   "
   [[ "${output}" == *"Total: 1 errors"* ]]
-  [[ "${output}" != *"no lint diagnostics were parsed"* ]]
+  [[ "${output}" != *"no diagnostics were parsed"* ]]
 }
 
 @test "typecheck diagnostics in pyright shape are counted in the error summary" {
@@ -567,7 +569,7 @@ MOCK
     bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
   "
   [[ "${output}" == *"Total: 1 errors"* ]]
-  [[ "${output}" != *"no lint diagnostics were parsed"* ]]
+  [[ "${output}" != *"no diagnostics were parsed"* ]]
 }
 
 @test "typecheck diagnostics in tsc shape are counted in the error summary" {
@@ -584,7 +586,7 @@ MOCK
     bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
   "
   [[ "${output}" == *"Total: 1 errors"* ]]
-  [[ "${output}" != *"no lint diagnostics were parsed"* ]]
+  [[ "${output}" != *"no diagnostics were parsed"* ]]
 }
 
 @test "typecheck diagnostics in pyrefly shape are counted in the error summary" {
@@ -601,7 +603,7 @@ MOCK
     bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
   "
   [[ "${output}" == *"Total: 1 errors"* ]]
-  [[ "${output}" != *"no lint diagnostics were parsed"* ]]
+  [[ "${output}" != *"no diagnostics were parsed"* ]]
 }
 
 @test "format-check failure alone does not block even when typecheck passes" {

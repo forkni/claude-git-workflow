@@ -9,7 +9,10 @@
 #   logfile        - Set by init_logging
 #   CGW_LINT_CMD   - Lint tool to use (default: ruff; empty = skip)
 # Returns:
-#   0 on lint pass, 1 on lint errors
+#   0 on all checks pass
+#   1 on lint/markdown errors (interactive callers may still offer an override)
+#   2 on typecheck errors specifically (fatal -- push_validated.sh never offers
+#     an interactive override for this code, only --skip-typecheck/CGW_SKIP_TYPECHECK=1)
 
 set -uo pipefail
 
@@ -22,11 +25,12 @@ main() {
   local skip_lint=0
   local skip_md_lint=0
   local skip_typecheck=0
+  local skip_typecheck_reason=""
   local md_only=0
 
-  [[ "${CGW_SKIP_LINT:-0}" == "1" ]] && skip_lint=1 && skip_md_lint=1 && skip_typecheck=1
+  [[ "${CGW_SKIP_LINT:-0}" == "1" ]] && skip_lint=1 && skip_md_lint=1 && skip_typecheck=1 && skip_typecheck_reason="CGW_SKIP_LINT=1"
   [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]] && skip_md_lint=1
-  [[ "${CGW_SKIP_TYPECHECK:-0}" == "1" ]] && skip_typecheck=1
+  [[ "${CGW_SKIP_TYPECHECK:-0}" == "1" ]] && skip_typecheck=1 && skip_typecheck_reason="CGW_SKIP_TYPECHECK=1"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -67,6 +71,7 @@ main() {
         skip_lint=1
         skip_md_lint=1
         skip_typecheck=1
+        skip_typecheck_reason="--skip-lint"
         shift
         ;;
       --skip-md-lint)
@@ -75,6 +80,7 @@ main() {
         ;;
       --skip-typecheck)
         skip_typecheck=1
+        skip_typecheck_reason="--skip-typecheck"
         shift
         ;;
       --md-only)
@@ -219,7 +225,7 @@ main() {
     # Blocking (joins overall_status below), unlike Format. Whole-project --
     # never scoped to a file list, see the --modified-only comment above.
     if [[ ${skip_typecheck} -eq 1 ]]; then
-      echo "  (typecheck skipped -- --skip-typecheck)" | tee -a "$logfile"
+      echo "  (typecheck skipped -- ${skip_typecheck_reason:---skip-typecheck})" | tee -a "$logfile"
     elif [[ -n "${CGW_TYPECHECK_CMD}" ]] && { get_python_path 2>/dev/null || true; ! command -v "$(cgw_resolve_lint_binary "${CGW_TYPECHECK_CMD}")" >/dev/null 2>&1; }; then
       # A configured-but-absent checker would exit 127 with no diagnostics,
       # which reads as "FAILED, 0 errors" and would now BLOCK a push. That is
@@ -269,7 +275,7 @@ main() {
   for _row in "${results[@]+"${results[@]}"}"; do
     IFS=':' read -r _row_name _row_status _row_errors _row_rest <<<"${_row}"
     if [[ "${_row_status}" == "FAILED" ]] && [[ "${_row_errors}" == "0" ]]; then
-      echo "[!] ${_row_name}: tool exited non-zero but no lint diagnostics were parsed -- likely a tool/config failure, not code errors (see log)" | tee -a "$logfile"
+      echo "[!] ${_row_name}: tool exited non-zero but no diagnostics were parsed -- likely a tool/config failure, not code errors (see log)" | tee -a "$logfile"
     fi
   done
 
@@ -293,7 +299,13 @@ main() {
   echo ""
   echo "Full log: $logfile"
 
-  [[ "$overall_status" == "PASSED" ]] && exit 0 || exit 1
+  # Exit 2 (distinct from the generic exit 1) specifically marks a typecheck
+  # failure -- callers (push_validated.sh) use this to refuse the interactive
+  # "push anyway?" override for type errors while still offering it for
+  # lint/markdown failures, matching the blocking-vs-advisory design intent.
+  [[ "$overall_status" == "PASSED" ]] && exit 0
+  [[ $typecheck_status -ne 0 ]] && exit 2
+  exit 1
 }
 
 main "$@"

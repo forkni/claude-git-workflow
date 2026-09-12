@@ -242,14 +242,26 @@ main() {
     [[ ${skip_md_lint} -eq 1 ]] && lint_args+=("--skip-md-lint")
     [[ ${skip_typecheck} -eq 1 ]] && lint_args+=("--skip-typecheck")
     [[ ${no_venv} -eq 1 ]] && lint_args+=("--no-venv")
-    if bash "${SCRIPT_DIR}/check_lint.sh" "${lint_args[@]}" >>"$logfile" 2>&1; then
+    local lint_check_status=0
+    bash "${SCRIPT_DIR}/check_lint.sh" "${lint_args[@]}" >>"$logfile" 2>&1 || lint_check_status=$?
+    if [[ ${lint_check_status} -eq 0 ]]; then
       echo "[OK] Lint check passed" | tee -a "$logfile"
       log_section_end "PRE-PUSH LINT CHECK" "$logfile" "0"
+    elif [[ ${lint_check_status} -eq 2 ]]; then
+      # Typecheck failures are fatal and never offered the interactive
+      # "push anyway?" override -- only the explicit --skip-typecheck /
+      # CGW_SKIP_TYPECHECK=1 bypass (checked before check_lint.sh even runs)
+      # can let a type error through. This is what makes the gate blocking.
+      echo "[!] Typecheck failed" | tee -a "$logfile"
+      log_section_end "PRE-PUSH LINT CHECK" "$logfile" "1"
+      echo "  Type errors must be fixed by hand -- see log for details" | tee -a "$logfile"
+      echo "  Bypass: --skip-typecheck (types only) or --skip-lint (all checks)" | tee -a "$logfile"
+      exit 1
     else
       echo "[!] Lint check failed" | tee -a "$logfile"
       log_section_end "PRE-PUSH LINT CHECK" "$logfile" "1"
-      echo "  Run ./scripts/git/fix_lint.sh (lint/format/markdown); type errors must be fixed by hand" | tee -a "$logfile"
-      echo "  Bypass: --skip-lint (all checks) or --skip-typecheck (types only)" | tee -a "$logfile"
+      echo "  Run ./scripts/git/fix_lint.sh (lint/format/markdown)" | tee -a "$logfile"
+      echo "  Bypass: --skip-lint (all checks)" | tee -a "$logfile"
       if ! cgw_confirm "Push anyway despite lint errors?" --non-interactive abort; then
         exit 1
       fi

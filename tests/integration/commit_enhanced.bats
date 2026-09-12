@@ -927,7 +927,7 @@ _run_commit() {
     export CGW_TYPECHECK_CMD=mock-typecheck
     export CGW_TYPECHECK_CHECK_ARGS=''
     export CGW_NON_INTERACTIVE=1
-    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --skip-lint \"feat: add feature file\"
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' \"feat: add feature file\"
   "
   [ "${status}" -eq 0 ]
   [ ! -f "${MOCK_BIN_DIR}/typecheck.log" ]
