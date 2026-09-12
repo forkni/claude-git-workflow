@@ -9,7 +9,10 @@
 #   logfile        - Set by init_logging
 #   CGW_LINT_CMD   - Lint tool to use (default: ruff; empty = skip)
 # Returns:
-#   0 on lint pass, 1 on lint errors
+#   0 on all checks pass
+#   1 on lint/markdown errors (interactive callers may still offer an override)
+#   2 on typecheck errors specifically (fatal -- push_validated.sh never offers
+#     an interactive override for this code, only --skip-typecheck/CGW_SKIP_TYPECHECK=1)
 
 set -uo pipefail
 
@@ -21,10 +24,13 @@ main() {
   local modified_only=0
   local skip_lint=0
   local skip_md_lint=0
+  local skip_typecheck=0
+  local skip_typecheck_reason=""
   local md_only=0
 
-  [[ "${CGW_SKIP_LINT:-0}" == "1" ]] && skip_lint=1 && skip_md_lint=1
+  [[ "${CGW_SKIP_LINT:-0}" == "1" ]] && skip_lint=1 && skip_md_lint=1 && skip_typecheck=1 && skip_typecheck_reason="CGW_SKIP_LINT=1"
   [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]] && skip_md_lint=1
+  [[ "${CGW_SKIP_TYPECHECK:-0}" == "1" ]] && skip_typecheck=1 && skip_typecheck_reason="CGW_SKIP_TYPECHECK=1"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -36,16 +42,19 @@ main() {
         echo "Options:"
         echo "  --modified-only   Only check files modified vs HEAD"
         echo "  --no-venv         Use system lint tool instead of .venv"
-        echo "  --skip-lint       Skip all lint checks"
+        echo "  --skip-lint       Skip all lint checks (code, markdown, and typecheck)"
         echo "  --skip-md-lint    Skip markdown lint only (CGW_MARKDOWNLINT_CMD step)"
-        echo "  --md-only         Only check markdown (skip code lint + format)"
+        echo "  --skip-typecheck  Skip typecheck only (CGW_TYPECHECK_CMD step)"
+        echo "  --md-only         Only check markdown (skip code lint + format + typecheck)"
         echo "  -h, --help        Show this help"
         echo ""
         echo "Environment:"
         echo "  CGW_NO_VENV=1          Same as --no-venv"
         echo "  CGW_SKIP_LINT=1        Same as --skip-lint"
         echo "  CGW_SKIP_MD_LINT=1     Same as --skip-md-lint"
+        echo "  CGW_SKIP_TYPECHECK=1   Same as --skip-typecheck"
         echo "  CGW_LINT_CMD=<tool>    Override lint tool (default: ruff)"
+        echo "  CGW_TYPECHECK_CMD=<tool>  Override typecheck tool (empty = skip)"
         echo "  (Also: CLAUDE_GIT_NO_VENV)"
         exit 0
         ;;
@@ -61,10 +70,17 @@ main() {
       --skip-lint)
         skip_lint=1
         skip_md_lint=1
+        skip_typecheck=1
+        skip_typecheck_reason="--skip-lint"
         shift
         ;;
       --skip-md-lint)
         skip_md_lint=1
+        shift
+        ;;
+      --skip-typecheck)
+        skip_typecheck=1
+        skip_typecheck_reason="--skip-typecheck"
         shift
         ;;
       --md-only)
@@ -93,8 +109,8 @@ main() {
     exit 0
   fi
 
-  if [[ -z "${CGW_LINT_CMD}" ]] && [[ -z "${CGW_FORMAT_CMD}" ]] && [[ -z "${CGW_MARKDOWNLINT_CMD}" ]]; then
-    echo "[OK] All lint checks skipped (CGW_LINT_CMD, CGW_FORMAT_CMD, and CGW_MARKDOWNLINT_CMD not set)"
+  if [[ -z "${CGW_LINT_CMD}" ]] && [[ -z "${CGW_FORMAT_CMD}" ]] && [[ -z "${CGW_MARKDOWNLINT_CMD}" ]] && [[ -z "${CGW_TYPECHECK_CMD}" ]]; then
+    echo "[OK] All lint checks skipped (CGW_LINT_CMD, CGW_FORMAT_CMD, CGW_MARKDOWNLINT_CMD, and CGW_TYPECHECK_CMD not set)"
     exit 0
   fi
 
@@ -109,6 +125,10 @@ main() {
   }
 
   # Handle --modified-only mode (direct output, no section logging)
+  # Typecheck is deliberately NOT run here: a typechecker needs whole-program
+  # context to resolve types across files, so scoping it to a diff's file
+  # list (the way lint/format are scoped below) would misreport errors that
+  # originate outside the modified set. Use the full mode for typecheck.
   if [[ "${modified_only}" -eq 1 ]]; then
     if [[ -z "${CGW_LINT_CMD}" ]]; then
       echo "[OK] No code lint tool configured for --modified-only (CGW_LINT_CMD not set)"
@@ -170,7 +190,7 @@ main() {
   } >"$logfile"
 
   local -a results=()
-  local lint_status=0 format_status=0 md_lint_status=0
+  local lint_status=0 format_status=0 md_lint_status=0 typecheck_status=0
 
   if [[ ${md_only} -eq 0 ]]; then
     # LINT CHECK
@@ -200,8 +220,33 @@ main() {
       [[ ${format_status} -ne 0 ]] && format_status_str="WARN"
       results+=("Format:${format_status_str}:${TOOL_ERROR_COUNT}:${format_duration}")
     fi
+
+    # TYPECHECK
+    # Blocking (joins overall_status below), unlike Format. Whole-project --
+    # never scoped to a file list, see the --modified-only comment above.
+    if [[ ${skip_typecheck} -eq 1 ]]; then
+      echo "  (typecheck skipped -- ${skip_typecheck_reason:---skip-typecheck})" | tee -a "$logfile"
+    elif [[ -n "${CGW_TYPECHECK_CMD}" ]] && { get_python_path 2>/dev/null || true; ! command -v "$(cgw_resolve_lint_binary "${CGW_TYPECHECK_CMD}")" >/dev/null 2>&1; }; then
+      # A configured-but-absent checker would exit 127 with no diagnostics,
+      # which reads as "FAILED, 0 errors" and would now BLOCK a push. That is
+      # an environment gap, not a type error -- warn and skip instead, the
+      # same way an unset CGW_MARKDOWNLINT_CMD is treated as opt-out rather
+      # than failure.
+      echo "[!] Typecheck skipped -- '${CGW_TYPECHECK_CMD}' is configured but not found on PATH or in .venv" | tee -a "$logfile"
+    else
+      local tc_start tc_end tc_duration tc_status_str
+      tc_start=$(date +%s)
+      cgw_run_typecheck || typecheck_status=1
+      tc_end=$(date +%s)
+      tc_duration=$((tc_end - tc_start))
+      if [[ -n "${CGW_TYPECHECK_CMD}" ]]; then
+        tc_status_str="PASSED"
+        [[ ${typecheck_status} -ne 0 ]] && tc_status_str="FAILED"
+        results+=("Typecheck:${tc_status_str}:${TOOL_ERROR_COUNT}:${tc_duration}")
+      fi
+    fi
   else
-    echo "  (code lint + format skipped -- --md-only)" | tee -a "$logfile"
+    echo "  (code lint + format + typecheck skipped -- --md-only)" | tee -a "$logfile"
   fi
 
   # MARKDOWN LINT
@@ -220,17 +265,17 @@ main() {
     fi
   fi
 
-  log_summary_table "$logfile" "${results[@]}"
+  log_summary_table "$logfile" "${results[@]+"${results[@]}"}"
 
   # A FAILED row with 0 parsed errors means the tool exited non-zero without
   # emitting any file:line diagnostics -- a tool/config failure (missing
   # binary, bad flags, crash), not counted lint errors. Name that explicitly
   # instead of leaving "FAILED ... 0 errors" to self-contradict.
   local _row _row_name _row_status _row_errors _row_rest
-  for _row in "${results[@]}"; do
+  for _row in "${results[@]+"${results[@]}"}"; do
     IFS=':' read -r _row_name _row_status _row_errors _row_rest <<<"${_row}"
     if [[ "${_row_status}" == "FAILED" ]] && [[ "${_row_errors}" == "0" ]]; then
-      echo "[!] ${_row_name}: tool exited non-zero but no lint diagnostics were parsed -- likely a tool/config failure, not code errors (see log)" | tee -a "$logfile"
+      echo "[!] ${_row_name}: tool exited non-zero but no diagnostics were parsed -- likely a tool/config failure, not code errors (see log)" | tee -a "$logfile"
     fi
   done
 
@@ -238,7 +283,7 @@ main() {
   script_end=$(date +%s)
   total_duration=$((script_end - script_start))
 
-  if [[ $lint_status -eq 0 ]] && [[ $md_lint_status -eq 0 ]]; then
+  if [[ $lint_status -eq 0 ]] && [[ $md_lint_status -eq 0 ]] && [[ $typecheck_status -eq 0 ]]; then
     overall_status="PASSED"
   else
     overall_status="FAILED"
@@ -254,7 +299,13 @@ main() {
   echo ""
   echo "Full log: $logfile"
 
-  [[ "$overall_status" == "PASSED" ]] && exit 0 || exit 1
+  # Exit 2 (distinct from the generic exit 1) specifically marks a typecheck
+  # failure -- callers (push_validated.sh) use this to refuse the interactive
+  # "push anyway?" override for type errors while still offering it for
+  # lint/markdown failures, matching the blocking-vs-advisory design intent.
+  [[ "$overall_status" == "PASSED" ]] && exit 0
+  [[ $typecheck_status -ne 0 ]] && exit 2
+  exit 1
 }
 
 main "$@"

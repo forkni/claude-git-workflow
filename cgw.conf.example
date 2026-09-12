@@ -150,8 +150,9 @@ CGW_FORMAT_EXCLUDES="--exclude logs --exclude .venv"
 # ============================================================================
 # TYPECHECK CONFIGURATION
 # ============================================================================
-# Optional non-blocking typecheck step run by the pre-commit hook.
-# Set CGW_TYPECHECK_CMD="" to disable (default).
+# Typecheck step. Advisory in the pre-commit hook; BLOCKING in check_lint.sh
+# and therefore in push_validated.sh -- setting CGW_TYPECHECK_CMD gates your
+# pushes. Set CGW_TYPECHECK_CMD="" to disable (default).
 #
 # ── Python / pyrefly (recommended for new Python projects) ───────────────────
 # CGW_TYPECHECK_CMD="pyrefly"
@@ -173,7 +174,8 @@ CGW_FORMAT_EXCLUDES="--exclude logs --exclude .venv"
 # CGW_TYPECHECK_CHECK_ARGS="--noEmit"
 # CGW_TYPECHECK_EXCLUDES=""
 #
-# Skip at runtime with CGW_SKIP_TYPECHECK=1.
+# Skip at runtime with CGW_SKIP_TYPECHECK=1, or --skip-typecheck on
+# check_lint.sh / push_validated.sh.
 
 CGW_TYPECHECK_CMD=""
 CGW_TYPECHECK_CHECK_ARGS="check"

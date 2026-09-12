@@ -253,9 +253,9 @@ script with `--help` to confirm rather than inventing it.
 | Script | Accepted flags |
 |---|---|
 | `commit_enhanced.sh` | `--non-interactive`, `--interactive`, `--staged-only`, `--all`, `--only <path>` (repeatable), `--skip-lint`, `--skip-md-lint`, `--no-venv`, `--sign`, `--no-sign` |
-| `check_lint.sh` | `--no-venv`, `--modified-only`, `--skip-lint`, `--skip-md-lint`, `--md-only` |
+| `check_lint.sh` | `--no-venv`, `--modified-only`, `--skip-lint`, `--skip-md-lint`, `--skip-typecheck`, `--md-only` |
 | `fix_lint.sh` | `--non-interactive`, `--no-venv`, `--modified-only`, `--skip-md-lint`, `--md-only` — **no `--skip-lint`** |
-| `push_validated.sh` | `--non-interactive`, `--dry-run`, `--skip-lint`, `--skip-md-lint`, `--no-venv`, `--force`, `--branch <name>` |
+| `push_validated.sh` | `--non-interactive`, `--dry-run`, `--skip-lint`, `--skip-md-lint`, `--skip-typecheck`, `--no-venv`, `--force`, `--branch <name>` |
 | `cherry_pick_commits.sh` | `--non-interactive`, `--commit <hash>`, `--only <pathspec>` (repeatable; partial pick), `--dry-run`, `--source <branch>`, `--target <branch>` |
 
 Asymmetries that trip people up:
@@ -278,6 +278,9 @@ Asymmetries that trip people up:
   wrapper.
 - `commit_enhanced.sh` lints **staged files only** — a failing unstaged file elsewhere in the
   tree does not block an `--only`-scoped commit.
+- **Typecheck does not run under `--md-only` or `--modified-only`** on `check_lint.sh` (it needs
+  whole-project context, so it never runs scoped to a diff or a markdown-only pass), and it does
+  not run at all in `commit_enhanced.sh` (see the Typecheck note below).
 
 ## Quick Decision Tree
 
@@ -311,7 +314,10 @@ Did lint checks fail?
 Optional flags: --skip-lint (skip all lint), --skip-md-lint (skip markdown lint only),
                 --sign (GPG/SSH-sign the commit), --no-sign (override CGW_SIGN_COMMITS)
 
-Typecheck: runs non-blocking in the pre-commit hook when CGW_TYPECHECK_CMD is set (pyrefly is the configured default for this project's Python code) — see script-reference.md.
+Typecheck: advisory in the pre-commit hook (when CGW_TYPECHECK_CMD is set), BLOCKING in
+           check_lint.sh/push_validated.sh. A failing typecheck blocks a push; --skip-typecheck
+           (or CGW_SKIP_TYPECHECK=1) bypasses it. Not run under --md-only/--modified-only, and
+           not run by commit_enhanced.sh — see script-reference.md.
 
 After commit: verify with git log --oneline -1
 (that single check is enough — skip any git status/diff scan beforehand; commit_enhanced.sh
