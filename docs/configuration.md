@@ -77,10 +77,10 @@ cp cgw.conf.example .cgw.conf
 | `CGW_MARKDOWNLINT_NPX_FALLBACK` | `1` | Set to `0` to disable the `npx --yes markdownlint-cli2` fallback when no markdownlint binary is on `PATH` |
 | `CGW_SKIP_LINT` | `0` | Set to `1` to skip all lint checks at runtime |
 | `CGW_SKIP_MD_LINT` | `0` | Set to `1` to skip only the markdown lint step; also narrows the `[3.5]` staged-blob congruence guard's scope, excluding `*.md` from what it considers "validated" this run |
-| `CGW_TYPECHECK_CMD` | `` | Typecheck tool; set to e.g. `pyrefly` to enable (`""` to disable) |
+| `CGW_TYPECHECK_CMD` | `` | Typecheck tool; set to e.g. `pyrefly` to enable (`""` to disable). Blocking in `check_lint.sh`/`push_validated.sh`, advisory in the pre-commit hook -- see [Typecheck](#typecheck) |
 | `CGW_TYPECHECK_CHECK_ARGS` | `check` | Arguments passed to the typecheck tool |
 | `CGW_TYPECHECK_EXCLUDES` | `` | Exclusion flags appended to the typecheck command |
-| `CGW_SKIP_TYPECHECK` | `0` | Set to `1` to skip the typecheck step at runtime |
+| `CGW_SKIP_TYPECHECK` | `0` | Set to `1` to skip the typecheck step at runtime -- the escape hatch when a blocking pre-push typecheck must be bypassed |
 | `CGW_STAGED_ONLY` | `0` | Set to `1` to commit only pre-staged files (`commit_enhanced.sh`) |
 | `CGW_COMMIT_SUBJECT_SOFT_LEN` | `50` | Commit subject length past which an advisory tip is printed (Pro Git recommendation) |
 | `CGW_COMMIT_SUBJECT_HARD_LEN` | `72` | Commit subject length past which the commit is blocked (`git log --oneline`/GitHub truncation point) |
@@ -204,7 +204,23 @@ CGW_FORMAT_CMD=""
 
 ## Typecheck
 
-The pre-commit hook runs a non-blocking typecheck step when `CGW_TYPECHECK_CMD` is set. Like the lint step, it surfaces warnings but never blocks the commit. Set `CGW_SKIP_TYPECHECK=1` to skip it at runtime (e.g. in CI where a dedicated type-check job runs separately).
+Typecheck runs whole-project when `CGW_TYPECHECK_CMD` is set, and is **blocking at push, advisory at commit**:
+
+| Where | Behavior |
+|---|---|
+| `hooks/pre-commit` / `.githooks/pre-commit` | Advisory — reports a `[WARN]` on type errors but never blocks the commit |
+| `check_lint.sh` | **Blocking** — a `Typecheck:FAILED` row fails the overall status and the exit code, same as lint and markdown lint |
+| `push_validated.sh` | **Blocking** — delegates to `check_lint.sh`, so a failing typecheck blocks the push |
+| `check_lint.sh --md-only` / `--modified-only` | Not run — typecheck needs whole-project context, so it never runs scoped to a diff or a markdown-only pass |
+| `commit_enhanced.sh` | Not run — see "Why typecheck isn't scoped to staged files" below |
+
+Skip it at runtime with `CGW_SKIP_TYPECHECK=1` or `--skip-typecheck` (accepted by `check_lint.sh` and `push_validated.sh`); `--skip-lint` implies it too.
+
+**Upgrading:** if your project already had `CGW_TYPECHECK_CMD` configured before this change, a failing typecheck used to only warn — it now also blocks `check_lint.sh` and `push_validated.sh`. Fix the type errors, or bypass with `CGW_SKIP_TYPECHECK=1` (keeps the advisory commit-time warning, un-gates the push) or `CGW_TYPECHECK_CMD=""` (turns it off entirely). A configured-but-not-installed checker is treated as an environment gap, not a failure: `check_lint.sh` warns and skips rather than blocking the push.
+
+### Why typecheck isn't scoped to staged files
+
+Unlike lint/format/markdown, typecheck never appears in `commit_enhanced.sh`'s staged-scoped code-quality gate, and its paths never enter `cgw_validated_path_set` (the set `commit_enhanced.sh`'s congruence guard re-stages on divergence). A type checker resolves imports across the whole project, so there is no honest way to scope it to a diff — doing so would both let a pre-existing, unrelated type error block an unrelated commit, and would turn the congruence guard into an indiscriminate re-stager of files the user never intended to stage.
 
 ### Python / pyrefly (recommended)
 

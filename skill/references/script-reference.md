@@ -131,16 +131,20 @@ Override with `--all` to always bulk-stage, or `--only <path>` to explicitly sel
 **`check_lint.sh`** — Pre-commit validation (read-only)
 
 ```bash
-./scripts/git/check_lint.sh [--modified-only] [--no-venv] [--skip-lint] [--skip-md-lint] [--md-only]
+./scripts/git/check_lint.sh [--modified-only] [--no-venv] [--skip-lint] [--skip-md-lint] [--skip-typecheck] [--md-only]
 ```
 
 - Default: checks all files
-- `--modified-only`: checks only git-modified files
-- `--skip-lint`: skip all lint checks
+- `--modified-only`: checks only git-modified files (typecheck never runs here — it needs
+  whole-project context, so it never runs scoped to a diff)
+- `--skip-lint`: skip all lint checks (implies `--skip-md-lint` and `--skip-typecheck`)
 - `--skip-md-lint`: skip markdown lint only
-- `--md-only`: check markdown only (skip code lint + format); mutually exclusive with
+- `--skip-typecheck`: skip typecheck only (also honors `CGW_SKIP_TYPECHECK=1`); typecheck is
+  **blocking** here and in `push_validated.sh` (advisory only in the pre-commit hook)
+- `--md-only`: check markdown only (skip code lint + format + typecheck); mutually exclusive with
   `--skip-md-lint` and with `--modified-only`
-- Skipped automatically if `CGW_LINT_CMD` is empty
+- Skipped automatically if `CGW_LINT_CMD` is empty (typecheck skipped automatically if
+  `CGW_TYPECHECK_CMD` is empty, independently of `CGW_LINT_CMD`)
 
 **`fix_lint.sh`** — Auto-fix lint issues (code + Markdown)
 
@@ -469,15 +473,16 @@ token at a real terminal.
 **`push_validated.sh`** — Validated push to remote
 
 ```bash
-./scripts/git/push_validated.sh [--non-interactive] [--dry-run] [--skip-lint] [--force] [--branch <name>]
+./scripts/git/push_validated.sh [--non-interactive] [--dry-run] [--skip-lint] [--skip-typecheck] [--force] [--branch <name>]
 ```
 
 | Flag | Purpose |
 |------|---------|
 | `--non-interactive` | Skip prompts |
 | `--dry-run` | Show what would be pushed without pushing |
-| `--skip-lint` | Skip all pre-push lint checks |
+| `--skip-lint` | Skip all pre-push lint checks (incl. typecheck) |
 | `--skip-md-lint` | Skip markdown lint only in pre-push check |
+| `--skip-typecheck` | Skip typecheck only in pre-push check (also honors `CGW_SKIP_TYPECHECK=1`); a failing typecheck otherwise blocks the push |
 | `--no-venv` | Forward to `check_lint.sh`: use system lint tool (no .venv) |
 | `--force` | Allow force-push (uses an explicit `--force-with-lease=<ref>:<sha>`; blocks for protected branches) |
 | `--branch <name>` | Override push target branch |
@@ -630,9 +635,16 @@ Computes GitHub-compatible heading slugs locally (offline port of `gh-md-toc` �
 | `CGW_TYPECHECK_CMD=<tool>` | Typecheck tool (`pyrefly`, `pyright`, `mypy`, `tsc`; default: `""` = disabled) |
 | `CGW_TYPECHECK_CHECK_ARGS=<args>` | Arguments for typecheck command (default: `check`) |
 | `CGW_TYPECHECK_EXCLUDES=<flags>` | Exclusion flags appended to typecheck command |
-| `CGW_SKIP_TYPECHECK=1` | Skip typecheck step even when `CGW_TYPECHECK_CMD` is set |
+| `CGW_SKIP_TYPECHECK=1` | Skip typecheck step even when `CGW_TYPECHECK_CMD` is set — the runtime equivalent of `--skip-typecheck` on `check_lint.sh` / `push_validated.sh`; this is the escape hatch for the push-blocking gate below |
 
-Typecheck runs **non-blocking** in the pre-commit hook when `CGW_TYPECHECK_CMD` is set (failures are reported but do not block the commit). Configured automatically by `configure.sh` based on detected project type (pyrefly for Python, tsc for TypeScript).
+Typecheck runs whole-project when `CGW_TYPECHECK_CMD` is set, and is **advisory in the pre-commit
+hook** (failures print a `[WARN]` but never block the commit) and **blocking in `check_lint.sh`**
+(a `Typecheck:FAILED` row fails the overall exit code, same as lint and markdown lint) — which in
+turn makes it blocking for `push_validated.sh`, since that script delegates its pre-push lint
+check to `check_lint.sh`. It does not run under `check_lint.sh --md-only` or `--modified-only`,
+and it does not run at all in `commit_enhanced.sh` (see `docs/configuration.md` for why). A
+typechecker is configured automatically by `configure.sh` based on detected project type (pyrefly
+for Python, tsc for TypeScript).
 
 ### CLAUDE_GIT_* (legacy, still supported)
 

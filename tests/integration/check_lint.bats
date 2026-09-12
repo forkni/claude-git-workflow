@@ -363,3 +363,258 @@ MOCK
   [[ "${output}" == *"Total: 0 errors"* ]]
   [[ "${output}" == *"tool exited non-zero but no lint diagnostics were parsed"* ]]
 }
+
+# ── Typecheck (blocking) ───────────────────────────────────────────────────────
+# Unlike Format, a failing typecheck joins overall_status: it must gate the
+# exit code the same way Lint and Markdown do.
+
+@test "typecheck-only config, failing typecheck: check_lint exits 1 and reports Typecheck" {
+  install_mock_typecheck_with_errors mypy
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    export CGW_TYPECHECK_CHECK_ARGS=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Typecheck"* ]]
+  [[ "${output}" == *"FAILED"* ]]
+}
+
+@test "typecheck-only config, passing typecheck: check_lint exits 0 and reports PASSED" {
+  install_mock_typecheck
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    export CGW_TYPECHECK_CHECK_ARGS=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Typecheck"* ]]
+  [[ "${output}" == *"PASSED"* ]]
+}
+
+@test "--skip-typecheck bypasses a failing typechecker entirely" {
+  MOCK_TYPECHECK_EXIT=1 install_mock_typecheck
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --skip-typecheck
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"typecheck skipped -- --skip-typecheck"* ]]
+  [ ! -f "${MOCK_BIN_DIR}/typecheck.log" ]
+}
+
+@test "CGW_SKIP_TYPECHECK=1 bypasses a failing typechecker entirely" {
+  MOCK_TYPECHECK_EXIT=1 install_mock_typecheck
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    export CGW_SKIP_TYPECHECK=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [ "${status}" -eq 0 ]
+  [ ! -f "${MOCK_BIN_DIR}/typecheck.log" ]
+}
+
+@test "--skip-lint implies --skip-typecheck" {
+  MOCK_TYPECHECK_EXIT=1 install_mock_typecheck
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --skip-lint
+  "
+  [ "${status}" -eq 0 ]
+  [ ! -f "${MOCK_BIN_DIR}/typecheck.log" ]
+}
+
+@test "--md-only does not run typecheck" {
+  install_mock_markdownlint
+  MOCK_TYPECHECK_EXIT=1 install_mock_typecheck
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=markdownlint-cli2
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --md-only
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"Typecheck"* ]]
+  [ ! -f "${MOCK_BIN_DIR}/typecheck.log" ]
+}
+
+@test "--modified-only does not run typecheck" {
+  install_mock_lint
+  MOCK_TYPECHECK_EXIT=1 install_mock_typecheck
+  echo "x = 1" > "${TEST_REPO_DIR}/mod.py"
+  git -C "${TEST_REPO_DIR}" add mod.py
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: add mod.py"
+  echo "x = 2" > "${TEST_REPO_DIR}/mod.py"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --modified-only
+  "
+  [ "${status}" -eq 0 ]
+  [ ! -f "${MOCK_BIN_DIR}/typecheck.log" ]
+}
+
+@test "empty CGW_TYPECHECK_CMD produces no Typecheck row and does not fail" {
+  install_mock_lint
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"Typecheck"* ]]
+}
+
+@test "typecheck-only project is not silently skipped by the all-empty early exit" {
+  MOCK_TYPECHECK_EXIT=1 install_mock_typecheck
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [ "${status}" -eq 1 ]
+  [[ "${output}" != *"All lint checks skipped"* ]]
+}
+
+@test "configured-but-missing typechecker is skipped with a warning, not a failure" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=definitely-not-installed-typechecker
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"configured but not found on PATH or in .venv"* ]]
+}
+
+@test "typecheck diagnostics in mypy shape are counted in the error summary" {
+  install_mock_typecheck_with_errors mypy
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    export CGW_TYPECHECK_CHECK_ARGS=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [[ "${output}" == *"Total: 1 errors"* ]]
+  [[ "${output}" != *"no lint diagnostics were parsed"* ]]
+}
+
+@test "typecheck diagnostics in pyright shape are counted in the error summary" {
+  install_mock_typecheck_with_errors pyright
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    export CGW_TYPECHECK_CHECK_ARGS=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [[ "${output}" == *"Total: 1 errors"* ]]
+  [[ "${output}" != *"no lint diagnostics were parsed"* ]]
+}
+
+@test "typecheck diagnostics in tsc shape are counted in the error summary" {
+  install_mock_typecheck_with_errors tsc
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    export CGW_TYPECHECK_CHECK_ARGS=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [[ "${output}" == *"Total: 1 errors"* ]]
+  [[ "${output}" != *"no lint diagnostics were parsed"* ]]
+}
+
+@test "typecheck diagnostics in pyrefly shape are counted in the error summary" {
+  install_mock_typecheck_with_errors pyrefly
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    export CGW_TYPECHECK_CHECK_ARGS=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [[ "${output}" == *"Total: 1 errors"* ]]
+  [[ "${output}" != *"no lint diagnostics were parsed"* ]]
+}
+
+@test "format-check failure alone does not block even when typecheck passes" {
+  _install_mock_ruff_format_fails
+  install_mock_typecheck
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    export CGW_TYPECHECK_CHECK_ARGS=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [ "${status}" -eq 0 ]
+}

@@ -95,6 +95,7 @@ Scripts use a three-tier resolution system — environment variables override `.
 | `CGW_LOCAL_FILES` | `CLAUDE.md MEMORY.md .claude/ logs/` | Files never committed |
 | `CGW_LOCAL_FILES_EXEMPT` | `""` | Files exempted from local-only protection (exact paths) |
 | `CGW_LINT_CMD` | `ruff` | Lint tool (`""` to disable) |
+| `CGW_TYPECHECK_CMD` | `""` | Typecheck tool (`pyrefly`/`pyright`/`mypy`/`tsc`, `""` to disable) — advisory at commit, **blocking** at push (see [Configuration](docs/configuration.md#typecheck)) |
 | `CGW_MERGE_MODE` | `direct` | `direct` (local merge) or `pr` (create GitHub PR) |
 | `CGW_SIGN_COMMITS` | `0` | `1` to GPG/SSH-sign commits (passes `-S` to `git commit`; respects `gpg.format`) |
 | `CGW_SIGN_TAGS` | `0` | `1` to GPG/SSH-sign release tags (passes `-s` to `git tag`) |
@@ -123,6 +124,7 @@ See [docs/configuration.md](docs/configuration.md) for all options and language-
 - bash 4.0+
 - git 2.0+
 - For lint: ruff / flake8 / eslint / golangci-lint / clang-tidy / cppcheck / cargo (or none — set `CGW_LINT_CMD=""`)
+- For typecheck (optional): pyrefly / pyright / mypy / tsc (or none — leave `CGW_TYPECHECK_CMD=""`, the default)
 - For Claude Code integration: Claude Code CLI
 - For PR creation (`create_pr.sh`): [gh CLI](https://cli.github.com/) + `gh auth login`
 - `jq` (optional): used by `configure.sh` to install the Claude Code guardrail into `.claude/settings.json`; a Python fallback runs automatically if absent. Install on Windows: `winget install jqlang.jq`

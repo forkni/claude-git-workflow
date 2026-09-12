@@ -13,6 +13,7 @@
 #   --dry-run           Show what would be pushed without pushing
 #   --skip-lint         Skip pre-push lint check
 #   --skip-md-lint      Skip markdown lint only in pre-push check
+#   --skip-typecheck    Skip typecheck only in pre-push check
 #   --no-venv           Forward to check_lint.sh: use system lint tool (no .venv)
 #   --force             Allow force-push (uses an explicit --force-with-lease=<ref>:<sha>)
 #   --branch <name>     Override push target branch (default: current branch)
@@ -33,6 +34,7 @@ main() {
   local dry_run=0
   local skip_lint=0
   local skip_md_lint=0
+  local skip_typecheck=0
   local no_venv=0
   local force_push=0
   local target_branch=""
@@ -47,8 +49,9 @@ main() {
         echo "Options:"
         echo "  --non-interactive   Skip all prompts"
         echo "  --dry-run           Show what would be pushed without pushing"
-        echo "  --skip-lint         Skip pre-push lint check (all lint)"
+        echo "  --skip-lint         Skip pre-push lint check (all lint, incl. typecheck)"
         echo "  --skip-md-lint      Skip markdown lint only in pre-push check"
+        echo "  --skip-typecheck    Skip typecheck only in pre-push check"
         echo "  --no-venv           Forward to check_lint.sh: use system lint tool (no .venv)"
         echo "  --force             Allow force-push (uses an explicit --force-with-lease=<ref>:<sha>)"
         echo "  --branch <name>     Override push target branch (default: current branch)"
@@ -73,6 +76,7 @@ main() {
       --dry-run) dry_run=1 ;;
       --skip-lint) skip_lint=1 ;;
       --skip-md-lint) skip_md_lint=1 ;;
+      --skip-typecheck) skip_typecheck=1 ;;
       --no-venv) no_venv=1 ;;
       --force) force_push=1 ;;
       --branch)
@@ -89,6 +93,7 @@ main() {
 
   [[ "${CGW_SKIP_LINT:-0}" == "1" ]] && skip_lint=1
   [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]] && skip_md_lint=1
+  [[ "${CGW_SKIP_TYPECHECK:-0}" == "1" ]] && skip_typecheck=1
   [[ "${CGW_NO_VENV:-0}" == "1" ]] && no_venv=1
 
   {
@@ -230,11 +235,12 @@ main() {
   echo "" | tee -a "$logfile"
 
   # [3/5] Optional pre-push lint check
-  if [[ ${skip_lint} -eq 0 ]] && [[ -n "${CGW_LINT_CMD}${CGW_FORMAT_CMD}${CGW_MARKDOWNLINT_CMD}" ]]; then
+  if [[ ${skip_lint} -eq 0 ]] && [[ -n "${CGW_LINT_CMD}${CGW_FORMAT_CMD}${CGW_MARKDOWNLINT_CMD}${CGW_TYPECHECK_CMD}" ]]; then
     log_section_start "PRE-PUSH LINT CHECK" "$logfile"
     echo "Running pre-push lint check..." | tee -a "$logfile"
     local lint_args=()
     [[ ${skip_md_lint} -eq 1 ]] && lint_args+=("--skip-md-lint")
+    [[ ${skip_typecheck} -eq 1 ]] && lint_args+=("--skip-typecheck")
     [[ ${no_venv} -eq 1 ]] && lint_args+=("--no-venv")
     if bash "${SCRIPT_DIR}/check_lint.sh" "${lint_args[@]}" >>"$logfile" 2>&1; then
       echo "[OK] Lint check passed" | tee -a "$logfile"
@@ -242,7 +248,8 @@ main() {
     else
       echo "[!] Lint check failed" | tee -a "$logfile"
       log_section_end "PRE-PUSH LINT CHECK" "$logfile" "1"
-      echo "  Run ./scripts/git/fix_lint.sh to fix issues, or use --skip-lint to bypass" | tee -a "$logfile"
+      echo "  Run ./scripts/git/fix_lint.sh (lint/format/markdown); type errors must be fixed by hand" | tee -a "$logfile"
+      echo "  Bypass: --skip-lint (all checks) or --skip-typecheck (types only)" | tee -a "$logfile"
       if ! cgw_confirm "Push anyway despite lint errors?" --non-interactive abort; then
         exit 1
       fi
