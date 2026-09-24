@@ -895,7 +895,7 @@ cgw_resolve_safe_conflicts() {
     merge)
       continue_hint="  1. Edit conflicted files
   2. git add <resolved files>
-  3. git commit"
+  3. ./scripts/git/commit_enhanced.sh   (no message needed -- uses git's prepared merge message; do NOT pass --only)"
       abort_hint="Or abort: git merge --abort && git checkout ${original_branch}"
       ;;
     cherry-pick)

@@ -161,7 +161,7 @@ side's intent, preserve both where compatible, re-run lint/tests, then conclude:
 ```bash
 # Resolve each hunk (see resolving-merge-conflicts.md), then:
 git add <resolved-files>
-./scripts/git/commit_enhanced.sh "fix: resolve merge conflict in <file>"
+./scripts/git/commit_enhanced.sh    # no message needed -- uses git's prepared merge message
 
 # Or abort the merge (only to deliberately abandon it):
 git merge --abort
@@ -170,8 +170,11 @@ git checkout "${CGW_SOURCE_BRANCH}"
 
 > Conclude with `commit_enhanced.sh`, not raw `git commit`: the PreToolUse
 > guardrail blocks `git commit`, and the wrapper still finalizes the merge
-> (`MERGE_HEAD` is set) while keeping lint and local-file protection. Do not pass
-> `--only` when concluding a merge — it resets the index and breaks merge state.
+> (`MERGE_HEAD` is set) while keeping lint and local-file protection. With no
+> message it uses git's own prepared `MERGE_MSG` (comments stripped) and skips
+> the conventional-format check for this commit, the same way `hooks/pre-push`
+> already exempts merge commits by parent count. Do not pass `--only` when
+> concluding a merge — it resets the index and breaks merge state.
 
 Never auto-resolve content conflicts — they require human review.
 
@@ -206,7 +209,7 @@ git checkout --ours <file> && git add <file>
 git checkout --theirs <file> && git add <file>
 
 # Then complete or abort the merge:
-git commit    # if resolved
+./scripts/git/commit_enhanced.sh    # if resolved -- no message needed
 git merge --abort  # if abandoning
 ```
 

@@ -96,6 +96,13 @@ Exits 1 if any `CGW_LOCAL_FILES` entry is tracked in git. Used by `branch-protec
 ./scripts/git/commit_enhanced.sh [flags] "commit message"
 ```
 
+**During a merge** (`MERGE_HEAD` present), the message is optional. With none,
+the wrapper uses git's own prepared `MERGE_MSG` (comment lines stripped)
+instead of demanding a conventional one, and the resulting merge commit is
+exempt from the conventional-format check and the subject-length hard cap —
+the same way `hooks/pre-push` already exempts merge commits by parent count.
+Passing a message still works and overrides git's prepared one.
+
 | Flag | Purpose | When to Use |
 |------|---------|-------------|
 | `--non-interactive` | Skip all prompts, use defaults | Auto-detected in Claude Code, CI/CD |
@@ -254,7 +261,7 @@ Merges only `docs/` changes. Warns if non-docs changes exist. Creates `pre-docs-
 
 Requires `gh` CLI authenticated (`gh auth login`). Checks ahead/behind status, then opens a PR. Charlie CI auto-reviews on PR open.
 
-Passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own `github.com` URL. Without this, `gh pr create` resolves its own target repo and — when `CGW_REMOTE` is a fork — defaults to the fork's parent/upstream repo instead of `CGW_REMOTE` itself. Falls back to no `--repo` (gh's own resolution) when the remote isn't a recognizable `github.com` URL.
+Passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own `github.com` URL (checks `pushurl` first, then `url`). Without this, `gh pr create` resolves its own target repo and — when `CGW_REMOTE` is a fork — defaults to the fork's parent/upstream repo instead of `CGW_REMOTE` itself. Aborts with an error if the remote isn't a recognizable `github.com` URL, rather than falling back to gh's own (unsafe) resolution.
 
 ---
 
@@ -484,7 +491,7 @@ token at a real terminal.
 | `--skip-md-lint` | Skip markdown lint only in pre-push check |
 | `--skip-typecheck` | Skip typecheck only in pre-push check (also honors `CGW_SKIP_TYPECHECK=1`); a failing typecheck otherwise blocks the push |
 | `--no-venv` | Forward to `check_lint.sh`: use system lint tool (no .venv) |
-| `--force` | Allow force-push (uses an explicit `--force-with-lease=<ref>:<sha>`; blocks for protected branches) |
+| `--force` | Allow force-push (explicit `--force-with-lease=<ref>:<sha>`, or an empty lease `<ref>:` when the branch doesn't exist on the remote yet; blocks for protected branches) |
 | `--branch <name>` | Override push target branch |
 
 Safety checks: verifies remote reachability, warns if behind remote, blocks unguarded force-push to protected branches.

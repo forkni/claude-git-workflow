@@ -190,7 +190,7 @@ main() {
     for crlf_f in "${crlf_files[@]}"; do
       echo "        ${crlf_f}"
     done
-    echo "  Fix with: git add --renormalize <file> && git commit"
+    echo "  Fix with: git add --renormalize <file> && ./scripts/git/commit_enhanced.sh 'fix: renormalize line endings'"
   fi
   echo ""
 

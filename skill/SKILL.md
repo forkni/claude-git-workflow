@@ -340,7 +340,7 @@ is phrased)
 
 Handles: pre-merge validation, backup tag, modify/delete/both-deleted conflict auto-resolution, content conflict detection (stops for manual review).
 
-**After manual conflict resolution:** when the script pauses for a content conflict (`UU`/`AA`/`AU`), resolve the markers, run `git add <file>`, then conclude the merge with `commit_enhanced.sh` — Rule 1 applies to merge-conclusion commits too. Do NOT re-run `merge_with_validation.sh`; there is no `--continue` flag. This conclude-with-the-wrapper rule is **merge-specific**: a merge commit has no message of its own yet, so you author one. A paused **cherry-pick** is the opposite case — it already carries the original commit's message — and concludes with `git cherry-pick --continue` instead (see *When a cherry-pick hits a conflict*, below).
+**After manual conflict resolution:** when the script pauses for a content conflict (`UU`/`AA`/`AU`), resolve the markers, run `git add <file>`, then conclude the merge with `commit_enhanced.sh` — Rule 1 applies to merge-conclusion commits too. Do NOT re-run `merge_with_validation.sh`; there is no `--continue` flag. This conclude-with-the-wrapper rule is **merge-specific**: with `MERGE_HEAD` set, `commit_enhanced.sh` needs no message argument — it uses git's own prepared merge message (`# Conflicts:` comments stripped) and is exempt from the conventional-format check and the subject-length hard cap, the same way `hooks/pre-push` already exempts merge commits by parent count. Pass a message explicitly only if you want to override git's prepared one. A paused **cherry-pick** is the opposite case — it already carries the original commit's message — and concludes with `git cherry-pick --continue` instead (see *When a cherry-pick hits a conflict*, below).
 
 Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Creating a PR below).
 
@@ -372,7 +372,7 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 
 Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login`. Charlie CI auto-reviews on PR open. Rule 6 applies here too — watch the PR's checks (`gh pr checks <n> --watch`), not just Charlie's review, per ci-verification.md.
 
-Always passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own URL — bare `gh pr create` resolves its own target repo and, when `CGW_REMOTE` is a fork, defaults to the fork's parent/upstream repo instead. If this script ever fails or is unavailable, do not drop to raw `gh pr create` without `--repo`: it silently targets the wrong repo on a fork remote.
+Always passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own URL — bare `gh pr create` resolves its own target repo and, when `CGW_REMOTE` is a fork, defaults to the fork's parent/upstream repo instead. If `CGW_REMOTE`'s URL can't be resolved to a `github.com` owner/repo, the script aborts rather than falling back to gh's own resolution. If this script ever fails or is unavailable, do not drop to raw `gh pr create` without `--repo`: it silently targets the wrong repo on a fork remote.
 
 **Syncing with remote:**
 

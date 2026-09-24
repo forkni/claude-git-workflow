@@ -178,6 +178,11 @@ main() {
         echo "  Standard types: feat fix docs chore test refactor style perf"
         echo "  Configure extras via CGW_EXTRA_PREFIXES in .cgw.conf"
         echo ""
+        echo "During a merge (MERGE_HEAD present), the message is optional:"
+        echo "  with none, uses git's prepared merge message (comments stripped)."
+        echo "  Merge-conclusion commits skip the conventional-format check and"
+        echo "  the subject-length hard cap (pre-push exempts merge commits too)."
+        echo ""
         echo "Environment:"
         echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
         echo "  CGW_STAGED_ONLY=1       Same as --staged-only"
@@ -689,14 +694,44 @@ main() {
   # [5] Get commit message
   echo "[5/6] Commit message..."
 
-  if [[ -z "${commit_msg_param}" ]]; then
+  local commit_msg="${commit_msg_param}"
+
+  # A merge in progress has a message prepared by git already (MERGE_MSG) --
+  # don't force the caller to author one. Strip the "# Conflicts:" comment
+  # block the same way `git commit` itself does before using it verbatim.
+  # git rev-parse --git-path also resolves correctly inside a worktree.
+  if [[ -z "${commit_msg}" ]] && [[ ${merge_in_progress} -eq 1 ]]; then
+    local merge_msg_path
+    merge_msg_path="$(git rev-parse --git-path MERGE_MSG 2>/dev/null)"
+    if [[ -n "${merge_msg_path}" ]] && [[ -f "${merge_msg_path}" ]]; then
+      commit_msg="$(git stripspace --strip-comments < "${merge_msg_path}")"
+    fi
+    if [[ -n "${commit_msg}" ]]; then
+      echo "  [i] Merge in progress; using git's prepared merge message"
+    fi
+  fi
+
+  if [[ -z "${commit_msg}" ]]; then
     err "Commit message required"
     echo "Usage: ./scripts/git/commit_enhanced.sh \"feat: Your message\"" >&2
+    if [[ ${merge_in_progress} -eq 1 ]]; then
+      echo "During a merge you may omit it to use git's prepared merge message." >&2
+    fi
     echo "Types: feat fix docs chore test refactor style perf (+ extras in .cgw.conf)" >&2
     exit 1
   fi
 
-  local commit_msg="${commit_msg_param}"
+  # A merge conclusion (MERGE_HEAD present) is exempt from the conventional-
+  # format check and the freeform check, the same way hooks/pre-push already
+  # exempts merge commits by parent count. A merge commit's subject describes
+  # what was merged ("Merge X into Y"), not a change type -- there is no
+  # sensible "type:" prefix to require, whether the message came from git's
+  # prepared MERGE_MSG above or was passed explicitly to override it.
+  local _merge_conclusion=0
+  if [[ ${merge_in_progress} -eq 1 ]]; then
+    _merge_conclusion=1
+    echo "  [i] Merge commit; conventional format not enforced (pre-push exempts merge commits too)"
+  fi
 
   # A freeform branch (CGW_FREEFORM_MESSAGE_BRANCHES) answers to another
   # project's commit-message style -- e.g. an upstream PR branch. Skip the
@@ -708,7 +743,9 @@ main() {
   # exempts them even if a glob matches, so an overbroad pattern like "*"
   # cannot silently turn off enforcement on the branches CGW protects.
   local _freeform=0
-  if cgw_branch_is_freeform "${current_branch}"; then
+  if [[ ${_merge_conclusion} -eq 1 ]]; then
+    : # exempted above; skip both the freeform and conventional-format checks
+  elif cgw_branch_is_freeform "${current_branch}"; then
     _freeform=1
     echo "  [i] ${current_branch} matches CGW_FREEFORM_MESSAGE_BRANCHES; conventional format not enforced"
     if ! cgw_freeform_message_check "${commit_msg}"; then
@@ -744,12 +781,13 @@ main() {
   # NOTE: cgw_validate_commit_message only requires "type:" (colon, no
   # mandatory space) -- strip on the bare colon, then trim one optional
   # leading space, so "type:subject" (no space) isn't measured with the
-  # prefix still attached. On a freeform branch there is no "type:" prefix
-  # to strip -- a colon in freeform prose is part of the subject, so the
-  # whole subject line is measured instead.
+  # prefix still attached. On a freeform branch, or a merge conclusion, there
+  # is no "type:" prefix to strip -- a colon in freeform prose, or in "Merge
+  # X into Y", is part of the subject, so the whole subject line is measured
+  # instead.
   local _subject_line="${commit_msg%%$'\n'*}"
   local _summary_part
-  if [[ ${_freeform} -eq 1 ]]; then
+  if [[ ${_freeform} -eq 1 ]] || [[ ${_merge_conclusion} -eq 1 ]]; then
     _summary_part="${_subject_line}"
   else
     _summary_part="${_subject_line#*:}"
@@ -757,7 +795,7 @@ main() {
   fi
   local _summary_len=${#_summary_part}
   if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_SOFT_LEN} ]]; then
-    if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_HARD_LEN} ]] && [[ ${_freeform} -eq 0 ]]; then
+    if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_HARD_LEN} ]] && [[ ${_freeform} -eq 0 ]] && [[ ${_merge_conclusion} -eq 0 ]]; then
       echo "[!] Subject after prefix is ${_summary_len} chars, over the ${CGW_COMMIT_SUBJECT_HARD_LEN}-char hard cap (Pro Git recommends ~${CGW_COMMIT_SUBJECT_SOFT_LEN})"
       echo "  Move detail into the commit body instead of a long summary line."
       if [[ "${CGW_ENFORCE_SUBJECT_LENGTH}" == "1" ]]; then
@@ -768,11 +806,13 @@ main() {
       fi
     elif [[ ${_freeform} -eq 1 ]]; then
       echo "[!] Tip: subject is ${_summary_len} chars (target project's style; not enforced here)"
+    elif [[ ${_merge_conclusion} -eq 1 ]]; then
+      echo "[!] Tip: merge subject is ${_summary_len} chars (not enforced for merge commits)"
     else
       echo "[!] Tip: subject after prefix is ${_summary_len} chars (Pro Git recommends ≤${CGW_COMMIT_SUBJECT_SOFT_LEN})"
     fi
   fi
-  unset _subject_line _summary_part _summary_len _freeform
+  unset _subject_line _summary_part _summary_len _freeform _merge_conclusion
 
   echo "Commit message: ${commit_msg}"
   echo ""
