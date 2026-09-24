@@ -348,7 +348,7 @@ Global flags: `--non-interactive`, `--dry-run`, `--help`
 | `--older-than <N>` | Only target branches/tags older than N days |
 | `--non-interactive` | Skip confirmation prompts |
 
-Protects `CGW_SOURCE_BRANCH`, `CGW_TARGET_BRANCH`, and `CGW_PROTECTED_BRANCHES` from deletion.
+Always protected, regardless of `CGW_TARGET_BRANCH`: `main`, `master`, the repo's `${CGW_REMOTE}/HEAD` default branch, `CGW_SOURCE_BRANCH`, `CGW_PROTECTED_BRANCHES`, the current branch, and any branch checked out in another worktree.
 
 ---
 

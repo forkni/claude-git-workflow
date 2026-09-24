@@ -5,6 +5,14 @@
 #          backup tags. Safe by default (--dry-run). See Pro Git Ch3 p.85-87.
 # Usage: ./scripts/git/branch_cleanup.sh [OPTIONS]
 #
+# Always protected (regardless of CGW_TARGET_BRANCH): main, master, the
+# repo's ${CGW_REMOTE}/HEAD default branch (see cgw_default_branch in
+# _common.sh), CGW_TARGET_BRANCH, CGW_SOURCE_BRANCH, CGW_PROTECTED_BRANCHES,
+# the current branch, and any branch checked out in another worktree.
+# CGW_TARGET_BRANCH can be overridden per invocation (e.g. to merge into
+# development); without the always-protected set, the repo's actual stable
+# branch would then look "merged" and get deleted.
+#
 # Globals:
 #   SCRIPT_DIR             - Directory containing this script
 #   PROJECT_ROOT           - Auto-detected git repo root (set by _config.sh)
@@ -54,6 +62,8 @@ main() {
         echo "Protected branches (never deleted):"
         echo "  ${CGW_TARGET_BRANCH}, ${CGW_SOURCE_BRANCH}"
         echo "  Plus: CGW_PROTECTED_BRANCHES setting"
+        echo "  Always: main, master, \${CGW_REMOTE}/HEAD default branch,"
+        echo "          current branch, branches checked out in other worktrees"
         echo ""
         echo "Environment:"
         echo "  CGW_REMOTE   Remote name (default: origin)"
@@ -95,8 +105,12 @@ main() {
   echo ""
   [[ ${execute} -eq 0 ]] && echo "  (dry run -- pass --execute to actually delete)" && echo ""
 
-  # Build set of protected branches
-  local -a protected=("${CGW_TARGET_BRANCH}" "${CGW_SOURCE_BRANCH}")
+  # Build set of protected branches. main/master and the repo's actual
+  # default branch are always protected -- CGW_TARGET_BRANCH can be
+  # overridden per invocation, and without this, the real stable branch
+  # would look "merged into" the overridden target and get deleted.
+  local -a protected=("${CGW_TARGET_BRANCH}" "${CGW_SOURCE_BRANCH}" main master)
+  protected+=("$(cgw_default_branch)")
   local -a _pb_arr=()
   read -r -a _pb_arr <<<"${CGW_PROTECTED_BRANCHES:-}" || true
   for pb in "${_pb_arr[@]+"${_pb_arr[@]}"}"; do
@@ -105,6 +119,12 @@ main() {
 
   local current_branch
   current_branch=$(git branch --show-current 2>/dev/null || echo "")
+
+  # Also protect any branch checked out in another worktree -- deleting it
+  # would fail loudly there, but it's still not this script's call to make.
+  while IFS= read -r _wt_branch; do
+    [[ -n "${_wt_branch}" ]] && protected+=("${_wt_branch#refs/heads/}")
+  done < <(git worktree list --porcelain 2>/dev/null | grep '^branch ' | cut -d' ' -f2-)
 
   # -- [1] Merged local branches ---------------------------------------------
   echo "--- [1] Merged Local Branches (merged into ${CGW_TARGET_BRANCH}) ---"
