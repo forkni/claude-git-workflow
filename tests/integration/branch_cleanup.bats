@@ -40,6 +40,23 @@ teardown() {
   git -C "${TEST_REPO_DIR}" branch | grep -q "feature/merged"
 }
 
+@test "explicit --dry-run is accepted and does not delete merged branches" {
+  # Documented in the header comment and --help as the (already-default) preview
+  # mode; the parser must accept it explicitly, not just treat it as unknown.
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b feature/merged
+  echo "x" > "${TEST_REPO_DIR}/feat.txt"
+  git -C "${TEST_REPO_DIR}" add feat.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: feature work"
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+  git -C "${TEST_REPO_DIR}" merge --quiet --no-ff feature/merged -m "Merge feature/merged"
+
+  run run_script branch_cleanup.sh --dry-run
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"DRY RUN"* ]] || [[ "${output}" == *"dry run"* ]]
+  git -C "${TEST_REPO_DIR}" branch | grep -q "feature/merged"
+}
+
 # ── --execute mode ────────────────────────────────────────────────────────────
 
 @test "--execute --non-interactive deletes merged branches" {

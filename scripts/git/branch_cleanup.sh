@@ -52,6 +52,7 @@ main() {
         echo "Defaults to dry-run (preview only). Pass --execute to actually delete."
         echo ""
         echo "Options:"
+        echo "  --dry-run          Preview only -- explicit form of the default"
         echo "  --execute          Delete merged branches and prune (without this, only previews)"
         echo "  --remote           Prune stale remote-tracking refs (git remote prune \${CGW_REMOTE})"
         echo "  --tags             Clean up old CGW backup tags (all pre-<op>-* families; see CGW_BACKUP_OPS in _common.sh)"
@@ -75,6 +76,7 @@ main() {
         echo "  ./scripts/git/branch_cleanup.sh --execute --tags --older-than 14"
         exit 0
         ;;
+      --dry-run) execute=0 ;;
       --execute) execute=1 ;;
       --remote) prune_remote=1 ;;
       --tags) clean_tags=1 ;;

@@ -342,6 +342,7 @@ Global flags: `--non-interactive`, `--dry-run`, `--help`
 | Flag | Purpose |
 |------|---------|
 | *(no flags)* | Dry-run — shows what would be deleted (safe default) |
+| `--dry-run` | Preview only — explicit form of the default |
 | `--execute` | Actually perform deletions |
 | `--remote` | Prune stale remote-tracking refs (`git remote prune`) |
 | `--tags` | Remove old `pre-merge-*`, `pre-cherry-pick-*`, `pre-docs-merge-*`, `pre-bisect-*`, `pre-rebase-*`, `pre-undo-commit-*`, `pre-recover-*` backup tags |
