@@ -13,7 +13,9 @@
 # Passes gh an explicit --repo resolved from CGW_REMOTE's own URL (see
 # cgw_remote_owner_repo in _common.sh). Without this, `gh pr create` resolves
 # its own target repo and -- when CGW_REMOTE is a fork -- defaults to the
-# fork's parent/upstream repo instead of CGW_REMOTE itself.
+# fork's parent/upstream repo instead of CGW_REMOTE itself. If CGW_REMOTE's
+# URL isn't a resolvable github.com URL, this script aborts rather than
+# falling back to gh's own (unsafe) resolution.
 # Arguments:
 #   --title <title>        Override auto-generated PR title
 #   --draft                Create PR as draft (not ready for review)
@@ -282,7 +284,11 @@ ${formatted_log}
   if pr_repo=$(cgw_remote_owner_repo "${CGW_REMOTE}"); then
     echo "Repo: ${pr_repo} (explicit -- avoids gh defaulting to a parent repo if ${CGW_REMOTE} is a fork)" | tee -a "$logfile"
   else
-    echo "[!] WARNING: could not determine ${CGW_REMOTE}'s owner/repo from its URL -- gh will use its own default repo resolution, which targets the parent repo if ${CGW_REMOTE} is a fork" | tee -a "$logfile"
+    err_tee "[ERROR] Could not determine ${CGW_REMOTE}'s owner/repo from its configured URL (checked pushurl, then url)."
+    err_tee "[ERROR] Refusing to run 'gh pr create' without an explicit --repo -- gh's own"
+    err_tee "[ERROR] resolution defaults to the parent/upstream repo when ${CGW_REMOTE} is a fork."
+    err_tee "[ERROR] Fix: run 'git remote -v' and confirm ${CGW_REMOTE} is a github.com SSH/HTTPS URL."
+    exit 1
   fi
 
   # [4/4] Create PR

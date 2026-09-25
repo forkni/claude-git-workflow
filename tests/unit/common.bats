@@ -2656,6 +2656,71 @@ UU b.py
   [ "${output}" = "forkni/claude-git-workflow" ]
 }
 
+# ── cgw_remote_owner_repo() -- URL-shape matrix ───────────────────────────────
+# Uses env-config (GIT_CONFIG_COUNT / GIT_CONFIG_KEY_n / GIT_CONFIG_VALUE_n,
+# git >= 2.31) instead of `git remote add` -- these vars inject a synthetic
+# config source that `git config --get` reads without touching the
+# filesystem, so no mktemp/git-init/rm-rf per case. Confirmed to work through
+# bats' `run` (env-prefix on the command reaches child `git` processes started
+# by the sourced function). The remote name "cgwtest" exists in no real
+# config, local or global. This is a regression net for a specific defect:
+# the old parser matched whole-URL shapes with three special-cased regexes
+# and silently mis-parsed or rejected every URL shape nobody enumerated.
+@test "cgw_remote_owner_repo: URL-shape and precedence matrix" {
+  local label url push expected got
+  # label|expected|url|pushurl(optional)
+  local -a cases=(
+    "ssh:// with explicit port|owner/repo|ssh://git@github.com:22/owner/repo.git|"
+    "https with trailing slash after .git|owner/repo|https://github.com/owner/repo.git/|"
+    "https with two trailing slashes|owner/repo|https://github.com/owner/repo.git//|"
+    "ssh over 443 (ssh.github.com)|owner/repo|ssh://git@ssh.github.com:443/owner/repo.git|"
+    "https tokenised userinfo|owner/repo|https://x-access-token:ghs_AbC@github.com/owner/repo.git|"
+    "https host uppercase|owner/repo|https://GitHub.com/owner/repo.git|"
+    "scp-like with leading slash in path|owner/repo|git@github.com:/owner/repo.git|"
+    "git:// protocol|owner/repo|git://github.com/owner/repo.git|"
+    "repo name containing dots|owner/repo.github.io|https://github.com/owner/repo.github.io.git|"
+    "hyphenated owner, underscored repo|my-org/my_repo.v2|git@github.com:my-org/my_repo.v2.git|"
+    "dotfile repo name|owner/.github|https://github.com/owner/.github|"
+    "pushurl takes precedence over url|owner/repo|https://gitlab.com/other/mirror.git|https://github.com/owner/repo.git"
+    "deep path is not a repo, not silently truncated|FAIL|https://github.com/owner/repo/pull/5|"
+    "empty owner segment|FAIL|https://github.com//repo.git|"
+    "owner starts with hyphen (argv-injection guard)|FAIL|https://github.com/-evil/repo|"
+    "query string|FAIL|https://github.com/owner/repo.git?x=1|"
+    "fragment|FAIL|https://github.com/owner/repo#frag|"
+    "embedded space|FAIL|https://github.com/owner/re po|"
+    "embedded semicolon|FAIL|https://github.com/owner/repo;whoami|"
+    "host suffix spoof|FAIL|https://github.com.evil.tld/owner/repo.git|"
+    "host prefix spoof|FAIL|https://evilgithub.com/owner/repo.git|"
+    "userinfo host spoof|FAIL|https://github.com@evil.tld/owner/repo.git|"
+    "unsupported scheme|FAIL|ftp://github.com/owner/repo.git|"
+  )
+  for c in "${cases[@]}"; do
+    IFS='|' read -r label expected url push <<<"${c}"
+    if [[ -n "${push}" ]]; then
+      GIT_CONFIG_COUNT=2 \
+        GIT_CONFIG_KEY_0=remote.cgwtest.url GIT_CONFIG_VALUE_0="${url}" \
+        GIT_CONFIG_KEY_1=remote.cgwtest.pushurl GIT_CONFIG_VALUE_1="${push}" \
+        run cgw_remote_owner_repo cgwtest
+    else
+      GIT_CONFIG_COUNT=1 \
+        GIT_CONFIG_KEY_0=remote.cgwtest.url GIT_CONFIG_VALUE_0="${url}" \
+        run cgw_remote_owner_repo cgwtest
+    fi
+    if [[ "${expected}" == "FAIL" ]]; then
+      if [[ "${status}" -eq 0 ]]; then
+        echo "FAILED CASE: ${label} -- url=${url} -- expected non-zero exit, got 0 with output '${output}'"
+        return 1
+      fi
+    else
+      got="${output}"
+      if [[ "${status}" -ne 0 ]] || [[ "${got}" != "${expected}" ]]; then
+        echo "FAILED CASE: ${label} -- url=${url} push=${push} -- expected '${expected}', got status=${status} output='${got}'"
+        return 1
+      fi
+    fi
+  done
+}
+
 @test "cgw_remote_owner_repo: non-github.com host returns 1" {
   run bash -c "
     tmp=\$(mktemp -d)

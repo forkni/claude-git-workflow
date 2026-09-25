@@ -379,36 +379,80 @@ cgw_remote_branch_exists() {
 # SSH/HTTPS remotes only. Returns 1 and prints nothing if <remote> is unset or
 # its URL isn't a recognizable github.com URL.
 #
-# Reads the RAW config value (`git config --get remote.<remote>.url`), not
-# `git remote get-url` -- the latter expands any `url.<base>.insteadOf`
-# rewrite and would report the rewritten transport (e.g. a corporate mirror
-# or, in tests, a local bare repo) instead of the remote's real GitHub
-# identity. Used by create_pr.sh to pass gh CLI an explicit `--repo`: without
-# it, `gh pr create` resolves the target repo itself and -- when the remote is
-# a fork -- defaults to the fork's parent/upstream repo, silently opening (or
-# failing to open) the PR against the wrong repository.
+# Reads remote.<remote>.pushurl first, falling back to remote.<remote>.url
+# when pushurl is unset -- a remote with a separate fetch/push URL (e.g.
+# fetch=upstream, push=fork) is actually targeted, on push, at pushurl, so
+# that is the identity that must drive gh's --repo. Reads the RAW config
+# value (`git config --get`), not `git remote get-url` -- the latter expands
+# any `url.<base>.insteadOf` rewrite and would report the rewritten transport
+# (e.g. a corporate mirror or, in tests, a local bare repo) instead of the
+# remote's real GitHub identity. Used by create_pr.sh to pass gh CLI an
+# explicit `--repo`: without it, `gh pr create` resolves the target repo
+# itself and -- when the remote is a fork -- defaults to the fork's
+# parent/upstream repo, silently opening (or failing to open) the PR against
+# the wrong repository.
+#
+# Accepts github.com, www.github.com, and ssh.github.com (SSH-over-443) as
+# hosts, matched case-insensitively. Parses by decomposing the URL into
+# (scheme, host, path) rather than matching whole-URL shapes with per-form
+# regexes -- the latter is what silently mis-parsed a port as the owner
+# (ssh://...:22/owner/repo) and left a trailing ".git" in place
+# (.../repo.git/, where the "/" strip ran before the ".git" strip). Any
+# unparseable or non-github.com URL returns 1 with nothing echoed; callers
+# that need an explicit --repo (create_pr.sh) treat that as fatal.
 cgw_remote_owner_repo() {
   local remote="$1"
   local url
-  url=$(git config --get "remote.${remote}.url" 2>/dev/null) || return 1
+  url=$(git config --get "remote.${remote}.pushurl" 2>/dev/null) || url=""
+  if [[ -z "${url}" ]]; then
+    url=$(git config --get "remote.${remote}.url" 2>/dev/null) || return 1
+  fi
   [[ -z "${url}" ]] && return 1
 
-  local owner repo
-  if [[ "${url}" =~ ^(git@|ssh://git@)github\.com[:/]([^/]+)/(.+)$ ]]; then
-    owner="${BASH_REMATCH[2]}"
-    repo="${BASH_REMATCH[3]}"
-  elif [[ "${url}" =~ ^https://github\.com/([^/]+)/(.+)$ ]]; then
-    owner="${BASH_REMATCH[1]}"
-    repo="${BASH_REMATCH[2]}"
+  local scheme host path owner repo
+  if [[ "${url}" =~ ^([A-Za-z][A-Za-z0-9+.-]*)://([^/@]+@)?([^/:]+)(:[0-9]+)?/(.+)$ ]]; then
+    # scheme://[userinfo@]host[:port]/path -- userinfo captured only to
+    # discard it (may carry a CI token; never echoed, never logged).
+    scheme=$(printf '%s' "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]')
+    case "${scheme}" in ssh | https | http | git) ;; *) return 1 ;; esac
+    host="${BASH_REMATCH[3]}"
+    path="${BASH_REMATCH[5]}"
+  elif [[ "${url}" =~ ^([^/@]+@)?([^/:]+):(.+)$ ]]; then
+    # scp-like [user@]host:path -- ':' is the path separator here, so no port
+    # can appear in this form. Conflating scp-like ':' with a URL port
+    # separator is what made ssh://...:22/owner/repo parse "22" as the owner.
+    # A Windows path (C:/...) also lands here and is rejected by the host
+    # check below.
+    host="${BASH_REMATCH[2]}"
+    path="${BASH_REMATCH[3]}"
   else
     return 1
   fi
 
-  repo="${repo%.git}"
-  repo="${repo%/}"
-  if [[ -z "${owner}" ]] || [[ -z "${repo}" ]]; then
-    return 1
-  fi
+  host=$(printf '%s' "${host}" | tr '[:upper:]' '[:lower:]')
+  case "${host}" in
+    github.com | www.github.com | ssh.github.com) ;;
+    *) return 1 ;;
+  esac
+
+  path="${path#/}"
+  while [[ "${path}" == */ ]]; do path="${path%/}"; done
+  # Strip ".git" AFTER trailing slashes, not before -- "repo.git/" does not
+  # end in literal ".git", so the opposite order leaves ".git" in the result.
+  path="${path%.git}"
+  while [[ "${path}" == */ ]]; do path="${path%/}"; done
+
+  owner="${path%%/*}"
+  repo="${path#*/}"
+  [[ "${owner}" == "${path}" ]] && return 1 # no '/' at all
+  [[ -z "${owner}" ]] || [[ -z "${repo}" ]] && return 1
+  [[ "${repo}" == */* ]] && return 1 # 3+ path segments is not a repo URL
+  # This value is handed straight to `gh --repo`: constrain to GitHub's real
+  # owner/repo charset and reject a leading '-' so it can never be read as a
+  # flag by a downstream command line.
+  [[ "${owner}" =~ ^[A-Za-z0-9._-]+$ ]] || return 1
+  [[ "${repo}" =~ ^[A-Za-z0-9._-]+$ ]] || return 1
+  [[ "${owner}" == -* ]] || [[ "${repo}" == -* ]] && return 1
   echo "${owner}/${repo}"
 }
 
