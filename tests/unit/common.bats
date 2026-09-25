@@ -2767,3 +2767,26 @@ UU b.py
   [ "${status}" -eq 0 ]
   [ "${output}" = "forkni/claude-git-workflow" ]
 }
+
+# ── cgw_remote_branch_exists() -- raw exit-code contract ──────────────────────
+# push_validated.sh's force-with-lease guard depends on being able to tell
+# "confirmed absent" (2) apart from "probe failed" (any other non-zero, e.g.
+# 128 for an unreachable remote) -- collapsing both into a boolean would let a
+# transient probe failure silently downgrade the lease. All three offline,
+# using the local repo itself as the "remote".
+
+@test "cgw_remote_branch_exists: exit code is 0 for a present branch" {
+  run cgw_remote_branch_exists "${TEST_REPO_DIR}" "main"
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_remote_branch_exists: exit code is 2 for a genuinely absent branch" {
+  run cgw_remote_branch_exists "${TEST_REPO_DIR}" "definitely-does-not-exist-branch"
+  [ "${status}" -eq 2 ]
+}
+
+@test "cgw_remote_branch_exists: exit code is not 0 or 2 when the remote path itself doesn't exist" {
+  run cgw_remote_branch_exists "${TEST_REPO_DIR}/no-such-remote-path" "main"
+  [ "${status}" -ne 0 ]
+  [ "${status}" -ne 2 ]
+}

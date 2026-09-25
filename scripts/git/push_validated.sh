@@ -15,7 +15,8 @@
 #   --skip-md-lint      Skip markdown lint only in pre-push check
 #   --skip-typecheck    Skip typecheck only in pre-push check
 #   --no-venv           Forward to check_lint.sh: use system lint tool (no .venv)
-#   --force             Allow force-push (uses an explicit --force-with-lease=<ref>:<sha>)
+#   --force             Allow force-push (explicit --force-with-lease=<ref>:<sha>, or an
+#                       empty lease <ref>: if the branch doesn't exist on the remote yet)
 #   --branch <name>     Override push target branch (default: current branch)
 #   -h, --help          Show help
 # Returns:
@@ -53,7 +54,8 @@ main() {
         echo "  --skip-md-lint      Skip markdown lint only in pre-push check"
         echo "  --skip-typecheck    Skip typecheck only in pre-push check"
         echo "  --no-venv           Forward to check_lint.sh: use system lint tool (no .venv)"
-        echo "  --force             Allow force-push (uses an explicit --force-with-lease=<ref>:<sha>)"
+        echo "  --force             Allow force-push (explicit --force-with-lease=<ref>:<sha>, or an"
+        echo "                      empty lease <ref>: if the branch doesn't exist on the remote yet)"
         echo "  --branch <name>     Override push target branch (default: current branch)"
         echo "  -h, --help          Show this help"
         echo ""
@@ -171,12 +173,27 @@ main() {
   echo "[OK] Remote '${CGW_REMOTE}' is reachable" | tee -a "$logfile"
 
   # Does the branch already exist on the remote? A brand-new branch has no
-  # remote tip to compare against and needs no force-with-lease guard in [5/5].
-  # ls-remote queries the remote directly -- unlike the fetch below, it does
-  # not depend on the remote's configured fetch refspec covering this branch.
+  # remote tip to compare against, so [5/5] uses an explicit empty lease
+  # instead of a SHA-based one. ls-remote queries the remote directly --
+  # unlike the fetch below, it does not depend on the remote's configured
+  # fetch refspec covering this branch.
+  #
+  # cgw_remote_branch_exists returns git ls-remote's raw exit code (0 exists,
+  # 2 genuinely absent, anything else -- 128, etc. -- the probe itself
+  # failed). cgw_remote_reachable above already caught a dead remote in the
+  # common case, so a non-{0,2} code here means a narrower failure (a
+  # transient/auth/server error on this specific ref query). Collapsing that
+  # into "absent" would silently degrade the force-push lease below, so it
+  # must be treated as unknown, not absent.
   local remote_branch_exists=0
-  if cgw_remote_branch_exists "${CGW_REMOTE}" "${target_branch}"; then
+  local remote_branch_probe_rc=0
+  cgw_remote_branch_exists "${CGW_REMOTE}" "${target_branch}" || remote_branch_probe_rc=$?
+  if [[ ${remote_branch_probe_rc} -eq 0 ]]; then
     remote_branch_exists=1
+  elif [[ ${remote_branch_probe_rc} -ne 2 ]]; then
+    err "Could not determine whether '${target_branch}' exists on ${CGW_REMOTE} (ls-remote exit ${remote_branch_probe_rc} -- probe failed, not confirmed absent)."
+    log_section_end "REMOTE CHECK" "$logfile" "1"
+    exit 1
   fi
 
   # Check if local is behind remote. Fetch with an explicit refspec (not just
@@ -284,7 +301,7 @@ main() {
     echo "Would push: ${target_branch} -> ${CGW_REMOTE}/${target_branch}" | tee -a "$logfile"
     if [[ ${force_push} -eq 1 ]]; then
       if [[ ${remote_branch_exists} -eq 0 ]]; then
-        echo "Would push as a new branch on ${CGW_REMOTE} (no force-with-lease needed)" | tee -a "$logfile"
+        echo "Would use: --force-with-lease=refs/heads/${target_branch}: (explicit empty lease; branch doesn't exist yet on ${CGW_REMOTE} -- still guards against one being created concurrently)" | tee -a "$logfile"
       else
         local dry_lease_sha
         dry_lease_sha=$(git rev-parse --verify --quiet "refs/remotes/${CGW_REMOTE}/${target_branch}" 2>/dev/null) || dry_lease_sha=""
@@ -305,7 +322,13 @@ main() {
   push_flags+=("${CGW_REMOTE}" "${target_branch}")
   if [[ ${force_push} -eq 1 ]]; then
     if [[ ${remote_branch_exists} -eq 0 ]]; then
-      echo "Branch does not exist on ${CGW_REMOTE} yet -- pushing without a force-with-lease guard (nothing to clobber)" | tee -a "$logfile"
+      # Empty <expect> is git's documented syntax for "the ref must not
+      # already exist on the remote" -- still a real guard, distinct from
+      # pushing with no lease at all: it rejects the push (with "stale info")
+      # if the branch was created on the remote between the probe above and
+      # this push.
+      push_flags+=("--force-with-lease=refs/heads/${target_branch}:")
+      echo "Branch does not exist on ${CGW_REMOTE} yet -- using --force-with-lease=refs/heads/${target_branch}: (explicit empty lease; still guards against a branch created concurrently)" | tee -a "$logfile"
     else
       # Bare --force-with-lease derives its expected value from the local
       # remote-tracking ref, resolved via the remote's configured fetch

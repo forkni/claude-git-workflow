@@ -370,6 +370,14 @@ cgw_remote_reachable() {
 # cgw_remote_branch_exists <remote> <branch>
 # Exits 0 when <branch> exists on <remote>, non-zero otherwise. Silent.
 # Accepts a plain branch name; builds refs/heads/ internally.
+#
+# Contract: the exit code is git ls-remote's raw exit code, unmodified --
+# 0 = exists, 2 = genuinely absent, anything else (128 = unreachable/auth
+# failure, etc.) = the probe itself failed and must NOT be read as absent.
+# `if cgw_remote_branch_exists ...` callers that only branch on zero/non-zero
+# are fine either way; a caller that needs to tell "absent" apart from "probe
+# failed" (e.g. before weakening a force-push guard) must capture "$?" itself
+# rather than treating this as a plain boolean.
 cgw_remote_branch_exists() {
   git ls-remote --exit-code "${1}" "refs/heads/${2}" >/dev/null 2>&1
 }
