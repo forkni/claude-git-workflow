@@ -257,3 +257,28 @@ EOF
   [[ "${output}" != *"syntax error"* ]]
 }
 
+@test "Antigravity install refuses to fall back to the Claude Code guardrail script" {
+  # Regression: when hooks/agy-block-dangerous-git.sh was missing but
+  # hooks/cc-block-dangerous-git.sh was present (configure.sh newer than the
+  # hooks/ dir next to it), the installer copied the cc script into the agy
+  # slot. A cc script predating Antigravity support cannot parse the toolCall
+  # payload and silently allows every command -- a fail-open guardrail
+  # reported as installed. The install must fail with the re-copy guidance.
+  local fake_cgw="${TEST_REPO_DIR}/fake_cgw"
+  mkdir -p "${fake_cgw}/scripts/git" "${fake_cgw}/hooks"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"${fake_cgw}/hooks/cc-block-dangerous-git.sh"
+  local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh"
+  run bash -c "
+    SCRIPT_DIR='${fake_cgw}/scripts/git'
+    PROJECT_ROOT='${TEST_REPO_DIR}'
+    HOME='${TEST_REPO_DIR}/home'
+    $(extract_shell_function "${cfg}" _json_escape_string)
+    $(extract_shell_function "${cfg}" _install_agy_guardrail_nojq)
+    $(extract_shell_function "${cfg}" _install_agy_guardrail)
+    _install_agy_guardrail local
+  "
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"agy-block-dangerous-git.sh not found"* ]]
+  [ ! -f "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.sh" ]
+  [ ! -f "${TEST_REPO_DIR}/.agents/hooks.json" ]
+}

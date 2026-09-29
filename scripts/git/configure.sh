@@ -509,8 +509,11 @@ _install_guardrail_nojq() {
   local settings_json="${1}"
   local hook_cmd="${2}"
 
-  # Already registered? (grep is enough without jq)
-  if [[ -f "${settings_json}" ]] && grep -qF "cc-block-dangerous-git" "${settings_json}" 2>/dev/null; then
+  # Already registered? (grep is enough without jq). Mirrors the jq path's
+  # idempotency check: an MSYS-corrupted entry (Program Files/Git) does not
+  # count, so it falls through to the python merge below, which replaces it.
+  if [[ -f "${settings_json}" ]] &&
+    grep -F "cc-block-dangerous-git" "${settings_json}" 2>/dev/null | grep -qvF "Program Files/Git"; then
     echo "  [OK] PreToolUse guardrail already registered in ${settings_json}"
     return 0
   fi
@@ -816,11 +819,12 @@ _install_agy_guardrail() {
   guardrail_src="$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)/agy-block-dangerous-git.sh" 2>/dev/null || true
   guardrail_cmd_src="$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)/agy-block-dangerous-git.cmd" 2>/dev/null || true
 
+  # No fallback to cc-block-dangerous-git.sh: a cc script older than the
+  # Antigravity integration cannot parse the toolCall payload and would
+  # silently allow every command while reporting the guardrail as installed.
   if [[ ! -f "${guardrail_src:-}" ]]; then
     if [[ -f "${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.sh" ]]; then
       guardrail_src="${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.sh"
-    elif [[ -f "$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)/cc-block-dangerous-git.sh" ]]; then
-      guardrail_src="$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)/cc-block-dangerous-git.sh"
     else
       echo "  [!] hooks/agy-block-dangerous-git.sh not found." >&2
       echo "      Re-copy hooks/ from the CGW source directory, then re-run: ./scripts/git/configure.sh" >&2

@@ -422,3 +422,38 @@ EOF
     return 1
   }
 }
+
+@test "no-jq settings.json writer replaces an MSYS-corrupted guardrail entry" {
+  _require_jq
+  command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 || skip "requires python"
+  # Regression: the no-jq idempotency check grepped for any
+  # "cc-block-dangerous-git" string, so a Git-Bash-mangled entry
+  # (C:/Program Files/Git/.claude/hooks/...) counted as "already registered"
+  # and was never repaired. The jq path excludes such entries; this path must
+  # too, so the python merge below it can replace the broken command.
+  local settings_json="${TEST_REPO_DIR}/settings.json"
+  cat >"${settings_json}" <<'JSON_EOF'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{"type": "command", "command": "C:/Program Files/Git/.claude/hooks/cc-block-dangerous-git.sh"}]
+      }
+    ]
+  }
+}
+JSON_EOF
+  local cmd='"$CLAUDE_PROJECT_DIR"/.claude/hooks/cc-block-dangerous-git.sh'
+  local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh"
+  run bash -c "
+    $(extract_shell_function "${cfg}" _json_escape_string)
+    $(extract_shell_function "${cfg}" _install_guardrail_nojq)
+    _install_guardrail_nojq \"\$1\" \"\$2\"
+  " _ "${settings_json}" "${cmd}"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"already registered"* ]]
+  jq -e . "${settings_json}" >/dev/null
+  [ "$(jq '[.hooks.PreToolUse[].hooks[].command] | length' "${settings_json}")" -eq 1 ]
+  [ "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "${settings_json}")" == "${cmd}" ]
+}
