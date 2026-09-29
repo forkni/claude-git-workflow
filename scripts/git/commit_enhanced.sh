@@ -323,7 +323,10 @@ main() {
         shift
         ;;
       --interactive)
+        # Undo the no-TTY auto-detection above for cgw_confirm too, not just
+        # this script's own read -p prompts.
         non_interactive=0
+        CGW_NON_INTERACTIVE=0
         shift
         ;;
       --staged-only)

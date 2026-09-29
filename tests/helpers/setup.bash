@@ -254,14 +254,16 @@ extract_shell_function() {
   ' "$1"
 }
 
-# guardrail_installer_functions — the configure.sh guardrail installer
+# guardrail_installer_functions — the configure.sh agent-harness installer
 # functions, extracted for use inside a test's `bash -c` (sourcing configure.sh
-# would run its main). Covers the registrar (spec / query / modifier) and both
-# harness installers.
+# would run its main). Covers the guardrail registrar (spec / query /
+# modifier), both guardrail installers, and the harness spec, skill installer
+# and prompt step.
 guardrail_installer_functions() {
   local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh" fn
   for fn in _json_escape_string _guardrail_spec _guardrail_is_registered \
-    _register_guardrail _install_guardrail_core _install_cc_guardrail _install_agy_guardrail; do
+    _register_guardrail _install_guardrail_core _install_cc_guardrail _install_agy_guardrail \
+    _harness_spec _install_harness_skill _offer_harness_install; do
     extract_shell_function "${cfg}" "${fn}"
   done
 }

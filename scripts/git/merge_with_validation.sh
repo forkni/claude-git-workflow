@@ -376,6 +376,10 @@ main() {
     log_section_end "GIT COMMIT" "$logfile" "0"
   fi
 
+  # The merge is complete: stay on the target (the next step is pushing it).
+  # The EXIT trap only returns to the original branch after an aborted merge.
+  _merge_did_checkout_target=0
+
   # Success summary
   echo "" | tee -a "$logfile"
   {

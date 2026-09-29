@@ -324,3 +324,44 @@ EOF
   [ ! -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow-cmd/SKILL.md" ]
   [ ! -f "${TEST_REPO_DIR}/.agents/hooks.json" ]
 }
+
+# ── Agent harness spec (_harness_spec) ──────────────────────────────────────
+
+@test "every agent harness defines every _harness_spec field" {
+  local fields="label dir cmd_layout skill_dst:local skill_dst:global cmd_dst:local cmd_dst:global
+    guardrail_dst:local guardrail_dst:global settings_json:local settings_json:global
+    skill_hint:local skill_hint:global skill_global_note guardrail_hint:local guardrail_hint:global
+    skill_blurb guardrail_blurb summary_skill summary_guardrail"
+  run bash -c "
+    PROJECT_ROOT=/p HOME=/h
+    $(guardrail_installer_functions)
+    for host in cc agy; do
+      for f in ${fields//$'\n'/ }; do
+        v=\"\$(_harness_spec \"\${host}\" \"\${f}\")\" || { echo \"missing: \${host}:\${f}\"; continue; }
+        [[ -n \"\${v}\" ]] || echo \"empty: \${host}:\${f}\"
+      done
+    done
+  "
+  [ "${status}" -eq 0 ]
+  [ -z "${output}" ]
+}
+
+@test "harness skill install without the command template still installs the skill and says so (both hosts)" {
+  local fake_cgw="${TEST_REPO_DIR}/fake_cgw"
+  mkdir -p "${fake_cgw}/scripts/git"
+  cp -r "${CGW_PROJECT_ROOT}/skill" "${fake_cgw}/"
+  local host
+  for host in cc agy; do
+    run bash -c "
+      SCRIPT_DIR='${fake_cgw}/scripts/git'
+      PROJECT_ROOT='${TEST_REPO_DIR}'
+      HOME='${TEST_REPO_DIR}/home'
+      $(guardrail_installer_functions)
+      _install_harness_skill ${host} local
+    "
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *"skill installed (local, command template not found)"* ]]
+  done
+  [ -f "${TEST_REPO_DIR}/.claude/skills/auto-git-workflow/SKILL.md" ]
+  [ -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow/SKILL.md" ]
+}

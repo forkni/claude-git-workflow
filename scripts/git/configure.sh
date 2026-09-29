@@ -417,26 +417,105 @@ _install_hook() {
   fi
 }
 
-_install_skill() {
-  local install_mode="${1:-local}" # "local" or "global"
-  local skill_src
-  local cmd_src
-  local skill_dst cmd_dst
+# ── Agent harnesses (Claude Code = cc, Antigravity = agy) ────────────────────
+#
+# _harness_spec <host> <field>
+#   Where each harness keeps CGW's skill, slash command and guardrail, plus the
+#   wording configure.sh uses for it. Guardrail *registration* facts live in
+#   _guardrail_spec; host-specific hook command strings stay in the
+#   _install_<host>_guardrail installers. Fields ending in :local / :global
+#   are per install mode.
+# Literal tildes in the *_hint / *_note fields are display strings for prompts,
+# never expanded or executed.
+# shellcheck disable=SC2088
+_harness_spec() {
+  case "$1:$2" in
+    cc:label) echo "Claude Code" ;;
+    cc:dir) echo ".claude" ;;
+    cc:skill_dst:local) echo "${PROJECT_ROOT}/.claude/skills/auto-git-workflow" ;;
+    cc:skill_dst:global) echo "${HOME}/.claude/skills/auto-git-workflow" ;;
+    # cmd_layout file: the command is a plain markdown file in cmd_dst.
+    cc:cmd_layout) echo "file" ;;
+    cc:cmd_dst:local) echo "${PROJECT_ROOT}/.claude/commands" ;;
+    cc:cmd_dst:global) echo "${HOME}/.claude/commands" ;;
+    cc:guardrail_dst:local) echo "${PROJECT_ROOT}/.claude/hooks/cc-block-dangerous-git.sh" ;;
+    cc:guardrail_dst:global) echo "${HOME}/.claude/hooks/cc-block-dangerous-git.sh" ;;
+    cc:settings_json:local) echo "${PROJECT_ROOT}/.claude/settings.json" ;;
+    cc:settings_json:global) echo "${HOME}/.claude/settings.json" ;;
+    cc:skill_hint:local) echo "project .claude/" ;;
+    cc:skill_hint:global) echo "global ~/.claude/" ;;
+    cc:skill_global_note) echo "  (--global: skill will be installed to ~/.claude/ for all projects)" ;;
+    cc:guardrail_hint:local) echo ".claude/settings.json" ;;
+    cc:guardrail_hint:global) echo "~/.claude/settings.json" ;;
+    cc:skill_blurb)
+      echo "The Claude Code skill teaches Claude to use CGW scripts instead of raw"
+      echo "git commands, ensuring lint checks and local-file protection are never bypassed."
+      ;;
+    cc:guardrail_blurb)
+      echo "The PreToolUse guardrail is a Claude Code hook that blocks dangerous git"
+      echo "commands (raw 'git commit', '--no-verify', 'git reset --hard', etc.) at the"
+      echo "harness layer, before they execute. This is defense-in-depth on top of the"
+      echo "repo-side git hooks — the model cannot bypass it by being asked to skip CGW."
+      ;;
+    cc:summary_skill) echo "Claude skill:" ;;
+    cc:summary_guardrail) echo "Claude guard:" ;;
 
-  # Determine destination based on install mode
-  if [[ "${install_mode}" == "global" ]]; then
-    skill_dst="${HOME}/.claude/skills/auto-git-workflow"
-    cmd_dst="${HOME}/.claude/commands"
-  else
-    skill_dst="${PROJECT_ROOT}/.claude/skills/auto-git-workflow"
-    cmd_dst="${PROJECT_ROOT}/.claude/commands"
-  fi
+    agy:label) echo "Antigravity" ;;
+    agy:dir) echo ".agents" ;;
+    agy:skill_dst:local) echo "${PROJECT_ROOT}/.agents/skills/auto-git-workflow" ;;
+    agy:skill_dst:global) echo "${HOME}/.gemini/config/skills/auto-git-workflow" ;;
+    # cmd_layout skill: Antigravity slash commands are skills
+    # (<cmd_dst>/SKILL.md), with links rewritten for that layout.
+    agy:cmd_layout) echo "skill" ;;
+    agy:cmd_dst:local) echo "${PROJECT_ROOT}/.agents/skills/auto-git-workflow-cmd" ;;
+    agy:cmd_dst:global) echo "${HOME}/.gemini/config/skills/auto-git-workflow-cmd" ;;
+    agy:guardrail_dst:local) echo "${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.sh" ;;
+    agy:guardrail_dst:global) echo "${HOME}/.gemini/config/hooks/agy-block-dangerous-git.sh" ;;
+    agy:settings_json:local) echo "${PROJECT_ROOT}/.agents/hooks.json" ;;
+    agy:settings_json:global) echo "${HOME}/.gemini/config/hooks.json" ;;
+    agy:skill_hint:local) echo "project .agents/skills/auto-git-workflow/" ;;
+    agy:skill_hint:global) echo "global ~/.gemini/config/skills/auto-git-workflow/" ;;
+    agy:skill_global_note) echo "  (--global: skill will be installed to ~/.gemini/config/skills/ for all projects)" ;;
+    agy:guardrail_hint:local) echo ".agents/hooks.json" ;;
+    agy:guardrail_hint:global) echo "~/.gemini/config/hooks.json" ;;
+    agy:skill_blurb)
+      echo "The Antigravity skill teaches Antigravity Agents to use CGW scripts instead"
+      echo "of raw git commands, ensuring lint checks and local-file protection are never bypassed."
+      ;;
+    agy:guardrail_blurb)
+      echo "The Antigravity PreToolUse guardrail intercepts run_command tool calls to block"
+      echo "dangerous git commands at the harness layer before they execute."
+      ;;
+    agy:summary_skill) echo "Antigravity:" ;;
+    agy:summary_guardrail) echo "AGY guard:" ;;
+    *) return 1 ;;
+  esac
+}
+
+# _install_harness_skill <host> <local|global>
+#   Installs the auto-git-workflow skill (SKILL.md + references/) and the
+#   auto-git-workflow-cmd slash command into the host's skill/command dirs.
+_install_harness_skill() {
+  local host="$1" install_mode="${2:-local}"
+  local label skill_dst cmd_dst cmd_layout skill_src cmd_src
+  label="$(_harness_spec "${host}" label)"
+  skill_dst="$(_harness_spec "${host}" "skill_dst:${install_mode}")"
+  cmd_dst="$(_harness_spec "${host}" "cmd_dst:${install_mode}")"
+  cmd_layout="$(_harness_spec "${host}" cmd_layout)"
+
+  # Where an already-installed command lives, per layout.
+  local cmd_installed="${cmd_dst}/auto-git-workflow-cmd.md"
+  [[ "${cmd_layout}" == "skill" ]] && cmd_installed="${cmd_dst}/SKILL.md"
 
   # Try staging area first (present during install.cmd), then CGW source repo
   if skill_src="$(cd "${SCRIPT_DIR}" && cd "../../skill" 2>/dev/null && pwd)"; then
     cmd_src="${skill_src}/../command/auto-git-workflow-cmd.md"
-  elif [[ -f "${skill_dst}/SKILL.md" ]]; then
-    echo "  [OK] Claude Code skill already installed (${install_mode})"
+  elif [[ "${cmd_layout}" == "skill" && -f "${skill_dst}/SKILL.md" && -f "${cmd_installed}" ]]; then
+    # A skill-layout command is its own skill: require both to call it installed.
+    echo "  [OK] ${label} skill + command already installed (${install_mode})"
+    return 0
+  elif [[ "${cmd_layout}" == "file" && -f "${skill_dst}/SKILL.md" ]]; then
+    echo "  [OK] ${label} skill already installed (${install_mode})"
     return 0
   else
     echo "  [!] Skill template not found." >&2
@@ -445,18 +524,62 @@ _install_skill() {
     return 1
   fi
 
-  echo "Installing Claude Code skill (${install_mode})..."
+  echo "Installing ${label} skill (${install_mode})..."
   mkdir -p "${skill_dst}/references"
 
   cp "${skill_src}/SKILL.md" "${skill_dst}/SKILL.md" 2>/dev/null || true
   cp "${skill_src}/references/"*.md "${skill_dst}/references/" 2>/dev/null || true
 
-  if [[ -f "${cmd_src}" ]]; then
-    mkdir -p "${cmd_dst}"
-    cp "${cmd_src}" "${cmd_dst}/auto-git-workflow-cmd.md" 2>/dev/null || true
-    echo "  [OK] Claude Code skill + slash command installed (${install_mode})"
+  if [[ ! -f "${cmd_src}" ]]; then
+    echo "  [OK] ${label} skill installed (${install_mode}, command template not found)"
+    return 0
+  fi
+  mkdir -p "${cmd_dst}"
+  if [[ "${cmd_layout}" == "skill" ]]; then
+    # Adapt links and paths so they work in the skills-directory layout.
+    sed -e 's|\.\./skills/auto-git-workflow/|../auto-git-workflow/|g' \
+      -e 's|\.claude/skills/auto-git-workflow/|auto-git-workflow/|g' \
+      "${cmd_src}" >"${cmd_installed}" 2>/dev/null || true
   else
-    echo "  [OK] Claude Code skill installed (${install_mode}, command template not found)"
+    cp "${cmd_src}" "${cmd_installed}" 2>/dev/null || true
+  fi
+  echo "  [OK] ${label} skill + slash command installed (${install_mode})"
+}
+
+# _offer_harness_install <host> <skill|guardrail> <skip> <enable> <global>
+#   One configure.sh step for one harness: explain it, default to "yes" when
+#   the project already has the harness's directory (or --global / --claude /
+#   --antigravity was given), confirm, then install locally or globally.
+_offer_harness_install() {
+  local host="$1" what="$2" skip="$3" enable="$4" global="$5"
+  [[ ${skip} -eq 1 ]] && return 0
+  local mode="local"
+  [[ ${global} -eq 1 ]] && mode="global"
+
+  echo ""
+  _harness_spec "${host}" "${what}_blurb"
+  if [[ "${what}" == "skill" && ${global} -eq 1 ]]; then
+    _harness_spec "${host}" skill_global_note
+  fi
+
+  local default="no"
+  if [[ -d "$(_harness_spec "${host}" dir)" ]] || [[ ${global} -eq 1 ]] || [[ ${enable} -eq 1 ]]; then
+    default="yes"
+  fi
+  local label hint prompt
+  label="$(_harness_spec "${host}" label)"
+  hint="$(_harness_spec "${host}" "${what}_hint:${mode}")"
+  if [[ "${what}" == "skill" ]]; then
+    prompt="Install ${label} skill to ${hint}?"
+  else
+    prompt="Install ${label} PreToolUse guardrail to ${hint}?"
+  fi
+  cgw_confirm "${prompt}" --default "${default}" --non-interactive accept || return 0
+
+  if [[ "${what}" == "skill" ]]; then
+    _install_harness_skill "${host}" "${mode}"
+  else
+    "_install_${host}_guardrail" "${mode}"
   fi
 }
 
@@ -702,16 +825,16 @@ _install_cc_guardrail() {
   # Determine destination paths
   local hook_dst settings_json hook_cmd
   if [[ "${install_mode}" == "global" ]]; then
-    hook_dst="${HOME}/.claude/hooks/cc-block-dangerous-git.sh"
-    settings_json="${HOME}/.claude/settings.json"
+    hook_dst="$(_harness_spec cc guardrail_dst:global)"
+    settings_json="$(_harness_spec cc settings_json:global)"
     # Literal tilde is intentional (SC2088): this string is written verbatim
     # into settings.json as the hook's "command" value, not executed here --
     # Claude Code expands it via its own shell when it invokes the hook.
     # shellcheck disable=SC2088
     hook_cmd="~/.claude/hooks/cc-block-dangerous-git.sh"
   else
-    hook_dst="${PROJECT_ROOT}/.claude/hooks/cc-block-dangerous-git.sh"
-    settings_json="${PROJECT_ROOT}/.claude/settings.json"
+    hook_dst="$(_harness_spec cc guardrail_dst:local)"
+    settings_json="$(_harness_spec cc settings_json:local)"
     # Literal double-quotes around $CLAUDE_PROJECT_DIR are intentional:
     # they become JSON-escaped \" in settings.json and are expanded by the shell
     # when Claude Code executes the hook command at runtime.
@@ -770,52 +893,6 @@ _install_cc_guardrail() {
   fi
 }
 
-_install_agy_skill() {
-  local install_mode="${1:-local}" # "local" or "global"
-  local skill_src cmd_src
-  local skill_dst cmd_dst
-
-  # Determine destination based on install mode
-  if [[ "${install_mode}" == "global" ]]; then
-    skill_dst="${HOME}/.gemini/config/skills/auto-git-workflow"
-    cmd_dst="${HOME}/.gemini/config/skills/auto-git-workflow-cmd"
-  else
-    skill_dst="${PROJECT_ROOT}/.agents/skills/auto-git-workflow"
-    cmd_dst="${PROJECT_ROOT}/.agents/skills/auto-git-workflow-cmd"
-  fi
-
-  # Try staging area first (present during install.cmd), then CGW source repo
-  if skill_src="$(cd "${SCRIPT_DIR}" && cd "../../skill" 2>/dev/null && pwd)"; then
-    cmd_src="$(cd "${SCRIPT_DIR}" && cd "../../command" 2>/dev/null && pwd)/auto-git-workflow-cmd.md"
-  elif [[ -f "${skill_dst}/SKILL.md" && -f "${cmd_dst}/SKILL.md" ]]; then
-    echo "  [OK] Antigravity skill + command already installed (${install_mode})"
-    return 0
-  else
-    echo "  [!] Skill template not found." >&2
-    echo "      Fix: copy skill/ and command/ from the CGW source repo into your" >&2
-    echo "      project root, then re-run: ./scripts/git/configure.sh" >&2
-    return 1
-  fi
-
-  echo "Installing Antigravity skill (${install_mode})..."
-  mkdir -p "${skill_dst}/references"
-
-  cp "${skill_src}/SKILL.md" "${skill_dst}/SKILL.md" 2>/dev/null || true
-  cp "${skill_src}/references/"*.md "${skill_dst}/references/" 2>/dev/null || true
-
-  if [[ -f "${cmd_src}" ]]; then
-    mkdir -p "${cmd_dst}"
-    # Antigravity slash commands are skills in .agents/skills/<name>/SKILL.md.
-    # Adapt links and paths so they work in Antigravity's layout.
-    sed -e 's|\.\./skills/auto-git-workflow/|../auto-git-workflow/|g' \
-        -e 's|\.claude/skills/auto-git-workflow/|auto-git-workflow/|g' \
-        "${cmd_src}" > "${cmd_dst}/SKILL.md" 2>/dev/null || true
-    echo "  [OK] Antigravity skill + slash command installed (${install_mode})"
-  else
-    echo "  [OK] Antigravity skill installed (${install_mode})"
-  fi
-}
-
 _install_agy_guardrail() {
   local install_mode="${1:-local}" # "local" or "global"
 
@@ -846,9 +923,9 @@ _install_agy_guardrail() {
 
   local hook_dst hook_cmd_dst hooks_json hook_cmd
   if [[ "${install_mode}" == "global" ]]; then
-    hook_dst="${HOME}/.gemini/config/hooks/agy-block-dangerous-git.sh"
-    hook_cmd_dst="${HOME}/.gemini/config/hooks/agy-block-dangerous-git.cmd"
-    hooks_json="${HOME}/.gemini/config/hooks.json"
+    hook_dst="$(_harness_spec agy guardrail_dst:global)"
+    hook_cmd_dst="${hook_dst%.sh}.cmd"
+    hooks_json="$(_harness_spec agy settings_json:global)"
     if [[ "${is_windows}" -eq 1 ]]; then
       local win_cmd_path
       win_cmd_path="$(cygpath -m "${hook_cmd_dst}" 2>/dev/null || echo "${hook_cmd_dst}")"
@@ -857,9 +934,9 @@ _install_agy_guardrail() {
       hook_cmd="bash ~/.gemini/config/hooks/agy-block-dangerous-git.sh"
     fi
   else
-    hook_dst="${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.sh"
-    hook_cmd_dst="${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.cmd"
-    hooks_json="${PROJECT_ROOT}/.agents/hooks.json"
+    hook_dst="$(_harness_spec agy guardrail_dst:local)"
+    hook_cmd_dst="${hook_dst%.sh}.cmd"
+    hooks_json="$(_harness_spec agy settings_json:local)"
     if [[ "${is_windows}" -eq 1 ]]; then
       local win_cmd_path
       win_cmd_path="$(cygpath -m "${hook_cmd_dst}" 2>/dev/null || echo "${hook_cmd_dst}")"
@@ -1307,131 +1384,12 @@ main() {
     fi
   fi
 
-  # -- Install Claude Code skill ---------------------------------------------
+  # -- Agent harness integrations (skill + PreToolUse guardrail per harness) --
 
-  if [[ ${skip_skill} -eq 0 ]]; then
-    echo ""
-    echo "The Claude Code skill teaches Claude to use CGW scripts instead of raw"
-    echo "git commands, ensuring lint checks and local-file protection are never bypassed."
-    if [[ ${global_skill} -eq 1 ]]; then
-      echo "  (--global: skill will be installed to ~/.claude/ for all projects)"
-    fi
-    local install_skill="no"
-    # Default to yes if .claude/ directory already exists (local mode)
-    # or if --global was specified or --claude was specified
-    if [[ -d ".claude" ]] || [[ ${global_skill} -eq 1 ]] || [[ ${enable_claude} -eq 1 ]]; then
-      install_skill="yes"
-    fi
-
-    local skill_dest_hint="project .claude/"
-    [[ ${global_skill} -eq 1 ]] && skill_dest_hint="global ~/.claude/"
-    if cgw_confirm "Install Claude Code skill to ${skill_dest_hint}?" --default "${install_skill}" --non-interactive accept; then
-      install_skill="yes"
-    else
-      install_skill="no"
-    fi
-
-    if [[ "${install_skill}" == "yes" ]]; then
-      if [[ ${global_skill} -eq 1 ]]; then
-        _install_skill "global"
-      else
-        _install_skill "local"
-      fi
-    fi
-  fi
-
-  # -- Install Claude Code PreToolUse harness guardrail ----------------------
-
-  if [[ ${skip_cc_guardrail} -eq 0 ]]; then
-    echo ""
-    echo "The PreToolUse guardrail is a Claude Code hook that blocks dangerous git"
-    echo "commands (raw 'git commit', '--no-verify', 'git reset --hard', etc.) at the"
-    echo "harness layer, before they execute. This is defense-in-depth on top of the"
-    echo "repo-side git hooks — the model cannot bypass it by being asked to skip CGW."
-    local install_guardrail="no"
-    if [[ -d ".claude" ]] || [[ ${global_skill} -eq 1 ]] || [[ ${enable_claude} -eq 1 ]]; then
-      install_guardrail="yes"
-    fi
-    local guardrail_dest_hint=".claude/settings.json"
-    # Literal tilde is intentional (SC2088): purely a display string in the
-    # prompt below, never expanded or executed.
-    # shellcheck disable=SC2088
-    [[ ${global_skill} -eq 1 ]] && guardrail_dest_hint="~/.claude/settings.json"
-    if cgw_confirm "Install Claude Code PreToolUse guardrail to ${guardrail_dest_hint}?" --default "${install_guardrail}" --non-interactive accept; then
-      install_guardrail="yes"
-    else
-      install_guardrail="no"
-    fi
-
-    if [[ "${install_guardrail}" == "yes" ]]; then
-      if [[ ${global_skill} -eq 1 ]]; then
-        _install_cc_guardrail "global"
-      else
-        _install_cc_guardrail "local"
-      fi
-    fi
-  fi
-
-  # -- Install Antigravity Agents skill --------------------------------------
-
-  if [[ ${skip_agy_skill} -eq 0 ]]; then
-    echo ""
-    echo "The Antigravity skill teaches Antigravity Agents to use CGW scripts instead"
-    echo "of raw git commands, ensuring lint checks and local-file protection are never bypassed."
-    if [[ ${global_skill} -eq 1 ]]; then
-      echo "  (--global: skill will be installed to ~/.gemini/config/skills/ for all projects)"
-    fi
-    local install_agy_skill="no"
-    # Default to yes if .agents/ directory already exists (local mode)
-    # or if --global was specified or --antigravity was specified
-    if [[ -d ".agents" ]] || [[ ${global_skill} -eq 1 ]] || [[ ${enable_agy} -eq 1 ]]; then
-      install_agy_skill="yes"
-    fi
-
-    local agy_skill_dest_hint="project .agents/skills/auto-git-workflow/"
-    [[ ${global_skill} -eq 1 ]] && agy_skill_dest_hint="global ~/.gemini/config/skills/auto-git-workflow/"
-    if cgw_confirm "Install Antigravity skill to ${agy_skill_dest_hint}?" --default "${install_agy_skill}" --non-interactive accept; then
-      install_agy_skill="yes"
-    else
-      install_agy_skill="no"
-    fi
-
-    if [[ "${install_agy_skill}" == "yes" ]]; then
-      if [[ ${global_skill} -eq 1 ]]; then
-        _install_agy_skill "global"
-      else
-        _install_agy_skill "local"
-      fi
-    fi
-  fi
-
-  # -- Install Antigravity PreToolUse harness guardrail ----------------------
-
-  if [[ ${skip_agy_guardrail} -eq 0 ]]; then
-    echo ""
-    echo "The Antigravity PreToolUse guardrail intercepts run_command tool calls to block"
-    echo "dangerous git commands at the harness layer before they execute."
-    local install_agy_guardrail="no"
-    if [[ -d ".agents" ]] || [[ ${global_skill} -eq 1 ]] || [[ ${enable_agy} -eq 1 ]]; then
-      install_agy_guardrail="yes"
-    fi
-    local agy_guardrail_dest_hint=".agents/hooks.json"
-    # shellcheck disable=SC2088
-    [[ ${global_skill} -eq 1 ]] && agy_guardrail_dest_hint="~/.gemini/config/hooks.json"
-    if cgw_confirm "Install Antigravity PreToolUse guardrail to ${agy_guardrail_dest_hint}?" --default "${install_agy_guardrail}" --non-interactive accept; then
-      install_agy_guardrail="yes"
-    else
-      install_agy_guardrail="no"
-    fi
-
-    if [[ "${install_agy_guardrail}" == "yes" ]]; then
-      if [[ ${global_skill} -eq 1 ]]; then
-        _install_agy_guardrail "global"
-      else
-        _install_agy_guardrail "local"
-      fi
-    fi
-  fi
+  _offer_harness_install cc skill "${skip_skill}" "${enable_claude}" "${global_skill}"
+  _offer_harness_install cc guardrail "${skip_cc_guardrail}" "${enable_claude}" "${global_skill}"
+  _offer_harness_install agy skill "${skip_agy_skill}" "${enable_agy}" "${global_skill}"
+  _offer_harness_install agy guardrail "${skip_agy_guardrail}" "${enable_agy}" "${global_skill}"
 
   # -- Summary --------------------------------------------------------------
 
@@ -1455,18 +1413,23 @@ main() {
   if [[ -n "${detected_lint}" ]]; then
     echo "  Lint tool:      ${detected_lint}"
   fi
-  if [[ -f "${PROJECT_ROOT}/.claude/skills/auto-git-workflow/SKILL.md" ]] || [[ ${global_skill} -eq 1 && -f "${HOME}/.claude/skills/auto-git-workflow/SKILL.md" ]]; then
-    echo "  Claude skill:   installed"
-  fi
-  if [[ -f "${PROJECT_ROOT}/.claude/hooks/cc-block-dangerous-git.sh" ]] || [[ ${global_skill} -eq 1 && -f "${HOME}/.claude/hooks/cc-block-dangerous-git.sh" ]]; then
-    echo "  Claude guard:   installed"
-  fi
-  if [[ -f "${PROJECT_ROOT}/.agents/skills/auto-git-workflow/SKILL.md" ]] || [[ ${global_skill} -eq 1 && -f "${HOME}/.gemini/config/skills/auto-git-workflow/SKILL.md" ]]; then
-    echo "  Antigravity:    installed"
-  fi
-  if [[ -f "${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.sh" ]] || [[ ${global_skill} -eq 1 && -f "${HOME}/.gemini/config/hooks/agy-block-dangerous-git.sh" ]]; then
-    echo "  AGY guard:      installed"
-  fi
+  local _host _mode
+  for _host in cc agy; do
+    for _mode in local global; do
+      [[ "${_mode}" == "global" && ${global_skill} -eq 0 ]] && continue
+      if [[ -f "$(_harness_spec "${_host}" "skill_dst:${_mode}")/SKILL.md" ]]; then
+        printf '  %-16sinstalled\n' "$(_harness_spec "${_host}" summary_skill)"
+        break
+      fi
+    done
+    for _mode in local global; do
+      [[ "${_mode}" == "global" && ${global_skill} -eq 0 ]] && continue
+      if [[ -f "$(_harness_spec "${_host}" "guardrail_dst:${_mode}")" ]]; then
+        printf '  %-16sinstalled\n' "$(_harness_spec "${_host}" summary_guardrail)"
+        break
+      fi
+    done
+  done
   echo ""
   echo "Quick start:"
   echo "  ./scripts/git/commit_enhanced.sh \"feat: your feature\""

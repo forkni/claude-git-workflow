@@ -190,7 +190,9 @@ The shared module for all binary yes/no confirmation prompts in CGW scripts. Con
 
 ## agent harness
 
-An AI coding agent host that CGW integrates with: today Claude Code (`cc`, `.claude/`) and Antigravity (`agy`, `.agents/`, `~/.gemini/config/`). Each harness gets a skill, a slash command, and a **guardrail**; the harness-specific facts live in `configure.sh`'s `_guardrail_spec` table and the per-harness installers. Use the short ids `cc` / `agy` in code and flags (`--skip-cc-guardrail`, `--skip-agy-guardrail`).
+An AI coding agent host that CGW integrates with: today Claude Code (`cc`, `.claude/`) and Antigravity (`agy`, `.agents/`, `~/.gemini/config/`). Each harness gets a skill, a slash command, and a **guardrail**.
+
+**Implementation seam**: in `scripts/git/configure.sh`, `_harness_spec <host> <field>` holds where each harness keeps the skill, command and guardrail (local and `--global`), how its slash command is laid out (`file` for Claude Code, `skill` for Antigravity), and the wording `configure.sh` uses for it; `_guardrail_spec` holds the guardrail-registration facts. `_install_harness_skill` and `_offer_harness_install` (the explain → default → confirm → install step `main()` runs per harness, per skill/guardrail) read the spec; only the host-specific hook command strings stay in `_install_cc_guardrail` / `_install_agy_guardrail`. Adding a harness means spec rows, an adapter, a guardrail installer, and one `_offer_harness_install` line per step. Use the short ids `cc` / `agy` in code and flags (`--skip-cc-guardrail`, `--skip-agy-guardrail`).
 
 ---
 
