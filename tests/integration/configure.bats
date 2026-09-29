@@ -297,3 +297,27 @@ EOF
     grep -q 'CGW_TYPECHECK_CMD="pyrefly"' "${TEST_REPO_DIR}/.cgw.conf"
   fi
 }
+
+# ── Antigravity configuration ────────────────────────────────────────────────
+
+@test "configure.sh installs Antigravity skill and hooks.json when .agents exists" {
+  mkdir -p "${TEST_REPO_DIR}/.agents"
+  _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow/SKILL.md" ]
+  [ -f "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.sh" ]
+  [ -f "${TEST_REPO_DIR}/.agents/hooks.json" ]
+}
+
+@test "configure.sh --antigravity provisions .agents even if absent" {
+  _run_configure "--non-interactive --antigravity"
+  [ -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow/SKILL.md" ]
+  [ -f "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.sh" ]
+  [ -f "${TEST_REPO_DIR}/.agents/hooks.json" ]
+}
+
+@test "configure.sh --skip-antigravity skips Antigravity when .agents exists" {
+  mkdir -p "${TEST_REPO_DIR}/.agents"
+  _run_configure "--non-interactive --skip-antigravity"
+  [ ! -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow/SKILL.md" ]
+  [ ! -f "${TEST_REPO_DIR}/.agents/hooks.json" ]
+}

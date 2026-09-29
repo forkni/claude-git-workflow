@@ -4,9 +4,9 @@ setlocal EnableDelayedExpansion
 :: ============================================================
 :: CGW (claude-git-workflow) Batch Updater
 :: Reads a list of already-installed consumer project paths from
-:: a config file and refreshes the toolkit (scripts, hooks, skill,
-:: command, guardrail) across all of them in one run -- WITHOUT
-:: touching any project's .cgw.conf.
+:: a config file and refreshes the toolkit (scripts, hooks, skills,
+:: command, guardrails for Claude Code and Antigravity) across
+:: all of them in one run -- WITHOUT touching any project's .cgw.conf.
 ::
 :: This is an UPDATER, not an installer: a project with no existing
 :: .cgw.conf is skipped -- use cgw-install.cmd for a first-time
@@ -63,9 +63,10 @@ echo                   updated; makes no changes.
 echo     --no-pause    Skip the final "Press any key" pause (for automation).
 echo.
 echo   Each listed project is refreshed via configure.sh --non-interactive:
-echo   scripts, hooks, the Claude Code skill/command, and the guardrail are
-echo   updated; .cgw.conf is NEVER overwritten. Projects with no existing
-echo   .cgw.conf are skipped -- run cgw-install.cmd for a first-time install.
+echo   scripts, hooks, Claude Code and Antigravity skills, commands, and
+echo   guardrails are updated; .cgw.conf is NEVER overwritten. Projects
+echo   with no existing .cgw.conf are skipped -- run cgw-install.cmd for a
+echo   first-time install.
 echo.
 goto :end
 
@@ -116,6 +117,7 @@ if not exist "!CGW_DIR!\hooks\pre-commit"                      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\pre-push"                        set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\pre-rebase"                      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\cc-block-dangerous-git.sh"       set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\hooks\agy-block-dangerous-git.sh"      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\skill\SKILL.md"                        set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\command\auto-git-workflow-cmd.md"      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\templates\markdownlint.json"           set "SOURCE_OK=0"
@@ -125,7 +127,8 @@ goto :bf03_done
 :bf03_fail
 echo   [FAIL] BF-03  CGW source missing required files
 echo          Expected: scripts\git\configure.sh, hooks\pre-commit, hooks\pre-push,
-echo                    hooks\pre-rebase, hooks\cc-block-dangerous-git.sh, skill\SKILL.md,
+echo                    hooks\pre-rebase, hooks\cc-block-dangerous-git.sh,
+echo                    hooks\agy-block-dangerous-git.sh, skill\SKILL.md,
 echo                    command\auto-git-workflow-cmd.md, templates\markdownlint.json
 set "CHECKS_PASSED=0"
 :bf03_done
@@ -241,6 +244,8 @@ copy /y "!CGW_DIR!\hooks\pre-rebase" "!P!\hooks\pre-rebase" >nul
 if errorlevel 1 set "STAGE_OK=0"
 copy /y "!CGW_DIR!\hooks\cc-block-dangerous-git.sh" "!P!\hooks\cc-block-dangerous-git.sh" >nul
 if errorlevel 1 set "STAGE_OK=0"
+copy /y "!CGW_DIR!\hooks\agy-block-dangerous-git.sh" "!P!\hooks\agy-block-dangerous-git.sh" >nul
+if errorlevel 1 set "STAGE_OK=0"
 
 if not exist "!P!\skill\" mkdir "!P!\skill\"
 xcopy /y /q /e "!CGW_DIR!\skill\" "!P!\skill\" >nul
@@ -265,9 +270,10 @@ echo.
 goto :eof
 :pp_stage_ok
 
-rem Ensure .claude\ exists so configure.sh defaults to installing the
-rem Claude Code skill and slash command (it checks for .claude\ presence).
+rem Ensure .claude\ and .agents\ exist so configure.sh defaults to installing
+rem skills, hooks, and commands for both Claude Code and Antigravity Agents.
 if not exist "!P!\.claude\" mkdir "!P!\.claude\"
+if not exist "!P!\.agents\" mkdir "!P!\.agents\"
 
 set "CFG_LOG=%TEMP%\cgw-batch-configure-%RANDOM%.log"
 pushd "!P!" 2>nul

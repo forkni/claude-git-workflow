@@ -4,7 +4,8 @@ setlocal EnableDelayedExpansion
 :: ============================================================
 :: CGW (claude-git-workflow) Installer
 :: Copies git workflow scripts into a target project and runs
-:: configure.sh to set up branches, lint, hooks, and skill.
+:: configure.sh to set up branches, lint, hooks, and skills
+:: for Claude Code and Antigravity Agents.
 ::
 :: Usage: Double-click or run from cmd/terminal
 :: Requires: Git for Windows (provides bash)
@@ -47,14 +48,27 @@ echo.
 echo(  Target: !TARGET_DIR!
 echo.
 
-rem --- Global skill option ---
-rem Ask whether to install the Claude Code skill globally (~/.claude/) or
-rem project-locally (.claude/ in the target project).
+rem --- Agent harness options ---
+set "INSTALL_CLAUDE=1"
+set "INSTALL_AGY=1"
 set "GLOBAL_SKILL=0"
-echo   The Claude Code skill can be installed locally (this project only) or
-echo   globally (all projects). Local is the default and easiest to undo.
+
+echo   Agent harnesses:
+echo   Configure for Claude Code and/or Antigravity Agents.
 echo.
-set /p "GLOBAL_CHOICE=Install Claude Code skill globally to %%USERPROFILE%%\.claude\? [y/N]: "
+set /p "CLAUDE_CHOICE=Configure Claude Code integration? [Y/n]: "
+if /i "!CLAUDE_CHOICE!"=="n"  set "INSTALL_CLAUDE=0"
+if /i "!CLAUDE_CHOICE!"=="no" set "INSTALL_CLAUDE=0"
+
+set /p "AGY_CHOICE=Configure Antigravity Agents integration? [Y/n]: "
+if /i "!AGY_CHOICE!"=="n"  set "INSTALL_AGY=0"
+if /i "!AGY_CHOICE!"=="no" set "INSTALL_AGY=0"
+
+echo.
+echo   Skills can be installed locally (this project only) or
+echo   globally (all projects: %%USERPROFILE%%\.claude and %%USERPROFILE%%\.gemini\config).
+echo.
+set /p "GLOBAL_CHOICE=Install skills globally to %%USERPROFILE%%? [y/N]: "
 if /i "!GLOBAL_CHOICE!"=="y"   set "GLOBAL_SKILL=1"
 if /i "!GLOBAL_CHOICE!"=="yes" set "GLOBAL_SKILL=1"
 echo.
@@ -125,6 +139,7 @@ if not exist "!CGW_DIR!\hooks\pre-commit"                      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\pre-push"                        set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\pre-rebase"                      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\cc-block-dangerous-git.sh"       set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\hooks\agy-block-dangerous-git.sh"      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\skill\SKILL.md"                        set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\command\auto-git-workflow-cmd.md"      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\templates\markdownlint.json"           set "SOURCE_OK=0"
@@ -134,7 +149,8 @@ goto :pi04_done
 :pi04_fail
 echo   [FAIL] PI-04  CGW source missing required files
 echo          Expected: scripts\git\configure.sh, hooks\pre-commit, hooks\pre-push,
-echo                    hooks\pre-rebase, hooks\cc-block-dangerous-git.sh, skill\SKILL.md,
+echo                    hooks\pre-rebase, hooks\cc-block-dangerous-git.sh,
+echo                    hooks\agy-block-dangerous-git.sh, skill\SKILL.md,
 echo                    command\auto-git-workflow-cmd.md, templates\markdownlint.json
 set "CHECKS_PASSED=0"
 :pi04_done
@@ -200,16 +216,25 @@ echo --- Installation Summary ---
 echo.
 echo(  Will copy into: !TARGET_DIR!
 echo     scripts\git\    (shell scripts)
-echo     hooks\          (pre-commit, pre-push, pre-rebase templates)
-echo     skill\          (Claude Code skill source)
+echo     hooks\          (pre-commit, pre-push, pre-rebase, cc-block-dangerous-git.sh, agy-block-dangerous-git.sh)
+echo     skill\          (agent skill source)
 echo     command\        (slash command source)
 echo     templates\      (markdown lint baseline config)
 echo     cgw.conf.example (config reference)
 echo.
-if "!GLOBAL_SKILL!"=="1" (
-    echo(  Claude Code skill: global install to !USERPROFILE!\.claude\
-) else (
-    echo   Claude Code skill: local install to .claude\ in target project
+if "!INSTALL_CLAUDE!"=="1" (
+    if "!GLOBAL_SKILL!"=="1" (
+        echo(  Claude Code:  global install to !USERPROFILE!\.claude\
+    ) else (
+        echo   Claude Code:  local install to .claude\ in target project
+    )
+)
+if "!INSTALL_AGY!"=="1" (
+    if "!GLOBAL_SKILL!"=="1" (
+        echo(  Antigravity:  global install to !USERPROFILE!\.gemini\config\
+    ) else (
+        echo   Antigravity:  local install to .agents\ in target project
+    )
 )
 echo.
 echo   Then run: configure.sh (interactive)
@@ -278,11 +303,13 @@ copy /y "!CGW_DIR!\hooks\pre-rebase" "!TARGET_DIR!\hooks\pre-rebase" >nul
 if errorlevel 1 goto :cp_hooks_fail
 copy /y "!CGW_DIR!\hooks\cc-block-dangerous-git.sh" "!TARGET_DIR!\hooks\cc-block-dangerous-git.sh" >nul
 if errorlevel 1 goto :cp_hooks_fail
-echo   [OK] Copied hooks\ templates (pre-commit, pre-push, pre-rebase, cc-block-dangerous-git.sh)
+copy /y "!CGW_DIR!\hooks\agy-block-dangerous-git.sh" "!TARGET_DIR!\hooks\agy-block-dangerous-git.sh" >nul
+if errorlevel 1 goto :cp_hooks_fail
+echo   [OK] Copied hooks\ templates (pre-commit, pre-push, pre-rebase, cc-block-dangerous-git.sh, agy-block-dangerous-git.sh)
 goto :cp_hooks_done
 :cp_hooks_fail
 echo   [ERR] Failed to copy hook templates from hooks\
-echo          Verify that hooks\pre-commit, hooks\pre-push, and hooks\pre-rebase exist in the CGW source directory.
+echo          Verify that hooks\pre-commit, hooks\pre-push, hooks\pre-rebase, cc-block-dangerous-git.sh, and agy-block-dangerous-git.sh exist in the CGW source directory.
 goto :abort
 :cp_hooks_done
 
@@ -337,9 +364,13 @@ if errorlevel 1 (
 )
 bash -c "chmod +x scripts/git/*.sh 2>/dev/null" >nul 2>&1
 
-rem Ensure .claude/ exists so configure.sh defaults to installing the
-rem Claude Code skill and slash command (it checks for .claude/ presence).
-if not exist ".claude\" mkdir ".claude"
+rem Ensure target agent directories exist so configure.sh defaults to installing
+if "!INSTALL_CLAUDE!"=="1" (
+    if not exist ".claude\" mkdir ".claude"
+)
+if "!INSTALL_AGY!"=="1" (
+    if not exist ".agents\" mkdir ".agents"
+)
 
 echo.
 
@@ -349,11 +380,12 @@ echo.
 echo   configure.sh will auto-detect your branches, lint tool, and
 echo   local-only files. You can confirm or override each setting.
 echo.
-if "!GLOBAL_SKILL!"=="1" (
-    bash scripts/git/configure.sh --global
-) else (
-    bash scripts/git/configure.sh
-)
+set "CFG_FLAGS="
+if "!GLOBAL_SKILL!"=="1"   set "CFG_FLAGS=!CFG_FLAGS! --global"
+if "!INSTALL_CLAUDE!"=="0" set "CFG_FLAGS=!CFG_FLAGS! --skip-claude"
+if "!INSTALL_AGY!"=="0"    set "CFG_FLAGS=!CFG_FLAGS! --skip-antigravity"
+
+bash scripts/git/configure.sh !CFG_FLAGS!
 set "CONFIGURE_EXIT=!ERRORLEVEL!"
 popd
 
@@ -414,6 +446,9 @@ if exist "!TARGET_DIR!\.cgw.conf"                                  echo(  Config
 if exist "!TARGET_DIR!\.git\hooks\pre-commit"                      echo(  Git hooks:    !TARGET_DIR!\.git\hooks\pre-commit + pre-push + pre-rebase
 if exist "!TARGET_DIR!\.claude\skills\auto-git-workflow\SKILL.md"  echo(  Claude skill: !TARGET_DIR!\.claude\skills\auto-git-workflow\
 if exist "!TARGET_DIR!\.claude\commands\auto-git-workflow-cmd.md"  echo(  Slash cmd:    !TARGET_DIR!\.claude\commands\auto-git-workflow-cmd.md
+if exist "!TARGET_DIR!\.claude\settings.json"                      echo(  Claude guard: !TARGET_DIR!\.claude\settings.json
+if exist "!TARGET_DIR!\.agents\skills\auto-git-workflow\SKILL.md"  echo(  AGY skill:    !TARGET_DIR!\.agents\skills\auto-git-workflow\
+if exist "!TARGET_DIR!\.agents\hooks.json"                         echo(  AGY guard:    !TARGET_DIR!\.agents\hooks.json
 if exist "!TARGET_DIR!\.markdownlint.json"                         echo(  Markdown cfg: !TARGET_DIR!\.markdownlint.json
 if exist "!TARGET_DIR!\.markdownlint-cli2.jsonc"                   echo(  Markdown tool: !TARGET_DIR!\.markdownlint-cli2.jsonc ^(gitignore-skip^)
 

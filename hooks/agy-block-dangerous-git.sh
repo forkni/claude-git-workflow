@@ -1,24 +1,26 @@
 #!/usr/bin/env bash
-# cc-block-dangerous-git.sh — Claude Code PreToolUse guardrail (installed by CGW configure.sh)
+# agy-block-dangerous-git.sh — Antigravity PreToolUse guardrail (installed by CGW configure.sh)
 #
 # Blocks dangerous git/shell commands before they reach the shell.
-# Claude Code invokes this hook for every Bash tool call (PreToolUse: Bash matcher).
+# Antigravity invokes this hook for run_command tool calls (PreToolUse: run_command matcher).
 #
-# Protocol (Claude Code hook contract):
-#   - Tool input arrives as JSON on stdin
-#   - Exit 2 + stderr content → Claude Code blocks the call; stderr is shown to the model
-#   - Exit 0 → command is allowed through
+# Protocol (Antigravity hook contract):
+#   - Tool input arrives as JSON on stdin:
+#       {"toolCall":{"name":"run_command","args":{"CommandLine":"..."}}, ...}
+#   - Hook returns JSON on stdout:
+#       {"decision":"allow"} to permit execution
+#       {"decision":"deny","reason":"..."} to block execution immediately
+#   - Exit 0 in both cases
+#
+# Also supports Claude Code hook contract (fallback compatibility):
+#   - Input: {"tool_input":{"command":"..."}}
+#   - Exit 2 + stderr to block, exit 0 to allow
 #
 # Fail-open policy: if jq is absent or stdin is unparseable, the guardrail
 # degrades gracefully (logs a warning, allows the command through) rather than
 # breaking the user's shell.
 #
-# Heuristic limits (defense-in-depth, not a sandbox): this hook does not evaluate
-# `eval`, shell aliases/functions, `git -C <path> <subcmd>` (the subcommand isn't
-# adjacent to `git`), or paths hidden inside quotes — e.g. `rm -rf "$HOME/.git"`
-# is stripped by the quote-stripping heuristic below before pattern matching runs.
-#
-# To uninstall: remove the PreToolUse entry from .claude/settings.json and
+# To uninstall: remove the cgw-git-guardrail entry from .agents/hooks.json and
 #   delete this file.
 # To temporarily disable: set SKIP_CGW_GUARDRAIL=1 in your environment.
 #
@@ -26,14 +28,14 @@
 
 set -uo pipefail
 
+INPUT=$(cat)
+
 # Fail open helper
 _allow_and_exit() {
   if jq -e '.tool_input' <<< "${INPUT}" >/dev/null 2>&1 && ! jq -e '.toolCall' <<< "${INPUT}" >/dev/null 2>&1; then
     exit 0
   fi
-  if jq -e '.toolCall' <<< "${INPUT}" >/dev/null 2>&1; then
-    printf '{"decision": "allow"}\n'
-  fi
+  printf '{"decision": "allow"}\n'
   exit 0
 }
 
@@ -45,22 +47,17 @@ if ! command -v jq &>/dev/null; then
   _allow_and_exit
 fi
 
-COMMAND=$(jq -r '(.tool_input.command // .toolCall.args.CommandLine // .toolCall.args.command // empty)' <<< "${INPUT}" 2>/dev/null)
+COMMAND=$(jq -r '(.toolCall.args.CommandLine // .toolCall.args.command // .tool_input.command // empty)' <<< "${INPUT}" 2>/dev/null)
 [[ -z "${COMMAND}" ]] && _allow_and_exit
 
 # Strip quoted-string contents before pattern matching so that blocked keywords
 # appearing inside commit messages or other string arguments do not cause false
-# positives.  For example, commit_enhanced.sh "docs: explain git commit workflow"
-# should not match the 'git commit' block.  Heuristic: removes "..." and '...'
-# (does not handle nested/escaped quotes, but covers all practical CGW cases).
+# positives. For example, commit_enhanced.sh "docs: explain git commit workflow"
+# should not match the 'git commit' block.
 COMMAND_UNQUOTED=$(sed 's/"[^"]*"//g; s/'"'"'[^'"'"']*'"'"'//g' <<< "${COMMAND}")
 
 # Split into individual shell invocations before pattern matching, so a flag or
-# exemption belonging to one command (e.g. `--cached` after a `;`) cannot satisfy
-# a check for a different, earlier command on the same line. Join backslash-
-# newline continuations first so a wrapped command stays one invocation, then
-# split on shell separators (; | & newline). `&&` / `||` produce an empty
-# segment, which matches no pattern and is harmlessly skipped.
+# exemption belonging to one command cannot satisfy a check for a different command.
 COMMAND_JOINED="${COMMAND_UNQUOTED//\\$'\n'/ }"
 COMMAND_SEGMENTED="${COMMAND_JOINED//[;|&$'\n']/$'\n'}"
 
@@ -73,36 +70,24 @@ _block() {
 ${redirect}
 The user has prevented you from doing this."
 
+  # Claude Code compatibility mode
   if jq -e '.tool_input' <<< "${INPUT}" >/dev/null 2>&1 && ! jq -e '.toolCall' <<< "${INPUT}" >/dev/null 2>&1; then
     printf 'BLOCKED: Command matched dangerous pattern "%s".\n%s\nThe user has prevented you from doing this.\n' \
       "${pattern}" "${redirect}" >&2
     exit 2
   fi
 
-  if jq -e '.toolCall' <<< "${INPUT}" >/dev/null 2>&1; then
-    jq -n --arg r "${reason}" '{"decision": "deny", "reason": $r}'
-    exit 0
-  fi
-
-  printf 'BLOCKED: Command matched dangerous pattern "%s".\n%s\nThe user has prevented you from doing this.\n' \
-    "${pattern}" "${redirect}" >&2
-  exit 2
+  # Antigravity protocol: emit JSON on stdout
+  jq -n --arg r "${reason}" '{"decision": "deny", "reason": $r}'
+  exit 0
 }
 
 # ── Pattern checks ────────────────────────────────────────────────────────────
-# Each invocation (one shell command — see segmentation above) is checked in
-# isolation with bash's built-in [[ =~ ]] regex operator against a padded copy
-# (" ${cmd} "), so every token is whitespace-delimited on both sides. That
-# absorbs tabs/repeated spaces without spawning a subprocess per check — with
-# segmentation multiplying the check count by segment count, per-check grep
-# subprocesses would be visibly slow under Git Bash on Windows.
-# CGW wrapper scripts in scripts/git/ are trusted; their subprocesses
-# are not intercepted by this hook (PreToolUse only fires for direct Bash calls).
 
 _check_invocation() {
   local padded=" $1 "
 
-  # Reusable flag fragments (unquoted so [[ =~ ]] treats them as regex, not literals)
+  # Reusable flag fragments
   local _force='[[:space:]](-[A-Za-z]*f[A-Za-z]*|--force)[[:space:]]'
   local _cached='[[:space:]]--cached([[:space:]]|=)'
   local _dryrun='[[:space:]](-[A-Za-z]*n[A-Za-z]*|--dry-run)[[:space:]]'
@@ -122,9 +107,7 @@ _check_invocation() {
       'CGW pre-commit/pre-push hooks cannot be bypassed with --no-verify. Fix the underlying issue (run ./scripts/git/fix_lint.sh for lint errors, or inspect the hook output).'
   fi
 
-  # Force-push without lease — overwrites others' work and bypasses protection.
-  # --force-with-lease is explicitly allowed (it is what push_validated.sh uses):
-  # a '-' follows "--force" in that flag, so the trailing [[:space:]] never matches.
+  # Force-push without lease — overwrites others work and bypasses protection
   if [[ ${padded} =~ git[[:space:]]+push[[:space:]] ]] && [[ ${padded} =~ ${_force} ]]; then
     _block 'git push --force' \
       'Use ./scripts/git/push_validated.sh instead — it uses --force-with-lease and requires confirmation on protected branches. Note: --force-with-lease is allowed.'
@@ -136,8 +119,7 @@ _check_invocation() {
       'Confirm with the user before running git reset --hard. This irreversibly discards uncommitted work and index changes.'
   fi
 
-  # git clean -f — permanently deletes untracked files (covers -f, -fd, -df, -fdx, ...).
-  # A dry-run flag (-n / --dry-run) only previews the deletion, so it is exempt.
+  # git clean -f — permanently deletes untracked files
   if [[ ${padded} =~ git[[:space:]]+clean[[:space:]] ]] \
      && [[ ${padded} =~ ${_force} ]] \
      && ! [[ ${padded} =~ ${_dryrun} ]]; then
@@ -145,12 +127,7 @@ _check_invocation() {
       'Confirm with the user before running git clean. This permanently deletes untracked files from the working tree.'
   fi
 
-  # git rm with a force flag deletes files from the WORKING TREE. git itself refuses
-  # `git rm` on modified/added files ("use -f to force"); -f overrides that and can
-  # UNRECOVERABLY delete git-ignored / untracked-turned-added files (e.g. local-only
-  # artifacts staged by `git cherry-pick -n`). --cached is index-only (keeps the file
-  # on disk — the documented untrack workflow), so a --cached in the SAME invocation
-  # is always allowed.
+  # git rm -f — deletes files from the working tree
   if [[ ${padded} =~ git[[:space:]]+rm[[:space:]] ]] \
      && ! [[ ${padded} =~ ${_cached} ]] \
      && [[ ${padded} =~ ${_force} ]]; then
@@ -172,9 +149,6 @@ _check_invocation() {
   fi
 
   if [[ ${padded} =~ git[[:space:]]+restore[[:space:]] ]] && [[ ${padded} =~ ${_dot} ]]; then
-    # --staged alone only touches the index (reversible with `git reset`) — exempt.
-    # --staged combined with --worktree (or --worktree/default alone) discards
-    # working-tree changes and stays blocked.
     if ! { [[ ${padded} =~ ${_staged} ]] && ! [[ ${padded} =~ ${_worktree} ]]; }; then
       _block 'git restore .' \
         'Confirm with the user — git restore . irreversibly discards all working-tree changes.'
@@ -210,8 +184,6 @@ _check_invocation() {
   fi
 
   # .git directory destruction
-  # Catches: rm -rf .git  rm -r -f .git  rm -rf .git/  rm -rf /path/to/.git
-  # Allows:  rm -rf .gitignore  rm -rf .github  (character after .git is alphanumeric)
   if [[ ${padded} =~ [[:space:]]rm[[:space:]] ]] \
      && [[ ${padded} =~ [[:space:]]-[A-Za-z]*r[A-Za-z]*[[:space:]] ]] \
      && [[ ${padded} =~ ${_force} ]] \

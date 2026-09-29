@@ -60,9 +60,16 @@ cd your-project && ./scripts/git/configure.sh
 | *(none)* | Interactive: shows detected values, prompts to confirm or override |
 | `--non-interactive` | Accept all auto-detected defaults without prompting |
 | `--reconfigure` | Overwrite an existing `.cgw.conf` (re-run detection + confirmation); the previous file is saved to `.cgw.conf.bak` first |
-| `--skip-hooks` | Skip hook installation |
-| `--skip-skill` | Skip Claude Code skill installation |
-| `--global` | Install skill to `~/.claude/` (available in every project) instead of `.claude/` |
+| `--skip-hooks` | Skip git pre-commit/pre-push/pre-rebase hook installation |
+| `--skip-skill` | Skip all skill installations (both Claude Code and Antigravity) |
+| `--skip-claude` | Skip Claude Code skill, command, and guardrail |
+| `--skip-antigravity` | Skip Antigravity skill and guardrail |
+| `--skip-cc-guardrail` | Skip Claude Code PreToolUse guardrail |
+| `--skip-agy-skill` | Skip Antigravity skill installation |
+| `--skip-agy-guardrail` | Skip Antigravity PreToolUse guardrail |
+| `--claude` | Explicitly enable Claude Code integration |
+| `--antigravity` | Explicitly enable Antigravity Agents integration |
+| `--global` | Install skills globally (`~/.claude/` and `~/.gemini/config/`) instead of project-locally |
 
 **Re-running configure.sh:**
 
