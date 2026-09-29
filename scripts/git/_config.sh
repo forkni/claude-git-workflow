@@ -200,7 +200,7 @@ CGW_MERGE_MODE|direct|enum:direct/pr|fill|conf
 CGW_SIGN_COMMITS|0|bool|fill|conf
 CGW_SIGN_TAGS|0|bool|fill|conf
 CGW_ALLOW_REBASE_PUBLISHED|0|bool|fill|conf
-CGW_AUTO_REMOVE_INDEX_LOCK|1|int|fill|conf
+CGW_AUTO_REMOVE_INDEX_LOCK|1|bool|fill|conf
 CGW_INDEX_LOCK_MAX_AGE_SECONDS|30|int|fill|conf
 CGW_INDEX_LOCK_WAIT_SECONDS|10|int|fill|conf
 CGW_NON_INTERACTIVE|0|bool|fill|env
@@ -210,7 +210,8 @@ CGW_STAGED_ONLY|0|bool|fill|env'
 cgw_config_registry() { printf '%s\n' "${_CGW_REGISTRY}"; }
 
 # Apply every registry default (computed settings are handled further down),
-# then validate by kind: a bad int warns and resets to its default.
+# then validate by kind: a bad int, bool or enum value warns and resets to its
+# default.
 _cgw_apply_registry_defaults() {
   local name default kind empty
   while IFS='|' read -r name default kind empty _; do
@@ -220,9 +221,27 @@ _cgw_apply_registry_defaults() {
     else
       [[ -z "${!name:-}" ]] && printf -v "${name}" '%s' "${default}"
     fi
-    if [[ "${kind}" == "int" ]] && ! [[ "${!name}" =~ ^[0-9]+$ ]]; then
-      printf '[WARN] %s has non-numeric value "%s"; resetting to %s\n' \
-        "${name}" "${!name}" "${default}" >&2
+    local expected=""
+    case "${kind}" in
+      int)
+        if ! [[ "${!name}" =~ ^[0-9]+$ ]]; then
+          printf '[WARN] %s has non-numeric value "%s"; resetting to %s\n' \
+            "${name}" "${!name}" "${default}" >&2
+          printf -v "${name}" '%s' "${default}"
+          export "${name?}"
+        fi
+        ;;
+      bool)
+        # An explicitly empty kept bool is honoured (scripts only act on "1").
+        [[ -z "${!name}" || "${!name}" == 0 || "${!name}" == 1 ]] || expected="0 or 1"
+        ;;
+      enum:*)
+        [[ "/${kind#enum:}/" == *"/${!name}/"* ]] || expected="${kind#enum:}"
+        ;;
+    esac
+    if [[ -n "${expected}" ]]; then
+      printf '[WARN] %s has invalid value "%s" (expected %s); resetting to %s\n' \
+        "${name}" "${!name}" "${expected}" "${default}" >&2
       printf -v "${name}" '%s' "${default}"
       export "${name?}"
     fi

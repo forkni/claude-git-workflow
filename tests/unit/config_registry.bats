@@ -142,3 +142,37 @@ _registry() { _in_config cgw_config_registry; }
     sed -E 's/^([^:]+):\$\{(CGW_[A-Z0-9_]+):-(.*)\}$/\1\t\2\t\3/')
   [ -z "${bad}" ] || { printf '%s' "${bad}"; false; }
 }
+
+# _resolve <env assignments...> -- source _config.sh with the given env; print
+# stderr (warnings) then the requested values as NAME=value lines.
+_resolve() {
+  local -a names=() kv
+  for kv in "$@"; do names+=("${kv%%=*}"); done
+  (cd "${TEST_REPO_DIR}" && env -i PATH="${PATH}" HOME="${HOME}" "$@" bash -c "
+    SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh' 2>&1
+    for n in ${names[*]}; do printf '%s=%s\n' \"\${n}\" \"\${!n}\"; done")
+}
+
+@test "an invalid bool warns and resets to its default" {
+  run _resolve CGW_SIGN_COMMITS=true CGW_AUTO_REMOVE_INDEX_LOCK=2 CGW_SKIP_LINT=yes
+  [[ "${output}" == *'[WARN] CGW_SIGN_COMMITS has invalid value "true" (expected 0 or 1); resetting to 0'* ]]
+  [[ "${output}" == *'[WARN] CGW_AUTO_REMOVE_INDEX_LOCK has invalid value "2" (expected 0 or 1); resetting to 1'* ]]
+  [[ "${output}" == *"CGW_SIGN_COMMITS=0"* ]]
+  [[ "${output}" == *"CGW_AUTO_REMOVE_INDEX_LOCK=1"* ]]
+  [[ "${output}" == *"CGW_SKIP_LINT=0"* ]]
+}
+
+@test "an invalid enum warns and resets to its default" {
+  run _resolve CGW_MERGE_MODE=squash
+  [[ "${output}" == *'[WARN] CGW_MERGE_MODE has invalid value "squash" (expected direct/pr); resetting to direct'* ]]
+  [[ "${output}" == *"CGW_MERGE_MODE=direct"* ]]
+}
+
+@test "valid bool/enum values and an explicitly empty kept bool pass silently" {
+  run _resolve CGW_SIGN_COMMITS=1 CGW_MERGE_MODE=pr CGW_SKIP_LINT=
+  [[ "${output}" != *"[WARN]"* ]]
+  [[ "${output}" == *"CGW_SIGN_COMMITS=1"* ]]
+  [[ "${output}" == *"CGW_MERGE_MODE=pr"* ]]
+  [[ "${output}" == *$'CGW_SKIP_LINT=\n'* || "${output}" == *"CGW_SKIP_LINT=" ]]
+}

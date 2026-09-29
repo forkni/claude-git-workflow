@@ -12,6 +12,8 @@ Priority 3: Built-in defaults                ← works without any config
 
 This means CI environments can always override any setting by exporting a `CGW_*` variable, without modifying the project config file.
 
+Typed settings are validated after resolution: an integer that is not a non-negative number, a `0`/`1` switch set to anything else (e.g. `true`), or an unknown choice for a setting like `CGW_MERGE_MODE` prints a `[WARN]` and falls back to the built-in default. An explicitly empty switch (`CGW_SKIP_LINT=""`) is accepted and treated as off.
+
 ---
 
 ## Auto-Configuration
