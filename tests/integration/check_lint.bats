@@ -651,3 +651,25 @@ VENV_EOF
   "
   [ -f "${TEST_REPO_DIR}/venv_fmt_called" ]
 }
+
+@test "--modified-only runs the format check when only a formatter is configured" {
+  # Format-only configs used to exit early ("No code lint tool configured")
+  # without checking anything; full mode and commit_enhanced.sh already ran
+  # the formatter with no linter configured.
+  _install_mock_ruff_format_fails
+  echo "x = 1" > "${TEST_REPO_DIR}/mod.py"
+  git -C "${TEST_REPO_DIR}" add mod.py
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: add mod.py"
+  echo "x = 2" > "${TEST_REPO_DIR}/mod.py"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=ruff
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --modified-only
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"non-blocking"* ]]
+  grep -q "mock ruff format" "${MOCK_BIN_DIR}/ruff.log"
+}

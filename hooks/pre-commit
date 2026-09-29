@@ -80,6 +80,22 @@ if (( ${#LINT_FILES[@]} > 0 )) && [[ -n "${CGW_LINT_CMD:-}" ]]; then
   fi
 fi
 
+# Optional: format check for the same staged files using CGW_FORMAT_CMD
+# (non-blocking). Runs whether or not a linter is configured -- a format-only
+# config is checked too, as it is by commit_enhanced.sh and check_lint.sh.
+if (( ${#LINT_FILES[@]} > 0 )) && [[ -n "${CGW_FORMAT_CMD:-}" ]]; then
+  echo ""
+  echo "Checking format (non-blocking)..."
+  logfile=/dev/null
+  if cgw_run_format_check "${LINT_FILES[@]}" >/dev/null 2>&1; then
+    echo "  [PASS] Format check passed"
+  else
+    echo "  [WARN] Format issues found in staged files"
+    echo "  Run './scripts/git/fix_lint.sh --modified-only' to auto-format"
+    echo "  (Commit proceeds — fix formatting before pushing)"
+  fi
+fi
+
 # Optional: typecheck using CGW_TYPECHECK_CMD (non-blocking)
 if [[ -n "${STAGED_FILES}" ]] && [[ -n "${CGW_TYPECHECK_CMD:-}" ]] && [[ "${CGW_SKIP_TYPECHECK:-0}" != "1" ]]; then
   echo ""

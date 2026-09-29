@@ -59,7 +59,7 @@ The shared module responsible for running lint, format, and markdownlint tool bi
 
 Backs the `[3.5]` congruence guard in `commit_enhanced.sh`, which runs once after both the lint/format and markdown auto-fix blocks and closes the "validated the working tree, committed a different blob" bug class. `CGW_ALLOW_STAGED_DIVERGENCE=1` opts a genuine `--staged-only` commit out of the guard's fail-closed default; see **whole-file staging intent** below for when the guard re-stages instead of failing.
 
-**Callers**: `commit_enhanced.sh` (lint check, format check, markdownlint, auto-fix loop, partial-stage snapshot, `[3.5]` congruence guard), `check_lint.sh`, `fix_lint.sh`, `hooks/pre-commit` (non-blocking advisory check).
+**Callers**: `commit_enhanced.sh` (lint check, format check, markdownlint, auto-fix loop, partial-stage snapshot, `[3.5]` congruence guard), `check_lint.sh`, `fix_lint.sh` (including their `--modified-only` modes, which pass the modified-file list), `hooks/pre-commit` (non-blocking advisory lint and format checks on staged files).
 
 ---
 

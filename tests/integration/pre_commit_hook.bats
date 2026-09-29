@@ -80,8 +80,8 @@ EOF
   [ "${status}" -eq 0 ]
 }
 
-@test "pre-commit hook: CGW_LINT_CMD empty skips lint silently" {
-  echo 'CGW_LINT_CMD=""' > "${TEST_REPO_DIR}/.cgw.conf"
+@test "pre-commit hook: no code checker configured skips the check silently" {
+  printf 'CGW_LINT_CMD=""\nCGW_FORMAT_CMD=""\n' > "${TEST_REPO_DIR}/.cgw.conf"
   echo "print('hello')" > "${TEST_REPO_DIR}/foo.py"
   git -C "${TEST_REPO_DIR}" add foo.py
   run git -C "${TEST_REPO_DIR}" commit -m "feat: add foo.py"
@@ -119,4 +119,18 @@ EOF
   [[ "${output}" != *"Checking lint"* ]]
   [[ "${output}" != *"[WARN]"* ]]
   rm -f "${fake_lint}"
+}
+
+@test "pre-commit hook: a format-only config runs the (advisory) format check" {
+  local fake_fmt
+  fake_fmt="$(mktemp)"
+  printf '#!/usr/bin/env bash\necho "1 file would be reformatted"\nexit 1\n' > "${fake_fmt}"
+  chmod +x "${fake_fmt}"
+  printf 'CGW_LINT_CMD=""\nCGW_FORMAT_CMD="%s"\n' "${fake_fmt}" > "${TEST_REPO_DIR}/.cgw.conf"
+  echo "print('hello')" > "${TEST_REPO_DIR}/foo.py"
+  git -C "${TEST_REPO_DIR}" add foo.py
+  run git -C "${TEST_REPO_DIR}" commit -m "feat: add foo.py"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"[WARN] Format issues found in staged files"* ]]
+  rm -f "${fake_fmt}"
 }

@@ -130,8 +130,8 @@ main() {
   # list (the way lint/format are scoped below) would misreport errors that
   # originate outside the modified set. Use the full mode for typecheck.
   if [[ "${modified_only}" -eq 1 ]]; then
-    if [[ -z "${CGW_LINT_CMD}" ]]; then
-      echo "[OK] No code lint tool configured for --modified-only (CGW_LINT_CMD not set)"
+    if [[ -z "${CGW_LINT_CMD}" ]] && [[ -z "${CGW_FORMAT_CMD}" ]]; then
+      echo "[OK] No code lint or format tool configured for --modified-only (CGW_LINT_CMD and CGW_FORMAT_CMD not set)"
       exit 0
     fi
     local modified_files

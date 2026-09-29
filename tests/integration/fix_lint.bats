@@ -275,3 +275,26 @@ VENV_EOF
   "
   [ -f "${TEST_REPO_DIR}/venv_fmt_called" ]
 }
+
+@test "--modified-only runs only the formatter when no linter is configured" {
+  # Regression: the --modified-only branch invoked CGW_LINT_CMD unconditionally,
+  # so a format-only config ran an empty command ("command not found") and
+  # exited 1 even though the formatter itself succeeded.
+  install_mock_lint
+  echo "x = 1" > "${TEST_REPO_DIR}/mod.py"
+  git -C "${TEST_REPO_DIR}" add mod.py
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: add mod.py"
+  echo "x = 2" > "${TEST_REPO_DIR}/mod.py"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=ruff
+    export CGW_MARKDOWNLINT_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/fix_lint.sh' --modified-only
+  "
+  [ "${status}" -eq 0 ]
+  grep -q "mock ruff format" "${MOCK_BIN_DIR}/ruff.log"
+  ! grep -q "mock ruff check" "${MOCK_BIN_DIR}/ruff.log"
+}
