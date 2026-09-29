@@ -1562,3 +1562,25 @@ _run_commit_pty() {
   [[ "${output}" == *"Proceeding with markdown lint warnings"* ]]
   [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
 }
+
+# ── Staging-mode decision (pure function, truth table) ──────────────────────
+
+@test "_effective_staged_only truth table" {
+  local fn
+  fn="$(extract_shell_function "${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh" _effective_staged_only)"
+  # staged_only all_flag has_staged has_unstaged -> expected
+  local row expected got
+  while read -r row expected; do
+    got="$(bash -c "${fn}"$'\n'"_effective_staged_only ${row//_/ }")"
+    [ "${got}" = "${expected}" ] || { echo "(${row}) -> ${got}, expected ${expected}"; false; }
+  done <<'TABLE'
+1_0_0_0 1
+1_1_1_1 1
+0_1_1_1 0
+0_1_0_0 0
+0_0_1_1 auto
+0_0_1_0 0
+0_0_0_1 0
+0_0_0_0 0
+TABLE
+}

@@ -79,7 +79,7 @@ The exact staged paths a `commit_enhanced.sh` run's code-quality gate actually v
 
 **Implementation seam**: `cgw_validated_path_set [md_skipped]` in `scripts/git/_common.sh`. `md_skipped` defaults to `0` ("markdown ran") when omitted — the conservative direction, since over-reporting divergence fails a commit closed while under-reporting would commit unvalidated content silently.
 
-**Callers**: the `[3.5]` congruence guard in `commit_enhanced.sh`, run once after both the lint/format and markdown auto-fix blocks so one check covers both paths. `commit_enhanced.sh` passes its `skip_md_lint` local explicitly at both call sites (detection and re-verify) rather than writing it back into `CGW_SKIP_MD_LINT` — the local is invisible to this script-level function otherwise, and a writeback risks leaking into `git commit`'s subprocess/hooks if the caller's environment already exported the var.
+**Callers**: the `[3.5]` congruence guard in `commit_enhanced.sh`, run once after both the lint/format and markdown auto-fix blocks so one check covers both paths. `commit_enhanced.sh` passes its `skip_md_lint` local explicitly into `_congruence_guard <md_skipped> <whole_file_intent>`, which uses that one argument for both detection and re-verify, rather than writing it back into `CGW_SKIP_MD_LINT` — the local is invisible to this script-level function otherwise, and a writeback risks leaking into `git commit`'s subprocess/hooks if the caller's environment already exported the var.
 
 ---
 
@@ -87,7 +87,7 @@ The exact staged paths a `commit_enhanced.sh` run's code-quality gate actually v
 
 The assumption that a path is meant to be staged in full, not by hunk — true of `--only <pathspec>` (explicit whole-path `git add`) and bulk/`--all` mode (`git add -u`), false of a genuine `--staged-only` commit where the user (or a concurrent process) ran `git add --patch` on purpose. The `[3.5]` congruence guard uses this to decide its response to a diverging validated file: whole-file-intent modes get an automatic re-stage and re-verify (`effective_staged_only == 0 || only_paths non-empty`); staged-only mode without `--only` fails closed instead, since re-staging there would defeat a deliberate **partial stage**.
 
-**Implementation seam**: the `effective_staged_only` / `only_paths` predicate at the `[3.5]` guard in `commit_enhanced.sh`.
+**Implementation seam**: `whole_file_intent`, computed in `commit_enhanced.sh`'s `main()` from `effective_staged_only` (itself from the pure `_effective_staged_only` decider) and `only_paths`, and passed to `_congruence_guard`.
 
 **Callers**: `commit_enhanced.sh`'s `[3.5]` congruence guard only — `_restage_after_fix` does not need this distinction because it already skips partial stages unconditionally via its own snapshot.
 
