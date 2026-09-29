@@ -636,13 +636,16 @@ _install_cc_guardrail() {
   # Remove any corrupted/stale guardrail entries before re-registering
   local clean_settings
   clean_settings="$(mktemp)"
-  jq '
+  if jq '
     .hooks.PreToolUse |= if . then
       map(select(
         .hooks | map(.command | contains("cc-block-dangerous-git")) | any | not
       ))
-    else . end' \
-    "${settings_json}" >"${clean_settings}" && mv "${clean_settings}" "${settings_json}" || rm -f "${clean_settings}"
+    else . end' "${settings_json}" >"${clean_settings}"; then
+    mv "${clean_settings}" "${settings_json}"
+  else
+    rm -f "${clean_settings}"
+  fi
 
   # Merge: append a new PreToolUse Bash-matcher entry without overwriting existing hooks
   # Split hook_cmd at the first "/" and reconstruct inside jq, so neither
@@ -707,25 +710,27 @@ _install_cc_guardrail() {
 
 _install_agy_skill() {
   local install_mode="${1:-local}" # "local" or "global"
-  local skill_src
-  local skill_dst
+  local skill_src cmd_src
+  local skill_dst cmd_dst
 
   # Determine destination based on install mode
   if [[ "${install_mode}" == "global" ]]; then
     skill_dst="${HOME}/.gemini/config/skills/auto-git-workflow"
+    cmd_dst="${HOME}/.gemini/config/skills/auto-git-workflow-cmd"
   else
     skill_dst="${PROJECT_ROOT}/.agents/skills/auto-git-workflow"
+    cmd_dst="${PROJECT_ROOT}/.agents/skills/auto-git-workflow-cmd"
   fi
 
   # Try staging area first (present during install.cmd), then CGW source repo
   if skill_src="$(cd "${SCRIPT_DIR}" && cd "../../skill" 2>/dev/null && pwd)"; then
-    :
-  elif [[ -f "${skill_dst}/SKILL.md" ]]; then
-    echo "  [OK] Antigravity skill already installed (${install_mode})"
+    cmd_src="$(cd "${SCRIPT_DIR}" && cd "../../command" 2>/dev/null && pwd)/auto-git-workflow-cmd.md"
+  elif [[ -f "${skill_dst}/SKILL.md" && -f "${cmd_dst}/SKILL.md" ]]; then
+    echo "  [OK] Antigravity skill + command already installed (${install_mode})"
     return 0
   else
     echo "  [!] Skill template not found." >&2
-    echo "      Fix: copy skill/ from the CGW source repo into your" >&2
+    echo "      Fix: copy skill/ and command/ from the CGW source repo into your" >&2
     echo "      project root, then re-run: ./scripts/git/configure.sh" >&2
     return 1
   fi
@@ -735,14 +740,25 @@ _install_agy_skill() {
 
   cp "${skill_src}/SKILL.md" "${skill_dst}/SKILL.md" 2>/dev/null || true
   cp "${skill_src}/references/"*.md "${skill_dst}/references/" 2>/dev/null || true
-  echo "  [OK] Antigravity skill installed (${install_mode})"
+
+  if [[ -f "${cmd_src}" ]]; then
+    mkdir -p "${cmd_dst}"
+    # Antigravity slash commands are skills in .agents/skills/<name>/SKILL.md.
+    # Adapt links and paths so they work in Antigravity's layout.
+    sed -e 's|\.\./skills/auto-git-workflow/|../auto-git-workflow/|g' \
+        -e 's|\.claude/skills/auto-git-workflow/|auto-git-workflow/|g' \
+        "${cmd_src}" > "${cmd_dst}/SKILL.md" 2>/dev/null || true
+    echo "  [OK] Antigravity skill + slash command installed (${install_mode})"
+  else
+    echo "  [OK] Antigravity skill installed (${install_mode})"
+  fi
 }
 
 _install_agy_guardrail_nojq() {
   local hooks_json="${1}"
   local hook_cmd="${2}"
 
-  if [[ -f "${hooks_json}" ]] && grep -qF "cgw-git-guardrail" "${hooks_json}" 2>/dev/null; then
+  if [[ -f "${hooks_json}" ]] && grep -qF "cgw-git-guardrail" "${hooks_json}" 2>/dev/null && ! grep -qF "bash -c" "${hooks_json}" 2>/dev/null; then
     echo "  [OK] Antigravity PreToolUse guardrail already registered in ${hooks_json}"
     return 0
   fi
@@ -796,30 +812,53 @@ PYEOF
 _install_agy_guardrail() {
   local install_mode="${1:-local}" # "local" or "global"
 
-  local guardrail_src
+  local guardrail_src guardrail_cmd_src
   guardrail_src="$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)/agy-block-dangerous-git.sh" 2>/dev/null || true
+  guardrail_cmd_src="$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)/agy-block-dangerous-git.cmd" 2>/dev/null || true
 
   if [[ ! -f "${guardrail_src:-}" ]]; then
-    if [[ -f "$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)/cc-block-dangerous-git.sh" ]]; then
-      guardrail_src="$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)/cc-block-dangerous-git.sh"
-    elif [[ -f "${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.sh" ]]; then
+    if [[ -f "${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.sh" ]]; then
       guardrail_src="${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.sh"
+    elif [[ -f "$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)/cc-block-dangerous-git.sh" ]]; then
+      guardrail_src="$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)/cc-block-dangerous-git.sh"
     else
       echo "  [!] hooks/agy-block-dangerous-git.sh not found." >&2
       echo "      Re-copy hooks/ from the CGW source directory, then re-run: ./scripts/git/configure.sh" >&2
       return 1
     fi
   fi
+  if [[ ! -f "${guardrail_cmd_src:-}" && -f "${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.cmd" ]]; then
+    guardrail_cmd_src="${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.cmd"
+  fi
 
-  local hook_dst hooks_json hook_cmd
+  local is_windows=0
+  case "$(uname -s 2>/dev/null)" in
+    MINGW* | MSYS* | CYGWIN*) is_windows=1 ;;
+  esac
+
+  local hook_dst hook_cmd_dst hooks_json hook_cmd
   if [[ "${install_mode}" == "global" ]]; then
     hook_dst="${HOME}/.gemini/config/hooks/agy-block-dangerous-git.sh"
+    hook_cmd_dst="${HOME}/.gemini/config/hooks/agy-block-dangerous-git.cmd"
     hooks_json="${HOME}/.gemini/config/hooks.json"
-    hook_cmd="bash ~/.gemini/config/hooks/agy-block-dangerous-git.sh"
+    if [[ "${is_windows}" -eq 1 ]]; then
+      local win_cmd_path
+      win_cmd_path="$(cygpath -m "${hook_cmd_dst}" 2>/dev/null || echo "${hook_cmd_dst}")"
+      hook_cmd="${win_cmd_path}"
+    else
+      hook_cmd="bash ~/.gemini/config/hooks/agy-block-dangerous-git.sh"
+    fi
   else
     hook_dst="${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.sh"
+    hook_cmd_dst="${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.cmd"
     hooks_json="${PROJECT_ROOT}/.agents/hooks.json"
-    hook_cmd="bash -c \"if [ -f .agents/hooks/agy-block-dangerous-git.sh ]; then exec bash .agents/hooks/agy-block-dangerous-git.sh; elif [ -f hooks/agy-block-dangerous-git.sh ]; then exec bash hooks/agy-block-dangerous-git.sh; else exec bash '${hook_dst}'; fi\""
+    if [[ "${is_windows}" -eq 1 ]]; then
+      local win_cmd_path
+      win_cmd_path="$(cygpath -m "${hook_cmd_dst}" 2>/dev/null || echo "${hook_cmd_dst}")"
+      hook_cmd="${win_cmd_path}"
+    else
+      hook_cmd="bash ${hook_dst}"
+    fi
   fi
 
   mkdir -p "$(dirname "${hook_dst}")"
@@ -828,6 +867,10 @@ _install_agy_guardrail() {
     cp "${guardrail_src}" "${hook_dst}"
   fi
   chmod +x "${hook_dst}"
+
+  if [[ -f "${guardrail_cmd_src:-}" && "${guardrail_cmd_src}" != "${hook_cmd_dst}" ]]; then
+    cp "${guardrail_cmd_src}" "${hook_cmd_dst}"
+  fi
 
   if ! command -v jq &>/dev/null; then
     _install_agy_guardrail_nojq "${hooks_json}" "${hook_cmd}"
@@ -838,10 +881,14 @@ _install_agy_guardrail() {
     echo '{}' >"${hooks_json}"
   fi
 
+  # Idempotency: skip if a valid guardrail command is already registered.
+  # A legacy broken entry containing "bash -c" or "if [" must be replaced.
   if jq -e '
-      .["cgw-git-guardrail"].PreToolUse[]?.hooks[]?.command
-        | select(contains("agy-block-dangerous-git") or contains("cc-block-dangerous-git"))
-      ' "${hooks_json}" >/dev/null 2>&1; then
+      [.["cgw-git-guardrail"].PreToolUse[]?.hooks[]?.command
+        | select(contains("agy-block-dangerous-git"))
+        | select(contains("bash -c") or contains("if [") | not)
+      ] | length > 0' \
+    "${hooks_json}" >/dev/null 2>&1; then
     echo "  [OK] Antigravity PreToolUse guardrail already registered in ${hooks_json}"
     return 0
   fi
@@ -876,10 +923,18 @@ _install_agy_guardrail() {
   fi
   echo "  [OK] Antigravity PreToolUse guardrail registered in ${hooks_json}"
 
-  # Smoke test
+  # Smoke test: read registered command from hooks.json and test with dummy input
+  local registered_cmd
+  registered_cmd="$(jq -r '."cgw-git-guardrail".PreToolUse[0].hooks[0].command // empty' "${hooks_json}" 2>/dev/null || true)"
   local test_input='{"toolCall":{"name":"run_command","args":{"CommandLine":"git commit -m \"smoke-test\""}}}'
   local smoke_output=""
-  smoke_output="$(echo "${test_input}" | bash "${hook_dst}" 2>/dev/null || true)"
+
+  if [[ "${is_windows}" -eq 1 ]]; then
+    smoke_output="$(echo "${test_input}" | cmd.exe //c "${registered_cmd}" 2>/dev/null || true)"
+  else
+    smoke_output="$(echo "${test_input}" | bash -c "${registered_cmd}" 2>/dev/null || true)"
+  fi
+
   if [[ "${smoke_output}" =~ \"decision\"[[:space:]]*:[[:space:]]*\"deny\" ]]; then
     echo "  [OK] Smoke test passed: registered Antigravity guardrail blocks raw git commit"
   else
@@ -1395,6 +1450,7 @@ main() {
       install_agy_guardrail="yes"
     fi
     local agy_guardrail_dest_hint=".agents/hooks.json"
+    # shellcheck disable=SC2088
     [[ ${global_skill} -eq 1 ]] && agy_guardrail_dest_hint="~/.gemini/config/hooks.json"
     if cgw_confirm "Install Antigravity PreToolUse guardrail to ${agy_guardrail_dest_hint}?" --default "${install_agy_guardrail}" --non-interactive accept; then
       install_agy_guardrail="yes"

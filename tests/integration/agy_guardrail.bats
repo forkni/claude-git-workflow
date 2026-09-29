@@ -209,3 +209,51 @@ _run_configure() {
   [ ! -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow/SKILL.md" ]
   [ ! -f "${TEST_REPO_DIR}/.agents/hooks.json" ]
 }
+
+@test "configure.sh replaces legacy broken bash -c entry in hooks.json" {
+  _require_jq
+  mkdir -p "${TEST_REPO_DIR}/.agents"
+  cat <<'EOF' >"${TEST_REPO_DIR}/.agents/hooks.json"
+{
+  "cgw-git-guardrail": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c \"if [ -f .agents/hooks/agy-block-dangerous-git.sh ]; then ...; fi\""
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+  run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  local registered_cmd
+  registered_cmd="$(jq -r '."cgw-git-guardrail".PreToolUse[0].hooks[0].command' "${TEST_REPO_DIR}/.agents/hooks.json")"
+  [[ "${registered_cmd}" != *"bash -c"* ]]
+  [[ "${registered_cmd}" =~ agy-block-dangerous-git ]]
+}
+
+@test "registered Antigravity hook command executes without syntax errors via cmd.exe on Windows" {
+  _require_jq
+  case "$(uname -s 2>/dev/null)" in
+    MINGW* | MSYS* | CYGWIN*) ;;
+    *) skip "Windows cmd.exe test only" ;;
+  esac
+  mkdir -p "${TEST_REPO_DIR}/.agents"
+  run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  local registered_cmd
+  registered_cmd="$(jq -r '."cgw-git-guardrail".PreToolUse[0].hooks[0].command' "${TEST_REPO_DIR}/.agents/hooks.json")"
+  [ -n "${registered_cmd}" ]
+  local payload='{"toolCall":{"name":"run_command","args":{"CommandLine":"git commit -m \"test\""}}}'
+  run bash -c "echo '${payload}' | cmd.exe //c \"${registered_cmd}\""
+  [ "${status}" -eq 0 ]
+  [[ "${output}" =~ \"decision\"[[:space:]]*:[[:space:]]*\"deny\" ]]
+  [[ "${output}" != *"syntax error"* ]]
+}
+

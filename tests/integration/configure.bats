@@ -304,6 +304,7 @@ EOF
   mkdir -p "${TEST_REPO_DIR}/.agents"
   _run_configure "--non-interactive"
   [ -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow/SKILL.md" ]
+  [ -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow-cmd/SKILL.md" ]
   [ -f "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.sh" ]
   [ -f "${TEST_REPO_DIR}/.agents/hooks.json" ]
 }
@@ -311,6 +312,7 @@ EOF
 @test "configure.sh --antigravity provisions .agents even if absent" {
   _run_configure "--non-interactive --antigravity"
   [ -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow/SKILL.md" ]
+  [ -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow-cmd/SKILL.md" ]
   [ -f "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.sh" ]
   [ -f "${TEST_REPO_DIR}/.agents/hooks.json" ]
 }
@@ -319,5 +321,6 @@ EOF
   mkdir -p "${TEST_REPO_DIR}/.agents"
   _run_configure "--non-interactive --skip-antigravity"
   [ ! -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow/SKILL.md" ]
+  [ ! -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow-cmd/SKILL.md" ]
   [ ! -f "${TEST_REPO_DIR}/.agents/hooks.json" ]
 }

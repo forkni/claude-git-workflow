@@ -149,6 +149,7 @@ if not exist "!CGW_DIR!\hooks\pre-push"                        set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\pre-rebase"                      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\cc-block-dangerous-git.sh"       set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\agy-block-dangerous-git.sh"      set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\hooks\agy-block-dangerous-git.cmd"     set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\skill\SKILL.md"                        set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\command\auto-git-workflow-cmd.md"      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\templates\markdownlint.json"           set "SOURCE_OK=0"
@@ -159,8 +160,9 @@ goto :pi04_done
 echo   [FAIL] PI-04  CGW source missing required files
 echo          Expected: scripts\git\configure.sh, hooks\pre-commit, hooks\pre-push,
 echo                    hooks\pre-rebase, hooks\cc-block-dangerous-git.sh,
-echo                    hooks\agy-block-dangerous-git.sh, skill\SKILL.md,
-echo                    command\auto-git-workflow-cmd.md, templates\markdownlint.json
+echo                    hooks\agy-block-dangerous-git.sh, hooks\agy-block-dangerous-git.cmd,
+echo                    skill\SKILL.md, command\auto-git-workflow-cmd.md,
+echo                    templates\markdownlint.json
 set "CHECKS_PASSED=0"
 :pi04_done
 
@@ -318,7 +320,7 @@ echo   [OK] Copied hooks\ templates (pre-commit, pre-push, pre-rebase, cc-block-
 goto :cp_hooks_done
 :cp_hooks_fail
 echo   [ERR] Failed to copy hook templates from hooks\
-echo          Verify that hooks\pre-commit, hooks\pre-push, hooks\pre-rebase, cc-block-dangerous-git.sh, and agy-block-dangerous-git.sh exist in the CGW source directory.
+echo          Verify that hooks\pre-commit, hooks\pre-push, hooks\pre-rebase, cc-block-dangerous-git.sh, agy-block-dangerous-git.sh, and agy-block-dangerous-git.cmd exist in the CGW source directory.
 goto :abort
 :cp_hooks_done
 

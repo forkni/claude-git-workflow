@@ -1,4 +1,5 @@
 ---
+name: auto-git-workflow-cmd
 description: State-aware interactive git menu — scans the repo (uncommitted work, ahead/behind, in-progress merge/rebase, stashes) and suggests the likely next step, with categories for commit, push, sync, merge, PR, undo, release, plus a one-click full commit → push → merge → push promotion — the sole entry point for CGW git actions; every push this command performs is followed through to a green CI verdict (or fixed until it is) before being reported done
 ---
 

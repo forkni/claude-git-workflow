@@ -7,6 +7,9 @@ CLAUDE.md
 SESSION_LOG.md
 .claude/commands/
 .claude/skills/
+.agents/skills/
+.agents/hooks/
+.agents/hooks.json
 docs/progit.txt
 docs/progit.pdf
 docs/SHELL_STYLE_GUIDE.md

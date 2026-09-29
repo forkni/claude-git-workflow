@@ -129,6 +129,7 @@ if not exist "!CGW_DIR!\hooks\pre-push"                        set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\pre-rebase"                      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\cc-block-dangerous-git.sh"       set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\agy-block-dangerous-git.sh"      set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\hooks\agy-block-dangerous-git.cmd"     set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\skill\SKILL.md"                        set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\command\auto-git-workflow-cmd.md"      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\templates\markdownlint.json"           set "SOURCE_OK=0"
@@ -139,8 +140,9 @@ goto :bf03_done
 echo   [FAIL] BF-03  CGW source missing required files
 echo          Expected: scripts\git\configure.sh, hooks\pre-commit, hooks\pre-push,
 echo                    hooks\pre-rebase, hooks\cc-block-dangerous-git.sh,
-echo                    hooks\agy-block-dangerous-git.sh, skill\SKILL.md,
-echo                    command\auto-git-workflow-cmd.md, templates\markdownlint.json
+echo                    hooks\agy-block-dangerous-git.sh, hooks\agy-block-dangerous-git.cmd,
+echo                    skill\SKILL.md, command\auto-git-workflow-cmd.md,
+echo                    templates\markdownlint.json
 set "CHECKS_PASSED=0"
 :bf03_done
 
