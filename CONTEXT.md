@@ -95,7 +95,7 @@ The assumption that a path is meant to be staged in full, not by hunk — true o
 
 ## commit-message format
 
-The conventional-commit grammar enforced on every `commit_enhanced.sh` invocation and every commit in the pre-push hook range, except commits on a [[freeform-message branch]] — and even there, never on the source, target, or a protected branch. Format: `<type>: <description>` where `<type>` is drawn from the built-in set (`feat|fix|docs|chore|test|refactor|style|perf`) plus any `CGW_EXTRA_PREFIXES` configured in `.cgw.conf`.
+The conventional-commit grammar enforced on every `commit_enhanced.sh` invocation and every commit in the pre-push hook range, with two exemptions: commits on a [[freeform-message branch]] (and even there, never on the source, target, or a protected branch), and merge-conclusion commits — with `MERGE_HEAD` set, `commit_enhanced.sh` uses git's prepared merge message (or an explicit override) verbatim, since a merge subject describes *what was merged* and has no change type; `hooks/pre-push` exempts merge commits by parent count for the same reason. Format: `<type>: <description>` where `<type>` is drawn from the built-in set (`feat|fix|docs|chore|test|refactor|style|perf`) plus any `CGW_EXTRA_PREFIXES` configured in `.cgw.conf`.
 
 **Implementation seam**: `cgw_validate_commit_message <msg>` in `scripts/git/_common.sh`. Pure predicate — returns 0 on match, 1 otherwise. No output: each caller owns its own user-facing message and merge-commit skipping logic. Skipped on [[freeform-message branch|#freeform-message-branch]]es — see below.
 

@@ -31,6 +31,34 @@ _run_commit() {
   "
 }
 
+# Helper: leave TEST_REPO_DIR mid-merge with a genuine UU conflict on
+# conflict.txt (development merging main), mirroring the pattern in
+# merge_validation.bats. MERGE_HEAD is present and conflict.txt still has
+# markers when this returns -- the caller resolves and `git add`s it.
+_setup_uu_conflict() {
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+  printf 'line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add conflict.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff -m "chore: sync conflict.txt"
+  printf 'dev-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev edits line1"
+
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+  printf 'main-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "fix: main edits line1"
+
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  # No -m here: leave git to prepare its own default MERGE_MSG (with the
+  # "# Conflicts:" comment block) so the no-message tests exercise the real
+  # git-provided message, not a custom one.
+  git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff || true
+}
+
 # ── No staged changes ─────────────────────────────────────────────────────────
 
 @test "no staged changes exits 0 with no-changes message" {
@@ -1339,4 +1367,88 @@ _run_commit() {
   [[ "${output}" == *"[skip-lint] Lint gate BYPASSED for this commit"* ]]
   [[ "${output}" == *"[skip-lint] Lint gate was bypassed for this commit"* ]]
   [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+}
+
+# ── Merge conclusion (git's prepared MERGE_MSG) ──────────────────────────────
+# When MERGE_HEAD is present, the message argument is optional: with none,
+# commit_enhanced.sh uses git's prepared MERGE_MSG (comments stripped) instead
+# of demanding a conventional-format message. See merge_with_validation.sh's
+# continue_hint and skill/SKILL.md Rule 1.
+
+@test "merge conclusion with no message uses git's prepared MERGE_MSG" {
+  _setup_uu_conflict
+  printf 'resolved-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+
+  run _run_commit ""
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+
+  # HEAD is a real 2-parent merge commit.
+  local parents
+  parents="$(git -C "${TEST_REPO_DIR}" rev-list --parents -n1 HEAD)"
+  [ "$(echo "${parents}" | wc -w)" -eq 3 ]
+
+  # MERGE_HEAD is cleared.
+  run git -C "${TEST_REPO_DIR}" rev-parse -q --verify MERGE_HEAD
+  [ "${status}" -ne 0 ]
+
+  # Subject came from git's prepared message, no leftover comment lines.
+  local subject body
+  subject="$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)"
+  body="$(git -C "${TEST_REPO_DIR}" log -1 --format=%B)"
+  [[ "${subject}" == Merge* ]]
+  [[ "${body}" != *"# Conflicts"* ]]
+}
+
+@test "merge conclusion accepts an explicit non-conventional message" {
+  _setup_uu_conflict
+  printf 'resolved-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+
+  run _run_commit "\"Merge main into development\""
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+
+  local parents
+  parents="$(git -C "${TEST_REPO_DIR}" rev-list --parents -n1 HEAD)"
+  [ "$(echo "${parents}" | wc -w)" -eq 3 ]
+  [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" = "Merge main into development" ]
+}
+
+@test "merge conclusion accepts an explicit conventional message" {
+  _setup_uu_conflict
+  printf 'resolved-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+
+  run _run_commit "\"chore: merge main into development\""
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" = "chore: merge main into development" ]
+}
+
+@test "merge conclusion with resolved tree identical to HEAD still commits (allow-empty + MERGE_MSG)" {
+  _setup_uu_conflict
+  # Resolve toward development's own side -- staged tree ends up byte-identical
+  # to development's pre-merge HEAD.
+  printf 'dev-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+
+  run _run_commit ""
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+
+  local parents
+  parents="$(git -C "${TEST_REPO_DIR}" rev-list --parents -n1 HEAD)"
+  [ "$(echo "${parents}" | wc -w)" -eq 3 ]
+  run git -C "${TEST_REPO_DIR}" rev-parse -q --verify MERGE_HEAD
+  [ "${status}" -ne 0 ]
+}
+
+@test "non-merge commit with no message is still rejected (regression)" {
+  echo "content" > "${TEST_REPO_DIR}/no_message_regress.txt"
+  git -C "${TEST_REPO_DIR}" add no_message_regress.txt
+  run _run_commit ""
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Commit message required"* ]]
 }

@@ -352,3 +352,11 @@ setup() {
   run run_script md_toc.sh doc.md --foobar
   [ "${status}" -eq 1 ]
 }
+
+# ── Documented default-mode flags must be accepted, not just implied ────────────
+
+@test "clean_build.sh --dry-run is accepted (documented default)" {
+  run run_script clean_build.sh --dry-run
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Dry run"* ]] || [[ "${output}" == *"dry run"* ]]
+}

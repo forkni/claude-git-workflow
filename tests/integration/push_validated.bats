@@ -287,13 +287,22 @@ _run_push() {
   [[ "${output}" == *"--force-with-lease=refs/heads/feature/y:${remote_tip}"* ]]
 }
 
-@test "force-push to a branch absent on the remote pushes without a lease" {
+@test "force-push to a branch absent on the remote uses an explicit empty lease" {
+  # Empty '--force-with-lease=<ref>:' still guards against a branch being
+  # created concurrently between the probe and the push (verified on git
+  # 2.50.1: rejected with "stale info" if the ref already exists remotely) --
+  # so "absent on the remote" must not mean "no lease at all".
   git -C "${TEST_REPO_DIR}" checkout --quiet -b feature/new development
 
   run _run_push "--branch feature/new --force --skip-lint"
 
   [ "${status}" -eq 0 ]
-  [[ "${output}" != *"force-with-lease="* ]]
+  # Boundary-checked, not a plain substring match: a bare substring match on
+  # "...feature/new:" would still pass if a regression appended a stray SHA
+  # (e.g. "...feature/new:d34dbeef"), since that string contains this one as
+  # a prefix. Require the colon to be followed by whitespace/EOL instead, so
+  # the lease value itself is proven empty.
+  [[ "${output}" =~ --force-with-lease=refs/heads/feature/new:[[:space:]] ]]
   local after_remote
   after_remote=$(git -C "${TEST_REPO_DIR}" ls-remote origin refs/heads/feature/new | cut -f1)
   local expected_sha

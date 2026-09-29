@@ -110,18 +110,29 @@ you find problems before finalizing, not after.
 Stage the resolved files, then finish via the wrapper for the operation in
 progress — **not** raw `git`:
 
-**Merge in progress** — conclude through `commit_enhanced.sh`. With `MERGE_HEAD`
-set, `git commit -m` produces a proper two-parent merge commit, and the wrapper
-keeps lint, local-file protection, and logging in place:
+**Merge in progress** — conclude through `commit_enhanced.sh` with no message.
+With `MERGE_HEAD` set, the wrapper uses git's own prepared merge message
+(comments stripped) instead of demanding a conventional one, produces a proper
+two-parent merge commit, and keeps lint, local-file protection, and logging in
+place:
 
 ```bash
 git add <resolved-files>
-./scripts/git/commit_enhanced.sh "fix: resolve merge conflict in <file>"
+./scripts/git/commit_enhanced.sh
+```
+
+Passing an explicit message still works and overrides git's prepared one —
+useful if you want to note what the resolution did:
+
+```bash
+./scripts/git/commit_enhanced.sh "Merge feature/x into development (resolved SESSION_LOG.md)"
 ```
 
 > **Why not raw `git commit`?** The CGW PreToolUse guardrail blocks every
 > `git commit` (it cannot tell a merge-conclusion commit from a normal one).
 > `commit_enhanced.sh` is the guardrail-safe path and still finalizes the merge.
+> A merge-conclusion commit is exempt from the conventional-format check and
+> the subject-length hard cap (`hooks/pre-push` exempts merge commits too).
 > Do **not** pass `--only` here — that resets the index and breaks the merge
 > state; let the default path stage the resolved tree.
 

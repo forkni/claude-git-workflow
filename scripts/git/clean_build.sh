@@ -8,6 +8,7 @@
 #   SCRIPT_DIR   - Directory containing this script
 #   PROJECT_ROOT - Auto-detected git repo root (set by _config.sh)
 # Arguments:
+#   --dry-run    Preview only (the default)
 #   --execute    Actually remove files (default is dry-run)
 #   --python     Clean Python artifacts (auto-detected if omitted)
 #   --td         Clean TouchDesigner artifacts (auto-detected if omitted)
@@ -38,6 +39,7 @@ main() {
         echo "Pass --execute to actually delete files."
         echo ""
         echo "Options:"
+        echo "  --dry-run    Preview only -- explicit form of the default"
         echo "  --execute    Remove files (without this flag, only previews)"
         echo "  --python     Include Python artifacts (__pycache__, *.pyc, dist/, etc.)"
         echo "  --td         Include TouchDesigner artifacts (*.toe.bak, Backup/)"
@@ -48,6 +50,7 @@ main() {
         echo "Auto-detects project type from pyproject.toml, *.toe files, *.glsl files."
         exit 0
         ;;
+      --dry-run) execute=0 ;;
       --execute) execute=1 ;;
       --python) force_python=1 ;;
       --td) force_td=1 ;;

@@ -265,6 +265,74 @@ _run_merge() {
   [[ "${output}" == *"Content conflicts require manual resolution"* ]]
 }
 
+@test "UU conflict halt points to commit_enhanced.sh, not a bare git commit" {
+  # commit_enhanced.sh's own guardrail hook blocks a bare `git commit` -- the
+  # recovery hint printed here must not send the user into that dead end
+  # (see cgw_resolve_safe_conflicts' continue_hint in _common.sh).
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add conflict.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff -m "chore: sync conflict.txt"
+  printf 'dev-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev edits line1"
+
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'main-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "fix: main edits line1"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"commit_enhanced.sh"* ]]
+  [[ "${output}" != *"3. git commit"* ]]
+}
+
+@test "finishing a UU merge via commit_enhanced.sh with no message creates the merge commit" {
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add conflict.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff -m "chore: sync conflict.txt"
+  printf 'dev-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev edits line1"
+
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'main-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "fix: main edits line1"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+
+  # merge_with_validation.sh checked out the target (main) to perform the
+  # merge and stayed there (cleanup trap can't check out over unmerged paths).
+  printf 'resolved-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh'
+  "
+  [ "${status}" -eq 0 ]
+
+  local parents
+  parents="$(git -C "${TEST_REPO_DIR}" rev-list --parents -n1 HEAD)"
+  [ "$(echo "${parents}" | wc -w)" -eq 3 ]
+  [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" = "Merge development into main" ]
+}
+
 # ── Conflict resolution: UD (deleted-by-them halt) ───────────────────────────
 
 # ── Merge conflict style (CGW_MERGE_CONFLICT_STYLE) ──────────────────────────
