@@ -47,7 +47,7 @@ The shared module responsible for running lint, format, and markdownlint tool bi
 - `cgw_run_format_check [files…]` — runs `CGW_FORMAT_CMD` with `CGW_FORMAT_CHECK_ARGS` via `run_tool_with_logging`. Skips silently when `CGW_FORMAT_CMD` is empty.
 - `cgw_run_lint_fix [files…]` — bundled lint+format fix: runs lint `--fix` then format `--fix` in sequence. Skips silently when both CMDs are empty.
 - `cgw_run_markdownlint_check [files…]` — runs `CGW_MARKDOWNLINT_CMD` with `CGW_MARKDOWNLINT_ARGS` via `run_tool_with_logging`. Skips silently when `CGW_SKIP_MD_LINT=1` or `CGW_MARKDOWNLINT_CMD` is empty.
-- `cgw_run_typecheck` — runs `CGW_TYPECHECK_CMD` with `CGW_TYPECHECK_CHECK_ARGS` via `run_tool_with_logging`, overriding `CGW_TOOL_ERROR_REGEX` (as a `local`, dynamically scoped) to a pattern matching mypy/pyright/tsc/pyrefly diagnostic shapes instead of the ruff-shaped default. Skips silently when `CGW_SKIP_TYPECHECK=1` or `CGW_TYPECHECK_CMD` is empty. Always whole-project (no file-list parameter) — a type checker resolves imports across the whole project, so there is no honest way to scope it to staged/modified files. Call sites: advisory in `.githooks/pre-commit`; **blocking** in `check_lint.sh` (and therefore `push_validated.sh`, which delegates its pre-push lint check to `check_lint.sh`); not called under `check_lint.sh --modified-only`/`--md-only`; absent from `commit_enhanced.sh` entirely on purpose (see **validated path set** below for why whole-project scope can't feed that guard).
+- `cgw_run_typecheck` — runs `CGW_TYPECHECK_CMD` with `CGW_TYPECHECK_CHECK_ARGS` via `run_tool_with_logging`, overriding `CGW_TOOL_ERROR_REGEX` (as a `local`, dynamically scoped) to a pattern matching mypy/pyright/tsc/pyrefly diagnostic shapes instead of the ruff-shaped default. Skips silently when `CGW_SKIP_TYPECHECK=1` or `CGW_TYPECHECK_CMD` is empty. Always whole-project (no file-list parameter) — a type checker resolves imports across the whole project, so there is no honest way to scope it to staged/modified files. Call sites: advisory in `hooks/pre-commit`; **blocking** in `check_lint.sh` (and therefore `push_validated.sh`, which delegates its pre-push lint check to `check_lint.sh`); not called under `check_lint.sh --modified-only`/`--md-only`; absent from `commit_enhanced.sh` entirely on purpose (see **validated path set** below for why whole-project scope can't feed that guard).
 - `cgw_strip_path_arg <args-string>` — strips the trailing path token from a CGW args string (the `${ARGS% *}` idiom). Used when a file list is passed explicitly so the default path token doesn't conflict.
 - `cgw_modified_files_for_lint` — returns the space-separated list of `.py` files modified vs HEAD (for `--modified-only` mode in `check_lint.sh` / `fix_lint.sh`).
 - `cgw_paths_diverging_from_index` — the general divergence core, reading paths from stdin. Emits the subset whose working-tree content (what the checks above validate) differs from its staged blob (what `git commit` records). Primary detection via `git hash-object --path=<f> <f>` vs `git rev-parse :<f>` — immune to skip-worktree/assume-unchanged, unlike `git diff`. But `hash-object` never reads the index, so on a file whose index blob already has CRLF (`git add` preserves that forever — see `cgw_crlf_in_index_files`), it renormalizes to LF and permanently disagrees with a byte-identical, `git add`-clean disk file. A hash-object mismatch is arbitrated via index-aware `git diff --quiet` (using `cgw_path_is_diff_blind` to skip that arbitration on skip-worktree/assume-unchanged paths, where `git diff` can't see the truth) before being reported. Fails closed: a staged path missing from the working tree is reported as diverged, not skipped.
@@ -59,7 +59,7 @@ The shared module responsible for running lint, format, and markdownlint tool bi
 
 Backs the `[3.5]` congruence guard in `commit_enhanced.sh`, which runs once after both the lint/format and markdown auto-fix blocks and closes the "validated the working tree, committed a different blob" bug class. `CGW_ALLOW_STAGED_DIVERGENCE=1` opts a genuine `--staged-only` commit out of the guard's fail-closed default; see **whole-file staging intent** below for when the guard re-stages instead of failing.
 
-**Callers**: `commit_enhanced.sh` (lint check, format check, markdownlint, auto-fix loop, partial-stage snapshot, `[3.5]` congruence guard), `check_lint.sh`, `fix_lint.sh`, `.githooks/pre-commit` (non-blocking advisory check).
+**Callers**: `commit_enhanced.sh` (lint check, format check, markdownlint, auto-fix loop, partial-stage snapshot, `[3.5]` congruence guard), `check_lint.sh`, `fix_lint.sh`, `hooks/pre-commit` (non-blocking advisory check).
 
 ---
 
@@ -99,7 +99,7 @@ The conventional-commit grammar enforced on every `commit_enhanced.sh` invocatio
 
 **Implementation seam**: `cgw_validate_commit_message <msg>` in `scripts/git/_common.sh`. Pure predicate — returns 0 on match, 1 otherwise. No output: each caller owns its own user-facing message and merge-commit skipping logic. Skipped on [[freeform-message branch|#freeform-message-branch]]es — see below.
 
-**Callers**: `commit_enhanced.sh` (step [5]), `undo_last.sh` (amend-message path), `hooks/pre-push` and `.githooks/pre-push` (byte-identical copies; all commits in push range).
+**Callers**: `commit_enhanced.sh` (step [5]), `undo_last.sh` (amend-message path), `hooks/pre-push` (all commits in push range).
 
 ---
 
@@ -134,10 +134,10 @@ guard) and `cgw_branch_is_guarded <branch>` (exact match against `CGW_SOURCE_BRA
 directly. `cgw_freeform_message_check <msg>` runs the optional delegated check. Settings in
 `scripts/git/_config.sh`.
 
-**Callers**: same four call sites as [[commit-message format]] above — each checks
+**Callers**: same call sites as [[commit-message format]] above — each checks
 `cgw_branch_is_freeform` first and branches to `cgw_freeform_message_check` instead of
 `cgw_validate_commit_message` when it matches (falling through to the guard notice above when
-the glob matched but the branch is guarded). `hooks/pre-push` and `.githooks/pre-push` derive
+the glob matched but the branch is guarded). `hooks/pre-push` derives
 the branch from the remote ref alone (`refs/heads/*` only) — a tag or other non-branch push
 target is never exempt, since falling back to the local ref would let a branch's exemption leak
 onto an unrelated tag push. The hook also narrows its "already pushed ⇒ already vetted"
