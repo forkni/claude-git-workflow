@@ -215,10 +215,11 @@ git add <resolved-files>
 ./scripts/git/rebase_safe.sh --skip
 ```
 
-Restore from backup tag if needed:
+Restore from backup tag if needed (after the rebase has completed or been
+aborted, with the rebased branch checked out):
 
 ```bash
-git checkout pre-rebase-<timestamp>-<pid>
+git reset --hard pre-rebase-<timestamp>-<pid>
 ```
 
 ---

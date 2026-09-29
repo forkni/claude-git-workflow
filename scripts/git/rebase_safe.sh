@@ -354,7 +354,7 @@ _cmd_rebase_onto() {
 
   # Create backup
   cgw_create_backup_tag rebase
-  echo "  To restore: git checkout ${CGW_BACKUP_TAG}" | tee -a "$logfile"
+  echo "  To restore: git reset --hard ${CGW_BACKUP_TAG}" | tee -a "$logfile"
   echo "" | tee -a "$logfile"
 
   log_section_start "GIT REBASE ONTO" "$logfile"
@@ -486,7 +486,7 @@ _cmd_squash_last() {
 
   # Create backup
   cgw_create_backup_tag rebase
-  echo "  To restore: git checkout ${CGW_BACKUP_TAG}" | tee -a "$logfile"
+  echo "  To restore: git reset --hard ${CGW_BACKUP_TAG}" | tee -a "$logfile"
   echo "" | tee -a "$logfile"
 
   log_section_start "GIT REBASE INTERACTIVE" "$logfile"
