@@ -360,6 +360,25 @@ EOF
   fi
 }
 
+@test "no-jq settings.json writer emits valid JSON for a command with embedded quotes" {
+  _require_jq
+  # Regression: the from-scratch printf path interpolated hook_cmd raw, so the
+  # local command ("$CLAUDE_PROJECT_DIR"/.claude/hooks/...) produced malformed
+  # JSON that Claude Code could not load, while configure.sh reported success.
+  local settings_json="${TEST_REPO_DIR}/settings.json"
+  local cmd='"$CLAUDE_PROJECT_DIR"/.claude/hooks/cc-block-dangerous-git.sh'
+  local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh"
+  bash -c "
+    $(extract_shell_function "${cfg}" _json_escape_string)
+    $(extract_shell_function "${cfg}" _install_guardrail_nojq)
+    _install_guardrail_nojq \"\$1\" \"\$2\"
+  " _ "${settings_json}" "${cmd}"
+  jq -e . "${settings_json}" >/dev/null
+  local registered
+  registered="$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "${settings_json}")"
+  [ "${registered}" == "${cmd}" ]
+}
+
 @test "registered guardrail path resolves to an existing file (regression: MSYS path conversion)" {
   # Catches the bug where Git Bash MSYS converts /.claude/... inside a jq --arg
   # value to C:/Program Files/Git/.claude/... when crossing into jq.exe, producing

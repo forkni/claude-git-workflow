@@ -239,3 +239,17 @@ run_script_at() {
     bash "${script_file}" "$@"
   )
 }
+
+# extract_shell_function <file> <name>
+# Prints the source of a top-level shell function so a test can define it in
+# a fresh bash without executing the file's main. Ends at the first "}" at
+# column 0 that is not inside a <<'PYEOF' heredoc (configure.sh embeds Python).
+extract_shell_function() {
+  awk -v fn="$2" '
+    $0 == fn "() {" { inside = 1 }
+    inside && /<<'"'"'PYEOF'"'"'/ { heredoc = 1 }
+    inside && heredoc && $0 == "PYEOF" { heredoc = 0; print; next }
+    inside { print }
+    inside && !heredoc && $0 == "}" { exit }
+  ' "$1"
+}

@@ -169,6 +169,25 @@ _run_configure() {
   [ ! -f "${TEST_REPO_DIR}/.agents/hooks.json" ]
 }
 
+@test "no-jq hooks.json writer emits valid JSON for a command with embedded quotes" {
+  _require_jq
+  # Regression: the from-scratch printf path interpolated hook_cmd raw, so the
+  # local guardrail command (bash -c "if ...") produced malformed JSON that
+  # Antigravity could not load, while configure.sh still reported success.
+  local hooks_json="${TEST_REPO_DIR}/hooks.json"
+  local cmd='bash -c "if [ -f a.sh ]; then exec bash a.sh; else exec bash '"'"'/p/b.sh'"'"'; fi"'
+  local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh"
+  bash -c "
+    $(extract_shell_function "${cfg}" _json_escape_string)
+    $(extract_shell_function "${cfg}" _install_agy_guardrail_nojq)
+    _install_agy_guardrail_nojq \"\$1\" \"\$2\"
+  " _ "${hooks_json}" "${cmd}"
+  jq -e . "${hooks_json}" >/dev/null
+  local registered
+  registered="$(jq -r '."cgw-git-guardrail".PreToolUse[0].hooks[0].command' "${hooks_json}")"
+  [ "${registered}" == "${cmd}" ]
+}
+
 @test "configure.sh --skip-antigravity skips both skill and guardrail" {
   _require_jq
   mkdir -p "${TEST_REPO_DIR}/.agents"

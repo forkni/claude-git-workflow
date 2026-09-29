@@ -491,6 +491,20 @@ _install_markdownlint_config() {
   fi
 }
 
+# Escape a string for interpolation inside a JSON string literal. The no-jq
+# write paths below build settings.json / hooks.json with printf, and the
+# hook commands they embed carry literal double quotes (e.g.
+# "$CLAUDE_PROJECT_DIR"/... and bash -c "..."), which would otherwise land
+# unescaped in the file and make it unparseable.
+_json_escape_string() {
+  local s="${1}"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\t'/\\t}"
+  s="${s//$'\n'/\\n}"
+  printf '%s' "${s}"
+}
+
 _install_guardrail_nojq() {
   local settings_json="${1}"
   local hook_cmd="${2}"
@@ -508,7 +522,7 @@ _install_guardrail_nojq() {
   fi
   if [[ -z "${existing_stripped}" ]] || [[ "${existing_stripped}" == "{}" ]]; then
     printf '{\n  "hooks": {\n    "PreToolUse": [\n      {\n        "matcher": "Bash",\n        "hooks": [{"type": "command", "command": "%s"}]\n      }\n    ]\n  }\n}\n' \
-      "${hook_cmd}" >"${settings_json}"
+      "$(_json_escape_string "${hook_cmd}")" >"${settings_json}"
     echo "  [OK] PreToolUse guardrail registered in ${settings_json}"
     return 0
   fi
@@ -729,7 +743,7 @@ _install_agy_guardrail_nojq() {
   fi
   if [[ -z "${existing_stripped}" ]] || [[ "${existing_stripped}" == "{}" ]]; then
     printf '{\n  "cgw-git-guardrail": {\n    "PreToolUse": [\n      {\n        "matcher": "run_command",\n        "hooks": [\n          {\n            "type": "command",\n            "command": "%s"\n          }\n        ]\n      }\n    ]\n  }\n}\n' \
-      "${hook_cmd}" >"${hooks_json}"
+      "$(_json_escape_string "${hook_cmd}")" >"${hooks_json}"
     echo "  [OK] Antigravity PreToolUse guardrail registered in ${hooks_json}"
     return 0
   fi
