@@ -70,14 +70,23 @@ _cmd_reflog() {
 
   echo "--- Reflog: ${ref} (most recent first) ---"
   echo ""
-  git reflog "${ref}" --date=relative --format="  %C(yellow)%h%C(reset)  %C(blue)%gd%C(reset)  %gs%C(auto)%d%C(reset)  %C(dim)(%cr)%C(reset)" \
-    2>/dev/null | head -n "${limit}" ||
-    git reflog "${ref}" --date=relative 2>/dev/null | head -n "${limit}" || {
+  # `| head` closes the pipe early, so git exits 141 (SIGPIPE) and `pipefail` would report the
+  # pipeline as failed whenever the reflog is longer than the limit -- running every `||`
+  # fallback (doubled output plus a false "no reflog entries"). Decide on the captured text instead.
+  local entries
+  entries="$(git reflog "${ref}" --date=relative --format="  %C(yellow)%h%C(reset)  %C(blue)%gd%C(reset)  %gs%C(auto)%d%C(reset)  %C(dim)(%cr)%C(reset)" \
+    2>/dev/null | head -n "${limit}" || true)"
+  if [[ -z "${entries}" ]]; then
+    entries="$(git reflog "${ref}" --date=relative 2>/dev/null | head -n "${limit}" || true)"
+  fi
+  if [[ -n "${entries}" ]]; then
+    printf '%s\n' "${entries}"
+  else
     echo "  (no reflog entries for ${ref})"
     echo ""
     echo "  Tip: run 'recover.sh dangling' to search for unreachable objects"
     echo "       via git fsck when the reflog is empty or unavailable."
-  }
+  fi
 
   echo ""
   echo "--- Backup tags (CGW safety net) ---"

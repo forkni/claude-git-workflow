@@ -765,15 +765,17 @@ _register_guardrail() {
     return 0
   fi
 
+  # Split the command at its first "/" and rejoin inside jq/python, so no argument
+  # starts with "/" and MSYS2 has nothing to path-convert when it crosses
+  # into jq.exe or python.exe on Git Bash (Windows). A no-op everywhere else.
+  #   '"$CLAUDE_PROJECT_DIR"/.claude/hooks/...' -> pfx='"$CLAUDE_PROJECT_DIR"'  sfx='.claude/hooks/...'
+  local pfx sfx has_slash=false
+  pfx="${cmd%%/*}"
+  sfx="${cmd#*/}"
+  [[ "${cmd}" == */* ]] && has_slash=true
+
   if command -v jq &>/dev/null; then
-    # Split the command at its first "/" and rejoin inside jq, so no argument
-    # starts with "/" and MSYS2 has nothing to path-convert when it crosses
-    # into jq.exe on Git Bash (Windows). A no-op everywhere else.
-    #   '"$CLAUDE_PROJECT_DIR"/.claude/hooks/...' -> pfx='"$CLAUDE_PROJECT_DIR"'  sfx='.claude/hooks/...'
-    local tmp pfx sfx has_slash=false
-    pfx="${cmd%%/*}"
-    sfx="${cmd#*/}"
-    [[ "${cmd}" == */* ]] && has_slash=true
+    local tmp
     tmp="$(mktemp)"
     jq --arg k1 "${k1}" --arg k2 "${k2}" --arg matcher "${matcher}" --arg marker "${marker}" \
       --arg pfx "${pfx}" --arg sfx "${sfx}" --argjson has_slash "${has_slash}" '
@@ -800,9 +802,10 @@ _register_guardrail() {
   local py_cmd
   for py_cmd in python3 python; do
     if command -v "${py_cmd}" &>/dev/null; then
-      if "${py_cmd}" - "${json}" "${cmd}" "${k1}" "${k2}" "${matcher}" "${marker}" 2>/dev/null <<'PYEOF'; then
+      if "${py_cmd}" - "${json}" "${pfx}" "${sfx}" "${has_slash}" "${k1}" "${k2}" "${matcher}" "${marker}" 2>/dev/null <<'PYEOF'; then
 import json, sys
-path, cmd, k1, k2, matcher, marker = sys.argv[1:7]
+path, pfx, sfx, has_slash, k1, k2, matcher, marker = sys.argv[1:9]
+cmd = f"{pfx}/{sfx}" if has_slash == "true" else pfx
 try:
     with open(path, encoding='utf-8') as f:
         data = json.load(f)

@@ -126,3 +126,18 @@ teardown() {
   tagged_sha=$(git -C "${TEST_REPO_DIR}" rev-parse "${tag}")
   [ "${tagged_sha}" = "${discarded_sha}" ]
 }
+
+# ── --revert mode: reject root commit (R1) ────────────────────────────────────
+
+@test "--revert refuses when rollback target is a root commit" {
+  local root_sha
+  root_sha=$(git -C "${TEST_REPO_DIR}" rev-list --max-parents=0 HEAD)
+
+  run run_script rollback_merge.sh --non-interactive --revert --target "${root_sha}"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" != *"syntax error"* ]]
+  [[ "${output}" == *"requires a merge commit"* ]]
+  [[ "${output}" == *"has 0 parent(s)"* ]]
+  [ -f "${TEST_REPO_DIR}/README.md" ]
+}
+
