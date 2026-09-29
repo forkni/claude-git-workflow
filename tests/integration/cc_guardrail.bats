@@ -380,11 +380,10 @@ EOF
   # JSON that Claude Code could not load, while configure.sh reported success.
   local settings_json="${TEST_REPO_DIR}/settings.json"
   local cmd='"$CLAUDE_PROJECT_DIR"/.claude/hooks/cc-block-dangerous-git.sh'
-  local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh"
   bash -c "
-    $(extract_shell_function "${cfg}" _json_escape_string)
-    $(extract_shell_function "${cfg}" _install_guardrail_nojq)
-    _install_guardrail_nojq \"\$1\" \"\$2\"
+    ${HIDE_JQ}
+    $(guardrail_installer_functions)
+    if _guardrail_is_registered cc \"\$1\"; then echo 'already registered'; else _register_guardrail cc \"\$1\" \"\$2\"; fi
   " _ "${settings_json}" "${cmd}"
   jq -e . "${settings_json}" >/dev/null
   local registered
@@ -445,11 +444,10 @@ EOF
 }
 JSON_EOF
   local cmd='"$CLAUDE_PROJECT_DIR"/.claude/hooks/cc-block-dangerous-git.sh'
-  local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh"
   run bash -c "
-    $(extract_shell_function "${cfg}" _json_escape_string)
-    $(extract_shell_function "${cfg}" _install_guardrail_nojq)
-    _install_guardrail_nojq \"\$1\" \"\$2\"
+    ${HIDE_JQ}
+    $(guardrail_installer_functions)
+    if _guardrail_is_registered cc \"\$1\"; then echo 'already registered'; else _register_guardrail cc \"\$1\" \"\$2\"; fi
   " _ "${settings_json}" "${cmd}"
   [ "${status}" -eq 0 ]
   [[ "${output}" != *"already registered"* ]]
@@ -485,16 +483,27 @@ JSON_EOF
   mkdir -p "${fake_cgw}/scripts/git" "${TEST_REPO_DIR}/.claude/hooks"
   printf '#!/usr/bin/env bash\ncat >/dev/null\necho "BLOCKED: legacy" >&2\nexit 2\n' \
     >"${TEST_REPO_DIR}/.claude/hooks/cc-block-dangerous-git.sh"
-  local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh"
   run bash -c "
     SCRIPT_DIR='${fake_cgw}/scripts/git'
     PROJECT_ROOT='${TEST_REPO_DIR}'
-    $(extract_shell_function "${cfg}" _json_escape_string)
-    $(extract_shell_function "${cfg}" _install_guardrail_core)
-    $(extract_shell_function "${cfg}" _install_guardrail_nojq)
-    $(extract_shell_function "${cfg}" _install_cc_guardrail)
+    $(guardrail_installer_functions)
     _install_cc_guardrail local
   "
   [ "${status}" -eq 0 ]
   [[ "${output}" != *"_guardrail_core.sh not found"* ]]
+}
+
+@test "registrar writes a valid entry into a 0-byte settings.json (jq present)" {
+  _require_jq
+  # Regression: with jq, an empty (0-byte) settings.json went through the jq
+  # merge, which emits nothing for empty input -- the file stayed empty while
+  # the installer printed "[OK] ... registered".
+  local f="${TEST_REPO_DIR}/settings.json"
+  : >"${f}"
+  run bash -c "
+    $(guardrail_installer_functions)
+    _register_guardrail cc \"\$1\" '\"\$CLAUDE_PROJECT_DIR\"/.claude/hooks/cc-block-dangerous-git.sh'
+  " _ "${f}"
+  [ "${status}" -eq 0 ]
+  jq -e '.hooks.PreToolUse[0].hooks[0].command | contains("cc-block-dangerous-git")' "${f}" >/dev/null
 }

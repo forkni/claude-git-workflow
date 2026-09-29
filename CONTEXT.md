@@ -178,6 +178,12 @@ The shared module for all binary yes/no confirmation prompts in CGW scripts. Con
 
 ---
 
+## agent harness
+
+An AI coding agent host that CGW integrates with: today Claude Code (`cc`, `.claude/`) and Antigravity (`agy`, `.agents/`, `~/.gemini/config/`). Each harness gets a skill, a slash command, and a **guardrail**; the harness-specific facts live in `configure.sh`'s `_guardrail_spec` table and the per-harness installers. Use the short ids `cc` / `agy` in code and flags (`--skip-cc-guardrail`, `--skip-agy-guardrail`).
+
+---
+
 ## guardrail
 
 An agent-harness PreToolUse hook that inspects each shell command an agent is about to run and blocks the raw git operations CGW exists to wrap (`git commit`, `git push --force`, `git reset --hard`, `--no-verify`, …), redirecting the agent to the matching CGW script. Defense-in-depth, not a sandbox: the git hooks remain the enforcement layer, and every guardrail fails open (with a warning) when it cannot classify — jq missing, core missing, unparseable input.
@@ -189,7 +195,9 @@ An agent-harness PreToolUse hook that inspects each shell command an agent is ab
 
 Both adapters currently accept both payload shapes; they differ only in which shape wins when a payload carries both, and in the response to an unrecognized shape.
 
-**Callers**: the two adapters. Installed (adapter + core, side by side) by `configure.sh` (`_install_cc_guardrail`, `_install_agy_guardrail`, via `_install_guardrail_core`) and staged by `cgw-install.cmd` / `cgw-batch-install.cmd`. Tests: `tests/integration/guardrail_hosts.bats` holds the shared verdict table run through both adapters and both payload shapes.
+**Registration seam**: in `scripts/git/configure.sh`, `_guardrail_spec <host> <field>` is the per-harness table (settings-file keys, matcher, command marker, known-bad substrings); `_guardrail_is_registered <host> <json>` (query) and `_register_guardrail <host> <json> <cmd>` (modifier: drop stale CGW entries, keep all others, append) apply it identically through every backend — fresh write, jq, python, manual instructions. Adding a harness means adding its rows to the table, an adapter, and an installer that supplies paths and a smoke test.
+
+**Callers**: the two adapters. Installed (adapter + core, side by side) by `configure.sh` (`_install_cc_guardrail`, `_install_agy_guardrail`, via `_install_guardrail_core` and the registration seam above) and staged by `cgw-install.cmd` / `cgw-batch-install.cmd`. Tests: `tests/integration/guardrail_hosts.bats` holds the shared verdict table run through both adapters and both payload shapes.
 
 ---
 

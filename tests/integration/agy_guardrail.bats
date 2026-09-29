@@ -176,11 +176,10 @@ _run_configure() {
   # Antigravity could not load, while configure.sh still reported success.
   local hooks_json="${TEST_REPO_DIR}/hooks.json"
   local cmd='bash -c "if [ -f a.sh ]; then exec bash a.sh; else exec bash '"'"'/p/b.sh'"'"'; fi"'
-  local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh"
   bash -c "
-    $(extract_shell_function "${cfg}" _json_escape_string)
-    $(extract_shell_function "${cfg}" _install_agy_guardrail_nojq)
-    _install_agy_guardrail_nojq \"\$1\" \"\$2\"
+    ${HIDE_JQ}
+    $(guardrail_installer_functions)
+    if _guardrail_is_registered agy \"\$1\"; then echo 'already registered'; else _register_guardrail agy \"\$1\" \"\$2\"; fi
   " _ "${hooks_json}" "${cmd}"
   jq -e . "${hooks_json}" >/dev/null
   local registered
@@ -267,14 +266,11 @@ EOF
   local fake_cgw="${TEST_REPO_DIR}/fake_cgw"
   mkdir -p "${fake_cgw}/scripts/git" "${fake_cgw}/hooks"
   printf '#!/usr/bin/env bash\nexit 0\n' >"${fake_cgw}/hooks/cc-block-dangerous-git.sh"
-  local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh"
   run bash -c "
     SCRIPT_DIR='${fake_cgw}/scripts/git'
     PROJECT_ROOT='${TEST_REPO_DIR}'
     HOME='${TEST_REPO_DIR}/home'
-    $(extract_shell_function "${cfg}" _json_escape_string)
-    $(extract_shell_function "${cfg}" _install_agy_guardrail_nojq)
-    $(extract_shell_function "${cfg}" _install_agy_guardrail)
+    $(guardrail_installer_functions)
     _install_agy_guardrail local
   "
   [ "${status}" -ne 0 ]
@@ -315,11 +311,10 @@ EOF
   "cgw-git-guardrail": {"PreToolUse": [{"matcher": "run_command", "hooks": [{"type": "command", "command": "bash /p/.agents/hooks/agy-block-dangerous-git.sh"}]}]}
 }
 JSON_EOF
-  local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh"
   run bash -c "
-    $(extract_shell_function "${cfg}" _json_escape_string)
-    $(extract_shell_function "${cfg}" _install_agy_guardrail_nojq)
-    _install_agy_guardrail_nojq \"\$1\" \"\$2\"
+    ${HIDE_JQ}
+    $(guardrail_installer_functions)
+    if _guardrail_is_registered agy \"\$1\"; then echo 'already registered'; else _register_guardrail agy \"\$1\" \"\$2\"; fi
   " _ "${hooks_json}" "bash /p/.agents/hooks/agy-block-dangerous-git.sh"
   [ "${status}" -eq 0 ]
   [[ "${output}" == *"already registered"* ]]
@@ -334,11 +329,10 @@ JSON_EOF
   "cgw-git-guardrail": {"PreToolUse": [{"matcher": "run_command", "hooks": [{"type": "command", "command": "bash -c \"if [ -f .agents/hooks/agy-block-dangerous-git.sh ]; then exec bash .agents/hooks/agy-block-dangerous-git.sh; fi\""}]}]}
 }
 JSON_EOF
-  local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh"
   run bash -c "
-    $(extract_shell_function "${cfg}" _json_escape_string)
-    $(extract_shell_function "${cfg}" _install_agy_guardrail_nojq)
-    _install_agy_guardrail_nojq \"\$1\" \"\$2\"
+    ${HIDE_JQ}
+    $(guardrail_installer_functions)
+    if _guardrail_is_registered agy \"\$1\"; then echo 'already registered'; else _register_guardrail agy \"\$1\" \"\$2\"; fi
   " _ "${hooks_json}" "bash /p/.agents/hooks/agy-block-dangerous-git.sh"
   [ "${status}" -eq 0 ]
   [[ "${output}" != *"already registered"* ]]
@@ -375,11 +369,10 @@ JSON_EOF
   command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 || skip "requires python"
   local f="${TEST_REPO_DIR}/hooks.json"
   _write_mixed_agy_hooks_json "${f}"
-  local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh"
   run bash -c "
-    $(extract_shell_function "${cfg}" _json_escape_string)
-    $(extract_shell_function "${cfg}" _install_agy_guardrail_nojq)
-    _install_agy_guardrail_nojq \"\$1\" \"\$2\"
+    ${HIDE_JQ}
+    $(guardrail_installer_functions)
+    if _guardrail_is_registered agy \"\$1\"; then echo 'already registered'; else _register_guardrail agy \"\$1\" \"\$2\"; fi
   " _ "${f}" "bash /p/.agents/hooks/agy-block-dangerous-git.sh"
   [ "${status}" -eq 0 ]
   [ "$(jq '."cgw-git-guardrail".PreToolUse | length' "${f}")" -eq 2 ]

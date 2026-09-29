@@ -528,62 +528,155 @@ _install_guardrail_core() {
   fi
 }
 
-_install_guardrail_nojq() {
-  local settings_json="${1}"
-  local hook_cmd="${2}"
+# ── Guardrail registration (shared by every agent harness) ───────────────────
+#
+# _guardrail_spec <host> <field>
+#   The per-harness facts the registrar needs; everything else is shared.
+#     label   — name used in status messages
+#     keys    — space-separated JSON keys leading to the PreToolUse entry array
+#     matcher — tool matcher for the registered entry
+#     marker  — substring that identifies a CGW guardrail command
+#     bad     — one substring per line marking a corrupted / legacy CGW entry
+#               that must be replaced rather than counted as registered
+_guardrail_spec() {
+  case "$1:$2" in
+    cc:label) echo "PreToolUse guardrail" ;;
+    cc:keys) echo "hooks PreToolUse" ;;
+    cc:matcher) echo "Bash" ;;
+    cc:marker) echo "cc-block-dangerous-git" ;;
+    cc:bad) echo "Program Files/Git" ;; # MSYS path mangling on Git Bash
+    agy:label) echo "Antigravity PreToolUse guardrail" ;;
+    agy:keys) echo "cgw-git-guardrail PreToolUse" ;;
+    agy:matcher) echo "run_command" ;;
+    agy:marker) echo "agy-block-dangerous-git" ;;
+    agy:bad) printf '%s\n' "bash -c" "if [" ;; # pre-.cmd-runner command format
+    *) return 1 ;;
+  esac
+}
 
-  # Already registered? (grep is enough without jq). Mirrors the jq path's
-  # idempotency check: an MSYS-corrupted entry (Program Files/Git) does not
-  # count, so it falls through to the python merge below, which replaces it.
-  if [[ -f "${settings_json}" ]] &&
-    grep -F "cc-block-dangerous-git" "${settings_json}" 2>/dev/null | grep -qvF "Program Files/Git"; then
-    echo "  [OK] PreToolUse guardrail already registered in ${settings_json}"
-    return 0
+# _guardrail_is_registered <host> <json_file>
+#   Query: true when some registered command names the host's marker and
+#   contains none of its bad substrings. jq checks the entry array itself;
+#   without jq, the same rule is applied per line (each command is on its own
+#   line in every file this installer writes).
+_guardrail_is_registered() {
+  local host="$1" json="$2" marker keys b
+  [[ -f "${json}" ]] || return 1
+  marker="$(_guardrail_spec "${host}" marker)" || return 1
+  local -a bad=()
+  mapfile -t bad < <(_guardrail_spec "${host}" bad)
+  if command -v jq &>/dev/null; then
+    keys="$(_guardrail_spec "${host}" keys)"
+    local k1 k2 bad_json=""
+    read -r k1 k2 <<<"${keys}"
+    for b in "${bad[@]}"; do bad_json+="\"$(_json_escape_string "${b}")\","; done
+    jq -e --arg k1 "${k1}" --arg k2 "${k2}" --arg marker "${marker}" \
+      --argjson bad "[${bad_json%,}]" '
+      [.[$k1][$k2][]?.hooks[]?.command | strings
+        | select(contains($marker))
+        | select(. as $c | any($bad[]; . as $b | $c | contains($b)) | not)
+      ] | length > 0' "${json}" >/dev/null 2>&1
+    return
   fi
+  local lines
+  lines="$(grep -F -- "${marker}" "${json}" 2>/dev/null)" || return 1
+  for b in "${bad[@]}"; do
+    lines="$(grep -vF -- "${b}" <<<"${lines}")" || return 1
+  done
+  [[ -n "${lines}" ]]
+}
 
-  # Simple case: no file yet, or just bare {}  — write from scratch
+# _register_guardrail <host> <json_file> <hook_cmd>
+#   Modifier: registers <hook_cmd> as the host's PreToolUse guardrail. Removes
+#   every stale CGW entry (anything naming the marker), keeps all other
+#   entries, appends the new one. Backends, first that applies: a fresh write
+#   when the file is missing, blank or {}; jq; python; manual instructions.
+#   Returns 1 when nothing was registered. Always (re)writes -- callers ask
+#   _guardrail_is_registered first.
+_register_guardrail() {
+  local host="$1" json="$2" cmd="$3"
+  local label keys matcher marker k1 k2
+  label="$(_guardrail_spec "${host}" label)" || return 1
+  keys="$(_guardrail_spec "${host}" keys)"
+  matcher="$(_guardrail_spec "${host}" matcher)"
+  marker="$(_guardrail_spec "${host}" marker)"
+  read -r k1 k2 <<<"${keys}"
+
+  echo "Installing ${label}..."
+
+  # Fresh write: no file yet, or only whitespace / {} -- no JSON tool needed.
   local existing_stripped=""
-  if [[ -f "${settings_json}" ]]; then
-    existing_stripped="$(tr -d '[:space:]' <"${settings_json}" 2>/dev/null)"
+  if [[ -f "${json}" ]]; then
+    existing_stripped="$(tr -d '[:space:]' <"${json}" 2>/dev/null)"
   fi
   if [[ -z "${existing_stripped}" ]] || [[ "${existing_stripped}" == "{}" ]]; then
-    printf '{\n  "hooks": {\n    "PreToolUse": [\n      {\n        "matcher": "Bash",\n        "hooks": [{"type": "command", "command": "%s"}]\n      }\n    ]\n  }\n}\n' \
-      "$(_json_escape_string "${hook_cmd}")" >"${settings_json}"
-    echo "  [OK] PreToolUse guardrail registered in ${settings_json}"
+    printf '{\n  "%s": {\n    "%s": [\n      {\n        "matcher": "%s",\n        "hooks": [{"type": "command", "command": "%s"}]\n      }\n    ]\n  }\n}\n' \
+      "${k1}" "${k2}" "${matcher}" "$(_json_escape_string "${cmd}")" >"${json}"
+    echo "  [OK] ${label} registered in ${json}"
     return 0
   fi
 
-  # Complex case: try Python to merge into existing settings
+  if command -v jq &>/dev/null; then
+    # Split the command at its first "/" and rejoin inside jq, so no argument
+    # starts with "/" and MSYS2 has nothing to path-convert when it crosses
+    # into jq.exe on Git Bash (Windows). A no-op everywhere else.
+    #   '"$CLAUDE_PROJECT_DIR"/.claude/hooks/...' -> pfx='"$CLAUDE_PROJECT_DIR"'  sfx='.claude/hooks/...'
+    local tmp pfx sfx has_slash=false
+    pfx="${cmd%%/*}"
+    sfx="${cmd#*/}"
+    [[ "${cmd}" == */* ]] && has_slash=true
+    tmp="$(mktemp)"
+    jq --arg k1 "${k1}" --arg k2 "${k2}" --arg matcher "${matcher}" --arg marker "${marker}" \
+      --arg pfx "${pfx}" --arg sfx "${sfx}" --argjson has_slash "${has_slash}" '
+      .[$k1][$k2] |= (
+        (. // [])
+        | map(select((.hooks // []) | map((.command // "") | contains($marker)) | any | not))
+        + [{"matcher": $matcher, "hooks": [{"type": "command",
+             "command": (if $has_slash then $pfx + "/" + $sfx else $pfx end)}]}]
+      )' "${json}" >"${tmp}" || {
+      rm -f "${tmp}"
+      echo "  [!] Failed to update ${json} (malformed JSON?). Guardrail NOT registered." >&2
+      echo "      Fix or remove the file, then re-run: ./scripts/git/configure.sh" >&2
+      return 1
+    }
+    if ! mv "${tmp}" "${json}"; then
+      rm -f "${tmp}"
+      echo "  [!] Failed to write ${json}. Guardrail NOT registered." >&2
+      return 1
+    fi
+    echo "  [OK] ${label} registered in ${json}"
+    return 0
+  fi
+
   local py_cmd
   for py_cmd in python3 python; do
     if command -v "${py_cmd}" &>/dev/null; then
-      if "${py_cmd}" - "${settings_json}" "${hook_cmd}" 2>/dev/null <<'PYEOF'; then
+      if "${py_cmd}" - "${json}" "${cmd}" "${k1}" "${k2}" "${matcher}" "${marker}" 2>/dev/null <<'PYEOF'; then
 import json, sys
-path, cmd = sys.argv[1], sys.argv[2]
+path, cmd, k1, k2, matcher, marker = sys.argv[1:7]
 try:
-    with open(path) as f:
+    with open(path, encoding='utf-8') as f:
         data = json.load(f)
 except Exception:
     data = {}
-ptu = data.setdefault('hooks', {}).setdefault('PreToolUse', [])
+ptu = data.setdefault(k1, {}).setdefault(k2, [])
 ptu[:] = [e for e in ptu
-          if not any('cc-block-dangerous-git' in h.get('command', '')
+          if not any(marker in h.get('command', '')
                      for h in e.get('hooks', []))]
-ptu.append({'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': cmd}]})
-with open(path, 'w') as f:
+ptu.append({'matcher': matcher, 'hooks': [{'type': 'command', 'command': cmd}]})
+with open(path, 'w', encoding='utf-8') as f:
     json.dump(data, f, indent=2)
 PYEOF
-        echo "  [OK] PreToolUse guardrail registered in ${settings_json} (via python)"
+        echo "  [OK] ${label} registered in ${json} (via python)"
         return 0
       fi
     fi
   done
 
-  # Nothing available — manual instructions
-  echo "  [!] jq and python not found — cannot auto-merge ${settings_json}" >&2
-  echo "      Manually add the following hook entry to ${settings_json}:" >&2
-  printf '      {"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"%s"}]}]}}\n' \
-    "${hook_cmd}" >&2
+  echo "  [!] jq and python not found — cannot auto-merge ${json}" >&2
+  echo "      Manually add the following hook entry to ${json}:" >&2
+  printf '      {"%s":{"%s":[{"matcher":"%s","hooks":[{"type":"command","command":"%s"}]}]}}\n' \
+    "${k1}" "${k2}" "${matcher}" "$(_json_escape_string "${cmd}")" >&2
   return 1
 }
 
@@ -634,71 +727,13 @@ _install_cc_guardrail() {
   chmod +x "${hook_dst}"
   _install_guardrail_core "${guardrail_src}" "${hook_dst}" || return 1
 
-  # Merge into settings.json — jq preferred; Python fallback; manual instructions as last resort
-  if ! command -v jq &>/dev/null; then
-    _install_guardrail_nojq "${settings_json}" "${hook_cmd}"
-    return $?
-  fi
-
-  # Initialize settings.json if it does not exist
-  if [[ ! -f "${settings_json}" ]]; then
-    echo '{}' >"${settings_json}"
-  fi
-
-  # Idempotency: skip if a valid guardrail command is already registered.
-  # "Valid" means it contains "cc-block-dangerous-git" but does NOT contain a
-  # known-bad MSYS-converted substring (Program Files/Git).  A corrupted entry
-  # falls through so it gets replaced below.
-  if jq -e '
-      [.hooks.PreToolUse[]?.hooks[]?.command
-        | select(contains("cc-block-dangerous-git"))
-        | select(contains("Program Files/Git") | not)
-      ] | length > 0' \
-    "${settings_json}" >/dev/null 2>&1; then
+  if _guardrail_is_registered cc "${settings_json}"; then
     echo "  [OK] PreToolUse guardrail already registered in ${settings_json}"
     return 0
   fi
-
-  echo "Installing PreToolUse guardrail..."
-  # Remove any corrupted/stale guardrail entries before re-registering
-  local clean_settings
-  clean_settings="$(mktemp)"
-  if jq '
-    .hooks.PreToolUse |= if . then
-      map(select(
-        .hooks | map(.command | contains("cc-block-dangerous-git")) | any | not
-      ))
-    else . end' "${settings_json}" >"${clean_settings}"; then
-    mv "${clean_settings}" "${settings_json}"
-  else
-    rm -f "${clean_settings}"
-  fi
-
-  # Merge: append a new PreToolUse Bash-matcher entry without overwriting existing hooks
-  # Split hook_cmd at the first "/" and reconstruct inside jq, so neither
-  # argument fragment starts with "/" and MSYS2 has nothing to path-convert
-  # when the value crosses into jq.exe on Git Bash (Windows).
-  # e.g. '"$CLAUDE_PROJECT_DIR"/.claude/hooks/...' →
-  #        pfx='"$CLAUDE_PROJECT_DIR"'  sfx='.claude/hooks/...'
-  # This is a no-op on macOS / Linux / WSL where MSYS is not in play.
-  local tmp_settings hook_pfx hook_sfx
-  tmp_settings="$(mktemp)"
-  hook_pfx="${hook_cmd%%/*}"
-  hook_sfx="${hook_cmd#*/}"
-  jq --arg pfx "${hook_pfx}" --arg sfx "${hook_sfx}" \
-    '.hooks.PreToolUse |= (. // []) + [{"matcher":"Bash","hooks":[{"type":"command","command":($pfx + "/" + $sfx)}]}]' \
-    "${settings_json}" >"${tmp_settings}" || {
-    rm -f "${tmp_settings}"
-    echo "  [!] Failed to update ${settings_json} (malformed JSON?). Guardrail NOT registered." >&2
-    echo "      Fix or remove the file, then re-run: ./scripts/git/configure.sh" >&2
-    return 1
-  }
-  if ! mv "${tmp_settings}" "${settings_json}"; then
-    rm -f "${tmp_settings}"
-    echo "  [!] Failed to write ${settings_json}. Guardrail NOT registered." >&2
-    return 1
-  fi
-  echo "  [OK] PreToolUse guardrail registered in ${settings_json}"
+  _register_guardrail cc "${settings_json}" "${hook_cmd}" || return 1
+  # The smoke test reads the registration back with jq.
+  command -v jq &>/dev/null || return 0
 
   # Smoke test: read the registered command back out of settings.json, substitute
   # $CLAUDE_PROJECT_DIR with the actual project root, verify the file exists, and
@@ -781,61 +816,6 @@ _install_agy_skill() {
   fi
 }
 
-_install_agy_guardrail_nojq() {
-  local hooks_json="${1}"
-  local hook_cmd="${2}"
-
-  # Already registered? Mirrors the jq path's per-entry rule: some command line
-  # names agy-block-dangerous-git and is not a legacy "bash -c" / "if [" entry.
-  if [[ -f "${hooks_json}" ]] &&
-    grep -F "agy-block-dangerous-git" "${hooks_json}" 2>/dev/null | grep -vF "bash -c" | grep -qvF "if ["; then
-    echo "  [OK] Antigravity PreToolUse guardrail already registered in ${hooks_json}"
-    return 0
-  fi
-
-  local existing_stripped=""
-  if [[ -f "${hooks_json}" ]]; then
-    existing_stripped="$(tr -d '[:space:]' <"${hooks_json}" 2>/dev/null)"
-  fi
-  if [[ -z "${existing_stripped}" ]] || [[ "${existing_stripped}" == "{}" ]]; then
-    printf '{\n  "cgw-git-guardrail": {\n    "PreToolUse": [\n      {\n        "matcher": "run_command",\n        "hooks": [\n          {\n            "type": "command",\n            "command": "%s"\n          }\n        ]\n      }\n    ]\n  }\n}\n' \
-      "$(_json_escape_string "${hook_cmd}")" >"${hooks_json}"
-    echo "  [OK] Antigravity PreToolUse guardrail registered in ${hooks_json}"
-    return 0
-  fi
-
-  local py_cmd
-  for py_cmd in python3 python; do
-    if command -v "${py_cmd}" &>/dev/null; then
-      if "${py_cmd}" - "${hooks_json}" "${hook_cmd}" 2>/dev/null <<'PYEOF'; then
-import json, sys
-path, cmd = sys.argv[1], sys.argv[2]
-try:
-    with open(path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-except Exception:
-    data = {}
-ptu = data.setdefault('cgw-git-guardrail', {}).setdefault('PreToolUse', [])
-ptu[:] = [e for e in ptu
-          if not any('agy-block-dangerous-git' in h.get('command', '')
-                     for h in e.get('hooks', []))]
-ptu.append({'matcher': 'run_command', 'hooks': [{'type': 'command', 'command': cmd}]})
-with open(path, 'w', encoding='utf-8') as f:
-    json.dump(data, f, indent=2)
-PYEOF
-        echo "  [OK] Antigravity PreToolUse guardrail registered in ${hooks_json} (via python)"
-        return 0
-      fi
-    fi
-  done
-
-  echo "  [!] jq and python not found — cannot auto-merge ${hooks_json}" >&2
-  echo "      Manually add the cgw-git-guardrail entry to ${hooks_json}:" >&2
-  printf '      {"cgw-git-guardrail":{"PreToolUse":[{"matcher":"run_command","hooks":[{"type":"command","command":"%s"}]}]}}\n' \
-    "${hook_cmd}" >&2
-  return 1
-}
-
 _install_agy_guardrail() {
   local install_mode="${1:-local}" # "local" or "global"
 
@@ -901,50 +881,13 @@ _install_agy_guardrail() {
     cp "${guardrail_cmd_src}" "${hook_cmd_dst}"
   fi
 
-  if ! command -v jq &>/dev/null; then
-    _install_agy_guardrail_nojq "${hooks_json}" "${hook_cmd}"
-    return $?
-  fi
-
-  if [[ ! -f "${hooks_json}" ]]; then
-    echo '{}' >"${hooks_json}"
-  fi
-
-  # Idempotency: skip if a valid guardrail command is already registered.
-  # A legacy broken entry containing "bash -c" or "if [" must be replaced.
-  if jq -e '
-      [.["cgw-git-guardrail"].PreToolUse[]?.hooks[]?.command
-        | select(contains("agy-block-dangerous-git"))
-        | select(contains("bash -c") or contains("if [") | not)
-      ] | length > 0' \
-    "${hooks_json}" >/dev/null 2>&1; then
+  if _guardrail_is_registered agy "${hooks_json}"; then
     echo "  [OK] Antigravity PreToolUse guardrail already registered in ${hooks_json}"
     return 0
   fi
-
-  echo "Installing Antigravity PreToolUse guardrail..."
-  local tmp_hooks
-  tmp_hooks="$(mktemp)"
-  # Remove stale CGW entries (legacy "bash -c" commands included), keep any
-  # other entry under the key, then append the current registration.
-  jq --arg cmd "${hook_cmd}" '
-    .["cgw-git-guardrail"].PreToolUse |= (
-      (. // [])
-      | map(select(.hooks | map(.command | contains("agy-block-dangerous-git")) | any | not))
-      + [{"matcher": "run_command", "hooks": [{"type": "command", "command": $cmd}]}]
-    )
-  ' "${hooks_json}" >"${tmp_hooks}" || {
-    rm -f "${tmp_hooks}"
-    echo "  [!] Failed to update ${hooks_json} (malformed JSON?). Guardrail NOT registered." >&2
-    echo "      Fix or remove the file, then re-run: ./scripts/git/configure.sh" >&2
-    return 1
-  }
-  if ! mv "${tmp_hooks}" "${hooks_json}"; then
-    rm -f "${tmp_hooks}"
-    echo "  [!] Failed to write ${hooks_json}. Guardrail NOT registered." >&2
-    return 1
-  fi
-  echo "  [OK] Antigravity PreToolUse guardrail registered in ${hooks_json}"
+  _register_guardrail agy "${hooks_json}" "${hook_cmd}" || return 1
+  # The smoke test reads the registration back with jq.
+  command -v jq &>/dev/null || return 0
 
   # Smoke test: read registered command from hooks.json and test with dummy input
   local registered_cmd
