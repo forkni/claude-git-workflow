@@ -642,7 +642,7 @@ _install_cc_guardrail() {
         .hooks | map(.command | contains("cc-block-dangerous-git")) | any | not
       ))
     else . end' \
-    "${settings_json}" >"${clean_settings}" && mv "${clean_settings}" "${settings_json}"
+    "${settings_json}" >"${clean_settings}" && mv "${clean_settings}" "${settings_json}" || rm -f "${clean_settings}"
 
   # Merge: append a new PreToolUse Bash-matcher entry without overwriting existing hooks
   # Split hook_cmd at the first "/" and reconstruct inside jq, so neither
@@ -657,7 +657,17 @@ _install_cc_guardrail() {
   hook_sfx="${hook_cmd#*/}"
   jq --arg pfx "${hook_pfx}" --arg sfx "${hook_sfx}" \
     '.hooks.PreToolUse |= (. // []) + [{"matcher":"Bash","hooks":[{"type":"command","command":($pfx + "/" + $sfx)}]}]' \
-    "${settings_json}" >"${tmp_settings}" && mv "${tmp_settings}" "${settings_json}"
+    "${settings_json}" >"${tmp_settings}" || {
+    rm -f "${tmp_settings}"
+    echo "  [!] Failed to update ${settings_json} (malformed JSON?). Guardrail NOT registered." >&2
+    echo "      Fix or remove the file, then re-run: ./scripts/git/configure.sh" >&2
+    return 1
+  }
+  if ! mv "${tmp_settings}" "${settings_json}"; then
+    rm -f "${tmp_settings}"
+    echo "  [!] Failed to write ${settings_json}. Guardrail NOT registered." >&2
+    return 1
+  fi
   echo "  [OK] PreToolUse guardrail registered in ${settings_json}"
 
   # Smoke test: read the registered command back out of settings.json, substitute
@@ -853,7 +863,17 @@ _install_agy_guardrail() {
         }
       ]
     }
-  ' "${hooks_json}" >"${tmp_hooks}" && mv "${tmp_hooks}" "${hooks_json}"
+  ' "${hooks_json}" >"${tmp_hooks}" || {
+    rm -f "${tmp_hooks}"
+    echo "  [!] Failed to update ${hooks_json} (malformed JSON?). Guardrail NOT registered." >&2
+    echo "      Fix or remove the file, then re-run: ./scripts/git/configure.sh" >&2
+    return 1
+  }
+  if ! mv "${tmp_hooks}" "${hooks_json}"; then
+    rm -f "${tmp_hooks}"
+    echo "  [!] Failed to write ${hooks_json}. Guardrail NOT registered." >&2
+    return 1
+  fi
   echo "  [OK] Antigravity PreToolUse guardrail registered in ${hooks_json}"
 
   # Smoke test

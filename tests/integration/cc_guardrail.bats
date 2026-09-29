@@ -335,6 +335,19 @@ EOF
   fi
 }
 
+@test "configure.sh reports failure and leaves a malformed settings.json untouched" {
+  _require_jq
+  # Regression: the jq merge result was never checked, so a malformed
+  # settings.json left the guardrail unregistered while configure.sh printed [OK].
+  mkdir -p "${TEST_REPO_DIR}/.claude"
+  printf '{ not json
+' >"${TEST_REPO_DIR}/.claude/settings.json"
+  run _run_configure "--non-interactive"
+  [[ "${output}" == *"Guardrail NOT registered"* ]]
+  [[ "${output}" != *"[OK] PreToolUse guardrail registered in"* ]]
+  [ "$(cat "${TEST_REPO_DIR}/.claude/settings.json")" == "$(printf '{ not json')" ]
+}
+
 @test "settings.json merge preserves existing entries" {
   _require_jq
   mkdir -p "${TEST_REPO_DIR}/.claude"

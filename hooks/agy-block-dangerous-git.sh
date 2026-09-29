@@ -20,6 +20,15 @@
 # degrades gracefully (logs a warning, allows the command through) rather than
 # breaking the user's shell.
 #
+# Heuristic limits (defense-in-depth, not a sandbox): this hook does not evaluate
+# `eval`, shell aliases/functions, nested shells (`bash -c '...'`), `git -C <path>
+# <subcmd>` / `git --git-dir=... <subcmd>` (the subcommand isn't adjacent to
+# `git`), or paths hidden inside quotes -- e.g. `rm -rf "$HOME/.git"` is stripped
+# by the quote-stripping heuristic below before pattern matching runs. The git
+# pre-commit / pre-push hooks remain the enforcement layer for whatever gets
+# through; this guardrail exists to redirect an agent to the CGW wrappers early.
+# Mirrors the limits documented in cc-block-dangerous-git.sh.
+#
 # To uninstall: remove the cgw-git-guardrail entry from .agents/hooks.json and
 #   delete this file.
 # To temporarily disable: set SKIP_CGW_GUARDRAIL=1 in your environment.

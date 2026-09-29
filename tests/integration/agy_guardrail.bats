@@ -188,6 +188,19 @@ _run_configure() {
   [ "${registered}" == "${cmd}" ]
 }
 
+@test "configure.sh reports failure and leaves a malformed hooks.json untouched" {
+  _require_jq
+  # Regression: the jq merge result was never checked, so a malformed hooks.json
+  # left the guardrail unregistered while configure.sh printed [OK].
+  mkdir -p "${TEST_REPO_DIR}/.agents"
+  printf '{ not json
+' >"${TEST_REPO_DIR}/.agents/hooks.json"
+  run _run_configure "--non-interactive"
+  [[ "${output}" == *"Guardrail NOT registered"* ]]
+  [[ "${output}" != *"Antigravity PreToolUse guardrail registered"* ]]
+  [ "$(cat "${TEST_REPO_DIR}/.agents/hooks.json")" == "$(printf '{ not json')" ]
+}
+
 @test "configure.sh --skip-antigravity skips both skill and guardrail" {
   _require_jq
   mkdir -p "${TEST_REPO_DIR}/.agents"
