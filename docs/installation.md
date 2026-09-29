@@ -48,7 +48,7 @@ cd your-project && ./scripts/git/configure.sh
 1. **Detection** — Scans the project for branch names, lint tools, virtual environments, and files that exist on disk but aren't tracked by git.
 2. **Confirmation** — In interactive mode, shows detected values and lets you override each one. Press Enter to accept defaults.
 3. **Config generation** — Writes `.cgw.conf` (git-ignored), which tells all CGW scripts about your branches, lint tool, and local-only files.
-4. **Hook installation** — Copies the pre-commit, pre-push, and pre-rebase hook templates into `.githooks/`, then into `.git/hooks/`. Hooks read configuration from `.cgw.conf` at run time, so any changes to `CGW_LOCAL_FILES`, `CGW_EXTRA_PREFIXES`, or `CGW_ALLOW_REBASE_PUBLISHED` take effect immediately without re-running this step.
+4. **Hook installation** — Copies the pre-commit, pre-push, and pre-rebase hook templates into `.githooks/`, then into `.git/hooks/`. Hooks read configuration from `.cgw.conf` at run time, so any changes to `CGW_LOCAL_FILES`, `CGW_EXTRA_PREFIXES`, `CGW_FREEFORM_MESSAGE_BRANCHES`, or `CGW_ALLOW_REBASE_PUBLISHED` take effect immediately without re-running this step.
 5. **Skill installation** — Copies the Claude Code skill and slash command definition into `.claude/` (project-local) or `~/.claude/` (global, with `--global`).
 
 ---
@@ -60,9 +60,16 @@ cd your-project && ./scripts/git/configure.sh
 | *(none)* | Interactive: shows detected values, prompts to confirm or override |
 | `--non-interactive` | Accept all auto-detected defaults without prompting |
 | `--reconfigure` | Overwrite an existing `.cgw.conf` (re-run detection + confirmation); the previous file is saved to `.cgw.conf.bak` first |
-| `--skip-hooks` | Skip hook installation |
-| `--skip-skill` | Skip Claude Code skill installation |
-| `--global` | Install skill to `~/.claude/` (available in every project) instead of `.claude/` |
+| `--skip-hooks` | Skip git pre-commit/pre-push/pre-rebase hook installation |
+| `--skip-skill` | Skip all skill installations (both Claude Code and Antigravity) |
+| `--skip-claude` | Skip Claude Code skill, command, and guardrail |
+| `--skip-antigravity` | Skip Antigravity skill and guardrail |
+| `--skip-cc-guardrail` | Skip Claude Code PreToolUse guardrail |
+| `--skip-agy-skill` | Skip Antigravity skill installation |
+| `--skip-agy-guardrail` | Skip Antigravity PreToolUse guardrail |
+| `--claude` | Explicitly enable Claude Code integration |
+| `--antigravity` | Explicitly enable Antigravity Agents integration |
+| `--global` | Install skills globally (`~/.claude/` and `~/.gemini/config/`) instead of project-locally |
 
 **Re-running configure.sh:**
 
@@ -102,6 +109,14 @@ hooks, skill, command, and the guardrail are refreshed while `.cgw.conf` is pres
 Projects with no existing `.cgw.conf` are skipped with a warning — use `cgw-install.cmd` for a
 first-time install.
 
+Because `.cgw.conf` is never touched, **new opt-in settings added to `cgw.conf.example` after a
+project's initial install do not reach that project's `.cgw.conf` via batch-update** — e.g.
+`CGW_FREEFORM_MESSAGE_BRANCHES`/`CGW_FREEFORM_MESSAGE_CHECK`. The updated *code* that reads them
+ships immediately (scripts + hooks are always overwritten), but the setting itself stays off
+until you add it to that project's `.cgw.conf` by hand, or run
+`configure.sh --reconfigure` there (which regenerates `.cgw.conf` from scratch and prompts for
+every value, backing up the old file to `.cgw.conf.bak` first).
+
 ---
 
 ## Troubleshooting
@@ -111,6 +126,16 @@ first-time install.
 `cgw-install.cmd` prepends `C:\Program Files\Git\bin` to `%PATH%` automatically, but if that path doesn't exist, bash won't be found.
 
 **Fix:** Install [Git for Windows](https://git-scm.com/download/win), then restart your terminal and re-run the installer.
+
+### Installer stops silently after `Project: ...` or before `configure.sh` (Windows)
+
+Both installers resolve `bash.exe` to an absolute path from `%PATH%` during pre-flight
+(`[PASS] BF-02 bash available: C:\Program Files\Git\bin\bash.exe`) and never call it by bare
+name. This matters because cmd.exe looks in the *current directory* before `%PATH%`, so a project
+that ships its own `bash.cmd` (Antigravity-enabled projects carry one as a shim) would otherwise
+be picked up instead of Git Bash — and a batch file invoked from a batch file without `call`
+never returns, which silently ended the run. If you see this symptom on an older CGW copy, update
+the installers from the CGW source.
 
 ### "Cannot find git repository root"
 

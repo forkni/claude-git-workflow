@@ -13,8 +13,10 @@
 #   --dry-run           Show what would be pushed without pushing
 #   --skip-lint         Skip pre-push lint check
 #   --skip-md-lint      Skip markdown lint only in pre-push check
+#   --skip-typecheck    Skip typecheck only in pre-push check
 #   --no-venv           Forward to check_lint.sh: use system lint tool (no .venv)
-#   --force             Allow force-push (uses --force-with-lease)
+#   --force             Allow force-push (explicit --force-with-lease=<ref>:<sha>, or an
+#                       empty lease <ref>: if the branch doesn't exist on the remote yet)
 #   --branch <name>     Override push target branch (default: current branch)
 #   -h, --help          Show help
 # Returns:
@@ -33,6 +35,7 @@ main() {
   local dry_run=0
   local skip_lint=0
   local skip_md_lint=0
+  local skip_typecheck=0
   local no_venv=0
   local force_push=0
   local target_branch=""
@@ -47,10 +50,12 @@ main() {
         echo "Options:"
         echo "  --non-interactive   Skip all prompts"
         echo "  --dry-run           Show what would be pushed without pushing"
-        echo "  --skip-lint         Skip pre-push lint check (all lint)"
+        echo "  --skip-lint         Skip pre-push lint check (all lint, incl. typecheck)"
         echo "  --skip-md-lint      Skip markdown lint only in pre-push check"
+        echo "  --skip-typecheck    Skip typecheck only in pre-push check"
         echo "  --no-venv           Forward to check_lint.sh: use system lint tool (no .venv)"
-        echo "  --force             Allow force-push (uses --force-with-lease)"
+        echo "  --force             Allow force-push (explicit --force-with-lease=<ref>:<sha>, or an"
+        echo "                      empty lease <ref>: if the branch doesn't exist on the remote yet)"
         echo "  --branch <name>     Override push target branch (default: current branch)"
         echo "  -h, --help          Show this help"
         echo ""
@@ -73,6 +78,7 @@ main() {
       --dry-run) dry_run=1 ;;
       --skip-lint) skip_lint=1 ;;
       --skip-md-lint) skip_md_lint=1 ;;
+      --skip-typecheck) skip_typecheck=1 ;;
       --no-venv) no_venv=1 ;;
       --force) force_push=1 ;;
       --branch)
@@ -89,6 +95,7 @@ main() {
 
   [[ "${CGW_SKIP_LINT:-0}" == "1" ]] && skip_lint=1
   [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]] && skip_md_lint=1
+  [[ "${CGW_SKIP_TYPECHECK:-0}" == "1" ]] && skip_typecheck=1
   [[ "${CGW_NO_VENV:-0}" == "1" ]] && no_venv=1
 
   {
@@ -165,19 +172,74 @@ main() {
   fi
   echo "[OK] Remote '${CGW_REMOTE}' is reachable" | tee -a "$logfile"
 
-  # Check if local is behind remote. If the fetch fails (network/auth), the
-  # behind-check below runs against stale tracking refs and can silently pass —
-  # surface it so the result isn't trusted on stale data.
-  if ! git fetch "${CGW_REMOTE}" "${target_branch}" >>"$logfile" 2>&1; then
-    echo "[!] WARNING: fetch of ${CGW_REMOTE}/${target_branch} failed -- behind-remote check may use stale data" | tee -a "$logfile"
+  # Does the branch already exist on the remote? A brand-new branch has no
+  # remote tip to compare against, so [5/5] uses an explicit empty lease
+  # instead of a SHA-based one. ls-remote queries the remote directly --
+  # unlike the fetch below, it does not depend on the remote's configured
+  # fetch refspec covering this branch.
+  #
+  # cgw_remote_branch_exists returns git ls-remote's raw exit code (0 exists,
+  # 2 genuinely absent, anything else -- 128, etc. -- the probe itself
+  # failed). cgw_remote_reachable above already caught a dead remote in the
+  # common case, so a non-{0,2} code here means a narrower failure (a
+  # transient/auth/server error on this specific ref query). Collapsing that
+  # into "absent" would silently degrade the force-push lease below, so it
+  # must be treated as unknown, not absent.
+  local remote_branch_exists=0
+  local remote_branch_probe_rc=0
+  cgw_remote_branch_exists "${CGW_REMOTE}" "${target_branch}" || remote_branch_probe_rc=$?
+  if [[ ${remote_branch_probe_rc} -eq 0 ]]; then
+    remote_branch_exists=1
+  elif [[ ${remote_branch_probe_rc} -ne 2 ]]; then
+    err "Could not determine whether '${target_branch}' exists on ${CGW_REMOTE} (ls-remote exit ${remote_branch_probe_rc} -- probe failed, not confirmed absent)."
+    log_section_end "REMOTE CHECK" "$logfile" "1"
+    exit 1
   fi
-  local behind
-  behind=$(cgw_rev_count "${target_branch}" "${CGW_REMOTE}/${target_branch}" || echo "0")
-  if [[ "${behind}" -gt 0 ]]; then
+
+  # Check if local is behind remote. Fetch with an explicit refspec (not just
+  # `git fetch <remote> <branch>`, which only guarantees FETCH_HEAD) so
+  # refs/remotes/<remote>/<branch> is always written, even when the remote's
+  # configured fetch refspec doesn't cover this branch (single-branch clones,
+  # narrowed remote.*.fetch -- common in fork/CI setups). The same tracking
+  # ref is what the force-push lease in [5/5] is built from.
+  local state_known=1
+  if [[ ${remote_branch_exists} -eq 1 ]]; then
+    if ! git fetch "${CGW_REMOTE}" \
+      "+refs/heads/${target_branch}:refs/remotes/${CGW_REMOTE}/${target_branch}" \
+      >>"$logfile" 2>&1; then
+      echo "[!] WARNING: fetch of ${CGW_REMOTE}/${target_branch} failed -- behind-remote check may use stale data" | tee -a "$logfile"
+      state_known=0
+    fi
+  fi
+
+  local behind="0"
+  if [[ ${remote_branch_exists} -eq 1 ]] && [[ ${state_known} -eq 1 ]]; then
+    if ! behind=$(cgw_rev_count "${target_branch}" "${CGW_REMOTE}/${target_branch}"); then
+      echo "[!] WARNING: cannot determine commits behind ${CGW_REMOTE}/${target_branch} (rev-list failed)" | tee -a "$logfile"
+      state_known=0
+      behind="0"
+    fi
+  fi
+
+  if [[ ${remote_branch_exists} -eq 1 ]] && [[ ${state_known} -eq 0 ]]; then
+    # Remote state is genuinely unverifiable -- not "diverged as expected from
+    # a rebase" (see below), but "we don't know". Confirm even under --force:
+    # the lease it would otherwise rely on can't be trusted either.
+    echo "  Cannot verify remote state before pushing." | tee -a "$logfile"
+    if ! cgw_confirm "Push anyway without a verified remote state?" --non-interactive abort; then
+      echo "  Aborted" | tee -a "$logfile"
+      log_section_end "REMOTE CHECK" "$logfile" "1"
+      exit 1
+    fi
+  elif [[ "${behind}" -gt 0 ]]; then
     echo "[!] WARNING: Local branch is ${behind} commit(s) behind ${CGW_REMOTE}/${target_branch}" | tee -a "$logfile"
     echo "  A normal push may fail or overwrite remote changes." | tee -a "$logfile"
     echo "  Consider: ./scripts/git/sync_branches.sh" | tee -a "$logfile"
     if [[ ${force_push} -eq 0 ]]; then
+      # Under --force this is the expected state after any rebase/amend (old
+      # SHAs become unreachable from the rewritten history) -- not a hazard.
+      # The force-with-lease guard in [5/5] is what verifies the remote
+      # actually still matches what we just fetched.
       if ! cgw_confirm "Continue push anyway?" --non-interactive abort; then
         echo "  Aborted" | tee -a "$logfile"
         log_section_end "REMOTE CHECK" "$logfile" "1"
@@ -190,19 +252,33 @@ main() {
   echo "" | tee -a "$logfile"
 
   # [3/5] Optional pre-push lint check
-  if [[ ${skip_lint} -eq 0 ]] && [[ -n "${CGW_LINT_CMD}${CGW_FORMAT_CMD}${CGW_MARKDOWNLINT_CMD}" ]]; then
+  if [[ ${skip_lint} -eq 0 ]] && [[ -n "${CGW_LINT_CMD}${CGW_FORMAT_CMD}${CGW_MARKDOWNLINT_CMD}${CGW_TYPECHECK_CMD}" ]]; then
     log_section_start "PRE-PUSH LINT CHECK" "$logfile"
     echo "Running pre-push lint check..." | tee -a "$logfile"
     local lint_args=()
     [[ ${skip_md_lint} -eq 1 ]] && lint_args+=("--skip-md-lint")
+    [[ ${skip_typecheck} -eq 1 ]] && lint_args+=("--skip-typecheck")
     [[ ${no_venv} -eq 1 ]] && lint_args+=("--no-venv")
-    if bash "${SCRIPT_DIR}/check_lint.sh" "${lint_args[@]}" >>"$logfile" 2>&1; then
+    local lint_check_status=0
+    bash "${SCRIPT_DIR}/check_lint.sh" "${lint_args[@]}" >>"$logfile" 2>&1 || lint_check_status=$?
+    if [[ ${lint_check_status} -eq 0 ]]; then
       echo "[OK] Lint check passed" | tee -a "$logfile"
       log_section_end "PRE-PUSH LINT CHECK" "$logfile" "0"
+    elif [[ ${lint_check_status} -eq 2 ]]; then
+      # Typecheck failures are fatal and never offered the interactive
+      # "push anyway?" override -- only the explicit --skip-typecheck /
+      # CGW_SKIP_TYPECHECK=1 bypass (checked before check_lint.sh even runs)
+      # can let a type error through. This is what makes the gate blocking.
+      echo "[!] Typecheck failed" | tee -a "$logfile"
+      log_section_end "PRE-PUSH LINT CHECK" "$logfile" "1"
+      echo "  Type errors must be fixed by hand -- see log for details" | tee -a "$logfile"
+      echo "  Bypass: --skip-typecheck (types only) or --skip-lint (all checks)" | tee -a "$logfile"
+      exit 1
     else
       echo "[!] Lint check failed" | tee -a "$logfile"
       log_section_end "PRE-PUSH LINT CHECK" "$logfile" "1"
-      echo "  Run ./scripts/git/fix_lint.sh to fix issues, or use --skip-lint to bypass" | tee -a "$logfile"
+      echo "  Run ./scripts/git/fix_lint.sh (lint/format/markdown)" | tee -a "$logfile"
+      echo "  Bypass: --skip-lint (all checks)" | tee -a "$logfile"
       if ! cgw_confirm "Push anyway despite lint errors?" --non-interactive abort; then
         exit 1
       fi
@@ -224,7 +300,17 @@ main() {
     echo "=== DRY RUN -- no push performed ===" | tee -a "$logfile"
     echo "Would push: ${target_branch} -> ${CGW_REMOTE}/${target_branch}" | tee -a "$logfile"
     if [[ ${force_push} -eq 1 ]]; then
-      echo "Would use: --force-with-lease" | tee -a "$logfile"
+      if [[ ${remote_branch_exists} -eq 0 ]]; then
+        echo "Would use: --force-with-lease=refs/heads/${target_branch}: (explicit empty lease; branch doesn't exist yet on ${CGW_REMOTE} -- still guards against one being created concurrently)" | tee -a "$logfile"
+      else
+        local dry_lease_sha
+        dry_lease_sha=$(git rev-parse --verify --quiet "refs/remotes/${CGW_REMOTE}/${target_branch}" 2>/dev/null) || dry_lease_sha=""
+        if [[ -n "${dry_lease_sha}" ]]; then
+          echo "Would use: --force-with-lease=refs/heads/${target_branch}:${dry_lease_sha}" | tee -a "$logfile"
+        else
+          echo "Would use: --force-with-lease (unable to resolve a lease value -- push would fail closed)" | tee -a "$logfile"
+        fi
+      fi
     fi
     exit 0
   fi
@@ -235,8 +321,34 @@ main() {
   local push_flags=()
   push_flags+=("${CGW_REMOTE}" "${target_branch}")
   if [[ ${force_push} -eq 1 ]]; then
-    push_flags+=("--force-with-lease")
-    echo "Using --force-with-lease (safer than --force)" | tee -a "$logfile"
+    if [[ ${remote_branch_exists} -eq 0 ]]; then
+      # Empty <expect> is git's documented syntax for "the ref must not
+      # already exist on the remote" -- still a real guard, distinct from
+      # pushing with no lease at all: it rejects the push (with "stale info")
+      # if the branch was created on the remote between the probe above and
+      # this push.
+      push_flags+=("--force-with-lease=refs/heads/${target_branch}:")
+      echo "Branch does not exist on ${CGW_REMOTE} yet -- using --force-with-lease=refs/heads/${target_branch}: (explicit empty lease; still guards against a branch created concurrently)" | tee -a "$logfile"
+    else
+      # Bare --force-with-lease derives its expected value from the local
+      # remote-tracking ref, resolved via the remote's configured fetch
+      # refspec -- NOT by checking whether the ref simply exists. Under a
+      # narrowed/single-branch refspec that resolution silently fails and git
+      # rejects with "stale info" even when the remote is perfectly in sync
+      # (see the REMOTE CHECK fetch above, which populates this same ref via
+      # an explicit refspec regardless of what's configured). Passing the
+      # lease explicitly is the only form documented to work without relying
+      # on that resolution.
+      local lease_sha
+      lease_sha=$(git rev-parse --verify --quiet "refs/remotes/${CGW_REMOTE}/${target_branch}" 2>/dev/null) || lease_sha=""
+      if [[ -z "${lease_sha}" ]]; then
+        err_tee "[FAIL] Cannot establish a force-push lease: refs/remotes/${CGW_REMOTE}/${target_branch} is unresolvable even after fetch"
+        log_section_end "GIT PUSH" "$logfile" "1"
+        exit 1
+      fi
+      push_flags+=("--force-with-lease=refs/heads/${target_branch}:${lease_sha}")
+      echo "Using --force-with-lease=refs/heads/${target_branch}:${lease_sha} (explicit lease; safer than bare --force-with-lease)" | tee -a "$logfile"
+    fi
   fi
 
   if run_git_with_logging "GIT PUSH" "$logfile" push "${push_flags[@]}"; then

@@ -9,6 +9,13 @@ load '../helpers/mocks'
 setup() {
   create_test_repo_with_remote
   setup_mock_bin
+  # Default origin to a resolvable github.com URL (redirected to the local
+  # bare remote via insteadOf) so tests that aren't specifically about
+  # URL-shape parsing exercise the realistic path: create_pr.sh now fails
+  # closed (exit 1) when origin can't be resolved to an owner/repo, so every
+  # test that expects the script to actually run needs a resolvable origin.
+  # The "non-github origin" test below explicitly reverts this.
+  _use_fake_github_origin
   # Start on development which is already 1 commit ahead of main
   git -C "${TEST_REPO_DIR}" checkout development
 }
@@ -183,4 +190,59 @@ _run_create_pr() {
   install_mock_gh
   run _run_create_pr
   [[ "${output}" == *"github.com"* ]] || [[ "${output}" == *"pull/"* ]]
+}
+
+# ── Explicit --repo (fork/upstream default-resolution bug) ──────────────────
+# Reproduces the fork/upstream repo shape offline: origin's *configured* URL
+# is rewritten to a fake github.com URL, but `url.<bare-dir>.insteadOf` sends
+# all real git transport (fetch/push/ls-remote) transparently to the local
+# bare remote already set up by create_test_repo_with_remote. This lets
+# cgw_remote_owner_repo "see" a github.com URL and parse it, while the rest of
+# the script still runs fully offline against the local bare repo.
+#
+# Without --repo, `gh pr create` resolves its own target repo and -- when the
+# remote is a fork -- defaults to the fork's parent/upstream repo instead of
+# origin itself. Asserting the exact --repo value in gh.log is red-capable:
+# before the fix, create_pr.sh never passed --repo at all.
+#
+# setup() also calls this for every test in the file: create_pr.sh now fails
+# closed when origin can't be resolved, so any test that expects the script
+# to run to completion needs a resolvable origin, not just the two tests
+# below that assert on the resolved --repo value itself.
+
+_use_fake_github_origin() {
+  local fake_url="https://github.com/forkni/claude-git-workflow.git"
+  git -C "${TEST_REPO_DIR}" config remote.origin.url "${fake_url}"
+  git -C "${TEST_REPO_DIR}" config "url.${TEST_REMOTE_DIR}.insteadOf" "${fake_url}"
+}
+
+@test "fork-shaped origin: passes explicit --repo resolved from origin's URL" {
+  install_mock_gh
+  _use_fake_github_origin
+  run _run_create_pr
+  [ "${status}" -eq 0 ]
+  grep -q -- "--repo forkni/claude-git-workflow" "${MOCK_BIN_DIR}/gh.log"
+}
+
+@test "fork-shaped origin: --dry-run preview shows the resolved repo" {
+  install_mock_gh
+  _use_fake_github_origin
+  run _run_create_pr "--dry-run"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"forkni/claude-git-workflow"* ]]
+}
+
+@test "non-github origin: refuses gh pr create without --repo (fails closed)" {
+  install_mock_gh
+  # Undo setup()'s default fake-github origin: this test exercises the case
+  # where origin genuinely can't be resolved to a github.com owner/repo (e.g.
+  # a local bare path, or a self-hosted git server) -- create_pr.sh must
+  # abort rather than let gh fall back to its own (unsafe) repo resolution.
+  git -C "${TEST_REPO_DIR}" config remote.origin.url "${TEST_REMOTE_DIR}"
+  run _run_create_pr
+  [ "${status}" -eq 1 ]
+  if [ -f "${MOCK_BIN_DIR}/gh.log" ]; then
+    ! grep -q "pr create" "${MOCK_BIN_DIR}/gh.log"
+  fi
+  [[ "${output}" == *"--repo"* ]]
 }

@@ -87,3 +87,18 @@ _run_check() {
   run _run_check 'export CGW_LOCAL_FILES="logs/"'
   [ "${status}" -eq 0 ]
 }
+
+# ── CLI argument handling (Obs 6) ─────────────────────────────────────────────
+
+@test "check_local_files.sh --help outputs usage and exits 0" {
+  run run_script check_local_files.sh --help
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Usage: "* ]]
+}
+
+@test "check_local_files.sh with unknown flag exits 1" {
+  run run_script check_local_files.sh --bogus-flag
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Unknown option: --bogus-flag"* ]]
+}
+

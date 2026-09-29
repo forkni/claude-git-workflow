@@ -26,7 +26,7 @@ Charlie also reads CLAUDE.md for project context.
 - [R7] Add `# shellcheck source=scripts/git/_config.sh` directive on source statements for sourced files
 - [R8] Never commit files listed in `CGW_LOCAL_FILES` (default: `CLAUDE.md MEMORY.md .claude/ logs/`)
 - [R9] Use forward slashes in all paths — never backslashes (bash on Windows requires forward slashes)
-- [R10] Use conventional commit prefixes: `feat|fix|docs|chore|test|refactor|style|perf` (extensible via `CGW_EXTRA_PREFIXES`)
+- [R10] Use conventional commit prefixes: `feat|fix|docs|chore|test|refactor|style|perf` (extensible via `CGW_EXTRA_PREFIXES`). A branch matching `CGW_FREEFORM_MESSAGE_BRANCHES` (e.g. an upstream PR branch) is exempt from this format — except the source, target, and any protected branch, which can never be exempted regardless of glob
 - [R11] Handle cross-platform venv: check `.venv/Scripts/` (Windows) before `.venv/bin/` (Unix) — see `get_python_path()` in `_common.sh`
 
 ## Examples

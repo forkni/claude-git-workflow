@@ -265,6 +265,74 @@ _run_merge() {
   [[ "${output}" == *"Content conflicts require manual resolution"* ]]
 }
 
+@test "UU conflict halt points to commit_enhanced.sh, not a bare git commit" {
+  # commit_enhanced.sh's own guardrail hook blocks a bare `git commit` -- the
+  # recovery hint printed here must not send the user into that dead end
+  # (see cgw_resolve_safe_conflicts' continue_hint in _common.sh).
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add conflict.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff -m "chore: sync conflict.txt"
+  printf 'dev-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev edits line1"
+
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'main-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "fix: main edits line1"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"commit_enhanced.sh"* ]]
+  [[ "${output}" != *"3. git commit"* ]]
+}
+
+@test "finishing a UU merge via commit_enhanced.sh with no message creates the merge commit" {
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add conflict.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff -m "chore: sync conflict.txt"
+  printf 'dev-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev edits line1"
+
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'main-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "fix: main edits line1"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+
+  # merge_with_validation.sh checked out the target (main) to perform the
+  # merge and stayed there (cleanup trap can't check out over unmerged paths).
+  printf 'resolved-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh'
+  "
+  [ "${status}" -eq 0 ]
+
+  local parents
+  parents="$(git -C "${TEST_REPO_DIR}" rev-list --parents -n1 HEAD)"
+  [ "$(echo "${parents}" | wc -w)" -eq 3 ]
+  [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" = "Merge development into main" ]
+}
+
 # ── Conflict resolution: UD (deleted-by-them halt) ───────────────────────────
 
 # ── Merge conflict style (CGW_MERGE_CONFLICT_STYLE) ──────────────────────────
@@ -448,3 +516,54 @@ _seed_add_then_delete_local_file_on_source() {
   [ "${status}" -eq 0 ]
   [[ "${output}" != *"uncommitted changes"* ]]
 }
+
+# ── Regression: a successful merge leaves you on the target branch ──────────
+# The EXIT trap that returns to the original branch after an ABORTED merge also
+# fired after a successful one: it printed "Interrupted" and checked out the
+# source branch again, so the summary's "Next steps: push_validated.sh" would
+# have pushed the source instead of the freshly merged target.
+
+@test "successful merge stays on the target branch without an 'Interrupted' notice" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  run _run_merge --target main
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"MERGE SUCCESSFUL"* ]]
+  [[ "${output}" != *"Interrupted"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" branch --show-current)" = "main" ]
+}
+
+# ── Trap messaging and guard order (Obs 4, Obs 5) ─────────────────────────────
+
+@test "refused merge due to local-only file leaves no backup tag (Obs 5)" {
+  _seed_local_file_on_source
+  run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"local-only file"* ]]
+  # No pre-merge backup tag created
+  [ -z "$(git -C "${TEST_REPO_DIR}" tag -l "pre-merge-*")" ]
+}
+
+@test "merge conflict exit trap reports paused resolution and does not claim returning to source (Obs 4)" {
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add conflict.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff -m "chore: sync conflict.txt"
+  printf 'dev-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev edits line1"
+
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'main-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "fix: main edits line1"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Merge paused for conflict resolution"* ]]
+  [[ "${output}" != *"Returning to: development"* ]]
+}
+

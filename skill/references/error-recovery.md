@@ -42,7 +42,7 @@ unset SKIP_CGW_GUARDRAIL
 **Permanent uninstall:**
 
 1. Remove the PreToolUse entry from `.claude/settings.json` (delete the object whose `command` contains `cc-block-dangerous-git`)
-2. Delete `.claude/hooks/cc-block-dangerous-git.sh`
+2. Delete `.claude/hooks/cc-block-dangerous-git.sh` and the shared classifier next to it, `.claude/hooks/_guardrail_core.sh`
 
 **Reinstall:** re-run `./scripts/git/configure.sh` and answer yes to the guardrail prompt.
 
@@ -215,10 +215,11 @@ git add <resolved-files>
 ./scripts/git/rebase_safe.sh --skip
 ```
 
-Restore from backup tag if needed:
+Restore from backup tag if needed (after the rebase has completed or been
+aborted, with the rebased branch checked out):
 
 ```bash
-git checkout pre-rebase-<timestamp>-<pid>
+git reset --hard pre-rebase-<timestamp>-<pid>
 ```
 
 ---

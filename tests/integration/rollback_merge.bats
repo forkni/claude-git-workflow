@@ -126,3 +126,29 @@ teardown() {
   tagged_sha=$(git -C "${TEST_REPO_DIR}" rev-parse "${tag}")
   [ "${tagged_sha}" = "${discarded_sha}" ]
 }
+
+# ── --revert mode: reject root commit (R1) ────────────────────────────────────
+
+@test "--revert refuses when rollback target is a root commit" {
+  local root_sha
+  root_sha=$(git -C "${TEST_REPO_DIR}" rev-list --max-parents=0 HEAD)
+
+  run run_script rollback_merge.sh --non-interactive --revert --target "${root_sha}"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" != *"syntax error"* ]]
+  [[ "${output}" == *"requires a merge commit"* ]]
+  [[ "${output}" == *"has 0 parent(s)"* ]]
+  [ -f "${TEST_REPO_DIR}/README.md" ]
+}
+
+@test "--non-interactive hard rollback refuses when --target omitted and no backup tag exists (E1)" {
+  echo "extra" > "${TEST_REPO_DIR}/extra.txt"
+  git -C "${TEST_REPO_DIR}" add extra.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: second commit"
+
+  run run_script rollback_merge.sh --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Refusing hard rollback: no --target specified and no pre-merge backup tag found"* ]]
+}
+
+

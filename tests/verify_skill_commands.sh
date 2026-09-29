@@ -16,6 +16,7 @@ DOCS=(
   "$REPO_ROOT/command/auto-git-workflow-cmd.md"
   "$REPO_ROOT/skill/references/full-promotion.md"
   "$REPO_ROOT/skill/references/ci-verification.md"
+  "$REPO_ROOT/skill/references/gitignore-templates.md"
 )
 pass=0
 fail=0

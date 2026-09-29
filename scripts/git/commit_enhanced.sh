@@ -123,6 +123,117 @@ _restage_after_fix() {
   unstage_local_only_files
 }
 
+# Pure staging-mode decision for a run. Prints 1 (commit the index as-is),
+# 0 (bulk-stage tracked changes first), or "auto" -- staged-only, detected
+# rather than requested: the user pre-staged a selection AND has unstaged
+# changes, so respect the selection (the caller explains why). --staged-only
+# (or --only) wins over --all; --all wins over auto-detection.
+#   _effective_staged_only <staged_only> <all_flag> <has_staged> <has_unstaged>
+_effective_staged_only() {
+  if [[ $1 -eq 1 ]]; then
+    echo 1
+  elif [[ $2 -eq 1 ]]; then
+    echo 0
+  elif [[ $3 -ne 0 ]] && [[ $4 -ne 0 ]]; then
+    echo auto
+  else
+    echo 0
+  fi
+}
+
+# [3.5] Congruence guard: the lint/format/markdown checks validate the WORKING
+# TREE, but `git commit` records the INDEX. If a staged file CGW actually
+# validated (a lint-eligible file when a code checker is configured, or a *.md
+# file when markdownlint genuinely ran) has a blob that differs from what's on
+# disk, CGW would commit content it never validated -- silently. Covers both
+# the gate-skip case (working tree already clean, stale staged blob) and a
+# re-stage that silently failed to update the index. Runs once, after both the
+# lint/format and markdown auto-fix blocks, so one check covers both paths --
+# see cgw_validated_path_set and docs/adr/0001-partial-staging-fails-closed.md.
+#
+#   _congruence_guard <md_skipped> <whole_file_intent>
+#
+# <md_skipped> is main()'s skip_md_lint, forwarded explicitly rather than
+# exported into CGW_SKIP_MD_LINT (see cgw_validated_path_set's header). It
+# feeds both detection and the re-verify below, so the two always see the same
+# validated path set.
+#
+# <whole_file_intent> 1 = staging intent is whole-file (bulk/--all, or --only
+# <paths>): re-staging a diverging file is safe, so re-stage and re-verify.
+# 0 = genuine partial staging (--staged-only, or auto-detected pre-stage +
+# unstaged, with no --only) may intentionally leave index != working tree --
+# never silently re-stage there; fail closed unless
+# CGW_ALLOW_STAGED_DIVERGENCE=1. Returns 1, after reporting, to abort.
+_congruence_guard() {
+  local md_skipped="$1" whole_file_intent="$2"
+  local -a diverged=()
+  local f
+  while IFS= read -r f; do
+    [[ -n "${f}" ]] && diverged+=("${f}")
+  done < <(cgw_validated_path_set "${md_skipped}" | cgw_paths_diverging_from_index)
+
+  [[ ${#diverged[@]} -eq 0 ]] && return 0
+
+  if [[ ${whole_file_intent} -eq 1 ]]; then
+    echo "[!] Validated working tree diverges from staged blob; re-staging: ${diverged[*]}"
+    for f in "${diverged[@]}"; do
+      git add -f -- "${f}"
+    done
+    unstage_local_only_files
+    # Re-verify: a path that still can't be re-staged (e.g. assume-unchanged/
+    # skip-worktree) stays divergent -- fail closed rather than commit
+    # unvalidated content.
+    if cgw_validated_path_set "${md_skipped}" | cgw_paths_diverging_from_index >/dev/null; then
+      err "Staged content still diverges from the validated working tree; aborting."
+      return 1
+    fi
+  elif [[ "${CGW_ALLOW_STAGED_DIVERGENCE:-0}" == "1" ]]; then
+    echo "[!] staged-only: committing staged blob that differs from the validated working tree (CGW_ALLOW_STAGED_DIVERGENCE=1)"
+  else
+    err "Staged content differs from the validated working tree for: ${diverged[*]}"
+    err "CGW validated the working tree but would commit a different staged blob."
+    err "  - To commit exactly your staged hunks:  CGW_ALLOW_STAGED_DIVERGENCE=1"
+    err "  - To bypass the checks entirely:        --skip-lint"
+    err "  - To commit the full working-tree file: git add ${diverged[*]}  (DISCARDS your hunk selection)"
+    return 1
+  fi
+}
+
+# Auto-fix one check family, re-stage the result, then re-run the same check
+# over the same files -- the sequence every auto-fix branch (interactive or
+# not, code or markdown) must follow. Takes the staged-file snapshots
+# explicitly for the same reason _restage_after_fix does. Returns 1, after
+# reporting, when errors remain; the caller aborts the commit.
+#   _fix_restage_recheck <lint|md> <originally_staged_files> <partially_staged_files> <file>...
+_fix_restage_recheck() {
+  local kind="$1" originally_staged_files="$2" partially_staged_files="$3"
+  shift 3
+  local remaining=0
+  case "${kind}" in
+    lint)
+      cgw_run_lint_fix "$@"
+      _restage_after_fix "${originally_staged_files}" "${partially_staged_files}"
+      # Re-check after fix (same staged scope)
+      cgw_run_lint_check "$@" || remaining=1
+      cgw_run_format_check "$@" || remaining=1
+      if [[ ${remaining} -eq 1 ]]; then
+        err "Code quality errors remain after auto-fix"
+        return 1
+      fi
+      ;;
+    md)
+      cgw_run_markdownlint_fix "$@"
+      _restage_after_fix "${originally_staged_files}" "${partially_staged_files}"
+      # Re-check after fix (same staged scope)
+      cgw_run_markdownlint_check "$@" || remaining=1
+      if [[ ${remaining} -eq 1 ]]; then
+        err "Markdown lint errors remain after auto-fix"
+        return 1
+      fi
+      ;;
+  esac
+}
+
 main() {
   local non_interactive=0
   local skip_lint=0
@@ -178,6 +289,11 @@ main() {
         echo "  Standard types: feat fix docs chore test refactor style perf"
         echo "  Configure extras via CGW_EXTRA_PREFIXES in .cgw.conf"
         echo ""
+        echo "During a merge (MERGE_HEAD present), the message is optional:"
+        echo "  with none, uses git's prepared merge message (comments stripped)."
+        echo "  Merge-conclusion commits skip the conventional-format check and"
+        echo "  the subject-length hard cap (pre-push exempts merge commits too)."
+        echo ""
         echo "Environment:"
         echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
         echo "  CGW_STAGED_ONLY=1       Same as --staged-only"
@@ -207,7 +323,10 @@ main() {
         shift
         ;;
       --interactive)
+        # Undo the no-TTY auto-detection above for cgw_confirm too, not just
+        # this script's own read -p prompts.
         non_interactive=0
+        CGW_NON_INTERACTIVE=0
         shift
         ;;
       --staged-only)
@@ -393,12 +512,9 @@ main() {
   # Determine effective staging mode.
   # Safe default: if user pre-staged anything AND has unstaged changes,
   # respect their selection (implicit --staged-only). --all overrides.
-  local effective_staged_only=0
-  if [[ ${staged_only} -eq 1 ]]; then
-    effective_staged_only=1
-  elif [[ ${all_flag} -eq 1 ]]; then
-    effective_staged_only=0
-  elif [[ ${has_staged} -ne 0 ]] && [[ ${has_unstaged} -ne 0 ]]; then
+  local effective_staged_only
+  effective_staged_only=$(_effective_staged_only "${staged_only}" "${all_flag}" "${has_staged}" "${has_unstaged}")
+  if [[ "${effective_staged_only}" == "auto" ]]; then
     effective_staged_only=1
     echo ""
     echo "===================================================================="
@@ -422,6 +538,11 @@ main() {
     if cgw_confirm "Stage all tracked changes?" --non-interactive accept; then
       git add -u
       unstage_local_only_files
+      if git diff --cached --quiet && [[ ${merge_in_progress} -eq 0 ]]; then
+        echo "[OK] Changes staged"
+        echo "[!] No changes to commit (tracked changes were in local-only files and were excluded)"
+        exit 0
+      fi
       echo "[OK] Changes staged"
     else
       echo "Please stage changes manually: git add <files>"
@@ -481,6 +602,15 @@ main() {
   fi
 
   # [3] Code quality check
+  # Deliberately no typecheck here. Every check in this block is scoped to the
+  # staged files (see cgw_staged_files_for_lint / cgw_validated_path_set
+  # below); a typechecker has no honest staged-scoped form -- it resolves
+  # imports across the whole project. Running it whole-repo would let an
+  # untouched file's pre-existing type error block an unrelated commit, and
+  # would pull every repo path into cgw_validated_path_set, turning the [3.5]
+  # congruence guard below into an indiscriminate re-stager. Typecheck is
+  # advisory at commit time via hooks/pre-commit and BLOCKING at push time via
+  # check_lint.sh / push_validated.sh.
   echo "[3/6] Checking code quality..."
 
   if [[ ${skip_lint} -eq 1 ]]; then
@@ -510,24 +640,12 @@ main() {
       echo "[!] Code quality errors detected"
       if [[ ${non_interactive} -eq 1 ]]; then
         echo "[Non-interactive] Auto-fixing code quality issues..."
-        cgw_run_lint_fix "${staged_lint[@]}"
-        _restage_after_fix "${originally_staged_files}" "${partially_staged_files}"
-
-        # Re-check after fix (same staged scope)
-        python_lint_error=0
-        cgw_run_lint_check "${staged_lint[@]}" || python_lint_error=1
-        cgw_run_format_check "${staged_lint[@]}" || python_lint_error=1
-
-        if [[ ${python_lint_error} -eq 1 ]]; then
-          err "Code quality errors remain after auto-fix"
-          exit 1
-        fi
+        _fix_restage_recheck lint "${originally_staged_files}" "${partially_staged_files}" "${staged_lint[@]}" || exit 1
       else
         read -rp "Auto-fix code quality issues? (yes/no/skip): " fix_lint
         case "${fix_lint}" in
           yes | y)
-            cgw_run_lint_fix "${staged_lint[@]}"
-            _restage_after_fix "${originally_staged_files}" "${partially_staged_files}"
+            _fix_restage_recheck lint "${originally_staged_files}" "${partially_staged_files}" "${staged_lint[@]}" || exit 1
             ;;
           skip | s)
             echo "[!] Proceeding with code quality warnings (CI may flag these)"
@@ -563,32 +681,12 @@ main() {
           echo "[!] Markdown lint errors detected"
           if [[ ${non_interactive} -eq 1 ]]; then
             echo "[Non-interactive] Auto-fixing markdown lint issues..."
-            cgw_run_markdownlint_fix "${staged_md[@]}"
-            _restage_after_fix "${originally_staged_files}" "${partially_staged_files}"
-
-            # Re-check after fix (same staged scope)
-            md_lint_error=0
-            cgw_run_markdownlint_check "${staged_md[@]}" || md_lint_error=1
-
-            if [[ ${md_lint_error} -eq 1 ]]; then
-              err "Markdown lint errors remain after auto-fix"
-              exit 1
-            fi
+            _fix_restage_recheck md "${originally_staged_files}" "${partially_staged_files}" "${staged_md[@]}" || exit 1
           else
             read -rp "Auto-fix markdown lint issues? (yes/no/skip): " fix_md_lint
             case "${fix_md_lint}" in
               yes | y)
-                cgw_run_markdownlint_fix "${staged_md[@]}"
-                _restage_after_fix "${originally_staged_files}" "${partially_staged_files}"
-
-                # Re-check after fix (same staged scope)
-                md_lint_error=0
-                cgw_run_markdownlint_check "${staged_md[@]}" || md_lint_error=1
-
-                if [[ ${md_lint_error} -eq 1 ]]; then
-                  err "Markdown lint errors remain after auto-fix"
-                  exit 1
-                fi
+                _fix_restage_recheck md "${originally_staged_files}" "${partially_staged_files}" "${staged_md[@]}" || exit 1
                 ;;
               skip | s)
                 echo "[!] Proceeding with markdown lint warnings (CI may flag these)"
@@ -607,61 +705,14 @@ main() {
       echo "  (markdown lint skipped -- --skip-md-lint)"
     fi
 
-    # [3.5] Congruence guard: the checks above validated the WORKING TREE, but
-    # `git commit` records the INDEX. If a staged file CGW actually validated
-    # (a lint-eligible file when a code checker is configured, or a *.md file
-    # when markdownlint genuinely ran) has a blob that differs from what's on
-    # disk, CGW would commit content it never validated -- silently. Covers
-    # both the gate-skip case (working tree already clean, stale staged
-    # blob) and a re-stage that silently failed to update the index. Runs
-    # once here, after both the lint/format auto-fix above and the markdown
-    # auto-fix just above, so one check covers both paths -- see
-    # cgw_validated_path_set.
-    #
-    # skip_md_lint is a main() local, invisible to a script-level function --
-    # forward it explicitly rather than exporting it into CGW_SKIP_MD_LINT
-    # (see cgw_validated_path_set's header for why). It must be forwarded
-    # identically at BOTH call sites below (detection and re-verify): if they
-    # drift, the re-verify sees a different validated set than detection did,
-    # and can abort after a re-stage that actually succeeded.
-    local -a _diverged_validated_files=()
-    local _div_f
-    while IFS= read -r _div_f; do
-      [[ -n "${_div_f}" ]] && _diverged_validated_files+=("${_div_f}")
-    done < <(cgw_validated_path_set "${skip_md_lint}" | cgw_paths_diverging_from_index)
-
-    if [[ ${#_diverged_validated_files[@]} -gt 0 ]]; then
-      # Re-staging the whole file is safe only when staging intent is
-      # whole-file: bulk/--all (effective_staged_only==0) or --only <paths>
-      # (only_paths non-empty; --only forces staged_only=1 above). Genuine
-      # partial staging (--staged-only, or auto-detected pre-stage+unstaged,
-      # with no --only) may intentionally leave index != working tree --
-      # never silently re-stage there.
-      if [[ ${effective_staged_only} -eq 0 || ${#only_paths[@]} -gt 0 ]]; then
-        echo "[!] Validated working tree diverges from staged blob; re-staging: ${_diverged_validated_files[*]}"
-        local _div_rf
-        for _div_rf in "${_diverged_validated_files[@]}"; do
-          git add -f -- "${_div_rf}"
-        done
-        unstage_local_only_files
-        # Re-verify: a path that still can't be re-staged (e.g. assume-unchanged/
-        # skip-worktree) stays divergent -- fail closed rather than commit
-        # unvalidated content.
-        if cgw_validated_path_set "${skip_md_lint}" | cgw_paths_diverging_from_index >/dev/null; then
-          err "Staged content still diverges from the validated working tree; aborting."
-          exit 1
-        fi
-      elif [[ "${CGW_ALLOW_STAGED_DIVERGENCE:-0}" == "1" ]]; then
-        echo "[!] staged-only: committing staged blob that differs from the validated working tree (CGW_ALLOW_STAGED_DIVERGENCE=1)"
-      else
-        err "Staged content differs from the validated working tree for: ${_diverged_validated_files[*]}"
-        err "CGW validated the working tree but would commit a different staged blob."
-        err "  - To commit exactly your staged hunks:  CGW_ALLOW_STAGED_DIVERGENCE=1"
-        err "  - To bypass the checks entirely:        --skip-lint"
-        err "  - To commit the full working-tree file: git add ${_diverged_validated_files[*]}  (DISCARDS your hunk selection)"
-        exit 1
-      fi
+    # [3.5] Congruence guard -- the checks above validated the WORKING TREE,
+    # `git commit` records the INDEX; see _congruence_guard. Whole-file staging
+    # intent: bulk/--all (effective_staged_only==0) or --only <paths>.
+    local whole_file_intent=0
+    if [[ ${effective_staged_only} -eq 0 || ${#only_paths[@]} -gt 0 ]]; then
+      whole_file_intent=1
     fi
+    _congruence_guard "${skip_md_lint}" "${whole_file_intent}" || exit 1
   fi
   echo ""
 
@@ -680,21 +731,75 @@ main() {
   # [5] Get commit message
   echo "[5/6] Commit message..."
 
-  if [[ -z "${commit_msg_param}" ]]; then
+  local commit_msg="${commit_msg_param}"
+
+  # A merge in progress has a message prepared by git already (MERGE_MSG) --
+  # don't force the caller to author one. Strip the "# Conflicts:" comment
+  # block the same way `git commit` itself does before using it verbatim.
+  # git rev-parse --git-path also resolves correctly inside a worktree.
+  if [[ -z "${commit_msg}" ]] && [[ ${merge_in_progress} -eq 1 ]]; then
+    local merge_msg_path
+    merge_msg_path="$(git rev-parse --git-path MERGE_MSG 2>/dev/null)"
+    if [[ -n "${merge_msg_path}" ]] && [[ -f "${merge_msg_path}" ]]; then
+      commit_msg="$(git stripspace --strip-comments < "${merge_msg_path}")"
+    fi
+    if [[ -n "${commit_msg}" ]]; then
+      echo "  [i] Merge in progress; using git's prepared merge message"
+    fi
+  fi
+
+  if [[ -z "${commit_msg}" ]]; then
     err "Commit message required"
     echo "Usage: ./scripts/git/commit_enhanced.sh \"feat: Your message\"" >&2
+    if [[ ${merge_in_progress} -eq 1 ]]; then
+      echo "During a merge you may omit it to use git's prepared merge message." >&2
+    fi
     echo "Types: feat fix docs chore test refactor style perf (+ extras in .cgw.conf)" >&2
     exit 1
   fi
 
-  local commit_msg="${commit_msg_param}"
+  # A merge conclusion (MERGE_HEAD present) is exempt from the conventional-
+  # format check and the freeform check, the same way hooks/pre-push already
+  # exempts merge commits by parent count. A merge commit's subject describes
+  # what was merged ("Merge X into Y"), not a change type -- there is no
+  # sensible "type:" prefix to require, whether the message came from git's
+  # prepared MERGE_MSG above or was passed explicitly to override it.
+  local _merge_conclusion=0
+  if [[ ${merge_in_progress} -eq 1 ]]; then
+    _merge_conclusion=1
+    echo "  [i] Merge commit; conventional format not enforced (pre-push exempts merge commits too)"
+  fi
 
-  if ! cgw_validate_commit_message "${commit_msg}"; then
-    echo "[!] WARNING: Message doesn't follow conventional format"
-    echo "  Configured types: ${CGW_ALL_PREFIXES/|/, }"
-    if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
-      echo "Commit cancelled"
-      exit 0
+  # A freeform branch (CGW_FREEFORM_MESSAGE_BRANCHES) answers to another
+  # project's commit-message style -- e.g. an upstream PR branch. Skip the
+  # conventional-format check and the hard subject-length cap on it, but
+  # still run CGW_FREEFORM_MESSAGE_CHECK when configured (the target
+  # project's own gate, e.g. its commit-msg hook) so the branch is not left
+  # with no message gate at all. CGW_SOURCE_BRANCH, CGW_TARGET_BRANCH, and
+  # CGW_PROTECTED_BRANCHES are guard-proof: cgw_branch_is_freeform never
+  # exempts them even if a glob matches, so an overbroad pattern like "*"
+  # cannot silently turn off enforcement on the branches CGW protects.
+  local _freeform=0
+  if [[ ${_merge_conclusion} -eq 1 ]]; then
+    : # exempted above; skip both the freeform and conventional-format checks
+  elif cgw_branch_is_freeform "${current_branch}"; then
+    _freeform=1
+    echo "  [i] ${current_branch} matches CGW_FREEFORM_MESSAGE_BRANCHES; conventional format not enforced"
+    if ! cgw_freeform_message_check "${commit_msg}"; then
+      err "Commit message rejected by CGW_FREEFORM_MESSAGE_CHECK"
+      exit 1
+    fi
+  else
+    if cgw_branch_matches_freeform_glob "${current_branch}" && cgw_branch_is_guarded "${current_branch}"; then
+      echo "  [i] ${current_branch} is a protected/source/target branch; CGW_FREEFORM_MESSAGE_BRANCHES ignored"
+    fi
+    if ! cgw_validate_commit_message "${commit_msg}"; then
+      echo "[!] WARNING: Message doesn't follow conventional format"
+      echo "  Configured types: ${CGW_ALL_PREFIXES//|/, }"
+      if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
+        echo "Commit cancelled"
+        exit 0
+      fi
     fi
   fi
 
@@ -702,7 +807,10 @@ main() {
   # for the summary line after the prefix; git log --oneline / GitHub UI
   # commonly truncate around 72). Soft threshold: advisory tip, non-blocking.
   # Hard threshold: blocks via cgw_confirm (non-interactive: abort) unless
-  # CGW_ENFORCE_SUBJECT_LENGTH=0.
+  # CGW_ENFORCE_SUBJECT_LENGTH=0. On a freeform branch the hard cap is
+  # advisory only (a tip, never a block) -- the target project's own style
+  # sets the real limit, and CGW_FREEFORM_MESSAGE_CHECK is the place to
+  # enforce it if desired.
   # NOTE: measure the first line only -- commit_msg is the full multi-line
   # message (subject + body + trailers); stripping "*: " against the whole
   # string would swallow the body into the "summary" and false-positive on
@@ -710,13 +818,21 @@ main() {
   # NOTE: cgw_validate_commit_message only requires "type:" (colon, no
   # mandatory space) -- strip on the bare colon, then trim one optional
   # leading space, so "type:subject" (no space) isn't measured with the
-  # prefix still attached.
+  # prefix still attached. On a freeform branch, or a merge conclusion, there
+  # is no "type:" prefix to strip -- a colon in freeform prose, or in "Merge
+  # X into Y", is part of the subject, so the whole subject line is measured
+  # instead.
   local _subject_line="${commit_msg%%$'\n'*}"
-  local _summary_part="${_subject_line#*:}"
-  _summary_part="${_summary_part# }"
+  local _summary_part
+  if [[ ${_freeform} -eq 1 ]] || [[ ${_merge_conclusion} -eq 1 ]]; then
+    _summary_part="${_subject_line}"
+  else
+    _summary_part="${_subject_line#*:}"
+    _summary_part="${_summary_part# }"
+  fi
   local _summary_len=${#_summary_part}
   if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_SOFT_LEN} ]]; then
-    if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_HARD_LEN} ]]; then
+    if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_HARD_LEN} ]] && [[ ${_freeform} -eq 0 ]] && [[ ${_merge_conclusion} -eq 0 ]]; then
       echo "[!] Subject after prefix is ${_summary_len} chars, over the ${CGW_COMMIT_SUBJECT_HARD_LEN}-char hard cap (Pro Git recommends ~${CGW_COMMIT_SUBJECT_SOFT_LEN})"
       echo "  Move detail into the commit body instead of a long summary line."
       if [[ "${CGW_ENFORCE_SUBJECT_LENGTH}" == "1" ]]; then
@@ -725,11 +841,15 @@ main() {
           exit 0
         fi
       fi
+    elif [[ ${_freeform} -eq 1 ]]; then
+      echo "[!] Tip: subject is ${_summary_len} chars (target project's style; not enforced here)"
+    elif [[ ${_merge_conclusion} -eq 1 ]]; then
+      echo "[!] Tip: merge subject is ${_summary_len} chars (not enforced for merge commits)"
     else
       echo "[!] Tip: subject after prefix is ${_summary_len} chars (Pro Git recommends ≤${CGW_COMMIT_SUBJECT_SOFT_LEN})"
     fi
   fi
-  unset _subject_line _summary_part _summary_len
+  unset _subject_line _summary_part _summary_len _freeform _merge_conclusion
 
   echo "Commit message: ${commit_msg}"
   echo ""

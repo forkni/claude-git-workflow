@@ -18,6 +18,7 @@ For script flags and environment variables, see [references/script-reference.md]
 For error recovery procedures, see [references/error-recovery.md](references/error-recovery.md).
 For branch rules and merge workflow, see [references/branch-and-merge-rules.md](references/branch-and-merge-rules.md).
 For non-obvious git techniques not covered by a wrapper (pickaxe search, merge-base discovery, back-dated tags, PR diff URLs), see [references/git-recipes.md](references/git-recipes.md).
+For choosing or composing a `.gitignore` — stack templates, OS/editor `Global` rules, pattern precedence and negation, and the trap where ignoring an already-tracked path does nothing — see [references/gitignore-templates.md](references/gitignore-templates.md).
 For the full promotion pipeline (commit → push → merge/PR → push, run by `/auto-git-workflow-cmd` option 1), see [references/full-promotion.md](references/full-promotion.md).
 For the mandatory post-push CI verification gate (subscribe, wait, fix-until-green), see [references/ci-verification.md](references/ci-verification.md).
 For removing a secret or local-only file that was **already committed** (rotate, diagnose, strip from history if pushed), see [references/removing-sensitive-data.md](references/removing-sensitive-data.md).
@@ -186,6 +187,17 @@ Conventional commit format (enforced by `commit_enhanced.sh`):
 
 Additional project-specific prefixes can be configured via `CGW_EXTRA_PREFIXES` in `.cgw.conf`.
 
+**Freeform-message branches.** Branches matching `CGW_FREEFORM_MESSAGE_BRANCHES` in `.cgw.conf`
+(e.g. an `up/*` branch targeting another project's PR conventions) skip the conventional-format
+check and the hard length cap below — but `commit_enhanced.sh` is still the only sanctioned way
+to commit on them. Local-only-file, lint, and protected-branch guards stay fully enforced, and
+`--no-verify` / raw `git commit` remain forbidden, same as on every other branch. The source,
+target, and any `CGW_PROTECTED_BRANCHES` entry can never be exempted this way — a glob as broad
+as `"*"` still has no effect on them, so the escape hatch cannot be used to silently disable the
+format check on the branches the policy protects. Optionally set `CGW_FREEFORM_MESSAGE_CHECK` to
+the target project's own message-validation command (e.g. its `commit-msg` hook) so that
+project's rules are enforced instead of skipping validation outright.
+
 **Scopes and the breaking-change marker are accepted natively.** For every prefix in the table
 above, the format check accepts the full Conventional Commits subject shape — `type: ...`,
 `type(scope): ...`, `type!: ...`, and `type(scope)!: ...` — e.g. `fix(parser): handle empty
@@ -241,9 +253,9 @@ script with `--help` to confirm rather than inventing it.
 | Script | Accepted flags |
 |---|---|
 | `commit_enhanced.sh` | `--non-interactive`, `--interactive`, `--staged-only`, `--all`, `--only <path>` (repeatable), `--skip-lint`, `--skip-md-lint`, `--no-venv`, `--sign`, `--no-sign` |
-| `check_lint.sh` | `--no-venv`, `--modified-only`, `--skip-lint`, `--skip-md-lint`, `--md-only` |
+| `check_lint.sh` | `--no-venv`, `--modified-only`, `--skip-lint`, `--skip-md-lint`, `--skip-typecheck`, `--md-only` |
 | `fix_lint.sh` | `--non-interactive`, `--no-venv`, `--modified-only`, `--skip-md-lint`, `--md-only` — **no `--skip-lint`** |
-| `push_validated.sh` | `--non-interactive`, `--dry-run`, `--skip-lint`, `--skip-md-lint`, `--no-venv`, `--force`, `--branch <name>` |
+| `push_validated.sh` | `--non-interactive`, `--dry-run`, `--skip-lint`, `--skip-md-lint`, `--skip-typecheck`, `--no-venv`, `--force`, `--branch <name>` |
 | `cherry_pick_commits.sh` | `--non-interactive`, `--commit <hash>`, `--only <pathspec>` (repeatable; partial pick), `--dry-run`, `--source <branch>`, `--target <branch>` |
 
 Asymmetries that trip people up:
@@ -266,6 +278,9 @@ Asymmetries that trip people up:
   wrapper.
 - `commit_enhanced.sh` lints **staged files only** — a failing unstaged file elsewhere in the
   tree does not block an `--only`-scoped commit.
+- **Typecheck does not run under `--md-only` or `--modified-only`** on `check_lint.sh` (it needs
+  whole-project context, so it never runs scoped to a diff or a markdown-only pass), and it does
+  not run at all in `commit_enhanced.sh` (see the Typecheck note below).
 
 ## Quick Decision Tree
 
@@ -299,7 +314,10 @@ Did lint checks fail?
 Optional flags: --skip-lint (skip all lint), --skip-md-lint (skip markdown lint only),
                 --sign (GPG/SSH-sign the commit), --no-sign (override CGW_SIGN_COMMITS)
 
-Typecheck: runs non-blocking in the pre-commit hook when CGW_TYPECHECK_CMD is set (pyrefly is the configured default for this project's Python code) — see script-reference.md.
+Typecheck: advisory in the pre-commit hook (when CGW_TYPECHECK_CMD is set), BLOCKING in
+           check_lint.sh/push_validated.sh. A failing typecheck blocks a push; --skip-typecheck
+           (or CGW_SKIP_TYPECHECK=1) bypasses it. Not run under --md-only/--modified-only, and
+           not run by commit_enhanced.sh — see script-reference.md.
 
 After commit: verify with git log --oneline -1
 (that single check is enough — skip any git status/diff scan beforehand; commit_enhanced.sh
@@ -322,7 +340,7 @@ is phrased)
 
 Handles: pre-merge validation, backup tag, modify/delete/both-deleted conflict auto-resolution, content conflict detection (stops for manual review).
 
-**After manual conflict resolution:** when the script pauses for a content conflict (`UU`/`AA`/`AU`), resolve the markers, run `git add <file>`, then conclude the merge with `commit_enhanced.sh` — Rule 1 applies to merge-conclusion commits too. Do NOT re-run `merge_with_validation.sh`; there is no `--continue` flag. This conclude-with-the-wrapper rule is **merge-specific**: a merge commit has no message of its own yet, so you author one. A paused **cherry-pick** is the opposite case — it already carries the original commit's message — and concludes with `git cherry-pick --continue` instead (see *When a cherry-pick hits a conflict*, below).
+**After manual conflict resolution:** when the script pauses for a content conflict (`UU`/`AA`/`AU`), resolve the markers, run `git add <file>`, then conclude the merge with `commit_enhanced.sh` — Rule 1 applies to merge-conclusion commits too. Do NOT re-run `merge_with_validation.sh`; there is no `--continue` flag. This conclude-with-the-wrapper rule is **merge-specific**: with `MERGE_HEAD` set, `commit_enhanced.sh` needs no message argument — it uses git's own prepared merge message (`# Conflicts:` comments stripped) and is exempt from the conventional-format check and the subject-length hard cap, the same way `hooks/pre-push` already exempts merge commits by parent count. Pass a message explicitly only if you want to override git's prepared one. A paused **cherry-pick** is the opposite case — it already carries the original commit's message — and concludes with `git cherry-pick --continue` instead (see *When a cherry-pick hits a conflict*, below).
 
 Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Creating a PR below).
 
@@ -335,7 +353,8 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 ./scripts/git/push_validated.sh --skip-lint           # skip lint check entirely
 ./scripts/git/push_validated.sh --no-venv --skip-lint # both
 # One call is enough on its own -- no pre-check needed, regardless of urgency or stakes in
-# the request; --force-with-lease + the protected-branch guard already cover what an extra
+# the request; an explicit --force-with-lease=<ref>:<sha> (resolved from a freshly-fetched
+# tracking ref, not the bare form) + the protected-branch guard already cover what an extra
 # git status/log would verify. A post-check IS required, though: Rule 6 — subscribe to the
 # CI runs this push triggers and wait for green, see ci-verification.md.
 ```
@@ -352,6 +371,8 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 ```
 
 Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login`. Charlie CI auto-reviews on PR open. Rule 6 applies here too — watch the PR's checks (`gh pr checks <n> --watch`), not just Charlie's review, per ci-verification.md.
+
+Always passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own URL — bare `gh pr create` resolves its own target repo and, when `CGW_REMOTE` is a fork, defaults to the fork's parent/upstream repo instead. If `CGW_REMOTE`'s URL can't be resolved to a `github.com` owner/repo, the script aborts rather than falling back to gh's own resolution. If this script ever fails or is unavailable, do not drop to raw `gh pr create` without `--repo`: it silently targets the wrong repo on a fork remote.
 
 **Syncing with remote:**
 
@@ -612,6 +633,13 @@ If a hook reports `CGW not found` inside a linked worktree, run `link` — see
 ./scripts/git/repo_health.sh                  # integrity check + size report
 ./scripts/git/repo_health.sh --gc             # also run garbage collection
 ```
+
+There is no `setup_gitignore.sh` — unlike `.gitattributes`, `.gitignore` is hand-composed.
+Only `configure.sh` touches it, and only two ways: a fresh install appends three entries
+(`logs/`, `.cgw.conf`, `.cgw.conf.bak`); `--reconfigure` appends just `.cgw.conf.bak` when it
+backs up an existing config. Neither path rewrites or reorders your existing rules. See
+[references/gitignore-templates.md](references/gitignore-templates.md) for stack templates,
+`Global` OS/editor rules, and the CGW baseline block to compose one.
 
 **Checking what changed on your branch:**
 

@@ -40,6 +40,23 @@ teardown() {
   git -C "${TEST_REPO_DIR}" branch | grep -q "feature/merged"
 }
 
+@test "explicit --dry-run is accepted and does not delete merged branches" {
+  # Documented in the header comment and --help as the (already-default) preview
+  # mode; the parser must accept it explicitly, not just treat it as unknown.
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b feature/merged
+  echo "x" > "${TEST_REPO_DIR}/feat.txt"
+  git -C "${TEST_REPO_DIR}" add feat.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: feature work"
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+  git -C "${TEST_REPO_DIR}" merge --quiet --no-ff feature/merged -m "Merge feature/merged"
+
+  run run_script branch_cleanup.sh --dry-run
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"DRY RUN"* ]] || [[ "${output}" == *"dry run"* ]]
+  git -C "${TEST_REPO_DIR}" branch | grep -q "feature/merged"
+}
+
 # ── --execute mode ────────────────────────────────────────────────────────────
 
 @test "--execute --non-interactive deletes merged branches" {
@@ -70,6 +87,50 @@ teardown() {
   run run_script branch_cleanup.sh --execute --non-interactive
   [ "${status}" -eq 0 ]
   git -C "${TEST_REPO_DIR}" branch | grep -q "development"
+}
+
+@test "main and master survive when CGW_TARGET_BRANCH is overridden to a non-stable branch" {
+  # master and a throwaway control branch both descend from main, so from
+  # development's perspective (the overridden target) they all look "merged".
+  # Without hardcoded protection, main/master would be deleted here too --
+  # they're not CGW_TARGET_BRANCH/CGW_SOURCE_BRANCH once TARGET=development.
+  # -f: some environments' init.defaultBranch=master already leaves a stray
+  # 'master' branch in the fixture repo (create_test_repo renames it to main
+  # but the original ref lingers) -- force it to a known, merged position.
+  git -C "${TEST_REPO_DIR}" branch -f master main
+  git -C "${TEST_REPO_DIR}" branch feature/stale main
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+
+  export CGW_TARGET_BRANCH=development
+  run run_script branch_cleanup.sh --execute --non-interactive
+  [ "${status}" -eq 0 ]
+  git -C "${TEST_REPO_DIR}" branch | grep -q "master"
+  git -C "${TEST_REPO_DIR}" branch | grep -qE '(^|[[:space:]])main$'
+  # Control branch proves --execute actually processed the merged set.
+  ! git -C "${TEST_REPO_DIR}" branch | grep -q "feature/stale"
+}
+
+@test "remote default branch survives when CGW_TARGET_BRANCH is overridden" {
+  git -C "${TEST_REPO_DIR}" branch stable main
+  git -C "${TEST_REPO_DIR}" push --quiet origin stable
+  git -C "${TEST_REPO_DIR}" remote set-head origin stable
+  git -C "${TEST_REPO_DIR}" branch feature/stale main
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+
+  export CGW_TARGET_BRANCH=development
+  run run_script branch_cleanup.sh --execute --non-interactive
+  [ "${status}" -eq 0 ]
+  git -C "${TEST_REPO_DIR}" branch | grep -q "stable"
+  ! git -C "${TEST_REPO_DIR}" branch | grep -q "feature/stale"
+}
+
+@test "branch checked out in a linked worktree is not listed for deletion" {
+  git -C "${TEST_REPO_DIR}" branch feature/wt main
+  git -C "${TEST_REPO_DIR}" worktree add --quiet "${TEST_TMPDIR}/wt" feature/wt
+
+  run run_script branch_cleanup.sh
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"feature/wt"* ]]
 }
 
 # ── backup tag cleanup ────────────────────────────────────────────────────────

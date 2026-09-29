@@ -31,13 +31,18 @@ The deterministic mapping from a `git status --short` two-letter porcelain pair 
 
 A file or directory that must never be committed to the remote repository. Configured via `CGW_LOCAL_FILES` in `.cgw.conf`. Match contract: literal name or trailing-slash directory entry, anchored on both ends — no globs, no substring matches.
 
-**Implementation seam**: `cgw_is_local_file` / `cgw_filter_local_files` in `scripts/git/_common.sh`.
+**Implementation seams & enforcement boundaries**:
+- `cgw_is_local_file` / `cgw_filter_local_files` / `cgw_guard_incoming_local_files` in `scripts/git/_common.sh`.
+- `commit_enhanced.sh`: automatically unstages tracked modifications via `unstage_local_only_files` before every commit. If the resulting Index has no remaining changes, the commit exits cleanly as a no-op with an explicit exclusion notice.
+- `merge_with_validation.sh`: inspects the incoming revision range (`HEAD..<source>`) for any commits introducing local files, aborting *before* taking a pre-merge backup tag.
+- `cherry_pick_commits.sh`: inspects the target commit (or explicit `--only` file subset) and refuses the cherry-pick before taking a backup tag.
+- `undo_last.sh amend-message`: inspects staged Index entries and hard-refuses if any local-only files are staged, preventing accidental inclusion into HEAD.
 
 ---
 
 ## lint pipeline
 
-The shared module responsible for running lint, format, and markdownlint tool binaries against staged or modified files. Lives in `_common.sh` and is reused by `commit_enhanced.sh`, `check_lint.sh`, `fix_lint.sh`, and the pre-commit hook.
+The shared module responsible for running lint, format, and markdownlint tool binaries against staged or modified files. Lives in `_common.sh` and is reused by `commit_enhanced.sh`, `check_lint.sh`, `fix_lint.sh`, and the pre-commit hook. Typecheck (`cgw_run_typecheck` below) is a sibling seam in the same file but is deliberately whole-project, not staged/modified-scoped — see its bullet for why.
 
 **Key seams**:
 
@@ -47,6 +52,7 @@ The shared module responsible for running lint, format, and markdownlint tool bi
 - `cgw_run_format_check [files…]` — runs `CGW_FORMAT_CMD` with `CGW_FORMAT_CHECK_ARGS` via `run_tool_with_logging`. Skips silently when `CGW_FORMAT_CMD` is empty.
 - `cgw_run_lint_fix [files…]` — bundled lint+format fix: runs lint `--fix` then format `--fix` in sequence. Skips silently when both CMDs are empty.
 - `cgw_run_markdownlint_check [files…]` — runs `CGW_MARKDOWNLINT_CMD` with `CGW_MARKDOWNLINT_ARGS` via `run_tool_with_logging`. Skips silently when `CGW_SKIP_MD_LINT=1` or `CGW_MARKDOWNLINT_CMD` is empty.
+- `cgw_run_typecheck` — runs `CGW_TYPECHECK_CMD` with `CGW_TYPECHECK_CHECK_ARGS` via `run_tool_with_logging`, overriding `CGW_TOOL_ERROR_REGEX` (as a `local`, dynamically scoped) to a pattern matching mypy/pyright/tsc/pyrefly diagnostic shapes instead of the ruff-shaped default. Skips silently when `CGW_SKIP_TYPECHECK=1` or `CGW_TYPECHECK_CMD` is empty. Always whole-project (no file-list parameter) — a type checker resolves imports across the whole project, so there is no honest way to scope it to staged/modified files. Call sites: advisory in `hooks/pre-commit` (skipped there, like lint and format, under `CGW_SKIP_LINT=1`); **blocking** in `check_lint.sh` (and therefore `push_validated.sh`, which delegates its pre-push lint check to `check_lint.sh`); not called under `check_lint.sh --modified-only`/`--md-only`; absent from `commit_enhanced.sh` entirely on purpose (see **validated path set** below for why whole-project scope can't feed that guard).
 - `cgw_strip_path_arg <args-string>` — strips the trailing path token from a CGW args string (the `${ARGS% *}` idiom). Used when a file list is passed explicitly so the default path token doesn't conflict.
 - `cgw_modified_files_for_lint` — returns the space-separated list of `.py` files modified vs HEAD (for `--modified-only` mode in `check_lint.sh` / `fix_lint.sh`).
 - `cgw_paths_diverging_from_index` — the general divergence core, reading paths from stdin. Emits the subset whose working-tree content (what the checks above validate) differs from its staged blob (what `git commit` records). Primary detection via `git hash-object --path=<f> <f>` vs `git rev-parse :<f>` — immune to skip-worktree/assume-unchanged, unlike `git diff`. But `hash-object` never reads the index, so on a file whose index blob already has CRLF (`git add` preserves that forever — see `cgw_crlf_in_index_files`), it renormalizes to LF and permanently disagrees with a byte-identical, `git add`-clean disk file. A hash-object mismatch is arbitrated via index-aware `git diff --quiet` (using `cgw_path_is_diff_blind` to skip that arbitration on skip-worktree/assume-unchanged paths, where `git diff` can't see the truth) before being reported. Fails closed: a staged path missing from the working tree is reported as diverged, not skipped.
@@ -58,7 +64,7 @@ The shared module responsible for running lint, format, and markdownlint tool bi
 
 Backs the `[3.5]` congruence guard in `commit_enhanced.sh`, which runs once after both the lint/format and markdown auto-fix blocks and closes the "validated the working tree, committed a different blob" bug class. `CGW_ALLOW_STAGED_DIVERGENCE=1` opts a genuine `--staged-only` commit out of the guard's fail-closed default; see **whole-file staging intent** below for when the guard re-stages instead of failing.
 
-**Callers**: `commit_enhanced.sh` (lint check, format check, markdownlint, auto-fix loop, partial-stage snapshot, `[3.5]` congruence guard), `check_lint.sh`, `fix_lint.sh`, `.githooks/pre-commit` (non-blocking advisory check).
+**Callers**: `commit_enhanced.sh` (lint check, format check, markdownlint, auto-fix loop, partial-stage snapshot, `[3.5]` congruence guard), `check_lint.sh`, `fix_lint.sh` (including their `--modified-only` modes, which pass the modified-file list), `hooks/pre-commit` (non-blocking advisory lint and format checks on staged files).
 
 ---
 
@@ -78,7 +84,7 @@ The exact staged paths a `commit_enhanced.sh` run's code-quality gate actually v
 
 **Implementation seam**: `cgw_validated_path_set [md_skipped]` in `scripts/git/_common.sh`. `md_skipped` defaults to `0` ("markdown ran") when omitted — the conservative direction, since over-reporting divergence fails a commit closed while under-reporting would commit unvalidated content silently.
 
-**Callers**: the `[3.5]` congruence guard in `commit_enhanced.sh`, run once after both the lint/format and markdown auto-fix blocks so one check covers both paths. `commit_enhanced.sh` passes its `skip_md_lint` local explicitly at both call sites (detection and re-verify) rather than writing it back into `CGW_SKIP_MD_LINT` — the local is invisible to this script-level function otherwise, and a writeback risks leaking into `git commit`'s subprocess/hooks if the caller's environment already exported the var.
+**Callers**: the `[3.5]` congruence guard in `commit_enhanced.sh`, run once after both the lint/format and markdown auto-fix blocks so one check covers both paths. `commit_enhanced.sh` passes its `skip_md_lint` local explicitly into `_congruence_guard <md_skipped> <whole_file_intent>`, which uses that one argument for both detection and re-verify, rather than writing it back into `CGW_SKIP_MD_LINT` — the local is invisible to this script-level function otherwise, and a writeback risks leaking into `git commit`'s subprocess/hooks if the caller's environment already exported the var.
 
 ---
 
@@ -86,7 +92,7 @@ The exact staged paths a `commit_enhanced.sh` run's code-quality gate actually v
 
 The assumption that a path is meant to be staged in full, not by hunk — true of `--only <pathspec>` (explicit whole-path `git add`) and bulk/`--all` mode (`git add -u`), false of a genuine `--staged-only` commit where the user (or a concurrent process) ran `git add --patch` on purpose. The `[3.5]` congruence guard uses this to decide its response to a diverging validated file: whole-file-intent modes get an automatic re-stage and re-verify (`effective_staged_only == 0 || only_paths non-empty`); staged-only mode without `--only` fails closed instead, since re-staging there would defeat a deliberate **partial stage**.
 
-**Implementation seam**: the `effective_staged_only` / `only_paths` predicate at the `[3.5]` guard in `commit_enhanced.sh`.
+**Implementation seam**: `whole_file_intent`, computed in `commit_enhanced.sh`'s `main()` from `effective_staged_only` (itself from the pure `_effective_staged_only` decider) and `only_paths`, and passed to `_congruence_guard`.
 
 **Callers**: `commit_enhanced.sh`'s `[3.5]` congruence guard only — `_restage_after_fix` does not need this distinction because it already skips partial stages unconditionally via its own snapshot.
 
@@ -94,11 +100,73 @@ The assumption that a path is meant to be staged in full, not by hunk — true o
 
 ## commit-message format
 
-The conventional-commit grammar enforced on every `commit_enhanced.sh` invocation and every commit in the pre-push hook range. Format: `<type>: <description>` where `<type>` is drawn from the built-in set (`feat|fix|docs|chore|test|refactor|style|perf`) plus any `CGW_EXTRA_PREFIXES` configured in `.cgw.conf`.
+The conventional-commit grammar enforced on every `commit_enhanced.sh` invocation and every commit in the pre-push hook range, with two exemptions: commits on a [[freeform-message branch]] (and even there, never on the source, target, or a protected branch), and merge-conclusion commits — with `MERGE_HEAD` set, `commit_enhanced.sh` uses git's prepared merge message (or an explicit override) verbatim, since a merge subject describes *what was merged* and has no change type; `hooks/pre-push` exempts merge commits by parent count for the same reason. Format: `<type>: <description>` where `<type>` is drawn from the built-in set (`feat|fix|docs|chore|test|refactor|style|perf`) plus any `CGW_EXTRA_PREFIXES` configured in `.cgw.conf`.
 
-**Implementation seam**: `cgw_validate_commit_message <msg>` in `scripts/git/_common.sh`. Pure predicate — returns 0 on match, 1 otherwise. No output: each caller owns its own user-facing message and merge-commit skipping logic.
+**Implementation seam**: `cgw_validate_commit_message <msg>` in `scripts/git/_common.sh`. Pure predicate — returns 0 on match, 1 otherwise. No output: each caller owns its own user-facing message and merge-commit skipping logic. Skipped on [[freeform-message branch|#freeform-message-branch]]es — see below.
 
-**Callers**: `commit_enhanced.sh` (step [5]), `undo_last.sh` (amend-message path), `.githooks/pre-push` (all commits in push range).
+**Callers**: `commit_enhanced.sh` (step [5]), `undo_last.sh` (amend-message path), `hooks/pre-push` (all commits in push range).
+
+---
+
+## freeform-message branch
+
+A branch whose name matches `CGW_FREEFORM_MESSAGE_BRANCHES` (space-separated bash globs, e.g.
+`"up/*"`) — typically a branch that targets another project's own commit-message convention,
+such as an upstream PR branch on a fork. On a matching branch, the conventional-commit-format
+check and the subject hard-length cap above are not enforced (the hard cap becomes an advisory
+tip instead of a block; the soft-length tip still prints). Everything else stays fully
+enforced: local-only-file guard, lint/format, protected-branch rules, backup tags, force-push
+protection. `commit_enhanced.sh` remains the only sanctioned commit path — `--no-verify` and
+raw `git commit`/`git push` are not re-permitted.
+
+**Guard-proof, by design.** A glob match alone is never enough: the source, target, and any
+`CGW_PROTECTED_BRANCHES` entry are hard-refused regardless of how broad the glob is — even
+`CGW_FREEFORM_MESSAGE_BRANCHES="*"` has no effect on them. This is what keeps the escape hatch
+from silently disabling the policy it's meant to carve a narrow exception into. Each call site
+that hits the guard prints a one-line notice (`... is a protected/source/target branch;
+CGW_FREEFORM_MESSAGE_BRANCHES ignored`) and falls through to the normal
+`cgw_validate_commit_message` path.
+
+Optionally, `CGW_FREEFORM_MESSAGE_CHECK` names a command (e.g. the target project's own
+`commit-msg` hook) run against the full message instead of skipping validation outright — the
+command receives the message as a file path in `$1` and its own exit code/output governs
+accept or reject.
+
+**Implementation seam**: `cgw_branch_matches_freeform_glob <branch>` (pure glob predicate, no
+guard) and `cgw_branch_is_guarded <branch>` (exact match against `CGW_SOURCE_BRANCH`,
+`CGW_TARGET_BRANCH`, `CGW_PROTECTED_BRANCHES`) in `scripts/git/_common.sh` compose into
+`cgw_branch_is_freeform <branch>` (glob match AND NOT guarded) — the predicate call sites use
+directly. `cgw_freeform_message_check <msg>` runs the optional delegated check. Settings in
+`scripts/git/_config.sh`.
+
+**Callers**: same call sites as [[commit-message format]] above — each checks
+`cgw_branch_is_freeform` first and branches to `cgw_freeform_message_check` instead of
+`cgw_validate_commit_message` when it matches (falling through to the guard notice above when
+the glob matched but the branch is guarded). `hooks/pre-push` derives
+the branch from the remote ref alone (`refs/heads/*` only) — a tag or other non-branch push
+target is never exempt, since falling back to the local ref would let a branch's exemption leak
+onto an unrelated tag push. The hook also narrows its "already pushed ⇒ already vetted"
+`--not --remotes` exclusion: when the push destination is not itself freeform, only
+remote-tracking refs whose branch name does *not* match a freeform glob are excluded from the
+check, so a non-conventional commit that only ever reached a protected branch by way of a
+freeform branch (e.g. merged from `up/x` into `development`) is still validated instead of
+silently inheriting `up/x`'s exemption.
+
+**Rollout note**: opt-in, no default (see `cgw.conf.example`). The code path (updated scripts +
+hooks) reaches every consumer project via `cgw-install.cmd` / `cgw-batch-install.cmd`
+automatically, but `cgw-batch-install.cmd` never writes `.cgw.conf` — an already-installed
+project only gets these two variables if added to its `.cgw.conf` by hand, or via
+`configure.sh --reconfigure`. See "Batch-updating multiple projects" in `docs/installation.md`.
+
+---
+
+## config registry
+
+The single list of `CGW_*` settings and their facts: `name|default|kind|empty|scope`, where *kind* is `str`, `bool`, `int`, `enum:a/b`, or `computed` (default derived from the repo or other settings — target branch, markdownlint detection, protected branches, merge-conflict style); *empty* is `keep` (an explicit `CGW_X=""` is honoured, e.g. to disable a tool) or `fill` (empty falls back to the default); *scope* is `conf` (persistent — `.cgw.conf`, `cgw.conf.example`, docs table) or `env` (per-run switch — docs table only).
+
+**Implementation seam**: `_CGW_REGISTRY` / `cgw_config_registry` and `_cgw_apply_registry_defaults` in `scripts/git/_config.sh` — applies every non-computed default after env + `.cgw.conf` resolution and validates by kind. Adding a setting starts with a row here; `tests/unit/config_registry.bats` then fails until `cgw.conf.example`, the `docs/configuration.md` options table, the `configure.sh` generator and any inline `${CGW_X:-default}` fallback agree with it. The explanatory prose in each of those stays hand-written.
+
+**Callers**: `_config.sh` (sourced by every script and hook via `_common.sh`); the parity tests.
 
 ---
 
@@ -125,6 +193,31 @@ The shared module for all binary yes/no confirmation prompts in CGW scripts. Con
 
 ---
 
+## agent harness
+
+An AI coding agent host that CGW integrates with: today Claude Code (`cc`, `.claude/`) and Antigravity (`agy`, `.agents/`, `~/.gemini/config/`). Each harness gets a skill, a slash command, and a **guardrail**.
+
+**Implementation seam**: in `scripts/git/configure.sh`, `_harness_spec <host> <field>` holds where each harness keeps the skill, command and guardrail (local and `--global`), how its slash command is laid out (`file` for Claude Code, `skill` for Antigravity), and the wording `configure.sh` uses for it; `_guardrail_spec` holds the guardrail-registration facts. `_install_harness_skill` and `_offer_harness_install` (the explain → default → confirm → install step `main()` runs per harness, per skill/guardrail) read the spec; only the host-specific hook command strings stay in `_install_cc_guardrail` / `_install_agy_guardrail`. Adding a harness means spec rows, an adapter, a guardrail installer, and one `_offer_harness_install` line per step. Use the short ids `cc` / `agy` in code and flags (`--skip-cc-guardrail`, `--skip-agy-guardrail`).
+
+---
+
+## guardrail
+
+An agent-harness PreToolUse hook that inspects each shell command an agent is about to run and blocks the raw git operations CGW exists to wrap (`git commit`, `git push --force`, `git reset --hard`, `--no-verify`, …), redirecting the agent to the matching CGW script. Defense-in-depth, not a sandbox: the git hooks remain the enforcement layer, and every guardrail fails open (with a warning) when it cannot classify — jq missing, core missing, unparseable input.
+
+**Implementation seam**: `cgw_guardrail_classify <command>` in `hooks/_guardrail_core.sh` — pure classifier (no stdin, no jq, no exit); returns 0 to allow, or 1 with the matched pattern and redirect guidance on stdout. Each harness has a thin adapter that owns only stdin parsing and that harness's allow/deny protocol, and sources the core from its own directory:
+
+- `hooks/cc-block-dangerous-git.sh` — Claude Code (`tool_input` payload; block = exit 2 + stderr).
+- `hooks/agy-block-dangerous-git.sh` — Antigravity (`toolCall` payload; block = `{"decision":"deny"}` on stdout), reached on Windows through the `hooks/agy-block-dangerous-git.cmd` runner.
+
+Both adapters currently accept both payload shapes; they differ only in which shape wins when a payload carries both, and in the response to an unrecognized shape.
+
+**Registration seam**: in `scripts/git/configure.sh`, `_guardrail_spec <host> <field>` is the per-harness table (settings-file keys, matcher, command marker, known-bad substrings); `_guardrail_is_registered <host> <json>` (query) and `_register_guardrail <host> <json> <cmd>` (modifier: drop stale CGW entries, keep all others, append) apply it identically through every backend — fresh write, jq, python, manual instructions. Adding a harness means adding its rows to the table, an adapter, and an installer that supplies paths and a smoke test.
+
+**Callers**: the two adapters. Installed (adapter + core, side by side) by `configure.sh` (`_install_cc_guardrail`, `_install_agy_guardrail`, via `_install_guardrail_core` and the registration seam above) and staged by `cgw-install.cmd` / `cgw-batch-install.cmd`. Tests: `tests/integration/guardrail_hosts.bats` holds the shared verdict table run through both adapters and both payload shapes.
+
+---
+
 ## remote status
 
 The shared module for querying remote reachability, remote branch existence, and commit distance between two refs. Concentrates a seam previously scattered across ~10 inline `git rev-list --count` and `git ls-remote` call sites in 6+ scripts, several of which were untested (notably `repo_health.sh`).
@@ -138,3 +231,20 @@ The shared module for querying remote reachability, remote branch existence, and
 All three helpers are silent: no stdout/stderr beyond `cgw_rev_count`'s count. Callers own all user-facing error messages.
 
 **Callers**: `push_validated.sh` (remote reachability + ahead/behind), `sync_branches.sh` (ahead/behind), `create_pr.sh` (remote branch existence + commit distance), `validate_branches.sh` (ahead/behind), `repo_health.sh` (bidirectional ahead/behind per branch), `rebase_safe.sh` (ahead/behind), `undo_last.sh` (ahead/behind).
+
+---
+
+## template source
+
+The external or repository directory tree containing the canonical template assets (`hooks/`, `skill/`, `command/`, `templates/`) copied into a consumer project's runtime configuration (git hooks in `.git/hooks/` and `.githooks/`, agent skills in `.claude/skills/` and `.agents/skills/`, slash commands in `.claude/commands/` and `.agents/skills/`, markdownlint in `.markdownlint.json`). Decoupled from the target repository root to eliminate temporary in-repo staging and accidental directory pollution.
+
+**Implementation seam**: Resolved in `scripts/git/configure.sh` via a deterministic priority chain:
+
+1. `--template-dir <path>` CLI flag.
+2. `CGW_TEMPLATE_DIR` environment variable.
+3. Sibling/parent source check (`${SCRIPT_DIR}/../../hooks`, etc., active when running inside the CGW source repository itself).
+4. Already-installed asset fallback (retaining or validating existing target configurations when no template source is provided).
+
+Legacy in-repo staging directories (`hooks/`, `skill/`, `command/`, `templates/` in the project root containing only CGW template artifacts) are automatically pruned by `_cleanup_legacy_artifacts` in `scripts/git/configure.sh` when running in a consumer project.
+
+**Callers**: `scripts/git/configure.sh` (`_install_hook`, `_install_harness_skill`, `_install_markdownlint_config`, `_cleanup_legacy_artifacts`), `cgw-install.cmd`, `cgw-batch-install.cmd`.

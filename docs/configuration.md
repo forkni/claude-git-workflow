@@ -12,6 +12,8 @@ Priority 3: Built-in defaults                ← works without any config
 
 This means CI environments can always override any setting by exporting a `CGW_*` variable, without modifying the project config file.
 
+Typed settings are validated after resolution: an integer that is not a non-negative number, a `0`/`1` switch set to anything else (e.g. `true`), or an unknown choice for a setting like `CGW_MERGE_MODE` prints a `[WARN]` and falls back to the built-in default. An explicitly empty switch (`CGW_SKIP_LINT=""`) is accepted and treated as off.
+
 ---
 
 ## Auto-Configuration
@@ -57,10 +59,11 @@ cp cgw.conf.example .cgw.conf
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CGW_SOURCE_BRANCH` | `development` | Branch where development happens |
-| `CGW_TARGET_BRANCH` | `main` | Stable/production branch |
+| `CGW_SOURCE_BRANCH` | `` | Branch where development happens. No built-in default: `configure.sh` writes it only when it detects a development-family branch (`development`/`develop`/`dev`/`staging`); otherwise pass `--source <branch>` per invocation |
+| `CGW_TARGET_BRANCH` | *(auto-detected)* | Stable/production branch; detected at runtime (`origin/HEAD` → `main` → `master` → `main`) unless set |
 | `CGW_REMOTE` | `origin` | Remote name for fetch/push — set to `upstream` for fork workflows |
 | `CGW_LOCAL_FILES` | `CLAUDE.md MEMORY.md .claude/ logs/` | Files never committed (space-separated) |
+| `CGW_LOCAL_FILES_EXEMPT` | `` | Exact paths let through `CGW_LOCAL_FILES` protection (space-separated) — for a tracked file inside a blocked directory |
 | `CGW_LINT_CMD` | `ruff` | Lint tool (`""` to disable) |
 | `CGW_FORMAT_CMD` | `ruff` | Format tool (`""` to disable) |
 | `CGW_LINT_CHECK_ARGS` | `check {files}` | Arguments for lint check (`{files}` = scan target; legacy `.` also works) |
@@ -77,27 +80,33 @@ cp cgw.conf.example .cgw.conf
 | `CGW_MARKDOWNLINT_NPX_FALLBACK` | `1` | Set to `0` to disable the `npx --yes markdownlint-cli2` fallback when no markdownlint binary is on `PATH` |
 | `CGW_SKIP_LINT` | `0` | Set to `1` to skip all lint checks at runtime |
 | `CGW_SKIP_MD_LINT` | `0` | Set to `1` to skip only the markdown lint step; also narrows the `[3.5]` staged-blob congruence guard's scope, excluding `*.md` from what it considers "validated" this run |
-| `CGW_TYPECHECK_CMD` | `` | Typecheck tool; set to e.g. `pyrefly` to enable (`""` to disable) |
+| `CGW_TYPECHECK_CMD` | `` | Typecheck tool; set to e.g. `pyrefly` to enable (`""` to disable). Blocking in `check_lint.sh`/`push_validated.sh`, advisory in the pre-commit hook -- see [Typecheck](#typecheck) |
 | `CGW_TYPECHECK_CHECK_ARGS` | `check` | Arguments passed to the typecheck tool |
 | `CGW_TYPECHECK_EXCLUDES` | `` | Exclusion flags appended to the typecheck command |
-| `CGW_SKIP_TYPECHECK` | `0` | Set to `1` to skip the typecheck step at runtime |
+| `CGW_ALLOW_STAGED_DIVERGENCE` | `0` | Set to `1` to let a genuine `--staged-only` commit record a staged blob that differs from the validated working tree (the `[3.5]` congruence guard otherwise fails closed); see [ADR-0001](adr/0001-partial-staging-fails-closed.md) |
+| `CGW_SKIP_TYPECHECK` | `0` | Set to `1` to skip the typecheck step at runtime -- the escape hatch when a blocking pre-push typecheck must be bypassed |
 | `CGW_STAGED_ONLY` | `0` | Set to `1` to commit only pre-staged files (`commit_enhanced.sh`) |
 | `CGW_COMMIT_SUBJECT_SOFT_LEN` | `50` | Commit subject length past which an advisory tip is printed (Pro Git recommendation) |
 | `CGW_COMMIT_SUBJECT_HARD_LEN` | `72` | Commit subject length past which the commit is blocked (`git log --oneline`/GitHub truncation point) |
 | `CGW_ENFORCE_SUBJECT_LENGTH` | `1` | Set to `0` to make the hard cap advisory-only instead of blocking |
 | `CGW_ALL` | `0` | Set to `1` to force-stage all tracked changes, overriding pre-staged-only logic (`commit_enhanced.sh`) |
 | `CGW_EXTRA_PREFIXES` | `` | Extra commit prefixes (pipe-separated, e.g. `cuda\|tensorrt`) |
+| `CGW_FREEFORM_MESSAGE_BRANCHES` | `` | Space-separated bash globs of branches whose commit format is not checked (e.g. `up/*` for an upstream PR branch). The source, target, and any `CGW_PROTECTED_BRANCHES` entry are never exempted, even by a glob as broad as `*` |
+| `CGW_FREEFORM_MESSAGE_CHECK` | `` | Command run against a freeform branch's message instead of skipping validation (e.g. the target project's own `commit-msg` hook) |
 | `CGW_DOCS_PATTERN` | `` | Regex for allowed docs filenames (`""` to skip) |
 | `CGW_DEV_ONLY_FILES` | `` | Files to warn about in cherry-pick (space-separated) |
 | `CGW_ALLOW_LOCAL_FILES_IN_MERGE` | `0` | Set to `1` to allow a merge/cherry-pick to carry `CGW_LOCAL_FILES` into shared history (the guard otherwise aborts non-interactively) |
 | `CGW_CLEANUP_TESTS` | `0` | Remove `tests/` from target if gitignored |
 | `CGW_MERGE_MODE` | `direct` | Promotion mode: `direct` (merge locally) or `pr` (create GitHub PR) |
-| `CGW_PROTECTED_BRANCHES` | `main` | Branches requiring `--force` for force-push |
+| `CGW_PROTECTED_BRANCHES` | *(`CGW_TARGET_BRANCH`)* | Branches requiring `--force` for force-push (space-separated); defaults to the target branch |
 | `CGW_MERGE_CONFLICT_STYLE` | `` | Set to `diff3` to show base version in conflict markers |
 | `CGW_MERGE_IGNORE_WHITESPACE` | `0` | Set to `1` to ignore whitespace differences during merge |
 | `CGW_SIGN_COMMITS` | `0` | Set to `1` to GPG/SSH-sign all commits (`git commit -S`). Overridable per-call with `--sign`/`--no-sign`. |
 | `CGW_SIGN_TAGS` | `0` | Set to `1` to create signed annotated tags (`git tag -s`). Overridable per-call with `--sign`/`--no-sign`. |
 | `CGW_ALLOW_REBASE_PUBLISHED` | `0` | Set to `1` to allow rebasing commits already pushed (disables `pre-rebase` hook guard) |
+| `CGW_AUTO_REMOVE_INDEX_LOCK` | `1` | Set to `0` to only warn about an abandoned `.git/index.lock` instead of removing it (removal is always refused while a rebase/merge/cherry-pick/revert/bisect is in progress) |
+| `CGW_INDEX_LOCK_MAX_AGE_SECONDS` | `30` | Age in seconds past which an `index.lock` counts as abandoned |
+| `CGW_INDEX_LOCK_WAIT_SECONDS` | `10` | Seconds to wait for a fresh `index.lock` to clear before escalating (`0` = don't wait) |
 | `CGW_NON_INTERACTIVE` | `0` | Set to `1` to suppress all prompts (CI mode) |
 | `CGW_NO_VENV` | `0` | Set to `1` to skip virtual environment detection |
 | `CGW_CI_VERIFY` | `1` | Set to `0` to disable the post-push CI verification gate entirely (agent procedure, see [`skill/references/ci-verification.md`](../skill/references/ci-verification.md)) |
@@ -202,7 +211,23 @@ CGW_FORMAT_CMD=""
 
 ## Typecheck
 
-The pre-commit hook runs a non-blocking typecheck step when `CGW_TYPECHECK_CMD` is set. Like the lint step, it surfaces warnings but never blocks the commit. Set `CGW_SKIP_TYPECHECK=1` to skip it at runtime (e.g. in CI where a dedicated type-check job runs separately).
+Typecheck runs whole-project when `CGW_TYPECHECK_CMD` is set, and is **blocking at push, advisory at commit**:
+
+| Where | Behavior |
+|---|---|
+| `hooks/pre-commit` / `.githooks/pre-commit` | Advisory — reports a `[WARN]` on type errors but never blocks the commit |
+| `check_lint.sh` | **Blocking** — a `Typecheck:FAILED` row fails the overall status and the exit code, same as lint and markdown lint |
+| `push_validated.sh` | **Blocking** — delegates to `check_lint.sh`, so a failing typecheck blocks the push |
+| `check_lint.sh --md-only` / `--modified-only` | Not run — typecheck needs whole-project context, so it never runs scoped to a diff or a markdown-only pass |
+| `commit_enhanced.sh` | Not run — see "Why typecheck isn't scoped to staged files" below |
+
+Skip it at runtime with `CGW_SKIP_TYPECHECK=1` or `--skip-typecheck` (accepted by `check_lint.sh` and `push_validated.sh`); `--skip-lint` implies it too.
+
+**Upgrading:** if your project already had `CGW_TYPECHECK_CMD` configured before this change, a failing typecheck used to only warn — it now also blocks `check_lint.sh` and `push_validated.sh`. Fix the type errors, or bypass with `CGW_SKIP_TYPECHECK=1` (keeps the advisory commit-time warning, un-gates the push) or `CGW_TYPECHECK_CMD=""` (turns it off entirely). A configured-but-not-installed checker is treated as an environment gap, not a failure: `check_lint.sh` warns and skips rather than blocking the push.
+
+### Why typecheck isn't scoped to staged files
+
+Unlike lint/format/markdown, typecheck never appears in `commit_enhanced.sh`'s staged-scoped code-quality gate, and its paths never enter `cgw_validated_path_set` (the set `commit_enhanced.sh`'s congruence guard re-stages on divergence). A type checker resolves imports across the whole project, so there is no honest way to scope it to a diff — doing so would both let a pre-existing, unrelated type error block an unrelated commit, and would turn the congruence guard into an indiscriminate re-stager of files the user never intended to stage.
 
 ### Python / pyrefly (recommended)
 

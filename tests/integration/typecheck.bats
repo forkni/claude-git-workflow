@@ -3,6 +3,10 @@
 # Verifies: (a) no-op when disabled, (b) [PASS] on clean, (c) [WARN] on errors (non-blocking),
 #           (d) CGW_SKIP_TYPECHECK=1 skip path.
 # Runs: bats tests/integration/typecheck.bats
+#
+# NOTE: the pre-commit hook's typecheck is ADVISORY by design and must stay so.
+# The BLOCKING typecheck lives in check_lint.sh (see check_lint.bats) and
+# reaches pushes via push_validated.sh. Do not make this hook block.
 
 bats_require_minimum_version 1.5.0
 load '../helpers/setup'
@@ -22,7 +26,7 @@ teardown() {
 }
 
 @test "pre-commit hook: CGW_TYPECHECK_CMD empty skips typecheck silently" {
-  printf 'CGW_TYPECHECK_CMD=""\nCGW_LINT_CMD=""\n' > "${TEST_REPO_DIR}/.cgw.conf"
+  printf 'CGW_TYPECHECK_CMD=""\nCGW_LINT_CMD=""\nCGW_FORMAT_CMD=""\n' > "${TEST_REPO_DIR}/.cgw.conf"
   echo "x = 1" > "${TEST_REPO_DIR}/foo.py"
   git -C "${TEST_REPO_DIR}" add foo.py
   run git -C "${TEST_REPO_DIR}" commit -m "feat: add foo.py"
@@ -50,7 +54,7 @@ teardown() {
   fake_tc="$(mktemp)"
   printf '#!/usr/bin/env bash\necho "foo.py:1:1: error: missing return type"\nexit 1\n' > "${fake_tc}"
   chmod +x "${fake_tc}"
-  printf 'CGW_LINT_CMD=""\nCGW_TYPECHECK_CMD="%s"\nCGW_TYPECHECK_CHECK_ARGS=""\n' "${fake_tc}" > "${TEST_REPO_DIR}/.cgw.conf"
+  printf 'CGW_LINT_CMD=""\nCGW_FORMAT_CMD=""\nCGW_TYPECHECK_CMD="%s"\nCGW_TYPECHECK_CHECK_ARGS=""\n' "${fake_tc}" > "${TEST_REPO_DIR}/.cgw.conf"
   echo "x = 1" > "${TEST_REPO_DIR}/foo.py"
   git -C "${TEST_REPO_DIR}" add foo.py
   run git -C "${TEST_REPO_DIR}" commit -m "feat: add foo.py"
@@ -65,7 +69,7 @@ teardown() {
   fake_tc="$(mktemp)"
   printf '#!/usr/bin/env bash\nexit 1\n' > "${fake_tc}"
   chmod +x "${fake_tc}"
-  printf 'CGW_LINT_CMD=""\nCGW_TYPECHECK_CMD="%s"\nCGW_TYPECHECK_CHECK_ARGS=""\nCGW_SKIP_TYPECHECK=1\n' "${fake_tc}" > "${TEST_REPO_DIR}/.cgw.conf"
+  printf 'CGW_LINT_CMD=""\nCGW_FORMAT_CMD=""\nCGW_TYPECHECK_CMD="%s"\nCGW_TYPECHECK_CHECK_ARGS=""\nCGW_SKIP_TYPECHECK=1\n' "${fake_tc}" > "${TEST_REPO_DIR}/.cgw.conf"
   echo "x = 1" > "${TEST_REPO_DIR}/foo.py"
   git -C "${TEST_REPO_DIR}" add foo.py
   run git -C "${TEST_REPO_DIR}" commit -m "feat: add foo.py"

@@ -370,8 +370,98 @@ cgw_remote_reachable() {
 # cgw_remote_branch_exists <remote> <branch>
 # Exits 0 when <branch> exists on <remote>, non-zero otherwise. Silent.
 # Accepts a plain branch name; builds refs/heads/ internally.
+#
+# Contract: the exit code is git ls-remote's raw exit code, unmodified --
+# 0 = exists, 2 = genuinely absent, anything else (128 = unreachable/auth
+# failure, etc.) = the probe itself failed and must NOT be read as absent.
+# `if cgw_remote_branch_exists ...` callers that only branch on zero/non-zero
+# are fine either way; a caller that needs to tell "absent" apart from "probe
+# failed" (e.g. before weakening a force-push guard) must capture "$?" itself
+# rather than treating this as a plain boolean.
 cgw_remote_branch_exists() {
   git ls-remote --exit-code "${1}" "refs/heads/${2}" >/dev/null 2>&1
+}
+
+# cgw_remote_owner_repo <remote>
+# Echoes "<owner>/<repo>" parsed from <remote>'s configured URL, for github.com
+# SSH/HTTPS remotes only. Returns 1 and prints nothing if <remote> is unset or
+# its URL isn't a recognizable github.com URL.
+#
+# Reads remote.<remote>.pushurl first, falling back to remote.<remote>.url
+# when pushurl is unset -- a remote with a separate fetch/push URL (e.g.
+# fetch=upstream, push=fork) is actually targeted, on push, at pushurl, so
+# that is the identity that must drive gh's --repo. Reads the RAW config
+# value (`git config --get`), not `git remote get-url` -- the latter expands
+# any `url.<base>.insteadOf` rewrite and would report the rewritten transport
+# (e.g. a corporate mirror or, in tests, a local bare repo) instead of the
+# remote's real GitHub identity. Used by create_pr.sh to pass gh CLI an
+# explicit `--repo`: without it, `gh pr create` resolves the target repo
+# itself and -- when the remote is a fork -- defaults to the fork's
+# parent/upstream repo, silently opening (or failing to open) the PR against
+# the wrong repository.
+#
+# Accepts github.com, www.github.com, and ssh.github.com (SSH-over-443) as
+# hosts, matched case-insensitively. Parses by decomposing the URL into
+# (scheme, host, path) rather than matching whole-URL shapes with per-form
+# regexes -- the latter is what silently mis-parsed a port as the owner
+# (ssh://...:22/owner/repo) and left a trailing ".git" in place
+# (.../repo.git/, where the "/" strip ran before the ".git" strip). Any
+# unparseable or non-github.com URL returns 1 with nothing echoed; callers
+# that need an explicit --repo (create_pr.sh) treat that as fatal.
+cgw_remote_owner_repo() {
+  local remote="$1"
+  local url
+  url=$(git config --get "remote.${remote}.pushurl" 2>/dev/null) || url=""
+  if [[ -z "${url}" ]]; then
+    url=$(git config --get "remote.${remote}.url" 2>/dev/null) || return 1
+  fi
+  [[ -z "${url}" ]] && return 1
+
+  local scheme host path owner repo
+  if [[ "${url}" =~ ^([A-Za-z][A-Za-z0-9+.-]*)://([^/@]+@)?([^/:]+)(:[0-9]+)?/(.+)$ ]]; then
+    # scheme://[userinfo@]host[:port]/path -- userinfo captured only to
+    # discard it (may carry a CI token; never echoed, never logged).
+    scheme=$(printf '%s' "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]')
+    case "${scheme}" in ssh | https | http | git) ;; *) return 1 ;; esac
+    host="${BASH_REMATCH[3]}"
+    path="${BASH_REMATCH[5]}"
+  elif [[ "${url}" =~ ^([^/@]+@)?([^/:]+):(.+)$ ]]; then
+    # scp-like [user@]host:path -- ':' is the path separator here, so no port
+    # can appear in this form. Conflating scp-like ':' with a URL port
+    # separator is what made ssh://...:22/owner/repo parse "22" as the owner.
+    # A Windows path (C:/...) also lands here and is rejected by the host
+    # check below.
+    host="${BASH_REMATCH[2]}"
+    path="${BASH_REMATCH[3]}"
+  else
+    return 1
+  fi
+
+  host=$(printf '%s' "${host}" | tr '[:upper:]' '[:lower:]')
+  case "${host}" in
+    github.com | www.github.com | ssh.github.com) ;;
+    *) return 1 ;;
+  esac
+
+  path="${path#/}"
+  while [[ "${path}" == */ ]]; do path="${path%/}"; done
+  # Strip ".git" AFTER trailing slashes, not before -- "repo.git/" does not
+  # end in literal ".git", so the opposite order leaves ".git" in the result.
+  path="${path%.git}"
+  while [[ "${path}" == */ ]]; do path="${path%/}"; done
+
+  owner="${path%%/*}"
+  repo="${path#*/}"
+  [[ "${owner}" == "${path}" ]] && return 1 # no '/' at all
+  [[ -z "${owner}" ]] || [[ -z "${repo}" ]] && return 1
+  [[ "${repo}" == */* ]] && return 1 # 3+ path segments is not a repo URL
+  # This value is handed straight to `gh --repo`: constrain to GitHub's real
+  # owner/repo charset and reject a leading '-' so it can never be read as a
+  # flag by a downstream command line.
+  [[ "${owner}" =~ ^[A-Za-z0-9._-]+$ ]] || return 1
+  [[ "${repo}" =~ ^[A-Za-z0-9._-]+$ ]] || return 1
+  [[ "${owner}" == -* ]] || [[ "${repo}" == -* ]] && return 1
+  echo "${owner}/${repo}"
 }
 
 # cgw_default_branch [--refresh]
@@ -857,7 +947,7 @@ cgw_resolve_safe_conflicts() {
     merge)
       continue_hint="  1. Edit conflicted files
   2. git add <resolved files>
-  3. git commit"
+  3. ./scripts/git/commit_enhanced.sh   (no message needed -- uses git's prepared merge message; do NOT pass --only)"
       abort_hint="Or abort: git merge --abort && git checkout ${original_branch}"
       ;;
     cherry-pick)
@@ -1408,6 +1498,16 @@ cgw_crlf_in_index_files() {
 #   given). Honors CGW_SKIP_TYPECHECK=1 and empty CGW_TYPECHECK_CMD (returns 0,
 #   emits skip line). Reads ${logfile} from caller scope. Returns 0 = clean,
 #   1 = errors found.
+#
+#   Overrides CGW_TOOL_ERROR_REGEX (see run_tool_with_logging) because the
+#   default ruff-shaped `^[^:]+:[0-9]+:[0-9]+:` misses every supported
+#   typechecker's real output: mypy omits the column by default
+#   (`file.py:10: error:`), pyright indents and uses ` - error:`
+#   (`  /p/file.py:10:5 - error:`), and pyrefly's diagnostic line carries no
+#   file/line at all -- it prints `ERROR <msg> [<code>]` with the location on
+#   the *next* line (` --> file.py:10:8`). Verified against real 1.0.0/1.3.0
+#   pyrefly, mypy, and pyright output (2026-09-12); tsc's documented
+#   `file.ts(10,5): error TS2322:` form is covered by the first alternative.
 cgw_run_typecheck() {
   if [[ "${CGW_SKIP_TYPECHECK:-0}" == "1" ]]; then
     echo "  (typecheck skipped -- CGW_SKIP_TYPECHECK=1)"
@@ -1420,6 +1520,8 @@ cgw_run_typecheck() {
   get_python_path 2>/dev/null || true
   local tc_bin
   tc_bin=$(cgw_resolve_lint_binary "${CGW_TYPECHECK_CMD}")
+  # shellcheck disable=SC2034  # read via dynamic scope by run_tool_with_logging
+  local CGW_TOOL_ERROR_REGEX='^[[:space:]]*[^[:space:]]+[:(][0-9]+[,:)][^[:space:]]*[[:space:]]*(-[[:space:]]+)?error|^ERROR[[:space:]]'
   if [[ $# -gt 0 ]]; then
     local stripped_args
     stripped_args=$(cgw_strip_path_arg "${CGW_TYPECHECK_CHECK_ARGS-check}")
@@ -1449,6 +1551,90 @@ cgw_validate_commit_message() {
   # with a generic warning, sending agents into the wrapper source to find
   # this regex and then stripping the scope to get through.
   echo "${msg}" | grep -qE "^(${CGW_ALL_PREFIXES})(\([A-Za-z0-9._/-]+\))?!?:"
+}
+
+# cgw_branch_matches_freeform_glob <branch>
+#   Returns 0 if <branch> matches any glob in CGW_FREEFORM_MESSAGE_BRANCHES.
+#   Pure predicate, no output. Empty branch or empty setting: always 1 -- an
+#   empty branch (e.g. a non-refs/heads/* push target) must never match a
+#   bare "*" glob.
+cgw_branch_matches_freeform_glob() {
+  local branch="$1" pat
+  [[ -z "${branch}" ]] && return 1
+  local -a _pats=()
+  read -r -a _pats <<<"${CGW_FREEFORM_MESSAGE_BRANCHES:-}" || true
+  for pat in "${_pats[@]+"${_pats[@]}"}"; do
+    # shellcheck disable=SC2053  # unquoted RHS is the point: glob match
+    [[ "${branch}" == ${pat} ]] && return 0
+  done
+  return 1
+}
+
+# cgw_branch_is_freeform <branch>
+#   Returns 0 if <branch> matches CGW_FREEFORM_MESSAGE_BRANCHES AND is not a
+#   guarded branch (CGW_SOURCE_BRANCH, CGW_TARGET_BRANCH, or any entry of
+#   CGW_PROTECTED_BRANCHES). Guarded branches are exempt-proof by design: an
+#   overbroad glob (e.g. "*") must never silently turn off conventional-
+#   format enforcement on the branches CGW's own policy protects. Pure
+#   predicate, no output -- callers print their own "pattern ignored" notice
+#   once they know which case applies.
+cgw_branch_is_freeform() {
+  local branch="$1" _guarded
+  cgw_branch_matches_freeform_glob "${branch}" || return 1
+
+  local -a _guarded_arr=()
+  read -r -a _guarded_arr <<<"${CGW_PROTECTED_BRANCHES:-}" || true
+  for _guarded in "${CGW_SOURCE_BRANCH:-}" "${CGW_TARGET_BRANCH:-}" "${_guarded_arr[@]+"${_guarded_arr[@]}"}"; do
+    [[ -n "${_guarded}" && "${branch}" == "${_guarded}" ]] && return 1
+  done
+  return 0
+}
+
+# cgw_branch_is_guarded <branch>
+#   Returns 0 if <branch> exactly matches CGW_SOURCE_BRANCH, CGW_TARGET_BRANCH,
+#   or any entry of CGW_PROTECTED_BRANCHES -- i.e. the branch a freeform glob
+#   is not allowed to exempt. Pure predicate, no output. Used by callers to
+#   decide whether to print the "pattern ignored" notice.
+cgw_branch_is_guarded() {
+  local branch="$1" _guarded
+  local -a _guarded_arr=()
+  read -r -a _guarded_arr <<<"${CGW_PROTECTED_BRANCHES:-}" || true
+  for _guarded in "${CGW_SOURCE_BRANCH:-}" "${CGW_TARGET_BRANCH:-}" "${_guarded_arr[@]+"${_guarded_arr[@]}"}"; do
+    [[ -n "${_guarded}" && "${branch}" == "${_guarded}" ]] && return 0
+  done
+  return 1
+}
+
+# cgw_freeform_message_check <msg>
+#   Delegated gate for a freeform branch's commit message, e.g. the target
+#   project's own commit-msg hook. Returns 0 (nothing to enforce) when
+#   CGW_FREEFORM_MESSAGE_CHECK is unset. Otherwise writes <msg> to a temp
+#   file and runs CGW_FREEFORM_MESSAGE_CHECK with that file as $1; returns
+#   the command's exit status. A relative command resolves against
+#   PROJECT_ROOT. Fails closed (returns 1) if the command cannot be found or
+#   is not executable -- a silently-skipped delegated gate is worse than a
+#   blocked commit. The command's own stdout/stderr passes through; this
+#   function prints nothing itself.
+cgw_freeform_message_check() {
+  local msg="$1"
+  [[ -z "${CGW_FREEFORM_MESSAGE_CHECK:-}" ]] && return 0
+
+  local cmd="${CGW_FREEFORM_MESSAGE_CHECK}"
+  if [[ "${cmd}" != /* ]]; then
+    cmd="${PROJECT_ROOT}/${cmd}"
+  fi
+  if [[ ! -x "${cmd}" ]]; then
+    err "CGW_FREEFORM_MESSAGE_CHECK is set to '${CGW_FREEFORM_MESSAGE_CHECK}' but '${cmd}' is not an executable file"
+    return 1
+  fi
+
+  local msgfile
+  msgfile="$(mktemp)" || return 1
+  printf '%s\n' "${msg}" >"${msgfile}"
+  "${cmd}" "${msgfile}"
+  local status=$?
+  rm -f "${msgfile}"
+  return ${status}
 }
 
 # ── interactive prompts module ─────────────────────────────────────────────────

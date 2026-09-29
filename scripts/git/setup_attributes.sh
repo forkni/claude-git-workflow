@@ -356,11 +356,11 @@ main() {
   echo ""
   echo "Next steps:"
   echo "  git add .gitattributes"
-  echo "  git commit -m 'chore: configure .gitattributes for binary and text files'"
+  echo "  ./scripts/git/commit_enhanced.sh 'chore: configure .gitattributes for binary and text files'"
   echo ""
   echo "If you have existing binary files already tracked, renormalize them:"
   echo "  git add --renormalize ."
-  echo "  git commit -m 'chore: renormalize line endings'"
+  echo "  ./scripts/git/commit_enhanced.sh 'chore: renormalize line endings'"
 }
 
 main "$@"

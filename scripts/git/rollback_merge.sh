@@ -191,6 +191,11 @@ main() {
     if [[ -n "${latest_tag}" ]]; then
       rollback_target="${latest_tag}"
       echo "[Non-interactive] Using latest backup tag: ${rollback_target}" | tee -a "$logfile"
+    elif [[ ${use_revert} -eq 0 ]]; then
+      err "[Non-interactive] Refusing hard rollback: no --target specified and no pre-merge backup tag found."
+      err "Specify --target <ref> or use --revert mode."
+      _rollback_done=1
+      exit 1
     else
       rollback_target="HEAD~1"
       echo "[Non-interactive] No backup tag found -- using HEAD~1" | tee -a "$logfile"
@@ -271,7 +276,9 @@ main() {
     # Preserves history -- no force-push needed (Pro Git p.288-289).
     # git revert -m 1 requires a merge commit (2+ parents); validate before attempting.
     local parent_count
-    parent_count=$(git cat-file -p "${rollback_target}" 2>/dev/null | grep -c "^parent " || echo "0")
+    # grep -c already prints 0 when nothing matches (and exits 1); `|| echo "0"` made a root
+    # commit's count "0\n0", which broke the [[ -lt ]] guard below and let it revert a non-merge.
+    parent_count=$(git cat-file -p "${rollback_target}" 2>/dev/null | grep -c "^parent " || true)
     if [[ "${parent_count}" -lt 2 ]]; then
       err "--revert requires a merge commit (2+ parents), but ${rollback_target} has ${parent_count} parent(s)"
       err "Use plain rollback (omit --revert) or provide a merge commit hash with --target"

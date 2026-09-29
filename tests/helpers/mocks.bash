@@ -52,6 +52,65 @@ EOF
   chmod +x "${MOCK_BIN_DIR}/ruff"
 }
 
+# ── Typecheck mock ─────────────────────────────────────────────────────────────
+
+# install_mock_typecheck [cmd_name]
+# Creates a fake typechecker (default name: mock-typecheck) that exits with
+# $MOCK_TYPECHECK_EXIT (default 0) and logs argv to $MOCK_BIN_DIR/typecheck.log.
+# NOTE: the default name is deliberately NOT pyrefly/pyright/mypy/tsc --
+# MOCK_BIN_DIR is prepended to PATH, and configure.sh's auto-detection probes
+# those exact names (see _require_no_typechecker in helpers/setup.bash).
+# Shadowing one of them would make a same-file configure test "detect" a fake
+# typechecker as real.
+install_mock_typecheck() {
+  local cmd_name="${1:-mock-typecheck}"
+  local exit_code="${MOCK_TYPECHECK_EXIT:-0}"
+  cat > "${MOCK_BIN_DIR}/${cmd_name}" << EOF
+#!/usr/bin/env bash
+echo "mock ${cmd_name} \$*" >> "${MOCK_BIN_DIR}/typecheck.log"
+exit ${exit_code}
+EOF
+  chmod +x "${MOCK_BIN_DIR}/${cmd_name}"
+}
+
+# install_mock_typecheck_with_errors [shape] [cmd_name]
+# Fake typechecker that exits 1 and emits one diagnostic in the named tool's
+# real output shape: mypy (default), pyright, tsc, pyrefly. Backs the
+# CGW_TOOL_ERROR_REGEX coverage in check_lint.bats -- none of these shapes
+# matches the default ruff-style file:line:col: pattern, and pyrefly's in
+# particular carries no file/line on the diagnostic line at all (it is on the
+# following " --> file:line:col" line, which this mock also emits).
+install_mock_typecheck_with_errors() {
+  local shape="${1:-mypy}"
+  local cmd_name="${2:-mock-typecheck}"
+  local diagnostic
+  case "${shape}" in
+    mypy)
+      diagnostic='foo.py:10: error: Incompatible return value type  [return-value]'
+      ;;
+    pyright)
+      diagnostic='  /repo/foo.py:10:5 - error: Cannot assign to declared type'
+      ;;
+    tsc)
+      diagnostic='foo.ts(10,5): error TS2322: Type '"'"'x'"'"' is not assignable to type '"'"'y'"'"'.'
+      ;;
+    pyrefly)
+      diagnostic=$'ERROR Could not find import of `foo` [import-error]\n --> foo.py:10:8'
+      ;;
+    *)
+      echo "install_mock_typecheck_with_errors: unknown shape '${shape}'" >&2
+      return 1
+      ;;
+  esac
+  cat > "${MOCK_BIN_DIR}/${cmd_name}" << EOF
+#!/usr/bin/env bash
+echo "mock ${cmd_name} \$*" >> "${MOCK_BIN_DIR}/typecheck.log"
+echo "${diagnostic}"
+exit 1
+EOF
+  chmod +x "${MOCK_BIN_DIR}/${cmd_name}"
+}
+
 # ── gh CLI mock ────────────────────────────────────────────────────────────────
 
 # install_mock_gh

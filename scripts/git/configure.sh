@@ -204,7 +204,7 @@ _detect_typecheck_tool() {
 _detect_local_files() {
   # Scan for files that exist on disk but are not tracked by git
   local files=()
-  local check_files=(CLAUDE.md MEMORY.md SESSION_LOG.md GEMINI.md .env .env.local .env.development .env.production)
+  local check_files=(CLAUDE.md MEMORY.md SESSION_LOG.md GEMINI.md AGENTS.md .env .env.local .env.development .env.production)
   local check_dirs=(.claude/ logs/)
 
   for f in "${check_files[@]}"; do
@@ -367,13 +367,34 @@ _build_typecheck_config() {
   esac
 }
 
-_install_hook() {
-  local hooks_template_dir="${SCRIPT_DIR}/../../hooks"
+# _resolve_template_dir <category>
+#   Resolves an asset template directory (hooks, skill, command, templates)
+#   using the priority chain:
+#     1. TEMPLATE_DIR (from --template-dir <path> or CGW_TEMPLATE_DIR env var)
+#     2. Sibling/parent relative lookup (${SCRIPT_DIR}/../../<category>)
+#   Returns 0 and prints absolute path on success; returns 1 on failure.
+_resolve_template_dir() {
+  local sub="${1:-}"
+  local resolved=""
+  if [[ -n "${TEMPLATE_DIR:-}" ]]; then
+    if resolved="$(cd "${TEMPLATE_DIR}/${sub}" 2>/dev/null && pwd)"; then
+      echo "${resolved}"
+      return 0
+    fi
+  fi
+  # Fallback: relative to SCRIPT_DIR (active when running in CGW source repo or legacy in-repo staging)
+  if resolved="$(cd "${SCRIPT_DIR}/../../${sub}" 2>/dev/null && pwd)"; then
+    echo "${resolved}"
+    return 0
+  fi
+  return 1
+}
 
-  # Try staging area first (present during install.cmd), then fall back to already-installed hook
-  hooks_template_dir="$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)" || {
+_install_hook() {
+  local hooks_template_dir
+  if ! hooks_template_dir="$(_resolve_template_dir hooks)"; then
     hooks_template_dir="${PROJECT_ROOT}/.cgw-hooks-template"
-  }
+  fi
 
   local hook_template="${hooks_template_dir}/pre-commit"
 
@@ -384,7 +405,7 @@ _install_hook() {
       return 0
     fi
     echo "  [!] Hook template not found at: ${hook_template}" >&2
-    echo "      Fix: copy the hooks/ directory from the CGW source repo into your project root," >&2
+    echo "      Fix: pass --template-dir <path-to-cgw-source> or set CGW_TEMPLATE_DIR," >&2
     echo "      then re-run: ./scripts/git/configure.sh" >&2
     return 1
   fi
@@ -417,54 +438,182 @@ _install_hook() {
   fi
 }
 
-_install_skill() {
-  local install_mode="${1:-local}" # "local" or "global"
-  local skill_src
-  local cmd_src
-  local skill_dst cmd_dst
+# ── Agent harnesses (Claude Code = cc, Antigravity = agy) ────────────────────
+#
+# _harness_spec <host> <field>
+#   Where each harness keeps CGW's skill, slash command and guardrail, plus the
+#   wording configure.sh uses for it. Guardrail *registration* facts live in
+#   _guardrail_spec; host-specific hook command strings stay in the
+#   _install_<host>_guardrail installers. Fields ending in :local / :global
+#   are per install mode.
+# Literal tildes in the *_hint / *_note fields are display strings for prompts,
+# never expanded or executed.
+# shellcheck disable=SC2088
+_harness_spec() {
+  case "$1:$2" in
+    cc:label) echo "Claude Code" ;;
+    cc:dir) echo ".claude" ;;
+    cc:skill_dst:local) echo "${PROJECT_ROOT}/.claude/skills/auto-git-workflow" ;;
+    cc:skill_dst:global) echo "${HOME}/.claude/skills/auto-git-workflow" ;;
+    # cmd_layout file: the command is a plain markdown file in cmd_dst.
+    cc:cmd_layout) echo "file" ;;
+    cc:cmd_dst:local) echo "${PROJECT_ROOT}/.claude/commands" ;;
+    cc:cmd_dst:global) echo "${HOME}/.claude/commands" ;;
+    cc:guardrail_dst:local) echo "${PROJECT_ROOT}/.claude/hooks/cc-block-dangerous-git.sh" ;;
+    cc:guardrail_dst:global) echo "${HOME}/.claude/hooks/cc-block-dangerous-git.sh" ;;
+    cc:settings_json:local) echo "${PROJECT_ROOT}/.claude/settings.json" ;;
+    cc:settings_json:global) echo "${HOME}/.claude/settings.json" ;;
+    cc:skill_hint:local) echo "project .claude/" ;;
+    cc:skill_hint:global) echo "global ~/.claude/" ;;
+    cc:skill_global_note) echo "  (--global: skill will be installed to ~/.claude/ for all projects)" ;;
+    cc:guardrail_hint:local) echo ".claude/settings.json" ;;
+    cc:guardrail_hint:global) echo "~/.claude/settings.json" ;;
+    cc:skill_blurb)
+      echo "The Claude Code skill teaches Claude to use CGW scripts instead of raw"
+      echo "git commands, ensuring lint checks and local-file protection are never bypassed."
+      ;;
+    cc:guardrail_blurb)
+      echo "The PreToolUse guardrail is a Claude Code hook that blocks dangerous git"
+      echo "commands (raw 'git commit', '--no-verify', 'git reset --hard', etc.) at the"
+      echo "harness layer, before they execute. This is defense-in-depth on top of the"
+      echo "repo-side git hooks — the model cannot bypass it by being asked to skip CGW."
+      ;;
+    cc:summary_skill) echo "Claude skill:" ;;
+    cc:summary_guardrail) echo "Claude guard:" ;;
 
-  # Determine destination based on install mode
-  if [[ "${install_mode}" == "global" ]]; then
-    skill_dst="${HOME}/.claude/skills/auto-git-workflow"
-    cmd_dst="${HOME}/.claude/commands"
-  else
-    skill_dst="${PROJECT_ROOT}/.claude/skills/auto-git-workflow"
-    cmd_dst="${PROJECT_ROOT}/.claude/commands"
-  fi
+    agy:label) echo "Antigravity" ;;
+    agy:dir) echo ".agents" ;;
+    agy:skill_dst:local) echo "${PROJECT_ROOT}/.agents/skills/auto-git-workflow" ;;
+    agy:skill_dst:global) echo "${HOME}/.gemini/config/skills/auto-git-workflow" ;;
+    # cmd_layout skill: Antigravity slash commands are skills
+    # (<cmd_dst>/SKILL.md), with links rewritten for that layout.
+    agy:cmd_layout) echo "skill" ;;
+    agy:cmd_dst:local) echo "${PROJECT_ROOT}/.agents/skills/auto-git-workflow-cmd" ;;
+    agy:cmd_dst:global) echo "${HOME}/.gemini/config/skills/auto-git-workflow-cmd" ;;
+    agy:guardrail_dst:local) echo "${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.sh" ;;
+    agy:guardrail_dst:global) echo "${HOME}/.gemini/config/hooks/agy-block-dangerous-git.sh" ;;
+    agy:settings_json:local) echo "${PROJECT_ROOT}/.agents/hooks.json" ;;
+    agy:settings_json:global) echo "${HOME}/.gemini/config/hooks.json" ;;
+    agy:skill_hint:local) echo "project .agents/skills/auto-git-workflow/" ;;
+    agy:skill_hint:global) echo "global ~/.gemini/config/skills/auto-git-workflow/" ;;
+    agy:skill_global_note) echo "  (--global: skill will be installed to ~/.gemini/config/skills/ for all projects)" ;;
+    agy:guardrail_hint:local) echo ".agents/hooks.json" ;;
+    agy:guardrail_hint:global) echo "~/.gemini/config/hooks.json" ;;
+    agy:skill_blurb)
+      echo "The Antigravity skill teaches Antigravity Agents to use CGW scripts instead"
+      echo "of raw git commands, ensuring lint checks and local-file protection are never bypassed."
+      ;;
+    agy:guardrail_blurb)
+      echo "The Antigravity PreToolUse guardrail intercepts run_command tool calls to block"
+      echo "dangerous git commands at the harness layer before they execute."
+      ;;
+    agy:summary_skill) echo "Antigravity:" ;;
+    agy:summary_guardrail) echo "AGY guard:" ;;
+    *) return 1 ;;
+  esac
+}
 
-  # Try staging area first (present during install.cmd), then CGW source repo
-  if skill_src="$(cd "${SCRIPT_DIR}" && cd "../../skill" 2>/dev/null && pwd)"; then
-    cmd_src="${skill_src}/../command/auto-git-workflow-cmd.md"
-  elif [[ -f "${skill_dst}/SKILL.md" ]]; then
-    echo "  [OK] Claude Code skill already installed (${install_mode})"
+# _install_harness_skill <host> <local|global>
+#   Installs the auto-git-workflow skill (SKILL.md + references/) and the
+#   auto-git-workflow-cmd slash command into the host's skill/command dirs.
+_install_harness_skill() {
+  local host="$1" install_mode="${2:-local}"
+  local label skill_dst cmd_dst cmd_layout skill_src cmd_src
+  label="$(_harness_spec "${host}" label)"
+  skill_dst="$(_harness_spec "${host}" "skill_dst:${install_mode}")"
+  cmd_dst="$(_harness_spec "${host}" "cmd_dst:${install_mode}")"
+  cmd_layout="$(_harness_spec "${host}" cmd_layout)"
+
+  # Where an already-installed command lives, per layout.
+  local cmd_installed="${cmd_dst}/auto-git-workflow-cmd.md"
+  [[ "${cmd_layout}" == "skill" ]] && cmd_installed="${cmd_dst}/SKILL.md"
+
+  # Try template source first, then already-installed fallback
+  if skill_src="$(_resolve_template_dir skill)"; then
+    if ! cmd_src="$(cd "${skill_src}/../command" 2>/dev/null && pwd)/auto-git-workflow-cmd.md" || [[ ! -f "${cmd_src}" ]]; then
+      local cmd_dir
+      if cmd_dir="$(_resolve_template_dir command)"; then
+        cmd_src="${cmd_dir}/auto-git-workflow-cmd.md"
+      fi
+    fi
+  elif [[ "${cmd_layout}" == "skill" && -f "${skill_dst}/SKILL.md" && -f "${cmd_installed}" ]]; then
+    # A skill-layout command is its own skill: require both to call it installed.
+    echo "  [OK] ${label} skill + command already installed (${install_mode})"
+    return 0
+  elif [[ "${cmd_layout}" == "file" && -f "${skill_dst}/SKILL.md" ]]; then
+    echo "  [OK] ${label} skill already installed (${install_mode})"
     return 0
   else
     echo "  [!] Skill template not found." >&2
-    echo "      Fix: copy skill/ and command/ from the CGW source repo into your" >&2
-    echo "      project root, then re-run: ./scripts/git/configure.sh" >&2
+    echo "      Fix: pass --template-dir <path-to-cgw-source> or set CGW_TEMPLATE_DIR," >&2
+    echo "      then re-run: ./scripts/git/configure.sh" >&2
     return 1
   fi
 
-  echo "Installing Claude Code skill (${install_mode})..."
+  echo "Installing ${label} skill (${install_mode})..."
   mkdir -p "${skill_dst}/references"
 
   cp "${skill_src}/SKILL.md" "${skill_dst}/SKILL.md" 2>/dev/null || true
   cp "${skill_src}/references/"*.md "${skill_dst}/references/" 2>/dev/null || true
 
-  if [[ -f "${cmd_src}" ]]; then
-    mkdir -p "${cmd_dst}"
-    cp "${cmd_src}" "${cmd_dst}/auto-git-workflow-cmd.md" 2>/dev/null || true
-    echo "  [OK] Claude Code skill + slash command installed (${install_mode})"
+  if [[ ! -f "${cmd_src}" ]]; then
+    echo "  [OK] ${label} skill installed (${install_mode}, command template not found)"
+    return 0
+  fi
+  mkdir -p "${cmd_dst}"
+  if [[ "${cmd_layout}" == "skill" ]]; then
+    # Adapt links and paths so they work in the skills-directory layout.
+    sed -e 's|\.\./skills/auto-git-workflow/|../auto-git-workflow/|g' \
+      -e 's|\.claude/skills/auto-git-workflow/|auto-git-workflow/|g' \
+      "${cmd_src}" >"${cmd_installed}" 2>/dev/null || true
   else
-    echo "  [OK] Claude Code skill installed (${install_mode}, command template not found)"
+    cp "${cmd_src}" "${cmd_installed}" 2>/dev/null || true
+  fi
+  echo "  [OK] ${label} skill + slash command installed (${install_mode})"
+}
+
+# _offer_harness_install <host> <skill|guardrail> <skip> <enable> <global>
+#   One configure.sh step for one harness: explain it, default to "yes" when
+#   the project already has the harness's directory (or --global / --claude /
+#   --antigravity was given), confirm, then install locally or globally.
+_offer_harness_install() {
+  local host="$1" what="$2" skip="$3" enable="$4" global="$5"
+  [[ ${skip} -eq 1 ]] && return 0
+  local mode="local"
+  [[ ${global} -eq 1 ]] && mode="global"
+
+  echo ""
+  _harness_spec "${host}" "${what}_blurb"
+  if [[ "${what}" == "skill" && ${global} -eq 1 ]]; then
+    _harness_spec "${host}" skill_global_note
+  fi
+
+  local default="no"
+  if [[ -d "$(_harness_spec "${host}" dir)" ]] || [[ ${global} -eq 1 ]] || [[ ${enable} -eq 1 ]]; then
+    default="yes"
+  fi
+  local label hint prompt
+  label="$(_harness_spec "${host}" label)"
+  hint="$(_harness_spec "${host}" "${what}_hint:${mode}")"
+  if [[ "${what}" == "skill" ]]; then
+    prompt="Install ${label} skill to ${hint}?"
+  else
+    prompt="Install ${label} PreToolUse guardrail to ${hint}?"
+  fi
+  cgw_confirm "${prompt}" --default "${default}" --non-interactive accept || return 0
+
+  if [[ "${what}" == "skill" ]]; then
+    _install_harness_skill "${host}" "${mode}"
+  else
+    "_install_${host}_guardrail" "${mode}"
   fi
 }
 
 _install_markdownlint_config() {
   local template_src
 
-  # Try staging area first (present during install.cmd), then CGW source repo
-  if ! template_src="$(cd "${SCRIPT_DIR}" && cd "../../templates" 2>/dev/null && pwd)"; then
+  # Try template source first, then in-repo fallback
+  if ! template_src="$(_resolve_template_dir templates)"; then
     echo "  [!] Markdown lint template not found -- skipping" >&2
     return 0
   fi
@@ -491,77 +640,217 @@ _install_markdownlint_config() {
   fi
 }
 
-_install_guardrail_nojq() {
-  local settings_json="${1}"
-  local hook_cmd="${2}"
+# Escape a string for interpolation inside a JSON string literal. The no-jq
+# write paths below build settings.json / hooks.json with printf, and the
+# hook commands they embed carry literal double quotes (e.g.
+# "$CLAUDE_PROJECT_DIR"/... and bash -c "..."), which would otherwise land
+# unescaped in the file and make it unparseable.
+_json_escape_string() {
+  local s="${1}"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\t'/\\t}"
+  s="${s//$'\n'/\\n}"
+  printf '%s' "${s}"
+}
 
-  # Already registered? (grep is enough without jq)
-  if [[ -f "${settings_json}" ]] && grep -qF "cc-block-dangerous-git" "${settings_json}" 2>/dev/null; then
-    echo "  [OK] PreToolUse guardrail already registered in ${settings_json}"
-    return 0
+# _install_guardrail_core <guardrail_src> <hook_dst>
+#   Both guardrail adapters source _guardrail_core.sh from their own directory,
+#   so the core travels with whichever adapter is installed: copied from next to
+#   the adapter's source into the adapter's destination directory. A missing
+#   core is reported here and caught again by each installer's smoke test (the
+#   adapter fails open without it).
+_install_guardrail_core() {
+  local core_src core_dst
+  core_src="$(dirname "${1}")/_guardrail_core.sh"
+  core_dst="$(dirname "${2}")/_guardrail_core.sh"
+  # A pre-core (self-contained) guardrail, e.g. an older installed copy picked
+  # up by the reconfigure fallback, carries its own classifier and needs none.
+  grep -qF "_guardrail_core.sh" "${1}" 2>/dev/null || return 0
+  if [[ ! -f "${core_src}" ]]; then
+    echo "  [!] ${core_src} not found — the guardrail cannot classify commands without it." >&2
+    echo "      Re-copy hooks/ from the CGW source directory, then re-run: ./scripts/git/configure.sh" >&2
+    return 1
   fi
+  if [[ "${core_src}" != "${core_dst}" ]]; then
+    cp "${core_src}" "${core_dst}"
+  fi
+}
 
-  # Simple case: no file yet, or just bare {}  — write from scratch
+# ── Guardrail registration (shared by every agent harness) ───────────────────
+#
+# _guardrail_spec <host> <field>
+#   The per-harness facts the registrar needs; everything else is shared.
+#     label   — name used in status messages
+#     keys    — space-separated JSON keys leading to the PreToolUse entry array
+#     matcher — tool matcher for the registered entry
+#     marker  — substring that identifies a CGW guardrail command
+#     bad     — one substring per line marking a corrupted / legacy CGW entry
+#               that must be replaced rather than counted as registered
+_guardrail_spec() {
+  case "$1:$2" in
+    cc:label) echo "PreToolUse guardrail" ;;
+    cc:keys) echo "hooks PreToolUse" ;;
+    cc:matcher) echo "Bash" ;;
+    cc:marker) echo "cc-block-dangerous-git" ;;
+    cc:bad) echo "Program Files/Git" ;; # MSYS path mangling on Git Bash
+    agy:label) echo "Antigravity PreToolUse guardrail" ;;
+    agy:keys) echo "cgw-git-guardrail PreToolUse" ;;
+    agy:matcher) echo "run_command" ;;
+    agy:marker) echo "agy-block-dangerous-git" ;;
+    agy:bad) printf '%s\n' "bash -c" "if [" ;; # pre-.cmd-runner command format
+    *) return 1 ;;
+  esac
+}
+
+# _guardrail_is_registered <host> <json_file>
+#   Query: true when some registered command names the host's marker and
+#   contains none of its bad substrings. jq checks the entry array itself;
+#   without jq, the same rule is applied per line (each command is on its own
+#   line in every file this installer writes).
+_guardrail_is_registered() {
+  local host="$1" json="$2" marker keys b
+  [[ -f "${json}" ]] || return 1
+  marker="$(_guardrail_spec "${host}" marker)" || return 1
+  local -a bad=()
+  mapfile -t bad < <(_guardrail_spec "${host}" bad)
+  if command -v jq &>/dev/null; then
+    keys="$(_guardrail_spec "${host}" keys)"
+    local k1 k2 bad_json=""
+    read -r k1 k2 <<<"${keys}"
+    for b in "${bad[@]}"; do bad_json+="\"$(_json_escape_string "${b}")\","; done
+    jq -e --arg k1 "${k1}" --arg k2 "${k2}" --arg marker "${marker}" \
+      --argjson bad "[${bad_json%,}]" '
+      [.[$k1][$k2][]?.hooks[]?.command | strings
+        | select(contains($marker))
+        | select(. as $c | any($bad[]; . as $b | $c | contains($b)) | not)
+      ] | length > 0' "${json}" >/dev/null 2>&1
+    return
+  fi
+  local lines
+  lines="$(grep -F -- "${marker}" "${json}" 2>/dev/null)" || return 1
+  for b in "${bad[@]}"; do
+    lines="$(grep -vF -- "${b}" <<<"${lines}")" || return 1
+  done
+  [[ -n "${lines}" ]]
+}
+
+# _register_guardrail <host> <json_file> <hook_cmd>
+#   Modifier: registers <hook_cmd> as the host's PreToolUse guardrail. Removes
+#   every stale CGW entry (anything naming the marker), keeps all other
+#   entries, appends the new one. Backends, first that applies: a fresh write
+#   when the file is missing, blank or {}; jq; python; manual instructions.
+#   Returns 1 when nothing was registered. Always (re)writes -- callers ask
+#   _guardrail_is_registered first.
+_register_guardrail() {
+  local host="$1" json="$2" cmd="$3"
+  local label keys matcher marker k1 k2
+  label="$(_guardrail_spec "${host}" label)" || return 1
+  keys="$(_guardrail_spec "${host}" keys)"
+  matcher="$(_guardrail_spec "${host}" matcher)"
+  marker="$(_guardrail_spec "${host}" marker)"
+  read -r k1 k2 <<<"${keys}"
+
+  echo "Installing ${label}..."
+
+  # Fresh write: no file yet, or only whitespace / {} -- no JSON tool needed.
   local existing_stripped=""
-  if [[ -f "${settings_json}" ]]; then
-    existing_stripped="$(tr -d '[:space:]' <"${settings_json}" 2>/dev/null)"
+  if [[ -f "${json}" ]]; then
+    existing_stripped="$(tr -d '[:space:]' <"${json}" 2>/dev/null)"
   fi
   if [[ -z "${existing_stripped}" ]] || [[ "${existing_stripped}" == "{}" ]]; then
-    printf '{\n  "hooks": {\n    "PreToolUse": [\n      {\n        "matcher": "Bash",\n        "hooks": [{"type": "command", "command": "%s"}]\n      }\n    ]\n  }\n}\n' \
-      "${hook_cmd}" >"${settings_json}"
-    echo "  [OK] PreToolUse guardrail registered in ${settings_json}"
+    printf '{\n  "%s": {\n    "%s": [\n      {\n        "matcher": "%s",\n        "hooks": [{"type": "command", "command": "%s"}]\n      }\n    ]\n  }\n}\n' \
+      "${k1}" "${k2}" "${matcher}" "$(_json_escape_string "${cmd}")" >"${json}"
+    echo "  [OK] ${label} registered in ${json}"
     return 0
   fi
 
-  # Complex case: try Python to merge into existing settings
+  # Split the command at its first "/" and rejoin inside jq/python, so no argument
+  # starts with "/" and MSYS2 has nothing to path-convert when it crosses
+  # into jq.exe or python.exe on Git Bash (Windows). A no-op everywhere else.
+  #   '"$CLAUDE_PROJECT_DIR"/.claude/hooks/...' -> pfx='"$CLAUDE_PROJECT_DIR"'  sfx='.claude/hooks/...'
+  local pfx sfx has_slash=false
+  pfx="${cmd%%/*}"
+  sfx="${cmd#*/}"
+  [[ "${cmd}" == */* ]] && has_slash=true
+
+  if command -v jq &>/dev/null; then
+    local tmp
+    tmp="$(mktemp)"
+    jq --arg k1 "${k1}" --arg k2 "${k2}" --arg matcher "${matcher}" --arg marker "${marker}" \
+      --arg pfx "${pfx}" --arg sfx "${sfx}" --argjson has_slash "${has_slash}" '
+      .[$k1][$k2] |= (
+        (. // [])
+        | map(select((.hooks // []) | map((.command // "") | contains($marker)) | any | not))
+        + [{"matcher": $matcher, "hooks": [{"type": "command",
+             "command": (if $has_slash then $pfx + "/" + $sfx else $pfx end)}]}]
+      )' "${json}" >"${tmp}" || {
+      rm -f "${tmp}"
+      echo "  [!] Failed to update ${json} (malformed JSON?). Guardrail NOT registered." >&2
+      echo "      Fix or remove the file, then re-run: ./scripts/git/configure.sh" >&2
+      return 1
+    }
+    if ! mv "${tmp}" "${json}"; then
+      rm -f "${tmp}"
+      echo "  [!] Failed to write ${json}. Guardrail NOT registered." >&2
+      return 1
+    fi
+    echo "  [OK] ${label} registered in ${json}"
+    return 0
+  fi
+
   local py_cmd
   for py_cmd in python3 python; do
     if command -v "${py_cmd}" &>/dev/null; then
-      if "${py_cmd}" - "${settings_json}" "${hook_cmd}" 2>/dev/null <<'PYEOF'; then
+      if "${py_cmd}" - "${json}" "${pfx}" "${sfx}" "${has_slash}" "${k1}" "${k2}" "${matcher}" "${marker}" 2>/dev/null <<'PYEOF'; then
 import json, sys
-path, cmd = sys.argv[1], sys.argv[2]
+path, pfx, sfx, has_slash, k1, k2, matcher, marker = sys.argv[1:9]
+cmd = f"{pfx}/{sfx}" if has_slash == "true" else pfx
 try:
-    with open(path) as f:
+    with open(path, encoding='utf-8') as f:
         data = json.load(f)
 except Exception:
     data = {}
-ptu = data.setdefault('hooks', {}).setdefault('PreToolUse', [])
+ptu = data.setdefault(k1, {}).setdefault(k2, [])
 ptu[:] = [e for e in ptu
-          if not any('cc-block-dangerous-git' in h.get('command', '')
+          if not any(marker in h.get('command', '')
                      for h in e.get('hooks', []))]
-ptu.append({'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': cmd}]})
-with open(path, 'w') as f:
+ptu.append({'matcher': matcher, 'hooks': [{'type': 'command', 'command': cmd}]})
+with open(path, 'w', encoding='utf-8') as f:
     json.dump(data, f, indent=2)
 PYEOF
-        echo "  [OK] PreToolUse guardrail registered in ${settings_json} (via python)"
+        echo "  [OK] ${label} registered in ${json} (via python)"
         return 0
       fi
     fi
   done
 
-  # Nothing available — manual instructions
-  echo "  [!] jq and python not found — cannot auto-merge ${settings_json}" >&2
-  echo "      Manually add the following hook entry to ${settings_json}:" >&2
-  printf '      {"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"%s"}]}]}}\n' \
-    "${hook_cmd}" >&2
+  echo "  [!] jq and python not found — cannot auto-merge ${json}" >&2
+  echo "      Manually add the following hook entry to ${json}:" >&2
+  printf '      {"%s":{"%s":[{"matcher":"%s","hooks":[{"type":"command","command":"%s"}]}]}}\n' \
+    "${k1}" "${k2}" "${matcher}" "$(_json_escape_string "${cmd}")" >&2
   return 1
 }
 
 _install_cc_guardrail() {
   local install_mode="${1:-local}" # "local" or "global"
 
-  # Find source script (staging area during install.cmd, or already-installed copy)
-  local guardrail_src
-  guardrail_src="$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)/cc-block-dangerous-git.sh" 2>/dev/null || true
+  # Find source script from template directory, or fallback to already-installed copy
+  local guardrail_src=""
+  local hooks_dir
+  if hooks_dir="$(_resolve_template_dir hooks)"; then
+    guardrail_src="${hooks_dir}/cc-block-dangerous-git.sh"
+  fi
 
   if [[ ! -f "${guardrail_src:-}" ]]; then
     # Fallback: accept the already-installed copy so reconfigure works after
-    # the staging hooks/ directory has been cleaned up.
+    # staging has finished.
     if [[ -f "${PROJECT_ROOT}/.claude/hooks/cc-block-dangerous-git.sh" ]]; then
       guardrail_src="${PROJECT_ROOT}/.claude/hooks/cc-block-dangerous-git.sh"
     else
       echo "  [!] hooks/cc-block-dangerous-git.sh not found." >&2
-      echo "      Re-copy hooks/ from the CGW source directory, then re-run: ./scripts/git/configure.sh" >&2
+      echo "      Fix: pass --template-dir <path-to-cgw-source> or set CGW_TEMPLATE_DIR," >&2
+      echo "      then re-run: ./scripts/git/configure.sh" >&2
       return 1
     fi
   fi
@@ -569,16 +858,16 @@ _install_cc_guardrail() {
   # Determine destination paths
   local hook_dst settings_json hook_cmd
   if [[ "${install_mode}" == "global" ]]; then
-    hook_dst="${HOME}/.claude/hooks/cc-block-dangerous-git.sh"
-    settings_json="${HOME}/.claude/settings.json"
+    hook_dst="$(_harness_spec cc guardrail_dst:global)"
+    settings_json="$(_harness_spec cc settings_json:global)"
     # Literal tilde is intentional (SC2088): this string is written verbatim
     # into settings.json as the hook's "command" value, not executed here --
     # Claude Code expands it via its own shell when it invokes the hook.
     # shellcheck disable=SC2088
     hook_cmd="~/.claude/hooks/cc-block-dangerous-git.sh"
   else
-    hook_dst="${PROJECT_ROOT}/.claude/hooks/cc-block-dangerous-git.sh"
-    settings_json="${PROJECT_ROOT}/.claude/settings.json"
+    hook_dst="$(_harness_spec cc guardrail_dst:local)"
+    settings_json="$(_harness_spec cc settings_json:local)"
     # Literal double-quotes around $CLAUDE_PROJECT_DIR are intentional:
     # they become JSON-escaped \" in settings.json and are expanded by the shell
     # when Claude Code executes the hook command at runtime.
@@ -592,59 +881,15 @@ _install_cc_guardrail() {
     cp "${guardrail_src}" "${hook_dst}"
   fi
   chmod +x "${hook_dst}"
+  _install_guardrail_core "${guardrail_src}" "${hook_dst}" || return 1
 
-  # Merge into settings.json — jq preferred; Python fallback; manual instructions as last resort
-  if ! command -v jq &>/dev/null; then
-    _install_guardrail_nojq "${settings_json}" "${hook_cmd}"
-    return $?
-  fi
-
-  # Initialize settings.json if it does not exist
-  if [[ ! -f "${settings_json}" ]]; then
-    echo '{}' >"${settings_json}"
-  fi
-
-  # Idempotency: skip if a valid guardrail command is already registered.
-  # "Valid" means it contains "cc-block-dangerous-git" but does NOT contain a
-  # known-bad MSYS-converted substring (Program Files/Git).  A corrupted entry
-  # falls through so it gets replaced below.
-  if jq -e '
-      [.hooks.PreToolUse[]?.hooks[]?.command
-        | select(contains("cc-block-dangerous-git"))
-        | select(contains("Program Files/Git") | not)
-      ] | length > 0' \
-    "${settings_json}" >/dev/null 2>&1; then
+  if _guardrail_is_registered cc "${settings_json}"; then
     echo "  [OK] PreToolUse guardrail already registered in ${settings_json}"
     return 0
   fi
-
-  echo "Installing PreToolUse guardrail..."
-  # Remove any corrupted/stale guardrail entries before re-registering
-  local clean_settings
-  clean_settings="$(mktemp)"
-  jq '
-    .hooks.PreToolUse |= if . then
-      map(select(
-        .hooks | map(.command | contains("cc-block-dangerous-git")) | any | not
-      ))
-    else . end' \
-    "${settings_json}" >"${clean_settings}" && mv "${clean_settings}" "${settings_json}"
-
-  # Merge: append a new PreToolUse Bash-matcher entry without overwriting existing hooks
-  # Split hook_cmd at the first "/" and reconstruct inside jq, so neither
-  # argument fragment starts with "/" and MSYS2 has nothing to path-convert
-  # when the value crosses into jq.exe on Git Bash (Windows).
-  # e.g. '"$CLAUDE_PROJECT_DIR"/.claude/hooks/...' →
-  #        pfx='"$CLAUDE_PROJECT_DIR"'  sfx='.claude/hooks/...'
-  # This is a no-op on macOS / Linux / WSL where MSYS is not in play.
-  local tmp_settings hook_pfx hook_sfx
-  tmp_settings="$(mktemp)"
-  hook_pfx="${hook_cmd%%/*}"
-  hook_sfx="${hook_cmd#*/}"
-  jq --arg pfx "${hook_pfx}" --arg sfx "${hook_sfx}" \
-    '.hooks.PreToolUse |= (. // []) + [{"matcher":"Bash","hooks":[{"type":"command","command":($pfx + "/" + $sfx)}]}]' \
-    "${settings_json}" >"${tmp_settings}" && mv "${tmp_settings}" "${settings_json}"
-  echo "  [OK] PreToolUse guardrail registered in ${settings_json}"
+  _register_guardrail cc "${settings_json}" "${hook_cmd}" || return 1
+  # The smoke test reads the registration back with jq.
+  command -v jq &>/dev/null || return 0
 
   # Smoke test: read the registered command back out of settings.json, substitute
   # $CLAUDE_PROJECT_DIR with the actual project root, verify the file exists, and
@@ -678,6 +923,102 @@ _install_cc_guardrail() {
     else
       echo "  [WARN] Smoke test: registered command did not block (exit=${exit_code})" >&2
     fi
+  fi
+}
+
+_install_agy_guardrail() {
+  local install_mode="${1:-local}" # "local" or "global"
+
+  local guardrail_src="" guardrail_cmd_src=""
+  local hooks_dir
+  if hooks_dir="$(_resolve_template_dir hooks)"; then
+    guardrail_src="${hooks_dir}/agy-block-dangerous-git.sh"
+    guardrail_cmd_src="${hooks_dir}/agy-block-dangerous-git.cmd"
+  fi
+
+  # No fallback to cc-block-dangerous-git.sh: a cc script older than the
+  # Antigravity integration cannot parse the toolCall payload and would
+  # silently allow every command while reporting the guardrail as installed.
+  if [[ ! -f "${guardrail_src:-}" ]]; then
+    if [[ -f "${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.sh" ]]; then
+      guardrail_src="${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.sh"
+    else
+      echo "  [!] hooks/agy-block-dangerous-git.sh not found." >&2
+      echo "      Fix: pass --template-dir <path-to-cgw-source> or set CGW_TEMPLATE_DIR," >&2
+      echo "      then re-run: ./scripts/git/configure.sh" >&2
+      return 1
+    fi
+  fi
+  if [[ ! -f "${guardrail_cmd_src:-}" && -f "${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.cmd" ]]; then
+    guardrail_cmd_src="${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.cmd"
+  fi
+
+  local is_windows=0
+  case "$(uname -s 2>/dev/null)" in
+    MINGW* | MSYS* | CYGWIN*) is_windows=1 ;;
+  esac
+
+  local hook_dst hook_cmd_dst hooks_json hook_cmd
+  if [[ "${install_mode}" == "global" ]]; then
+    hook_dst="$(_harness_spec agy guardrail_dst:global)"
+    hook_cmd_dst="${hook_dst%.sh}.cmd"
+    hooks_json="$(_harness_spec agy settings_json:global)"
+    if [[ "${is_windows}" -eq 1 ]]; then
+      local win_cmd_path
+      win_cmd_path="$(cygpath -m "${hook_cmd_dst}" 2>/dev/null || echo "${hook_cmd_dst}")"
+      hook_cmd="${win_cmd_path}"
+    else
+      hook_cmd="bash ~/.gemini/config/hooks/agy-block-dangerous-git.sh"
+    fi
+  else
+    hook_dst="$(_harness_spec agy guardrail_dst:local)"
+    hook_cmd_dst="${hook_dst%.sh}.cmd"
+    hooks_json="$(_harness_spec agy settings_json:local)"
+    if [[ "${is_windows}" -eq 1 ]]; then
+      local win_cmd_path
+      win_cmd_path="$(cygpath -m "${hook_cmd_dst}" 2>/dev/null || echo "${hook_cmd_dst}")"
+      hook_cmd="${win_cmd_path}"
+    else
+      hook_cmd="bash ${hook_dst}"
+    fi
+  fi
+
+  mkdir -p "$(dirname "${hook_dst}")"
+  mkdir -p "$(dirname "${hooks_json}")"
+  if [[ "${guardrail_src}" != "${hook_dst}" ]]; then
+    cp "${guardrail_src}" "${hook_dst}"
+  fi
+  chmod +x "${hook_dst}"
+  _install_guardrail_core "${guardrail_src}" "${hook_dst}" || return 1
+
+  if [[ -f "${guardrail_cmd_src:-}" && "${guardrail_cmd_src}" != "${hook_cmd_dst}" ]]; then
+    cp "${guardrail_cmd_src}" "${hook_cmd_dst}"
+  fi
+
+  if _guardrail_is_registered agy "${hooks_json}"; then
+    echo "  [OK] Antigravity PreToolUse guardrail already registered in ${hooks_json}"
+    return 0
+  fi
+  _register_guardrail agy "${hooks_json}" "${hook_cmd}" || return 1
+  # The smoke test reads the registration back with jq.
+  command -v jq &>/dev/null || return 0
+
+  # Smoke test: read registered command from hooks.json and test with dummy input
+  local registered_cmd
+  registered_cmd="$(jq -r '."cgw-git-guardrail".PreToolUse[0].hooks[0].command // empty' "${hooks_json}" 2>/dev/null || true)"
+  local test_input='{"toolCall":{"name":"run_command","args":{"CommandLine":"git commit -m \"smoke-test\""}}}'
+  local smoke_output=""
+
+  if [[ "${is_windows}" -eq 1 ]]; then
+    smoke_output="$(echo "${test_input}" | cmd.exe //c "${registered_cmd}" 2>/dev/null || true)"
+  else
+    smoke_output="$(echo "${test_input}" | bash -c "${registered_cmd}" 2>/dev/null || true)"
+  fi
+
+  if [[ "${smoke_output}" =~ \"decision\"[[:space:]]*:[[:space:]]*\"deny\" ]]; then
+    echo "  [OK] Smoke test passed: registered Antigravity guardrail blocks raw git commit"
+  else
+    echo "  [WARN] Smoke test: Antigravity guardrail did not return expected decision:deny (output=${smoke_output})" >&2
   fi
 }
 
@@ -739,6 +1080,75 @@ _cleanup_legacy_artifacts() {
     rm -f "${PROJECT_ROOT}/scripts/git/README.md"
     echo "  [OK] Removed legacy scripts/git/README.md"
   fi
+
+  # Never clean staging directories when running inside the CGW source repository itself.
+  if [[ -f "${PROJECT_ROOT}/cgw-batch-install.cmd" && -f "${PROJECT_ROOT}/cgw-install.cmd" && -f "${PROJECT_ROOT}/tests/run.sh" ]]; then
+    return 0
+  fi
+
+  # Prune legacy staging directories in consumer projects if they carry CGW markers
+  if [[ -d "${PROJECT_ROOT}/skill" ]]; then
+    if [[ -f "${PROJECT_ROOT}/skill/SKILL.md" ]] && grep -q "auto-git-workflow" "${PROJECT_ROOT}/skill/SKILL.md" 2>/dev/null; then
+      rm -rf "${PROJECT_ROOT}/skill"
+      echo "  [OK] Removed legacy staging directory: skill/"
+    fi
+  fi
+  if [[ -d "${PROJECT_ROOT}/command" ]]; then
+    if [[ -f "${PROJECT_ROOT}/command/auto-git-workflow-cmd.md" ]] && grep -q "auto-git-workflow-cmd" "${PROJECT_ROOT}/command/auto-git-workflow-cmd.md" 2>/dev/null; then
+      rm -rf "${PROJECT_ROOT}/command"
+      echo "  [OK] Removed legacy staging directory: command/"
+    fi
+  fi
+  if [[ -d "${PROJECT_ROOT}/templates" ]]; then
+    if [[ -f "${PROJECT_ROOT}/templates/markdownlint.json" || -f "${PROJECT_ROOT}/templates/markdownlint-cli2.jsonc" ]]; then
+      local foreign_files=0
+      local f b
+      for f in "${PROJECT_ROOT}/templates/"*; do
+        [[ ! -e "${f}" ]] && continue
+        b="$(basename "${f}")"
+        case "${b}" in
+          markdownlint.json|markdownlint-cli2.jsonc)
+            ;;
+          *)
+            foreign_files=1
+            ;;
+        esac
+      done
+      if [[ ${foreign_files} -eq 0 ]]; then
+        rm -rf "${PROJECT_ROOT}/templates"
+        echo "  [OK] Removed legacy staging directory: templates/"
+      else
+        rm -f "${PROJECT_ROOT}/templates/markdownlint.json" "${PROJECT_ROOT}/templates/markdownlint-cli2.jsonc"
+        echo "  [OK] Removed legacy staging CGW template files from templates/"
+      fi
+    fi
+  fi
+  if [[ -d "${PROJECT_ROOT}/hooks" ]]; then
+    if [[ -f "${PROJECT_ROOT}/hooks/pre-commit" ]] && grep -q "claude-git-workflow" "${PROJECT_ROOT}/hooks/pre-commit" 2>/dev/null; then
+      local foreign_files=0
+      local f b
+      for f in "${PROJECT_ROOT}/hooks/"*; do
+        [[ ! -e "${f}" ]] && continue
+        b="$(basename "${f}")"
+        case "${b}" in
+          pre-commit|pre-push|pre-rebase|cc-block-dangerous-git.sh|agy-block-dangerous-git.sh|agy-block-dangerous-git.cmd|_guardrail_core.sh)
+            ;;
+          *)
+            foreign_files=1
+            ;;
+        esac
+      done
+      if [[ ${foreign_files} -eq 0 ]]; then
+        rm -rf "${PROJECT_ROOT}/hooks"
+        echo "  [OK] Removed legacy staging directory: hooks/"
+      else
+        rm -f "${PROJECT_ROOT}/hooks/pre-commit" "${PROJECT_ROOT}/hooks/pre-push" "${PROJECT_ROOT}/hooks/pre-rebase" \
+              "${PROJECT_ROOT}/hooks/cc-block-dangerous-git.sh" "${PROJECT_ROOT}/hooks/agy-block-dangerous-git.sh" \
+              "${PROJECT_ROOT}/hooks/agy-block-dangerous-git.cmd" "${PROJECT_ROOT}/hooks/_guardrail_core.sh"
+        echo "  [OK] Removed legacy staging CGW hook files from hooks/"
+      fi
+    fi
+  fi
 }
 
 # ============================================================================
@@ -751,7 +1161,12 @@ main() {
   local skip_hooks=0
   local skip_skill=0
   local skip_cc_guardrail=0
+  local skip_agy_skill=0
+  local skip_agy_guardrail=0
+  local enable_claude=0
+  local enable_agy=0
   local global_skill=0
+  TEMPLATE_DIR="${TEMPLATE_DIR:-${CGW_TEMPLATE_DIR:-}}"
 
   while [[ $# -gt 0 ]]; do
     case "${1}" in
@@ -760,19 +1175,33 @@ main() {
         echo ""
         echo "Auto-configure claude-git-workflow for this project."
         echo "Scans the project and generates .cgw.conf, installs hooks,"
-        echo "and optionally installs the Claude Code skill."
+        echo "and installs skills/guardrails for Claude Code and Antigravity Agents."
         echo ""
         echo "Options:"
+        echo "  --template-dir <dir> Path to CGW source toolkit providing asset templates"
         echo "  --non-interactive    Accept all auto-detected defaults"
         echo "  --reconfigure        Overwrite existing .cgw.conf"
         echo "  --skip-hooks         Don't install git pre-commit hook"
-        echo "  --skip-skill         Don't install Claude Code skill"
-        echo "  --skip-cc-guardrail  Don't install PreToolUse harness guardrail"
-        echo "  --global             Install Claude Code skill to ~/.claude/ (available in all projects)"
+        echo "  --skip-skill         Don't install skills (skips both Claude and Antigravity)"
+        echo "  --skip-claude        Skip Claude Code integration (skill + guardrail)"
+        echo "  --skip-antigravity   Skip Antigravity integration (skill + guardrail)"
+        echo "  --skip-cc-guardrail  Don't install Claude Code PreToolUse guardrail"
+        echo "  --skip-agy-skill     Don't install Antigravity skill"
+        echo "  --skip-agy-guardrail Don't install Antigravity PreToolUse guardrail"
+        echo "  --claude             Explicitly enable Claude Code integration"
+        echo "  --antigravity        Explicitly enable Antigravity Agents integration"
+        echo "  --global             Install skills globally (~/.claude/ and ~/.gemini/config/)"
         echo "  -h, --help           Show this help"
         echo ""
         echo "After running, edit .cgw.conf to customize any detected values."
         exit 0
+        ;;
+      --template-dir)
+        shift
+        TEMPLATE_DIR="${1:-}"
+        ;;
+      --template-dir=*)
+        TEMPLATE_DIR="${1#*=}"
         ;;
       --non-interactive)
         non_interactive=1
@@ -780,8 +1209,23 @@ main() {
         ;;
       --reconfigure) reconfigure=1 ;;
       --skip-hooks) skip_hooks=1 ;;
-      --skip-skill) skip_skill=1 ;;
+      --skip-skill)
+        skip_skill=1
+        skip_agy_skill=1
+        ;;
+      --skip-claude)
+        skip_skill=1
+        skip_cc_guardrail=1
+        ;;
+      --skip-antigravity)
+        skip_agy_skill=1
+        skip_agy_guardrail=1
+        ;;
       --skip-cc-guardrail) skip_cc_guardrail=1 ;;
+      --skip-agy-skill) skip_agy_skill=1 ;;
+      --skip-agy-guardrail) skip_agy_guardrail=1 ;;
+      --claude) enable_claude=1 ;;
+      --antigravity) enable_agy=1 ;;
       --global) global_skill=1 ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2
@@ -946,6 +1390,22 @@ main() {
       echo "# -- type(scope)!: is accepted natively."
       echo "CGW_EXTRA_PREFIXES=\"\""
       echo ""
+      echo "# Freeform-message branches (space-separated bash globs; empty = none)"
+      echo "# Branches matching a glob here skip the conventional-format check and the"
+      echo "# subject-length hard cap -- use for branches that target another project"
+      echo "# with its own commit-message style (e.g. an upstream PR branch)."
+      echo "# Guard-proof: the source, target, and protected branches are never"
+      echo "# exempted, even by \"*\" -- a matching-but-guarded branch falls back to"
+      echo "# the normal format check."
+      echo "# Example: CGW_FREEFORM_MESSAGE_BRANCHES=\"up/* upstream/*\""
+      echo "CGW_FREEFORM_MESSAGE_BRANCHES=\"\""
+      echo ""
+      echo "# Optional delegated check for freeform-branch messages (empty = skip only)"
+      echo "# Options: \"\" (no check runs) or a command run with the message as \$1,"
+      echo "# e.g. the target project's own commit-msg hook. Relative paths resolve"
+      echo "# against the project root."
+      echo "CGW_FREEFORM_MESSAGE_CHECK=\"\""
+      echo ""
       echo "# Docs CI pattern (empty = skip; set to enable doc filename validation)"
       echo "# Options: \"\" (skip) or a bash ERE matching allowed docs/ filenames."
       echo "# Example: CGW_DOCS_PATTERN=\"^(README\\.md|.*_GUIDE\\.md|.*_REFERENCE\\.md)$\""
@@ -1039,67 +1499,12 @@ main() {
     fi
   fi
 
-  # -- Install Claude Code skill ---------------------------------------------
+  # -- Agent harness integrations (skill + PreToolUse guardrail per harness) --
 
-  if [[ ${skip_skill} -eq 0 ]]; then
-    echo ""
-    echo "The Claude Code skill teaches Claude to use CGW scripts instead of raw"
-    echo "git commands, ensuring lint checks and local-file protection are never bypassed."
-    if [[ ${global_skill} -eq 1 ]]; then
-      echo "  (--global: skill will be installed to ~/.claude/ for all projects)"
-    fi
-    local install_skill="no"
-    # Default to yes if .claude/ directory already exists (local mode)
-    # or if --global was specified
-    if [[ -d ".claude" ]] || [[ ${global_skill} -eq 1 ]]; then
-      install_skill="yes"
-    fi
-
-    local skill_dest_hint="project .claude/"
-    [[ ${global_skill} -eq 1 ]] && skill_dest_hint="global ~/.claude/"
-    if cgw_confirm "Install Claude Code skill to ${skill_dest_hint}?" --default "${install_skill}" --non-interactive accept; then
-      install_skill="yes"
-    else
-      install_skill="no"
-    fi
-
-    if [[ "${install_skill}" == "yes" ]]; then
-      if [[ ${global_skill} -eq 1 ]]; then
-        _install_skill "global"
-      else
-        _install_skill "local"
-      fi
-    fi
-  fi
-
-  # -- Install PreToolUse harness guardrail ----------------------------------
-
-  if [[ ${skip_cc_guardrail} -eq 0 ]]; then
-    echo ""
-    echo "The PreToolUse guardrail is a Claude Code hook that blocks dangerous git"
-    echo "commands (raw 'git commit', '--no-verify', 'git reset --hard', etc.) at the"
-    echo "harness layer, before they execute. This is defense-in-depth on top of the"
-    echo "repo-side git hooks — the model cannot bypass it by being asked to skip CGW."
-    local install_guardrail
-    local guardrail_dest_hint=".claude/settings.json"
-    # Literal tilde is intentional (SC2088): purely a display string in the
-    # prompt below, never expanded or executed.
-    # shellcheck disable=SC2088
-    [[ ${global_skill} -eq 1 ]] && guardrail_dest_hint="~/.claude/settings.json"
-    if cgw_confirm "Install PreToolUse guardrail to ${guardrail_dest_hint}?" --default yes --non-interactive accept; then
-      install_guardrail="yes"
-    else
-      install_guardrail="no"
-    fi
-
-    if [[ "${install_guardrail}" == "yes" ]]; then
-      if [[ ${global_skill} -eq 1 ]]; then
-        _install_cc_guardrail "global"
-      else
-        _install_cc_guardrail "local"
-      fi
-    fi
-  fi
+  _offer_harness_install cc skill "${skip_skill}" "${enable_claude}" "${global_skill}"
+  _offer_harness_install cc guardrail "${skip_cc_guardrail}" "${enable_claude}" "${global_skill}"
+  _offer_harness_install agy skill "${skip_agy_skill}" "${enable_agy}" "${global_skill}"
+  _offer_harness_install agy guardrail "${skip_agy_guardrail}" "${enable_agy}" "${global_skill}"
 
   # -- Summary --------------------------------------------------------------
 
@@ -1123,6 +1528,23 @@ main() {
   if [[ -n "${detected_lint}" ]]; then
     echo "  Lint tool:      ${detected_lint}"
   fi
+  local _host _mode
+  for _host in cc agy; do
+    for _mode in local global; do
+      [[ "${_mode}" == "global" && ${global_skill} -eq 0 ]] && continue
+      if [[ -f "$(_harness_spec "${_host}" "skill_dst:${_mode}")/SKILL.md" ]]; then
+        printf '  %-16sinstalled\n' "$(_harness_spec "${_host}" summary_skill)"
+        break
+      fi
+    done
+    for _mode in local global; do
+      [[ "${_mode}" == "global" && ${global_skill} -eq 0 ]] && continue
+      if [[ -f "$(_harness_spec "${_host}" "guardrail_dst:${_mode}")" ]]; then
+        printf '  %-16sinstalled\n' "$(_harness_spec "${_host}" summary_guardrail)"
+        break
+      fi
+    done
+  done
   echo ""
   echo "Quick start:"
   echo "  ./scripts/git/commit_enhanced.sh \"feat: your feature\""

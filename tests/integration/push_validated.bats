@@ -80,6 +80,51 @@ _run_push() {
   [ "${status}" -eq 0 ]
 }
 
+# ── --skip-typecheck passthrough / typecheck gate wiring ──────────────────────
+
+@test "--skip-typecheck is accepted and exits 0 in dry-run" {
+  run _run_push "--skip-lint --skip-typecheck --dry-run"
+  [ "${status}" -eq 0 ]
+}
+
+@test "typecheck-only project (no lint/format/markdown) still runs the pre-push check and blocks on type errors" {
+  MOCK_TYPECHECK_EXIT=1 install_mock_typecheck
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    export CGW_TYPECHECK_CHECK_ARGS=''
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/push_validated.sh'
+  "
+  # Without CGW_TYPECHECK_CMD reaching the ':233' concatenation, the whole
+  # pre-push lint block would be skipped (no CGW_LINT_CMD/FORMAT/MARKDOWNLINT)
+  # and this push would succeed. It must instead abort on the type error.
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"Lint check failed"* ]] || [[ "${output}" == *"Typecheck"* ]]
+}
+
+@test "typecheck-only project with --skip-typecheck pushes successfully despite type errors" {
+  MOCK_TYPECHECK_EXIT=1 install_mock_typecheck
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    export CGW_TYPECHECK_CHECK_ARGS=''
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/push_validated.sh' --skip-typecheck
+  "
+  [ "${status}" -eq 0 ]
+}
+
 # ── Protected branch force-push protection ────────────────────────────────────
 
 @test "force-push to protected main branch aborts in non-interactive" {
@@ -176,6 +221,115 @@ _run_push() {
   [ "${status}" -eq 0 ]
   # Exactly 1 commit (commit B) is ahead of origin/main on the main branch.
   [[ "${output}" == *"Local ahead of origin/main: 1 commit(s)"* ]]
+}
+
+# ── Force-push lease resolution (narrowed fetch refspec) ──────────────────────
+
+@test "force-push succeeds when fetch refspec does not cover the branch" {
+  # Narrow origin's fetch refspec to only 'main', simulating a fork/CI clone
+  # whose remote.origin.fetch never learns about other branches (repro of the
+  # 'stale info' bug: bare --force-with-lease derives its expected value from
+  # the local remote-tracking ref, resolved via the configured fetch refspec --
+  # it does not query the remote directly).
+  git -C "${TEST_REPO_DIR}" config --replace-all remote.origin.fetch \
+    "+refs/heads/main:refs/remotes/origin/main"
+
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b feature/x main
+  echo "v1" >"${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: v1"
+  git -C "${TEST_REPO_DIR}" push --quiet origin feature/x
+  # A plain push (no -u/--set-upstream) does not create a local tracking ref,
+  # and the narrowed refspec above would not cover it even if fetched --
+  # this reproduces "never fetched under a narrowed refspec" exactly.
+  git -C "${TEST_REPO_DIR}" update-ref -d refs/remotes/origin/feature/x 2>/dev/null || true
+
+  # Rewrite history (amend) so the push genuinely requires --force.
+  echo "v2" >"${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet --amend -m "feat: v2 (rewritten)"
+  local expected_sha
+  expected_sha=$(git -C "${TEST_REPO_DIR}" rev-parse feature/x)
+
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+
+  run _run_push "--branch feature/x --force --skip-lint"
+
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"Unknown flag"* ]]
+
+  local after_remote
+  after_remote=$(git -C "${TEST_REPO_DIR}" ls-remote origin refs/heads/feature/x | cut -f1)
+  [ "${after_remote}" = "${expected_sha}" ]
+}
+
+@test "force-push logs an explicit --force-with-lease=<ref>:<sha> matching the pre-push remote tip" {
+  # Anti-regression guard: assert the actual git command line, not just the
+  # exit code, so this fix can never silently degrade into bare --force (which
+  # always "succeeds" but drops the safety check entirely).
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b feature/y main
+  echo "v1" >"${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: v1"
+  git -C "${TEST_REPO_DIR}" push --quiet origin feature/y
+  local remote_tip
+  remote_tip=$(git -C "${TEST_REPO_DIR}" rev-parse feature/y)
+
+  echo "v2" >"${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet --amend -m "feat: v2 (rewritten)"
+
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+
+  run _run_push "--branch feature/y --force --skip-lint"
+
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"--force-with-lease=refs/heads/feature/y:${remote_tip}"* ]]
+}
+
+@test "force-push to a branch absent on the remote uses an explicit empty lease" {
+  # Empty '--force-with-lease=<ref>:' still guards against a branch being
+  # created concurrently between the probe and the push (verified on git
+  # 2.50.1: rejected with "stale info" if the ref already exists remotely) --
+  # so "absent on the remote" must not mean "no lease at all".
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b feature/new development
+
+  run _run_push "--branch feature/new --force --skip-lint"
+
+  [ "${status}" -eq 0 ]
+  # Boundary-checked, not a plain substring match: a bare substring match on
+  # "...feature/new:" would still pass if a regression appended a stray SHA
+  # (e.g. "...feature/new:d34dbeef"), since that string contains this one as
+  # a prefix. Require the colon to be followed by whitespace/EOL instead, so
+  # the lease value itself is proven empty.
+  [[ "${output}" =~ --force-with-lease=refs/heads/feature/new:[[:space:]] ]]
+  local after_remote
+  after_remote=$(git -C "${TEST_REPO_DIR}" ls-remote origin refs/heads/feature/new | cut -f1)
+  local expected_sha
+  expected_sha=$(git -C "${TEST_REPO_DIR}" rev-parse feature/new)
+  [ "${after_remote}" = "${expected_sha}" ]
+}
+
+@test "force-push after rebase (behind > 0) does not require confirmation" {
+  # A rev-count "behind" is expected after any rewrite -- it must not gate
+  # --force, or every legitimate rebase-then-force-push (rebase_safe.sh's
+  # documented flow) would abort non-interactively.
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b feature/z main
+  echo "v1" >"${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: v1"
+  git -C "${TEST_REPO_DIR}" push --quiet origin feature/z
+
+  echo "v2" >"${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet --amend -m "feat: v2 (rewritten)"
+
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+
+  run _run_push "--branch feature/z --force --skip-lint"
+
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"Continue push anyway?"* ]]
 }
 
 @test "force-push to source branch (development) blocked in non-interactive" {

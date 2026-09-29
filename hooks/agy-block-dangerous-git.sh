@@ -1,23 +1,30 @@
 #!/usr/bin/env bash
-# cc-block-dangerous-git.sh — Claude Code PreToolUse guardrail (installed by CGW configure.sh)
+# agy-block-dangerous-git.sh — Antigravity PreToolUse guardrail (installed by CGW configure.sh)
 #
 # Blocks dangerous git/shell commands before they reach the shell.
-# Claude Code invokes this hook for every Bash tool call (PreToolUse: Bash matcher).
+# Antigravity invokes this hook for run_command tool calls (PreToolUse: run_command matcher).
 #
-# Protocol (Claude Code hook contract):
-#   - Tool input arrives as JSON on stdin
-#   - Exit 2 + stderr content → Claude Code blocks the call; stderr is shown to the model
-#   - Exit 0 → command is allowed through
+# Protocol (Antigravity hook contract):
+#   - Tool input arrives as JSON on stdin:
+#       {"toolCall":{"name":"run_command","args":{"CommandLine":"..."}}, ...}
+#   - Hook returns JSON on stdout:
+#       {"decision":"allow"} to permit execution
+#       {"decision":"deny","reason":"..."} to block execution immediately
+#   - Exit 0 in both cases
+#
+# Also supports Claude Code hook contract (fallback compatibility):
+#   - Input: {"tool_input":{"command":"..."}}
+#   - Exit 2 + stderr to block, exit 0 to allow
 #
 # Fail-open policy: if jq is absent or stdin is unparseable, the guardrail
 # degrades gracefully (logs a warning, allows the command through) rather than
 # breaking the user's shell.
 #
 # The classifier itself (which commands are blocked, and its heuristic limits)
-# lives in _guardrail_core.sh next to this file, shared with the Antigravity
-# guardrail; this adapter owns only stdin parsing and the Claude Code protocol.
+# lives in _guardrail_core.sh next to this file, shared with the Claude Code
+# guardrail; this adapter owns only stdin parsing and the Antigravity protocol.
 #
-# To uninstall: remove the PreToolUse entry from .claude/settings.json and
+# To uninstall: remove the cgw-git-guardrail entry from .agents/hooks.json and
 #   delete this file.
 # To temporarily disable: set SKIP_CGW_GUARDRAIL=1 in your environment.
 #
@@ -32,9 +39,7 @@ _allow_and_exit() {
   if jq -e '.tool_input' <<< "${INPUT}" >/dev/null 2>&1 && ! jq -e '.toolCall' <<< "${INPUT}" >/dev/null 2>&1; then
     exit 0
   fi
-  if jq -e '.toolCall' <<< "${INPUT}" >/dev/null 2>&1; then
-    printf '{"decision": "allow"}\n'
-  fi
+  printf '{"decision": "allow"}\n'
   exit 0
 }
 
@@ -56,7 +61,7 @@ if ! source "${_CGW_GUARDRAIL_CORE}" 2>/dev/null; then
   _allow_and_exit
 fi
 
-COMMAND=$(jq -r '(.tool_input.command // .toolCall.args.CommandLine // .toolCall.args.command // empty)' <<< "${INPUT}" 2>/dev/null)
+COMMAND=$(jq -r '(.toolCall.args.CommandLine // .toolCall.args.command // .tool_input.command // empty)' <<< "${INPUT}" 2>/dev/null)
 [[ -z "${COMMAND}" ]] && _allow_and_exit
 
 # ── Block helper ──────────────────────────────────────────────────────────────
@@ -68,20 +73,16 @@ _block() {
 ${redirect}
 The user has prevented you from doing this."
 
+  # Claude Code compatibility mode
   if jq -e '.tool_input' <<< "${INPUT}" >/dev/null 2>&1 && ! jq -e '.toolCall' <<< "${INPUT}" >/dev/null 2>&1; then
     printf 'BLOCKED: Command matched dangerous pattern "%s".\n%s\nThe user has prevented you from doing this.\n' \
       "${pattern}" "${redirect}" >&2
     exit 2
   fi
 
-  if jq -e '.toolCall' <<< "${INPUT}" >/dev/null 2>&1; then
-    jq -n --arg r "${reason}" '{"decision": "deny", "reason": $r}'
-    exit 0
-  fi
-
-  printf 'BLOCKED: Command matched dangerous pattern "%s".\n%s\nThe user has prevented you from doing this.\n' \
-    "${pattern}" "${redirect}" >&2
-  exit 2
+  # Antigravity protocol: emit JSON on stdout
+  jq -n --arg r "${reason}" '{"decision": "deny", "reason": $r}'
+  exit 0
 }
 
 if ! _verdict=$(cgw_guardrail_classify "${COMMAND}"); then

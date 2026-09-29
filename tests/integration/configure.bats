@@ -297,3 +297,112 @@ EOF
     grep -q 'CGW_TYPECHECK_CMD="pyrefly"' "${TEST_REPO_DIR}/.cgw.conf"
   fi
 }
+
+# ── Antigravity configuration ────────────────────────────────────────────────
+
+@test "configure.sh installs Antigravity skill and hooks.json when .agents exists" {
+  mkdir -p "${TEST_REPO_DIR}/.agents"
+  _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow/SKILL.md" ]
+  [ -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow-cmd/SKILL.md" ]
+  [ -f "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.sh" ]
+  [ -f "${TEST_REPO_DIR}/.agents/hooks.json" ]
+}
+
+@test "configure.sh --antigravity provisions .agents even if absent" {
+  _run_configure "--non-interactive --antigravity"
+  [ -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow/SKILL.md" ]
+  [ -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow-cmd/SKILL.md" ]
+  [ -f "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.sh" ]
+  [ -f "${TEST_REPO_DIR}/.agents/hooks.json" ]
+}
+
+@test "configure.sh --skip-antigravity skips Antigravity when .agents exists" {
+  mkdir -p "${TEST_REPO_DIR}/.agents"
+  _run_configure "--non-interactive --skip-antigravity"
+  [ ! -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow/SKILL.md" ]
+  [ ! -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow-cmd/SKILL.md" ]
+  [ ! -f "${TEST_REPO_DIR}/.agents/hooks.json" ]
+}
+
+# ── Agent harness spec (_harness_spec) ──────────────────────────────────────
+
+@test "every agent harness defines every _harness_spec field" {
+  local fields="label dir cmd_layout skill_dst:local skill_dst:global cmd_dst:local cmd_dst:global
+    guardrail_dst:local guardrail_dst:global settings_json:local settings_json:global
+    skill_hint:local skill_hint:global skill_global_note guardrail_hint:local guardrail_hint:global
+    skill_blurb guardrail_blurb summary_skill summary_guardrail"
+  run bash -c "
+    PROJECT_ROOT=/p HOME=/h
+    $(guardrail_installer_functions)
+    for host in cc agy; do
+      for f in ${fields//$'\n'/ }; do
+        v=\"\$(_harness_spec \"\${host}\" \"\${f}\")\" || { echo \"missing: \${host}:\${f}\"; continue; }
+        [[ -n \"\${v}\" ]] || echo \"empty: \${host}:\${f}\"
+      done
+    done
+  "
+  [ "${status}" -eq 0 ]
+  [ -z "${output}" ]
+}
+
+@test "harness skill install without the command template still installs the skill and says so (both hosts)" {
+  local fake_cgw="${TEST_REPO_DIR}/fake_cgw"
+  mkdir -p "${fake_cgw}/scripts/git"
+  cp -r "${CGW_PROJECT_ROOT}/skill" "${fake_cgw}/"
+  local host
+  for host in cc agy; do
+    run bash -c "
+      SCRIPT_DIR='${fake_cgw}/scripts/git'
+      PROJECT_ROOT='${TEST_REPO_DIR}'
+      HOME='${TEST_REPO_DIR}/home'
+      $(guardrail_installer_functions)
+      _install_harness_skill ${host} local
+    "
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *"skill installed (local, command template not found)"* ]]
+  done
+  [ -f "${TEST_REPO_DIR}/.claude/skills/auto-git-workflow/SKILL.md" ]
+  [ -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow/SKILL.md" ]
+}
+
+@test "configure.sh with --template-dir locates templates outside project and installs assets" {
+  local ext_toolkit="${TEST_TMPDIR}/ext_cgw"
+  mkdir -p "${ext_toolkit}/hooks" "${ext_toolkit}/skill" "${ext_toolkit}/command" "${ext_toolkit}/templates"
+  cp -r "${CGW_PROJECT_ROOT}/hooks/"* "${ext_toolkit}/hooks/"
+  cp -r "${CGW_PROJECT_ROOT}/skill/"* "${ext_toolkit}/skill/"
+  cp -r "${CGW_PROJECT_ROOT}/command/"* "${ext_toolkit}/command/"
+  cp -r "${CGW_PROJECT_ROOT}/templates/"* "${ext_toolkit}/templates/"
+
+  mkdir -p "${TEST_REPO_DIR}/.claude" "${TEST_REPO_DIR}/.agents"
+  run _run_configure "--non-interactive" "--template-dir" "${ext_toolkit}"
+  [ "${status}" -eq 0 ]
+  [ -f "${TEST_REPO_DIR}/.git/hooks/pre-commit" ]
+  [ -f "${TEST_REPO_DIR}/.claude/skills/auto-git-workflow/SKILL.md" ]
+  [ -f "${TEST_REPO_DIR}/.claude/commands/auto-git-workflow-cmd.md" ]
+  [ -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow/SKILL.md" ]
+  [ -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow-cmd/SKILL.md" ]
+  [ ! -d "${TEST_REPO_DIR}/hooks" ]
+  [ ! -d "${TEST_REPO_DIR}/skill" ]
+  [ ! -d "${TEST_REPO_DIR}/command" ]
+  [ ! -d "${TEST_REPO_DIR}/templates" ]
+}
+
+@test "configure.sh _cleanup_legacy_artifacts prunes root-level staging dirs with CGW markers" {
+  mkdir -p "${TEST_REPO_DIR}/skill" "${TEST_REPO_DIR}/command" "${TEST_REPO_DIR}/templates" "${TEST_REPO_DIR}/hooks"
+  cp -r "${CGW_PROJECT_ROOT}/skill/"* "${TEST_REPO_DIR}/skill/"
+  cp -r "${CGW_PROJECT_ROOT}/command/"* "${TEST_REPO_DIR}/command/"
+  cp "${CGW_PROJECT_ROOT}/templates/markdownlint.json" "${TEST_REPO_DIR}/templates/"
+  cp "${CGW_PROJECT_ROOT}/hooks/pre-commit" "${TEST_REPO_DIR}/hooks/"
+
+  run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Removed legacy staging directory: skill/"* ]]
+  [[ "${output}" == *"Removed legacy staging directory: command/"* ]]
+  [[ "${output}" == *"Removed legacy staging directory: templates/"* ]]
+  [[ "${output}" == *"Removed legacy staging directory: hooks/"* ]]
+  [ ! -d "${TEST_REPO_DIR}/skill" ]
+  [ ! -d "${TEST_REPO_DIR}/command" ]
+  [ ! -d "${TEST_REPO_DIR}/templates" ]
+  [ ! -d "${TEST_REPO_DIR}/hooks" ]
+}

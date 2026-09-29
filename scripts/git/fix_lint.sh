@@ -95,7 +95,7 @@ main() {
 
   get_lint_exclusions
 
-  # Handle --modified-only mode (direct output, no section logging)
+  # Handle --modified-only mode (lint pipeline scoped to the modified files; console only)
   if [[ "${modified_only}" -eq 1 ]]; then
     local EXIT_CODE=0
     local ran_something=0
@@ -109,24 +109,13 @@ main() {
         echo "Files: $modified_files"
         echo ""
 
-        get_python_path 2>/dev/null || true
-        local lint_bin
-        lint_bin=$(cgw_resolve_lint_binary "${CGW_LINT_CMD}")
-
-        echo "[LINT FIX]"
-        local lint_fix_cmd_args
-        lint_fix_cmd_args=$(cgw_strip_path_arg "${CGW_LINT_FIX_ARGS}")
-        # shellcheck disable=SC2086
-        "${lint_bin}" ${lint_fix_cmd_args} $modified_files || EXIT_CODE=1
-
-        if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-          echo ""
-          echo "[FORMAT FIX]"
-          local fmt_fix_cmd_args
-          fmt_fix_cmd_args=$(cgw_strip_path_arg "${CGW_FORMAT_FIX_ARGS}")
-          # shellcheck disable=SC2086
-          "${CGW_FORMAT_CMD}" ${fmt_fix_cmd_args} $modified_files || EXIT_CODE=1
-        fi
+        local -a files=()
+        read -r -a files <<<"${modified_files}"
+        # Same lint pipeline as full mode, scoped to the modified files:
+        # lint --fix then format --fix, each skipped when its tool is unset.
+        # Section output goes to the console only (no log file in this mode).
+        local logfile=/dev/null
+        cgw_run_lint_fix "${files[@]}" || EXIT_CODE=1
       fi
     fi
 
@@ -146,8 +135,7 @@ main() {
         echo "Files: $modified_md"
         echo ""
         echo "[MARKDOWN FIX]"
-        # No section logging in --modified-only mode; discard cgw_run_markdownlint_fix's
-        # internal log-file append target ($logfile is unset here -- init_logging hasn't run).
+        # No log file in --modified-only mode (init_logging hasn't run).
         local logfile="/dev/null"
         cgw_run_markdownlint_fix "${modified_md_arr[@]}" || EXIT_CODE=1
       fi
