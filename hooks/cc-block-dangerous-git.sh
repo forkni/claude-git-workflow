@@ -26,6 +26,8 @@
 
 set -uo pipefail
 
+INPUT=$(cat)
+
 # Fail open helper
 _allow_and_exit() {
   if jq -e '.tool_input' <<< "${INPUT}" >/dev/null 2>&1 && ! jq -e '.toolCall' <<< "${INPUT}" >/dev/null 2>&1; then
