@@ -260,7 +260,9 @@ CGW_MERGE_IGNORE_WHITESPACE="0"
 # MARKDOWN LINT (commit_enhanced.sh, check_lint.sh, push_validated.sh)
 # ============================================================================
 # Optional markdown linting step run in addition to CGW_LINT_CMD.
-# Set CGW_MARKDOWNLINT_CMD="" to disable (default).
+# Unset (default): auto-detected at runtime -- markdownlint-cli2 -> markdownlint
+# -> npx --yes markdownlint-cli2 -> disabled. Set CGW_MARKDOWNLINT_CMD="" to
+# disable it, or CGW_MARKDOWNLINT_NPX_FALLBACK=0 to skip only the npx fallback.
 #
 # CGW_MARKDOWNLINT_ARGS holds flags/exclusions ONLY (never a scan-target glob).
 # CGW_MARKDOWNLINT_PATHS is the default scan target, used only in audit mode
@@ -283,9 +285,12 @@ CGW_MERGE_IGNORE_WHITESPACE="0"
 #
 # Skip at runtime with --skip-md-lint flag or CGW_SKIP_MD_LINT=1.
 
-CGW_MARKDOWNLINT_CMD=""
+# CGW_MARKDOWNLINT_CMD=""   # uncomment to disable markdown lint
+# CGW_MARKDOWNLINT_NPX_FALLBACK=1
 CGW_MARKDOWNLINT_ARGS="!CLAUDE.md !MEMORY.md"
 CGW_MARKDOWNLINT_PATHS="**/*.md"
+# --fix invocation for fix_lint.sh and the commit-gate auto-fix
+CGW_MARKDOWNLINT_FIX_ARGS="--fix"
 
 # ============================================================================
 # DOCS CI VALIDATION (merge_with_validation.sh)
@@ -349,6 +354,26 @@ CGW_CLEANUP_TESTS="0"
 #
 CGW_MERGE_MODE="direct"
 # CGW_MERGE_MODE="pr"
+
+# ============================================================================
+# COMMIT AND TAG SIGNING (commit_enhanced.sh, create_release.sh)
+# ============================================================================
+# GPG/SSH signing, matching Pro Git "Signing Your Work". Additive: never
+# disables git's own commit.gpgsign / tag.gpgsign. The key is whatever git is
+# configured with (gpg.format, user.signingkey). Per-call: --sign / --no-sign.
+# CGW_SIGN_COMMITS: 0 = off (default), 1 = git commit -S
+# CGW_SIGN_TAGS:    0 = off (default), 1 = git tag -s instead of -a
+
+CGW_SIGN_COMMITS="0"
+CGW_SIGN_TAGS="0"
+
+# ============================================================================
+# PUBLISHED-COMMIT REBASE GUARD (hooks/pre-rebase)
+# ============================================================================
+# 0 = refuse to rebase commits already pushed to CGW_REMOTE (default)
+# 1 = allow it -- only if you control a shared force-push workflow.
+
+CGW_ALLOW_REBASE_PUBLISHED="0"
 
 # ============================================================================
 # CI VERIFICATION GATE (agent procedure — see skill/references/ci-verification.md)

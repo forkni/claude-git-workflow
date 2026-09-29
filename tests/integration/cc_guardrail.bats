@@ -380,11 +380,10 @@ EOF
   # JSON that Claude Code could not load, while configure.sh reported success.
   local settings_json="${TEST_REPO_DIR}/settings.json"
   local cmd='"$CLAUDE_PROJECT_DIR"/.claude/hooks/cc-block-dangerous-git.sh'
-  local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh"
   bash -c "
-    $(extract_shell_function "${cfg}" _json_escape_string)
-    $(extract_shell_function "${cfg}" _install_guardrail_nojq)
-    _install_guardrail_nojq \"\$1\" \"\$2\"
+    ${HIDE_JQ}
+    $(guardrail_installer_functions)
+    if _guardrail_is_registered cc \"\$1\"; then echo 'already registered'; else _register_guardrail cc \"\$1\" \"\$2\"; fi
   " _ "${settings_json}" "${cmd}"
   jq -e . "${settings_json}" >/dev/null
   local registered
@@ -421,4 +420,90 @@ EOF
     echo "File does not exist — MSYS path conversion likely corrupted the registration." >&2
     return 1
   }
+}
+
+@test "no-jq settings.json writer replaces an MSYS-corrupted guardrail entry" {
+  _require_jq
+  command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 || skip "requires python"
+  # Regression: the no-jq idempotency check grepped for any
+  # "cc-block-dangerous-git" string, so a Git-Bash-mangled entry
+  # (C:/Program Files/Git/.claude/hooks/...) counted as "already registered"
+  # and was never repaired. The jq path excludes such entries; this path must
+  # too, so the python merge below it can replace the broken command.
+  local settings_json="${TEST_REPO_DIR}/settings.json"
+  cat >"${settings_json}" <<'JSON_EOF'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{"type": "command", "command": "C:/Program Files/Git/.claude/hooks/cc-block-dangerous-git.sh"}]
+      }
+    ]
+  }
+}
+JSON_EOF
+  local cmd='"$CLAUDE_PROJECT_DIR"/.claude/hooks/cc-block-dangerous-git.sh'
+  run bash -c "
+    ${HIDE_JQ}
+    $(guardrail_installer_functions)
+    if _guardrail_is_registered cc \"\$1\"; then echo 'already registered'; else _register_guardrail cc \"\$1\" \"\$2\"; fi
+  " _ "${settings_json}" "${cmd}"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"already registered"* ]]
+  jq -e . "${settings_json}" >/dev/null
+  [ "$(jq '[.hooks.PreToolUse[].hooks[].command] | length' "${settings_json}")" -eq 1 ]
+  [ "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "${settings_json}")" == "${cmd}" ]
+}
+
+@test "install copies the shared guardrail core next to the adapter and the smoke test blocks" {
+  _require_jq
+  mkdir -p "${TEST_REPO_DIR}/.claude"
+  run _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.claude/hooks/_guardrail_core.sh" ]
+  [[ "${output}" == *"Smoke test passed: registered command blocks raw git commit"* ]]
+}
+
+@test "adapter without its core fails open with a warning" {
+  _require_jq
+  local lone="${TEST_REPO_DIR}/lone"
+  mkdir -p "${lone}"
+  cp "${GUARDRAIL_SCRIPT}" "${lone}/"
+  run bash "${lone}/cc-block-dangerous-git.sh" <<<'{"tool_input":{"command":"git commit -m x"}}'
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"_guardrail_core.sh not found"* ]]
+}
+
+@test "reconfigure keeps working from a pre-core installed guardrail when hooks/ is gone" {
+  _require_jq
+  # Upgrade path: the staging hooks/ dir was cleaned up after an older install,
+  # so configure.sh falls back to the installed, self-contained script, which
+  # has no core next to it and does not need one.
+  local fake_cgw="${TEST_REPO_DIR}/fake_cgw"
+  mkdir -p "${fake_cgw}/scripts/git" "${TEST_REPO_DIR}/.claude/hooks"
+  printf '#!/usr/bin/env bash\ncat >/dev/null\necho "BLOCKED: legacy" >&2\nexit 2\n' \
+    >"${TEST_REPO_DIR}/.claude/hooks/cc-block-dangerous-git.sh"
+  run bash -c "
+    SCRIPT_DIR='${fake_cgw}/scripts/git'
+    PROJECT_ROOT='${TEST_REPO_DIR}'
+    $(guardrail_installer_functions)
+    _install_cc_guardrail local
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"_guardrail_core.sh not found"* ]]
+}
+
+@test "registrar writes a valid entry into a 0-byte settings.json (jq present)" {
+  _require_jq
+  # Regression: with jq, an empty (0-byte) settings.json went through the jq
+  # merge, which emits nothing for empty input -- the file stayed empty while
+  # the installer printed "[OK] ... registered".
+  local f="${TEST_REPO_DIR}/settings.json"
+  : >"${f}"
+  run bash -c "
+    $(guardrail_installer_functions)
+    _register_guardrail cc \"\$1\" '\"\$CLAUDE_PROJECT_DIR\"/.claude/hooks/cc-block-dangerous-git.sh'
+  " _ "${f}"
+  [ "${status}" -eq 0 ]
+  jq -e '.hooks.PreToolUse[0].hooks[0].command | contains("cc-block-dangerous-git")' "${f}" >/dev/null
 }

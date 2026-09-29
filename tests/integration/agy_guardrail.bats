@@ -176,11 +176,10 @@ _run_configure() {
   # Antigravity could not load, while configure.sh still reported success.
   local hooks_json="${TEST_REPO_DIR}/hooks.json"
   local cmd='bash -c "if [ -f a.sh ]; then exec bash a.sh; else exec bash '"'"'/p/b.sh'"'"'; fi"'
-  local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh"
   bash -c "
-    $(extract_shell_function "${cfg}" _json_escape_string)
-    $(extract_shell_function "${cfg}" _install_agy_guardrail_nojq)
-    _install_agy_guardrail_nojq \"\$1\" \"\$2\"
+    ${HIDE_JQ}
+    $(guardrail_installer_functions)
+    if _guardrail_is_registered agy \"\$1\"; then echo 'already registered'; else _register_guardrail agy \"\$1\" \"\$2\"; fi
   " _ "${hooks_json}" "${cmd}"
   jq -e . "${hooks_json}" >/dev/null
   local registered
@@ -257,3 +256,126 @@ EOF
   [[ "${output}" != *"syntax error"* ]]
 }
 
+@test "Antigravity install refuses to fall back to the Claude Code guardrail script" {
+  # Regression: when hooks/agy-block-dangerous-git.sh was missing but
+  # hooks/cc-block-dangerous-git.sh was present (configure.sh newer than the
+  # hooks/ dir next to it), the installer copied the cc script into the agy
+  # slot. A cc script predating Antigravity support cannot parse the toolCall
+  # payload and silently allows every command -- a fail-open guardrail
+  # reported as installed. The install must fail with the re-copy guidance.
+  local fake_cgw="${TEST_REPO_DIR}/fake_cgw"
+  mkdir -p "${fake_cgw}/scripts/git" "${fake_cgw}/hooks"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"${fake_cgw}/hooks/cc-block-dangerous-git.sh"
+  run bash -c "
+    SCRIPT_DIR='${fake_cgw}/scripts/git'
+    PROJECT_ROOT='${TEST_REPO_DIR}'
+    HOME='${TEST_REPO_DIR}/home'
+    $(guardrail_installer_functions)
+    _install_agy_guardrail local
+  "
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"agy-block-dangerous-git.sh not found"* ]]
+  [ ! -f "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.sh" ]
+  [ ! -f "${TEST_REPO_DIR}/.agents/hooks.json" ]
+}
+
+@test "install copies the shared guardrail core next to the Antigravity adapter and the smoke test denies" {
+  _require_jq
+  mkdir -p "${TEST_REPO_DIR}/.agents"
+  run _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.agents/hooks/_guardrail_core.sh" ]
+  [[ "${output}" == *"Smoke test passed: registered Antigravity guardrail blocks raw git commit"* ]]
+}
+
+@test "Antigravity adapter without its core fails open with a warning and decision allow" {
+  _require_jq
+  local lone="${TEST_REPO_DIR}/lone"
+  mkdir -p "${lone}"
+  cp "${GUARDRAIL_SCRIPT}" "${lone}/"
+  run bash "${lone}/agy-block-dangerous-git.sh" <<<'{"toolCall":{"args":{"CommandLine":"git commit -m x"}}}'
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"_guardrail_core.sh not found"* ]]
+  [[ "${output}" =~ \"decision\":[[:space:]]*\"allow\" ]]
+}
+
+@test "no-jq idempotency uses the jq path's per-entry rule, not a file-wide grep" {
+  command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 || skip "requires python"
+  # Regression: without jq, "already registered" meant "the file mentions
+  # cgw-git-guardrail and contains no 'bash -c' ANYWHERE", while the jq path
+  # checks each registered command. A valid entry next to an unrelated hook
+  # that happens to use `bash -c` was re-registered on every run.
+  local hooks_json="${TEST_REPO_DIR}/hooks.json"
+  cat >"${hooks_json}" <<'JSON_EOF'
+{
+  "other-tool": {"PreToolUse": [{"matcher": "run_command", "hooks": [{"type": "command", "command": "bash -c \"echo other\""}]}]},
+  "cgw-git-guardrail": {"PreToolUse": [{"matcher": "run_command", "hooks": [{"type": "command", "command": "bash /p/.agents/hooks/agy-block-dangerous-git.sh"}]}]}
+}
+JSON_EOF
+  run bash -c "
+    ${HIDE_JQ}
+    $(guardrail_installer_functions)
+    if _guardrail_is_registered agy \"\$1\"; then echo 'already registered'; else _register_guardrail agy \"\$1\" \"\$2\"; fi
+  " _ "${hooks_json}" "bash /p/.agents/hooks/agy-block-dangerous-git.sh"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"already registered"* ]]
+}
+
+@test "no-jq idempotency still replaces a legacy bash -c guardrail entry" {
+  _require_jq
+  command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 || skip "requires python"
+  local hooks_json="${TEST_REPO_DIR}/hooks.json"
+  cat >"${hooks_json}" <<'JSON_EOF'
+{
+  "cgw-git-guardrail": {"PreToolUse": [{"matcher": "run_command", "hooks": [{"type": "command", "command": "bash -c \"if [ -f .agents/hooks/agy-block-dangerous-git.sh ]; then exec bash .agents/hooks/agy-block-dangerous-git.sh; fi\""}]}]}
+}
+JSON_EOF
+  run bash -c "
+    ${HIDE_JQ}
+    $(guardrail_installer_functions)
+    if _guardrail_is_registered agy \"\$1\"; then echo 'already registered'; else _register_guardrail agy \"\$1\" \"\$2\"; fi
+  " _ "${hooks_json}" "bash /p/.agents/hooks/agy-block-dangerous-git.sh"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"already registered"* ]]
+  [ "$(jq -r '."cgw-git-guardrail".PreToolUse[0].hooks[0].command' "${hooks_json}")" == "bash /p/.agents/hooks/agy-block-dangerous-git.sh" ]
+}
+
+# Shared fixture for the merge-strategy tests: a foreign (non-CGW) entry and a
+# legacy CGW entry, both under the cgw-git-guardrail key.
+_write_mixed_agy_hooks_json() {
+  cat >"$1" <<'JSON_EOF'
+{
+  "cgw-git-guardrail": {"PreToolUse": [
+    {"matcher": "run_command", "hooks": [{"type": "command", "command": "bash /opt/other-audit.sh"}]},
+    {"matcher": "run_command", "hooks": [{"type": "command", "command": "bash -c \"exec bash .agents/hooks/agy-block-dangerous-git.sh\""}]}
+  ]}
+}
+JSON_EOF
+}
+
+@test "Antigravity install replaces stale CGW entries and keeps foreign ones (jq path)" {
+  _require_jq
+  mkdir -p "${TEST_REPO_DIR}/.agents"
+  _write_mixed_agy_hooks_json "${TEST_REPO_DIR}/.agents/hooks.json"
+  run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  local f="${TEST_REPO_DIR}/.agents/hooks.json"
+  [ "$(jq '."cgw-git-guardrail".PreToolUse | length' "${f}")" -eq 2 ]
+  [ "$(jq -r '."cgw-git-guardrail".PreToolUse[0].hooks[0].command' "${f}")" == "bash /opt/other-audit.sh" ]
+  [[ "$(jq -r '."cgw-git-guardrail".PreToolUse[1].hooks[0].command' "${f}")" != *"bash -c"* ]]
+}
+
+@test "Antigravity install replaces stale CGW entries and keeps foreign ones (python path)" {
+  _require_jq
+  command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 || skip "requires python"
+  local f="${TEST_REPO_DIR}/hooks.json"
+  _write_mixed_agy_hooks_json "${f}"
+  run bash -c "
+    ${HIDE_JQ}
+    $(guardrail_installer_functions)
+    if _guardrail_is_registered agy \"\$1\"; then echo 'already registered'; else _register_guardrail agy \"\$1\" \"\$2\"; fi
+  " _ "${f}" "bash /p/.agents/hooks/agy-block-dangerous-git.sh"
+  [ "${status}" -eq 0 ]
+  [ "$(jq '."cgw-git-guardrail".PreToolUse | length' "${f}")" -eq 2 ]
+  [ "$(jq -r '."cgw-git-guardrail".PreToolUse[0].hooks[0].command' "${f}")" == "bash /opt/other-audit.sh" ]
+  [ "$(jq -r '."cgw-git-guardrail".PreToolUse[1].hooks[0].command' "${f}")" == "bash /p/.agents/hooks/agy-block-dangerous-git.sh" ]
+}

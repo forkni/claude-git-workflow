@@ -149,3 +149,26 @@ teardown() {
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"(both modified)"* ]]
 }
+
+# ── Regression: the printed restore command must actually restore the branch ──
+# rebase_safe.sh used to print "To restore: git checkout <tag>", which only
+# detaches HEAD at the tag and leaves the rebased branch untouched. Running the
+# advertised command verbatim must put the branch itself back on the backup.
+
+@test "--onto prints a restore command that resets the branch to the backup tag" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  local before
+  before=$(git -C "${TEST_REPO_DIR}" rev-parse development)
+
+  run run_script rebase_safe.sh --onto main --non-interactive
+  [ "${status}" -eq 0 ]
+
+  local restore_cmd
+  restore_cmd=$(printf '%s\n' "${output}" | sed -n 's/^ *To restore: //p' | head -1)
+  [ -n "${restore_cmd}" ]
+  [[ "${restore_cmd}" == git\ * ]]
+  (cd "${TEST_REPO_DIR}" && eval "${restore_cmd}")
+
+  [ "$(git -C "${TEST_REPO_DIR}" symbolic-ref --short HEAD)" = "development" ]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse development)" = "${before}" ]
+}

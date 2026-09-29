@@ -130,6 +130,7 @@ if not exist "!CGW_DIR!\hooks\pre-rebase"                      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\cc-block-dangerous-git.sh"       set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\agy-block-dangerous-git.sh"      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\agy-block-dangerous-git.cmd"     set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\hooks\_guardrail_core.sh"              set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\skill\SKILL.md"                        set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\command\auto-git-workflow-cmd.md"      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\templates\markdownlint.json"           set "SOURCE_OK=0"
@@ -141,6 +142,7 @@ echo   [FAIL] BF-03  CGW source missing required files
 echo          Expected: scripts\git\configure.sh, hooks\pre-commit, hooks\pre-push,
 echo                    hooks\pre-rebase, hooks\cc-block-dangerous-git.sh,
 echo                    hooks\agy-block-dangerous-git.sh, hooks\agy-block-dangerous-git.cmd,
+echo                    hooks\_guardrail_core.sh,
 echo                    skill\SKILL.md, command\auto-git-workflow-cmd.md,
 echo                    templates\markdownlint.json
 set "CHECKS_PASSED=0"
@@ -258,6 +260,10 @@ if errorlevel 1 set "STAGE_OK=0"
 copy /y "!CGW_DIR!\hooks\cc-block-dangerous-git.sh" "!P!\hooks\cc-block-dangerous-git.sh" >nul
 if errorlevel 1 set "STAGE_OK=0"
 copy /y "!CGW_DIR!\hooks\agy-block-dangerous-git.sh" "!P!\hooks\agy-block-dangerous-git.sh" >nul
+if errorlevel 1 set "STAGE_OK=0"
+copy /y "!CGW_DIR!\hooks\agy-block-dangerous-git.cmd" "!P!\hooks\agy-block-dangerous-git.cmd" >nul
+if errorlevel 1 set "STAGE_OK=0"
+copy /y "!CGW_DIR!\hooks\_guardrail_core.sh" "!P!\hooks\_guardrail_core.sh" >nul
 if errorlevel 1 set "STAGE_OK=0"
 
 if not exist "!P!\skill\" mkdir "!P!\skill\"

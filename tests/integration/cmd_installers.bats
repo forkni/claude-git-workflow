@@ -48,6 +48,26 @@ teardown() {
   done
 }
 
+@test "cmd installers copy every hooks\\ file they require in the CGW source" {
+  # Regression: both installers required hooks\agy-block-dangerous-git.cmd in
+  # the source (SOURCE_OK) but never copied it, so configure.sh registered a
+  # .agents/hooks/agy-block-dangerous-git.cmd path in hooks.json on Windows
+  # that pointed at a file that was never installed.
+  local f name required copied missing=""
+  for f in cgw-install.cmd cgw-batch-install.cmd; do
+    required=$(grep -oE 'if not exist "!CGW_DIR!\\hooks\\[^"]+"' "${CGW_PROJECT_ROOT}/${f}" | sed -E 's/.*\\hooks\\([^"]+)"/\1/' | sort -u)
+    copied=$(grep -oE 'copy /y "!CGW_DIR!\\hooks\\[^"]+"' "${CGW_PROJECT_ROOT}/${f}" | sed -E 's/.*\\hooks\\([^"]+)"/\1/' | sort -u)
+    [ -n "${required}" ]
+    for name in ${required}; do
+      grep -qxF "${name}" <<<"${copied}" || missing+="${f}: ${name}"$'\n'
+    done
+  done
+  [ -z "${missing}" ] || {
+    printf 'required but never copied:\n%s' "${missing}"
+    false
+  }
+}
+
 # ── Behavioural (Windows only) ────────────────────────────────────────────────
 
 # Builds a CGW-managed git project at $TEST_TMPDIR/proj that also carries a

@@ -253,3 +253,21 @@ extract_shell_function() {
     inside && !heredoc && $0 == "}" { exit }
   ' "$1"
 }
+
+# guardrail_installer_functions — the configure.sh guardrail installer
+# functions, extracted for use inside a test's `bash -c` (sourcing configure.sh
+# would run its main). Covers the registrar (spec / query / modifier) and both
+# harness installers.
+guardrail_installer_functions() {
+  local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh" fn
+  for fn in _json_escape_string _guardrail_spec _guardrail_is_registered \
+    _register_guardrail _install_guardrail_core _install_cc_guardrail _install_agy_guardrail; do
+    extract_shell_function "${cfg}" "${fn}"
+  done
+}
+
+# HIDE_JQ — prelude for a test's `bash -c` that makes `command -v jq` fail, so
+# configure.sh takes its no-jq backends (fresh write, python, manual) without
+# touching PATH. Every other `command` call passes through unchanged.
+# shellcheck disable=SC2016
+HIDE_JQ='command() { if [[ "$1" == -v && "$2" == jq ]]; then return 1; fi; builtin command "$@"; }'
