@@ -516,3 +516,18 @@ _seed_add_then_delete_local_file_on_source() {
   [ "${status}" -eq 0 ]
   [[ "${output}" != *"uncommitted changes"* ]]
 }
+
+# ── Regression: a successful merge leaves you on the target branch ──────────
+# The EXIT trap that returns to the original branch after an ABORTED merge also
+# fired after a successful one: it printed "Interrupted" and checked out the
+# source branch again, so the summary's "Next steps: push_validated.sh" would
+# have pushed the source instead of the freshly merged target.
+
+@test "successful merge stays on the target branch without an 'Interrupted' notice" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  run _run_merge --target main
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"MERGE SUCCESSFUL"* ]]
+  [[ "${output}" != *"Interrupted"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" branch --show-current)" = "main" ]
+}
