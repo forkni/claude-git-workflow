@@ -124,8 +124,10 @@ main() {
           echo "[FORMAT FIX]"
           local fmt_fix_cmd_args
           fmt_fix_cmd_args=$(cgw_strip_path_arg "${CGW_FORMAT_FIX_ARGS}")
+          local format_bin
+          format_bin=$(cgw_resolve_lint_binary "${CGW_FORMAT_CMD}")
           # shellcheck disable=SC2086
-          "${CGW_FORMAT_CMD}" ${fmt_fix_cmd_args} $modified_files || EXIT_CODE=1
+          "${format_bin}" ${fmt_fix_cmd_args} $modified_files || EXIT_CODE=1
         fi
       fi
     fi

@@ -162,11 +162,13 @@ main() {
       echo "[FORMAT CHECK]"
       local fmt_check_cmd_args
       fmt_check_cmd_args=$(cgw_strip_path_arg "${CGW_FORMAT_CHECK_ARGS}")
+      local format_bin
+      format_bin=$(cgw_resolve_lint_binary "${CGW_FORMAT_CMD}")
       # Non-blocking: mirrors full-mode (overall_status gates on lint+markdown
       # only) and CI's shfmt continue-on-error. A format diff is reported but
       # never gates the exit code -- only the lint step above does.
       # shellcheck disable=SC2086
-      if ! "${CGW_FORMAT_CMD}" ${fmt_check_cmd_args} $modified_files; then
+      if ! "${format_bin}" ${fmt_check_cmd_args} $modified_files; then
         echo "[WARN] Format issues found (non-blocking) -- run fix_lint.sh to auto-format"
       fi
     fi

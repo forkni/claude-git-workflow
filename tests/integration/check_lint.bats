@@ -620,3 +620,34 @@ MOCK
   "
   [ "${status}" -eq 0 ]
 }
+
+# ── Regression: --modified-only resolves CGW_FORMAT_CMD through the venv ─────
+# The lint binary in the --modified-only branch was venv-resolved via
+# cgw_resolve_lint_binary, but the format binary was invoked bare -- a
+# formatter installed only in .venv was "command not found" in this mode while
+# full mode (cgw_run_format_*) found it.
+
+@test "--modified-only runs a .venv-only CGW_FORMAT_CMD (check_lint.sh)" {
+  install_mock_lint
+  mkdir -p "${TEST_REPO_DIR}/.venv/bin"
+  cat > "${TEST_REPO_DIR}/.venv/bin/venvfmt" << VENV_EOF
+#!/usr/bin/env bash
+touch "${TEST_REPO_DIR}/venv_fmt_called"
+exit 0
+VENV_EOF
+  chmod +x "${TEST_REPO_DIR}/.venv/bin/venvfmt"
+  echo "x = 1" > "${TEST_REPO_DIR}/mod.py"
+  git -C "${TEST_REPO_DIR}" add mod.py
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: add mod.py"
+  echo "x = 2" > "${TEST_REPO_DIR}/mod.py"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=venvfmt
+    export CGW_MARKDOWNLINT_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --modified-only
+  "
+  [ -f "${TEST_REPO_DIR}/venv_fmt_called" ]
+}
