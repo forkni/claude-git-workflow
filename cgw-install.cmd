@@ -227,7 +227,7 @@ echo --- Installation Summary ---
 echo.
 echo(  Will copy into: !TARGET_DIR!
 echo     scripts\git\    (shell scripts)
-echo     hooks\          (pre-commit, pre-push, pre-rebase, cc-block-dangerous-git.sh, agy-block-dangerous-git.sh)
+echo     hooks\          (pre-commit, pre-push, pre-rebase, cc-block-dangerous-git.sh, agy-block-dangerous-git.sh/.cmd)
 echo     skill\          (agent skill source)
 echo     command\        (slash command source)
 echo     templates\      (markdown lint baseline config)
@@ -316,7 +316,9 @@ copy /y "!CGW_DIR!\hooks\cc-block-dangerous-git.sh" "!TARGET_DIR!\hooks\cc-block
 if errorlevel 1 goto :cp_hooks_fail
 copy /y "!CGW_DIR!\hooks\agy-block-dangerous-git.sh" "!TARGET_DIR!\hooks\agy-block-dangerous-git.sh" >nul
 if errorlevel 1 goto :cp_hooks_fail
-echo   [OK] Copied hooks\ templates (pre-commit, pre-push, pre-rebase, cc-block-dangerous-git.sh, agy-block-dangerous-git.sh)
+copy /y "!CGW_DIR!\hooks\agy-block-dangerous-git.cmd" "!TARGET_DIR!\hooks\agy-block-dangerous-git.cmd" >nul
+if errorlevel 1 goto :cp_hooks_fail
+echo   [OK] Copied hooks\ templates (pre-commit, pre-push, pre-rebase, cc-block-dangerous-git.sh, agy-block-dangerous-git.sh, agy-block-dangerous-git.cmd)
 goto :cp_hooks_done
 :cp_hooks_fail
 echo   [ERR] Failed to copy hook templates from hooks\

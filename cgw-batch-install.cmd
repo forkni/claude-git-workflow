@@ -259,6 +259,8 @@ copy /y "!CGW_DIR!\hooks\cc-block-dangerous-git.sh" "!P!\hooks\cc-block-dangerou
 if errorlevel 1 set "STAGE_OK=0"
 copy /y "!CGW_DIR!\hooks\agy-block-dangerous-git.sh" "!P!\hooks\agy-block-dangerous-git.sh" >nul
 if errorlevel 1 set "STAGE_OK=0"
+copy /y "!CGW_DIR!\hooks\agy-block-dangerous-git.cmd" "!P!\hooks\agy-block-dangerous-git.cmd" >nul
+if errorlevel 1 set "STAGE_OK=0"
 
 if not exist "!P!\skill\" mkdir "!P!\skill\"
 xcopy /y /q /e "!CGW_DIR!\skill\" "!P!\skill\" >nul
