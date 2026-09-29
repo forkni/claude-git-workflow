@@ -134,3 +134,22 @@ EOF
   [[ "${output}" == *"[WARN] Format issues found in staged files"* ]]
   rm -f "${fake_fmt}"
 }
+
+@test "pre-commit hook: CGW_SKIP_LINT=1 skips lint, format and typecheck and says so" {
+  # check_lint.sh treats CGW_SKIP_LINT=1 as "skip typecheck too"; the hook used
+  # to still run typecheck, and reported "[PASS] Lint check passed" for a lint
+  # step that never ran.
+  local fake_tc
+  fake_tc="$(mktemp)"
+  printf '#!/usr/bin/env bash\ntouch "%s.ran"\nexit 1\n' "${fake_tc}" > "${fake_tc}"
+  chmod +x "${fake_tc}"
+  printf 'CGW_TYPECHECK_CMD="%s"\n' "${fake_tc}" > "${TEST_REPO_DIR}/.cgw.conf"
+  echo "print('hello')" > "${TEST_REPO_DIR}/foo.py"
+  git -C "${TEST_REPO_DIR}" add foo.py
+  run env CGW_SKIP_LINT=1 git -C "${TEST_REPO_DIR}" commit -m "feat: add foo.py"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"skipped -- CGW_SKIP_LINT=1"* ]]
+  [[ "${output}" != *"[PASS] Lint check passed"* ]]
+  [ ! -f "${fake_tc}.ran" ]
+  rm -f "${fake_tc}" "${fake_tc}.ran"
+}
