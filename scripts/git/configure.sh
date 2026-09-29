@@ -815,14 +815,11 @@ try:
         data = json.load(f)
 except Exception:
     data = {}
-data['cgw-git-guardrail'] = {
-    'PreToolUse': [
-        {
-            'matcher': 'run_command',
-            'hooks': [{'type': 'command', 'command': cmd}]
-        }
-    ]
-}
+ptu = data.setdefault('cgw-git-guardrail', {}).setdefault('PreToolUse', [])
+ptu[:] = [e for e in ptu
+          if not any('agy-block-dangerous-git' in h.get('command', '')
+                     for h in e.get('hooks', []))]
+ptu.append({'matcher': 'run_command', 'hooks': [{'type': 'command', 'command': cmd}]})
 with open(path, 'w', encoding='utf-8') as f:
     json.dump(data, f, indent=2)
 PYEOF
@@ -928,20 +925,14 @@ _install_agy_guardrail() {
   echo "Installing Antigravity PreToolUse guardrail..."
   local tmp_hooks
   tmp_hooks="$(mktemp)"
+  # Remove stale CGW entries (legacy "bash -c" commands included), keep any
+  # other entry under the key, then append the current registration.
   jq --arg cmd "${hook_cmd}" '
-    .["cgw-git-guardrail"] = {
-      "PreToolUse": [
-        {
-          "matcher": "run_command",
-          "hooks": [
-            {
-              "type": "command",
-              "command": $cmd
-            }
-          ]
-        }
-      ]
-    }
+    .["cgw-git-guardrail"].PreToolUse |= (
+      (. // [])
+      | map(select(.hooks | map(.command | contains("agy-block-dangerous-git")) | any | not))
+      + [{"matcher": "run_command", "hooks": [{"type": "command", "command": $cmd}]}]
+    )
   ' "${hooks_json}" >"${tmp_hooks}" || {
     rm -f "${tmp_hooks}"
     echo "  [!] Failed to update ${hooks_json} (malformed JSON?). Guardrail NOT registered." >&2
