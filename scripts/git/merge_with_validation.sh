@@ -38,6 +38,13 @@ _merge_did_checkout_target=0
 _cleanup_merge() {
   local current
   current=$(git branch --show-current 2>/dev/null || true)
+  if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+    echo "" >&2
+    echo "[!] Merge paused for conflict resolution -- you are on branch: ${current}" >&2
+    echo "  Resolve conflicts, stage them, and complete with: ./scripts/git/commit_enhanced.sh" >&2
+    echo "  Or abort the merge: git merge --abort && git checkout ${_merge_original_branch}" >&2
+    return 0
+  fi
   if [[ ${_merge_did_checkout_target} -eq 1 ]] && [[ -n "${_merge_original_branch}" ]] &&
     [[ "${current}" != "${_merge_original_branch}" ]]; then
     echo "" >&2
@@ -305,6 +312,14 @@ main() {
   log_section_end "GIT CHECKOUT TARGET" "$logfile" "0"
   echo "" | tee -a "$logfile"
 
+  # Refuse to merge a source branch that would carry local-only files into the
+  # target's shared history (commit_enhanced.sh can't unstage from a merge).
+  # Run BEFORE creating the backup tag so a refused merge leaves no stray tag (Obs 5).
+  if ! cgw_guard_incoming_local_files merge "${src_branch}"; then
+    err_tee "[FAIL] Merge aborted: source branch carries local-only files"
+    exit 1
+  fi
+
   # [3/7] Create pre-merge backup tag
   log_section_start "CREATE BACKUP TAG" "$logfile"
 
@@ -328,15 +343,6 @@ main() {
   local merge_extra_args=()
   if [[ "${CGW_MERGE_IGNORE_WHITESPACE:-0}" == "1" ]]; then
     merge_extra_args+=("-Xignore-space-change")
-  fi
-
-  # Refuse to merge a source branch that would carry local-only files into the
-  # target's shared history (commit_enhanced.sh can't unstage from a merge).
-  # The EXIT trap restores the original branch on abort.
-  if ! cgw_guard_incoming_local_files merge "${src_branch}"; then
-    err_tee "[FAIL] Merge aborted: source branch carries local-only files"
-    log_section_end "GIT MERGE" "$logfile" "1"
-    exit 1
   fi
 
   # shellcheck disable=SC2068  # Intentional: empty array expands to zero words (${arr[@]+...} is Bash 3.x portable)

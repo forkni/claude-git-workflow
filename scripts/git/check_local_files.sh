@@ -8,6 +8,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/git/_common.sh
 source "${SCRIPT_DIR}/_common.sh"
 
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h | --help)
+      echo "Usage: ./scripts/git/check_local_files.sh"
+      echo ""
+      echo "Verify no local-only files (CGW_LOCAL_FILES) are tracked in git."
+      exit 0
+      ;;
+    *)
+      err "Unknown option: $1"
+      echo "Usage: ./scripts/git/check_local_files.sh" >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
+
 mapfile -t hits < <(git ls-files | cgw_filter_local_files || true)
 if ((${#hits[@]} > 0)); then
   err "Local-only files are tracked in git:"

@@ -538,6 +538,11 @@ main() {
     if cgw_confirm "Stage all tracked changes?" --non-interactive accept; then
       git add -u
       unstage_local_only_files
+      if git diff --cached --quiet && [[ ${merge_in_progress} -eq 0 ]]; then
+        echo "[OK] Changes staged"
+        echo "[!] No changes to commit (tracked changes were in local-only files and were excluded)"
+        exit 0
+      fi
       echo "[OK] Changes staged"
     else
       echo "Please stage changes manually: git add <files>"
@@ -790,7 +795,7 @@ main() {
     fi
     if ! cgw_validate_commit_message "${commit_msg}"; then
       echo "[!] WARNING: Message doesn't follow conventional format"
-      echo "  Configured types: ${CGW_ALL_PREFIXES/|/, }"
+      echo "  Configured types: ${CGW_ALL_PREFIXES//|/, }"
       if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
         echo "Commit cancelled"
         exit 0

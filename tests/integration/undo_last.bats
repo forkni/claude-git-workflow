@@ -179,3 +179,52 @@ teardown() {
 
   git -C "${TEST_REPO_DIR}" log -1 --format="%s" | grep -q "Present track_anything count as a one-channel CHOP"
 }
+
+# ── amend-message prefix formatting & staged changes guards (Obs 1, C1) ───────
+
+@test "amend-message: formats all configured commit prefixes with commas (Obs 1)" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  echo "new" > "${TEST_REPO_DIR}/new.txt"
+  git -C "${TEST_REPO_DIR}" add new.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: original message"
+
+  run run_script undo_last.sh amend-message "invalid_prefix: new message" --non-interactive
+  # Non-interactive with invalid prefix aborts confirmation (exit 0)
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"feat, fix, docs, chore, test, refactor, style, perf"* ]]
+  [[ "${output}" != *"fix|docs"* ]]
+}
+
+@test "amend-message: hard refuses when local-only file is staged in index (C1)" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  echo "new" > "${TEST_REPO_DIR}/new.txt"
+  git -C "${TEST_REPO_DIR}" add new.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: original message"
+
+  # Stage a local-only file in the index
+  mkdir -p "${TEST_REPO_DIR}/.claude"
+  echo '{"local": 1}' > "${TEST_REPO_DIR}/.claude/settings.local.json"
+  git -C "${TEST_REPO_DIR}" add -f .claude/settings.local.json
+
+  run run_script undo_last.sh amend-message "fix: new message" --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Cannot amend commit message while local-only files are staged"* ]]
+}
+
+@test "amend-message: aborts non-interactive when non-local staged changes exist (C1)" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  echo "new" > "${TEST_REPO_DIR}/new.txt"
+  git -C "${TEST_REPO_DIR}" add new.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: original message"
+
+  # Stage a regular file in the index
+  echo "extra staged" > "${TEST_REPO_DIR}/staged_file.txt"
+  git -C "${TEST_REPO_DIR}" add staged_file.txt
+
+  run run_script undo_last.sh amend-message "fix: new message" --non-interactive
+  # Non-interactive confirmation aborts with status 1
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"WARNING: Staged changes detected in index"* ]]
+  [[ "${output}" == *"aborting"* ]]
+}
+

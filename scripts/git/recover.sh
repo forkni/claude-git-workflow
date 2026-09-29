@@ -262,6 +262,12 @@ _cmd_restore() {
     exit 1
   fi
 
+  # Validate branch name syntax before creating any backup tags (Obs 7)
+  if ! git check-ref-format --branch "${branch_name}" 2>/dev/null; then
+    echo "[ERROR] '${branch_name}' is not a valid branch name" >&2
+    exit 1
+  fi
+
   if [[ "${dry_run}" -eq 1 ]]; then
     echo "--- Dry run: no changes made ---"
     echo "Would create backup tag at HEAD, then: git branch ${branch_name} ${full_sha}"

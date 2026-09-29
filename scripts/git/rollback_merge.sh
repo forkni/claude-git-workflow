@@ -191,6 +191,11 @@ main() {
     if [[ -n "${latest_tag}" ]]; then
       rollback_target="${latest_tag}"
       echo "[Non-interactive] Using latest backup tag: ${rollback_target}" | tee -a "$logfile"
+    elif [[ ${use_revert} -eq 0 ]]; then
+      err "[Non-interactive] Refusing hard rollback: no --target specified and no pre-merge backup tag found."
+      err "Specify --target <ref> or use --revert mode."
+      _rollback_done=1
+      exit 1
     else
       rollback_target="HEAD~1"
       echo "[Non-interactive] No backup tag found -- using HEAD~1" | tee -a "$logfile"

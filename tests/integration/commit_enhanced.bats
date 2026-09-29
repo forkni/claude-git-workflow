@@ -1603,3 +1603,29 @@ TABLE
   [[ "${output}" != *"COMMIT SUCCESSFUL"* ]]
   [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "${head_before}" ]
 }
+
+# ── Configured prefixes formatting (Obs 1) ────────────────────────────────────
+
+@test "commit_enhanced.sh formats all configured commit prefixes with commas (Obs 1)" {
+  echo "change" >> "${TEST_REPO_DIR}/README.md"
+  git -C "${TEST_REPO_DIR}" add README.md
+  run _run_commit "\"invalid_prefix: some change\""
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"feat, fix, docs, chore, test, refactor, style, perf"* ]]
+  [[ "${output}" != *"fix|docs"* ]]
+}
+
+# ── Local-only files excluded exit 0 (Obs 2) ─────────────────────────────────
+
+@test "commit_enhanced.sh exits 0 when all changes are excluded local-only files (Obs 2)" {
+  echo "# Claude" > "${TEST_REPO_DIR}/CLAUDE.md"
+  git -C "${TEST_REPO_DIR}" add CLAUDE.md
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: track CLAUDE.md"
+
+  echo "modified" >> "${TEST_REPO_DIR}/CLAUDE.md"
+  run _run_commit "\"feat: try to commit local only\""
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"tracked changes were in local-only files and were excluded"* ]]
+}
+
+

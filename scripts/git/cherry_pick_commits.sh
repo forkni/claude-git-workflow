@@ -406,6 +406,17 @@ main() {
     fi
   elif ! run_git_with_logging "GIT CHERRY-PICK COMMIT" "$logfile" cherry-pick "${commit_hash}"; then
     log_section_end "GIT CHERRY-PICK" "$logfile" "1"
+
+    # Detect redundant/empty cherry-pick (commit was already applied on this branch)
+    local unmerged_count
+    unmerged_count=$(git status --porcelain | grep -cE '^(U.|.U|AA|DD)' || true)
+    if git diff --cached --quiet && [[ ${unmerged_count} -eq 0 ]]; then
+      err_tee "[FAIL] Commit ${commit_hash} produces no changes on ${tgt_branch} (already applied?)"
+      git cherry-pick --abort 2>/dev/null || git reset --hard HEAD 2>/dev/null || true
+      git checkout "${original_branch}"
+      exit 1
+    fi
+
     echo "" | tee -a "$logfile"
     echo "[!] Cherry-pick conflicts detected - analyzing..." | tee -a "$logfile"
 

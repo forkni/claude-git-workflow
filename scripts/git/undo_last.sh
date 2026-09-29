@@ -368,11 +368,37 @@ _cmd_amend_message() {
     fi
     if ! cgw_validate_commit_message "${new_msg}"; then
       echo "  [!] Message does not follow conventional format: ${new_msg}"
-      echo "  Expected: <type>: <description> (types: ${CGW_ALL_PREFIXES/|/, })"
+      echo "  Expected: <type>: <description> (types: ${CGW_ALL_PREFIXES//|/, })"
       if ! cgw_confirm "Continue anyway?" --non-interactive accept; then
         echo "Cancelled"
         exit 0
       fi
+    fi
+  fi
+
+  # Guard against accidentally bundling staged changes into the amended commit (C1)
+  local -a staged_local_files=()
+  local _clf
+  while IFS= read -r _clf; do
+    [[ -n "${_clf}" ]] && staged_local_files+=("${_clf}")
+  done < <(git diff --cached --name-only | cgw_filter_local_files || true)
+
+  if [[ ${#staged_local_files[@]} -gt 0 ]]; then
+    err "Cannot amend commit message while local-only files are staged in the index:"
+    for _clf in "${staged_local_files[@]}"; do
+      err "  - ${_clf}"
+    done
+    err "Unstage them first with: git reset HEAD <file>"
+    exit 1
+  fi
+
+  if ! git diff --cached --quiet; then
+    echo "  [!] WARNING: Staged changes detected in index; amend-message will include them in this commit."
+    echo "      Staged files: $(git diff --cached --name-only | tr '\n' ' ')"
+    echo "      To change ONLY the commit message, unstage changes first: git reset HEAD"
+    if ! cgw_confirm "Include staged changes in amended commit?" --non-interactive abort; then
+      echo "Cancelled"
+      exit 0
     fi
   fi
 

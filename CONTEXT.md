@@ -31,7 +31,12 @@ The deterministic mapping from a `git status --short` two-letter porcelain pair 
 
 A file or directory that must never be committed to the remote repository. Configured via `CGW_LOCAL_FILES` in `.cgw.conf`. Match contract: literal name or trailing-slash directory entry, anchored on both ends — no globs, no substring matches.
 
-**Implementation seam**: `cgw_is_local_file` / `cgw_filter_local_files` in `scripts/git/_common.sh`.
+**Implementation seams & enforcement boundaries**:
+- `cgw_is_local_file` / `cgw_filter_local_files` / `cgw_guard_incoming_local_files` in `scripts/git/_common.sh`.
+- `commit_enhanced.sh`: automatically unstages tracked modifications via `unstage_local_only_files` before every commit. If the resulting Index has no remaining changes, the commit exits cleanly as a no-op with an explicit exclusion notice.
+- `merge_with_validation.sh`: inspects the incoming revision range (`HEAD..<source>`) for any commits introducing local files, aborting *before* taking a pre-merge backup tag.
+- `cherry_pick_commits.sh`: inspects the target commit (or explicit `--only` file subset) and refuses the cherry-pick before taking a backup tag.
+- `undo_last.sh amend-message`: inspects staged Index entries and hard-refuses if any local-only files are staged, preventing accidental inclusion into HEAD.
 
 ---
 

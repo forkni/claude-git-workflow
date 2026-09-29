@@ -128,3 +128,21 @@ teardown() {
   backup_tag=$(git -C "${TEST_REPO_DIR}" tag -l 'pre-recover-*' | head -1)
   [ -n "${backup_tag}" ]
 }
+
+# ── branch name validation before backup tag (Obs 7) ──────────────────────────
+
+@test "restore: invalid branch name fails without creating a backup tag (Obs 7)" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  local head_sha
+  head_sha=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+
+  run run_script recover.sh restore "${head_sha}" --branch "bad branch name!" --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"not a valid branch name"* ]]
+
+  # Must NOT leave any pre-recover backup tags behind
+  local tags
+  tags=$(git -C "${TEST_REPO_DIR}" tag -l 'pre-recover-*')
+  [ -z "${tags}" ]
+}
+

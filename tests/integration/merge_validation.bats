@@ -531,3 +531,39 @@ _seed_add_then_delete_local_file_on_source() {
   [[ "${output}" != *"Interrupted"* ]]
   [ "$(git -C "${TEST_REPO_DIR}" branch --show-current)" = "main" ]
 }
+
+# ── Trap messaging and guard order (Obs 4, Obs 5) ─────────────────────────────
+
+@test "refused merge due to local-only file leaves no backup tag (Obs 5)" {
+  _seed_local_file_on_source
+  run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"local-only file"* ]]
+  # No pre-merge backup tag created
+  [ -z "$(git -C "${TEST_REPO_DIR}" tag -l "pre-merge-*")" ]
+}
+
+@test "merge conflict exit trap reports paused resolution and does not claim returning to source (Obs 4)" {
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add conflict.txt"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff -m "chore: sync conflict.txt"
+  printf 'dev-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev edits line1"
+
+  git -C "${TEST_REPO_DIR}" checkout main
+  printf 'main-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "fix: main edits line1"
+
+  git -C "${TEST_REPO_DIR}" checkout development
+  run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Merge paused for conflict resolution"* ]]
+  [[ "${output}" != *"Returning to: development"* ]]
+}
+

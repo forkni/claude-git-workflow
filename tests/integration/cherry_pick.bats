@@ -156,3 +156,26 @@ _commit_local_file_on_dev() {
   CGW_ALLOW_LOCAL_FILES_IN_MERGE=1 run run_script cherry_pick_commits.sh --commit "${bad_commit}" --non-interactive
   [ "${status}" -eq 0 ]
 }
+
+@test "cherry-pick aborts cleanly when commit is already applied on target branch (Obs 8)" {
+  local dev_commit
+  dev_commit=$(git -C "${TEST_REPO_DIR}" log development --oneline -1 | awk '{print $1}')
+
+  run run_script cherry_pick_commits.sh --commit "${dev_commit}" --non-interactive
+  [ "${status}" -eq 0 ]
+
+  # Switch back to development to attempt cherry-picking to main again
+  git -C "${TEST_REPO_DIR}" checkout development
+
+  # Cherry-picking the same commit again produces no changes on main
+  run run_script cherry_pick_commits.sh --commit "${dev_commit}" --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"produces no changes"* ]] || [[ "${output}" == *"already applied"* ]]
+
+  # Must not leave repo in cherry-pick state and must return to original branch
+  [ ! -f "${TEST_REPO_DIR}/.git/CHERRY_PICK_HEAD" ]
+  local current_branch
+  current_branch=$(git -C "${TEST_REPO_DIR}" branch --show-current)
+  [ "${current_branch}" = "development" ]
+}
+
