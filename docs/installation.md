@@ -127,6 +127,16 @@ every value, backing up the old file to `.cgw.conf.bak` first).
 
 **Fix:** Install [Git for Windows](https://git-scm.com/download/win), then restart your terminal and re-run the installer.
 
+### Installer stops silently after `Project: ...` or before `configure.sh` (Windows)
+
+Both installers resolve `bash.exe` to an absolute path from `%PATH%` during pre-flight
+(`[PASS] BF-02 bash available: C:\Program Files\Git\bin\bash.exe`) and never call it by bare
+name. This matters because cmd.exe looks in the *current directory* before `%PATH%`, so a project
+that ships its own `bash.cmd` (Antigravity-enabled projects carry one as a shim) would otherwise
+be picked up instead of Git Bash — and a batch file invoked from a batch file without `call`
+never returns, which silently ended the run. If you see this symptom on an older CGW copy, update
+the installers from the CGW source.
+
 ### "Cannot find git repository root"
 
 configure.sh resolves the repository from your current directory (git's own discovery, `git rev-parse --show-toplevel`), falling back to walking up from the script's location — and found no repository either way.

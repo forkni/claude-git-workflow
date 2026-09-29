@@ -17,7 +17,9 @@ setlocal EnableDelayedExpansion
 ::   (config-file defaults to cgw-install-batch.conf next to this
 ::   script; see cgw-install-batch.conf.example)
 ::
-:: Requires: Git for Windows (provides bash)
+:: Requires: Git for Windows (provides bash). bash.exe is resolved to an
+::   absolute path from PATH in BF-02 and never invoked by bare name, because
+::   a project's own bash.cmd (Antigravity shim) would otherwise shadow it.
 ::
 :: Note on special characters in paths:
 ::   Paths containing ! are corrupted by EnableDelayedExpansion (cmd.exe
@@ -100,9 +102,18 @@ if exist "C:\Program Files\Git\bin\bash.exe" (
 ) else if exist "C:\Program Files (x86)\Git\bin\bash.exe" (
     set "PATH=C:\Program Files (x86)\Git\bin;!PATH!"
 )
-where bash >nul 2>&1
-if not !ERRORLEVEL!==0 goto :bf02_fail
-echo   [PASS] BF-02  bash available
+rem Resolve an ABSOLUTE bash.exe from PATH once and use it for every later
+rem invocation. %%~$PATH:B searches PATH directories only -- never the current
+rem directory -- so a project that ships its own bash.cmd (Antigravity-enabled
+rem projects carry one that delegates to a Python shim) cannot shadow it.
+rem cmd.exe resolves a bare "bash" against the cwd first, and a batch file
+rem invoked from a batch file without "call" never returns: with bare "bash"
+rem after pushd, the updater chained into the project's bash.cmd and silently
+rem terminated right after printing "Project: ...".
+set "BASH_EXE="
+for %%B in (bash.exe) do set "BASH_EXE=%%~$PATH:B"
+if "!BASH_EXE!"=="" goto :bf02_fail
+echo(  [PASS] BF-02  bash available: !BASH_EXE!
 goto :bf02_done
 :bf02_fail
 echo   [FAIL] BF-02  bash not found on PATH
@@ -286,8 +297,11 @@ echo.
 goto :eof
 :pp_pushd_ok
 
-bash -c "chmod +x scripts/git/*.sh 2>/dev/null" >nul 2>&1
-bash scripts/git/configure.sh --non-interactive >"!CFG_LOG!" 2>&1
+rem Always the absolute BASH_EXE resolved in BF-02, never bare "bash": we are
+rem inside the project now, and a project-local bash.cmd would win the cwd
+rem lookup and swallow the rest of this script (see BF-02).
+"!BASH_EXE!" -c "chmod +x scripts/git/*.sh 2>/dev/null" >nul 2>&1
+"!BASH_EXE!" scripts/git/configure.sh --non-interactive >"!CFG_LOG!" 2>&1
 set "CFG_EXIT=!ERRORLEVEL!"
 popd
 

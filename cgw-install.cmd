@@ -121,9 +121,18 @@ if exist "C:\Program Files\Git\bin\bash.exe" (
 ) else if exist "C:\Program Files (x86)\Git\bin\bash.exe" (
     set "PATH=C:\Program Files (x86)\Git\bin;!PATH!"
 )
-where bash >nul 2>&1
-if not !ERRORLEVEL!==0 goto :pi03_fail
-echo   [PASS] PI-03  bash available
+rem Resolve an ABSOLUTE bash.exe from PATH once and use it for every later
+rem invocation. %%~$PATH:B searches PATH directories only -- never the current
+rem directory -- so a target project that ships its own bash.cmd (Antigravity-
+rem enabled projects carry one that delegates to a Python shim) cannot shadow
+rem it. cmd.exe resolves a bare "bash" against the cwd first, and a batch file
+rem invoked from a batch file without "call" never returns: with bare "bash"
+rem after pushd, the installer chained into the project's bash.cmd and
+rem silently terminated before configure.sh ever ran.
+set "BASH_EXE="
+for %%B in (bash.exe) do set "BASH_EXE=%%~$PATH:B"
+if "!BASH_EXE!"=="" goto :pi03_fail
+echo(  [PASS] PI-03  bash available: !BASH_EXE!
 goto :pi03_done
 :pi03_fail
 echo   [FAIL] PI-03  bash not found on PATH
@@ -362,7 +371,10 @@ if errorlevel 1 (
     echo(  [ERR] Cannot enter target directory: !TARGET_DIR!
     goto :abort
 )
-bash -c "chmod +x scripts/git/*.sh 2>/dev/null" >nul 2>&1
+rem Always the absolute BASH_EXE resolved in PI-03, never bare "bash": we are
+rem inside the target now, and a project-local bash.cmd would win the cwd
+rem lookup and swallow the rest of this script (see PI-03).
+"!BASH_EXE!" -c "chmod +x scripts/git/*.sh 2>/dev/null" >nul 2>&1
 
 rem Ensure target agent directories exist so configure.sh defaults to installing
 if "!INSTALL_CLAUDE!"=="1" (
@@ -385,7 +397,7 @@ if "!GLOBAL_SKILL!"=="1"   set "CFG_FLAGS=!CFG_FLAGS! --global"
 if "!INSTALL_CLAUDE!"=="0" set "CFG_FLAGS=!CFG_FLAGS! --skip-claude"
 if "!INSTALL_AGY!"=="0"    set "CFG_FLAGS=!CFG_FLAGS! --skip-antigravity"
 
-bash scripts/git/configure.sh !CFG_FLAGS!
+"!BASH_EXE!" scripts/git/configure.sh !CFG_FLAGS!
 set "CONFIGURE_EXIT=!ERRORLEVEL!"
 popd
 
