@@ -57,10 +57,11 @@ cp cgw.conf.example .cgw.conf
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CGW_SOURCE_BRANCH` | `development` | Branch where development happens |
-| `CGW_TARGET_BRANCH` | `main` | Stable/production branch |
+| `CGW_SOURCE_BRANCH` | `` | Branch where development happens. No built-in default: `configure.sh` writes it only when it detects a development-family branch (`development`/`develop`/`dev`/`staging`); otherwise pass `--source <branch>` per invocation |
+| `CGW_TARGET_BRANCH` | *(auto-detected)* | Stable/production branch; detected at runtime (`origin/HEAD` → `main` → `master` → `main`) unless set |
 | `CGW_REMOTE` | `origin` | Remote name for fetch/push — set to `upstream` for fork workflows |
 | `CGW_LOCAL_FILES` | `CLAUDE.md MEMORY.md .claude/ logs/` | Files never committed (space-separated) |
+| `CGW_LOCAL_FILES_EXEMPT` | `` | Exact paths let through `CGW_LOCAL_FILES` protection (space-separated) — for a tracked file inside a blocked directory |
 | `CGW_LINT_CMD` | `ruff` | Lint tool (`""` to disable) |
 | `CGW_FORMAT_CMD` | `ruff` | Format tool (`""` to disable) |
 | `CGW_LINT_CHECK_ARGS` | `check {files}` | Arguments for lint check (`{files}` = scan target; legacy `.` also works) |
@@ -80,6 +81,7 @@ cp cgw.conf.example .cgw.conf
 | `CGW_TYPECHECK_CMD` | `` | Typecheck tool; set to e.g. `pyrefly` to enable (`""` to disable). Blocking in `check_lint.sh`/`push_validated.sh`, advisory in the pre-commit hook -- see [Typecheck](#typecheck) |
 | `CGW_TYPECHECK_CHECK_ARGS` | `check` | Arguments passed to the typecheck tool |
 | `CGW_TYPECHECK_EXCLUDES` | `` | Exclusion flags appended to the typecheck command |
+| `CGW_ALLOW_STAGED_DIVERGENCE` | `0` | Set to `1` to let a genuine `--staged-only` commit record a staged blob that differs from the validated working tree (the `[3.5]` congruence guard otherwise fails closed); see [ADR-0001](adr/0001-partial-staging-fails-closed.md) |
 | `CGW_SKIP_TYPECHECK` | `0` | Set to `1` to skip the typecheck step at runtime -- the escape hatch when a blocking pre-push typecheck must be bypassed |
 | `CGW_STAGED_ONLY` | `0` | Set to `1` to commit only pre-staged files (`commit_enhanced.sh`) |
 | `CGW_COMMIT_SUBJECT_SOFT_LEN` | `50` | Commit subject length past which an advisory tip is printed (Pro Git recommendation) |
@@ -94,12 +96,15 @@ cp cgw.conf.example .cgw.conf
 | `CGW_ALLOW_LOCAL_FILES_IN_MERGE` | `0` | Set to `1` to allow a merge/cherry-pick to carry `CGW_LOCAL_FILES` into shared history (the guard otherwise aborts non-interactively) |
 | `CGW_CLEANUP_TESTS` | `0` | Remove `tests/` from target if gitignored |
 | `CGW_MERGE_MODE` | `direct` | Promotion mode: `direct` (merge locally) or `pr` (create GitHub PR) |
-| `CGW_PROTECTED_BRANCHES` | `main` | Branches requiring `--force` for force-push |
+| `CGW_PROTECTED_BRANCHES` | *(`CGW_TARGET_BRANCH`)* | Branches requiring `--force` for force-push (space-separated); defaults to the target branch |
 | `CGW_MERGE_CONFLICT_STYLE` | `` | Set to `diff3` to show base version in conflict markers |
 | `CGW_MERGE_IGNORE_WHITESPACE` | `0` | Set to `1` to ignore whitespace differences during merge |
 | `CGW_SIGN_COMMITS` | `0` | Set to `1` to GPG/SSH-sign all commits (`git commit -S`). Overridable per-call with `--sign`/`--no-sign`. |
 | `CGW_SIGN_TAGS` | `0` | Set to `1` to create signed annotated tags (`git tag -s`). Overridable per-call with `--sign`/`--no-sign`. |
 | `CGW_ALLOW_REBASE_PUBLISHED` | `0` | Set to `1` to allow rebasing commits already pushed (disables `pre-rebase` hook guard) |
+| `CGW_AUTO_REMOVE_INDEX_LOCK` | `1` | Set to `0` to only warn about an abandoned `.git/index.lock` instead of removing it (removal is always refused while a rebase/merge/cherry-pick/revert/bisect is in progress) |
+| `CGW_INDEX_LOCK_MAX_AGE_SECONDS` | `30` | Age in seconds past which an `index.lock` counts as abandoned |
+| `CGW_INDEX_LOCK_WAIT_SECONDS` | `10` | Seconds to wait for a fresh `index.lock` to clear before escalating (`0` = don't wait) |
 | `CGW_NON_INTERACTIVE` | `0` | Set to `1` to suppress all prompts (CI mode) |
 | `CGW_NO_VENV` | `0` | Set to `1` to skip virtual environment detection |
 | `CGW_CI_VERIFY` | `1` | Set to `0` to disable the post-push CI verification gate entirely (agent procedure, see [`skill/references/ci-verification.md`](../skill/references/ci-verification.md)) |
