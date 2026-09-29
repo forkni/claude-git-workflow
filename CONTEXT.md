@@ -234,6 +234,7 @@ All three helpers are silent: no stdout/stderr beyond `cgw_rev_count`'s count. C
 The external or repository directory tree containing the canonical template assets (`hooks/`, `skill/`, `command/`, `templates/`) copied into a consumer project's runtime configuration (git hooks in `.git/hooks/` and `.githooks/`, agent skills in `.claude/skills/` and `.agents/skills/`, slash commands in `.claude/commands/` and `.agents/skills/`, markdownlint in `.markdownlint.json`). Decoupled from the target repository root to eliminate temporary in-repo staging and accidental directory pollution.
 
 **Implementation seam**: Resolved in `scripts/git/configure.sh` via a deterministic priority chain:
+
 1. `--template-dir <path>` CLI flag.
 2. `CGW_TEMPLATE_DIR` environment variable.
 3. Sibling/parent source check (`${SCRIPT_DIR}/../../hooks`, etc., active when running inside the CGW source repository itself).

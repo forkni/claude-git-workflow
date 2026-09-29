@@ -9,6 +9,7 @@ Historically, the Windows installers (`cgw-install.cmd` and `cgw-batch-install.c
 To prevent destructive deletion of a consumer repository's own legitimate files (e.g., a web project carrying its own `templates/` or `hooks/` directory), PR #12 introduced a pre-existence probe (`HOOKS_PREEXISTED=1`) that skipped post-install cleanup and emitted a `[WARN]` whenever a staging directory was already present before staging began.
 
 However, because this check was a simple existence test, it created a permanent failure latch:
+
 1. If an installation was ever interrupted, or if post-install cleanup was declined, the staging folders remained on disk.
 2. On every subsequent run of `cgw-batch-install.cmd`, the directories were detected as pre-existing *before* staging started.
 3. The cleanup routine refused to delete them and emitted `[WARN] ... pre-existed -- left in place, not deleted`.
