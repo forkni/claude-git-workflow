@@ -301,3 +301,46 @@ EOF
   [[ "${output}" == *"_guardrail_core.sh not found"* ]]
   [[ "${output}" =~ \"decision\":[[:space:]]*\"allow\" ]]
 }
+
+@test "no-jq idempotency uses the jq path's per-entry rule, not a file-wide grep" {
+  command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 || skip "requires python"
+  # Regression: without jq, "already registered" meant "the file mentions
+  # cgw-git-guardrail and contains no 'bash -c' ANYWHERE", while the jq path
+  # checks each registered command. A valid entry next to an unrelated hook
+  # that happens to use `bash -c` was re-registered on every run.
+  local hooks_json="${TEST_REPO_DIR}/hooks.json"
+  cat >"${hooks_json}" <<'JSON_EOF'
+{
+  "other-tool": {"PreToolUse": [{"matcher": "run_command", "hooks": [{"type": "command", "command": "bash -c \"echo other\""}]}]},
+  "cgw-git-guardrail": {"PreToolUse": [{"matcher": "run_command", "hooks": [{"type": "command", "command": "bash /p/.agents/hooks/agy-block-dangerous-git.sh"}]}]}
+}
+JSON_EOF
+  local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh"
+  run bash -c "
+    $(extract_shell_function "${cfg}" _json_escape_string)
+    $(extract_shell_function "${cfg}" _install_agy_guardrail_nojq)
+    _install_agy_guardrail_nojq \"\$1\" \"\$2\"
+  " _ "${hooks_json}" "bash /p/.agents/hooks/agy-block-dangerous-git.sh"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"already registered"* ]]
+}
+
+@test "no-jq idempotency still replaces a legacy bash -c guardrail entry" {
+  _require_jq
+  command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 || skip "requires python"
+  local hooks_json="${TEST_REPO_DIR}/hooks.json"
+  cat >"${hooks_json}" <<'JSON_EOF'
+{
+  "cgw-git-guardrail": {"PreToolUse": [{"matcher": "run_command", "hooks": [{"type": "command", "command": "bash -c \"if [ -f .agents/hooks/agy-block-dangerous-git.sh ]; then exec bash .agents/hooks/agy-block-dangerous-git.sh; fi\""}]}]}
+}
+JSON_EOF
+  local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh"
+  run bash -c "
+    $(extract_shell_function "${cfg}" _json_escape_string)
+    $(extract_shell_function "${cfg}" _install_agy_guardrail_nojq)
+    _install_agy_guardrail_nojq \"\$1\" \"\$2\"
+  " _ "${hooks_json}" "bash /p/.agents/hooks/agy-block-dangerous-git.sh"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"already registered"* ]]
+  [ "$(jq -r '."cgw-git-guardrail".PreToolUse[0].hooks[0].command' "${hooks_json}")" == "bash /p/.agents/hooks/agy-block-dangerous-git.sh" ]
+}

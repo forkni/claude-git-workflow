@@ -785,7 +785,10 @@ _install_agy_guardrail_nojq() {
   local hooks_json="${1}"
   local hook_cmd="${2}"
 
-  if [[ -f "${hooks_json}" ]] && grep -qF "cgw-git-guardrail" "${hooks_json}" 2>/dev/null && ! grep -qF "bash -c" "${hooks_json}" 2>/dev/null; then
+  # Already registered? Mirrors the jq path's per-entry rule: some command line
+  # names agy-block-dangerous-git and is not a legacy "bash -c" / "if [" entry.
+  if [[ -f "${hooks_json}" ]] &&
+    grep -F "agy-block-dangerous-git" "${hooks_json}" 2>/dev/null | grep -vF "bash -c" | grep -qvF "if ["; then
     echo "  [OK] Antigravity PreToolUse guardrail already registered in ${hooks_json}"
     return 0
   fi
