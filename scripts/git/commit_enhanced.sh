@@ -542,6 +542,16 @@ main() {
           yes | y)
             cgw_run_lint_fix "${staged_lint[@]}"
             _restage_after_fix "${originally_staged_files}" "${partially_staged_files}"
+
+            # Re-check after fix (same staged scope)
+            python_lint_error=0
+            cgw_run_lint_check "${staged_lint[@]}" || python_lint_error=1
+            cgw_run_format_check "${staged_lint[@]}" || python_lint_error=1
+
+            if [[ ${python_lint_error} -eq 1 ]]; then
+              err "Code quality errors remain after auto-fix"
+              exit 1
+            fi
             ;;
           skip | s)
             echo "[!] Proceeding with code quality warnings (CI may flag these)"

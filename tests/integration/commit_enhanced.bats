@@ -1452,3 +1452,33 @@ _setup_uu_conflict() {
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"Commit message required"* ]]
 }
+
+# ── Regression: interactive "yes" to lint auto-fix must re-check ─────────────
+# The non-interactive lint path and both markdown paths re-run the check after
+# auto-fix and abort if errors remain. The interactive lint "yes" branch used
+# to re-stage and fall straight through to the commit, so a fixer that could
+# not fix everything still produced a commit. A pty (script(1)) is required
+# because commit_enhanced.sh forces non-interactive mode when stdin is not a TTY.
+
+@test "interactive lint auto-fix aborts when errors remain after the fix" {
+  command -v script >/dev/null 2>&1 || skip "script(1) not available"
+  install_mock_lint_with_errors
+  printf 'x = 1\n' > "${TEST_REPO_DIR}/unfixable.py"
+  git -C "${TEST_REPO_DIR}" add unfixable.py
+  local head_before
+  head_before=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_SKIP_MD_LINT=1
+    unset CGW_NON_INTERACTIVE
+    printf 'yes\nyes\nyes\nyes\n' | script -qec \"bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --no-venv 'feat: unfixable lint'\" /dev/null
+  "
+  [[ "${output}" == *"Code quality errors remain after auto-fix"* ]]
+  [[ "${output}" != *"COMMIT SUCCESSFUL"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "${head_before}" ]
+}
