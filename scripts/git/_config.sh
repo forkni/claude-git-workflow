@@ -141,6 +141,95 @@ if [[ -f "${_CGW_CONF}" ]]; then
 fi
 
 # ============================================================================
+# CONFIG REGISTRY -- the single list of CGW_* settings and their facts
+# ============================================================================
+# One row per setting: name|default|kind|empty|scope
+#   kind   str | bool (0/1) | int (non-negative) | enum:a/b/... | computed
+#          (computed: default derived below from other settings or the repo,
+#          e.g. the target branch; the registry only records that it exists)
+#   empty  keep -- an explicitly empty value (CGW_X="") is honoured, e.g. an
+#                  empty CGW_LINT_CMD disables lint
+#          fill -- an empty value falls back to the default
+#   scope  conf -- a persistent setting: belongs in .cgw.conf, is shown in
+#                  cgw.conf.example and the docs options table
+#          env  -- a per-run switch (CGW_SKIP_LINT=1 ...): docs table only
+# Defaults, validation, cgw.conf.example, docs/configuration.md and the
+# configure.sh generator are all checked against this table by
+# tests/unit/config_registry.bats -- add a setting here first.
+_CGW_REGISTRY='CGW_SOURCE_BRANCH||str|fill|conf
+CGW_TARGET_BRANCH||computed|fill|conf
+CGW_REMOTE|origin|str|fill|conf
+CGW_LOCAL_FILES|CLAUDE.md MEMORY.md .claude/ logs/|str|fill|conf
+CGW_LOCAL_FILES_EXEMPT||str|fill|conf
+CGW_EXTRA_PREFIXES||str|fill|conf
+CGW_FREEFORM_MESSAGE_BRANCHES||str|fill|conf
+CGW_FREEFORM_MESSAGE_CHECK||str|fill|conf
+CGW_LINT_CMD|ruff|str|keep|conf
+CGW_LINT_CHECK_ARGS|check {files}|str|keep|conf
+CGW_LINT_FIX_ARGS|check --fix {files}|str|keep|conf
+CGW_LINT_EXCLUDES|--extend-exclude logs --extend-exclude .venv|str|keep|conf
+CGW_FORMAT_CMD|ruff|str|keep|conf
+CGW_FORMAT_CHECK_ARGS|format --check {files}|str|keep|conf
+CGW_FORMAT_FIX_ARGS|format {files}|str|keep|conf
+CGW_FORMAT_EXCLUDES|--exclude logs --exclude .venv|str|keep|conf
+CGW_MARKDOWNLINT_NPX_FALLBACK|1|bool|keep|conf
+CGW_MARKDOWNLINT_CMD||computed|keep|conf
+CGW_MARKDOWNLINT_ARGS|!CLAUDE.md !MEMORY.md|str|keep|conf
+CGW_MARKDOWNLINT_PATHS|**/*.md|str|keep|conf
+CGW_MARKDOWNLINT_FIX_ARGS|--fix|str|keep|conf
+CGW_LINT_EXTENSIONS|*.py|str|keep|conf
+CGW_SKIP_LINT|0|bool|keep|env
+CGW_SKIP_MD_LINT|0|bool|keep|env
+CGW_SKIP_TYPECHECK|0|bool|keep|env
+CGW_ALL|0|bool|keep|env
+CGW_ALLOW_STAGED_DIVERGENCE|0|bool|keep|conf
+CGW_COMMIT_SUBJECT_SOFT_LEN|50|int|keep|conf
+CGW_COMMIT_SUBJECT_HARD_LEN|72|int|keep|conf
+CGW_ENFORCE_SUBJECT_LENGTH|1|bool|keep|conf
+CGW_TYPECHECK_CMD||str|keep|conf
+CGW_TYPECHECK_CHECK_ARGS|check|str|keep|conf
+CGW_TYPECHECK_EXCLUDES||str|keep|conf
+CGW_MERGE_CONFLICT_STYLE||computed|fill|conf
+CGW_MERGE_IGNORE_WHITESPACE|0|bool|fill|conf
+CGW_DOCS_PATTERN||str|fill|conf
+CGW_DEV_ONLY_FILES||str|fill|conf
+CGW_ALLOW_LOCAL_FILES_IN_MERGE|0|bool|keep|conf
+CGW_CLEANUP_TESTS|0|bool|fill|conf
+CGW_PROTECTED_BRANCHES||computed|fill|conf
+CGW_MERGE_MODE|direct|enum:direct/pr|fill|conf
+CGW_SIGN_COMMITS|0|bool|fill|conf
+CGW_SIGN_TAGS|0|bool|fill|conf
+CGW_ALLOW_REBASE_PUBLISHED|0|bool|fill|conf
+CGW_AUTO_REMOVE_INDEX_LOCK|1|int|fill|conf
+CGW_INDEX_LOCK_MAX_AGE_SECONDS|30|int|fill|conf
+CGW_INDEX_LOCK_WAIT_SECONDS|10|int|fill|conf
+CGW_NON_INTERACTIVE|0|bool|fill|env
+CGW_NO_VENV|0|bool|fill|env
+CGW_STAGED_ONLY|0|bool|fill|env'
+# Prints the table (builtins only -- _config.sh is sourced by every script).
+cgw_config_registry() { printf '%s\n' "${_CGW_REGISTRY}"; }
+
+# Apply every registry default (computed settings are handled further down),
+# then validate by kind: a bad int warns and resets to its default.
+_cgw_apply_registry_defaults() {
+  local name default kind empty
+  while IFS='|' read -r name default kind empty _; do
+    [[ "${kind}" == "computed" ]] && continue
+    if [[ "${empty}" == "keep" ]]; then
+      [[ -z "${!name+x}" ]] && printf -v "${name}" '%s' "${default}"
+    else
+      [[ -z "${!name:-}" ]] && printf -v "${name}" '%s' "${default}"
+    fi
+    if [[ "${kind}" == "int" ]] && ! [[ "${!name}" =~ ^[0-9]+$ ]]; then
+      printf '[WARN] %s has non-numeric value "%s"; resetting to %s\n' \
+        "${name}" "${!name}" "${default}" >&2
+      printf -v "${name}" '%s' "${default}"
+      export "${name?}"
+    fi
+  done <<<"${_CGW_REGISTRY}"
+}
+
+# ============================================================================
 # DEFAULTS (applied only if still unset after env + config)
 # ============================================================================
 
@@ -149,7 +238,15 @@ fi
 # not a repo-wide fact. Scripts that need a default when no --source flag is given must
 # handle an empty CGW_SOURCE_BRANCH explicitly (see validate_branch_pair in _common.sh,
 # which reports a clear "no source branch configured" error instead of guessing).
-CGW_SOURCE_BRANCH="${CGW_SOURCE_BRANCH:-}"
+# Legacy CLAUDE_GIT_* env vars map onto their CGW_* equivalents before the
+# registry fills defaults (a legacy "1" wins over the "0" default).
+# shellcheck disable=SC2034  # consumed by the sourcing scripts (cross-file)
+{
+  if [[ "${CLAUDE_GIT_NON_INTERACTIVE:-0}" == "1" ]]; then CGW_NON_INTERACTIVE=1; fi
+  if [[ "${CLAUDE_GIT_NO_VENV:-0}" == "1" ]]; then CGW_NO_VENV=1; fi
+  if [[ "${CLAUDE_GIT_STAGED_ONLY:-0}" == "1" ]]; then CGW_STAGED_ONLY=1; fi
+}
+_cgw_apply_registry_defaults
 
 # TARGET is a repo-wide fact ("which branch is stable") and IS auto-detected here so every
 # script gets a sensible value without requiring .cgw.conf to pin it down.
@@ -175,20 +272,16 @@ fi
 
 # --- Remote name ---
 # Override with CGW_REMOTE=upstream (or any remote name) for fork-based workflows.
-CGW_REMOTE="${CGW_REMOTE:-origin}"
 
 # --- Local-only files (space-separated; trailing / denotes a directory) ---
 # These files are never committed. configure.sh auto-detects project-specific ones.
-CGW_LOCAL_FILES="${CGW_LOCAL_FILES:-CLAUDE.md MEMORY.md .claude/ logs/}"
 
 # --- Exempt files (exact paths allowed through CGW_LOCAL_FILES protection) ---
-CGW_LOCAL_FILES_EXEMPT="${CGW_LOCAL_FILES_EXEMPT:-}"
 
 # --- Commit message prefixes ---
 # Standard conventional commit prefixes (always included):
 _CGW_BASE_PREFIXES="feat|fix|docs|chore|test|refactor|style|perf"
 # Project-specific extras (pipe-separated, e.g. "cuda|tensorrt"):
-CGW_EXTRA_PREFIXES="${CGW_EXTRA_PREFIXES:-}"
 if [[ -n "${CGW_EXTRA_PREFIXES}" ]]; then
   CGW_ALL_PREFIXES="${_CGW_BASE_PREFIXES}|${CGW_EXTRA_PREFIXES}"
 else
@@ -202,12 +295,10 @@ export CGW_ALL_PREFIXES # consumed by commit_enhanced.sh (cross-file, not detect
 # cap). Everything else still applies: lint, local-only files, protected
 # branches. Use for branches that target another project with its own
 # commit-message style (e.g. an upstream PR branch). Example: "up/* upstream/*"
-CGW_FREEFORM_MESSAGE_BRANCHES="${CGW_FREEFORM_MESSAGE_BRANCHES:-}"
 # Optional: a command run against the message on a freeform branch instead of
 # skipping validation entirely, e.g. the target project's own commit-msg hook.
 # Receives the message as a file path in $1. Relative paths resolve against
 # PROJECT_ROOT. Empty (default): no check runs.
-CGW_FREEFORM_MESSAGE_CHECK="${CGW_FREEFORM_MESSAGE_CHECK:-}"
 export CGW_FREEFORM_MESSAGE_BRANCHES CGW_FREEFORM_MESSAGE_CHECK # consumed by commit_enhanced.sh, undo_last.sh, hooks/pre-push (cross-file, not detectable by shellcheck)
 
 # --- Lint configuration ---
@@ -217,17 +308,9 @@ export CGW_FREEFORM_MESSAGE_BRANCHES CGW_FREEFORM_MESSAGE_CHECK # consumed by co
 # The "{files}" token marks where a scoped file list is substituted (audit mode
 # expands it to "."); a legacy standalone "." also still works. See _common.sh
 # cgw_strip_path_arg / cgw_fill_path_placeholder.
-[[ -z "${CGW_LINT_CMD+x}" ]] && CGW_LINT_CMD="ruff"
-[[ -z "${CGW_LINT_CHECK_ARGS+x}" ]] && CGW_LINT_CHECK_ARGS="check {files}"
-[[ -z "${CGW_LINT_FIX_ARGS+x}" ]] && CGW_LINT_FIX_ARGS="check --fix {files}"
-[[ -z "${CGW_LINT_EXCLUDES+x}" ]] && CGW_LINT_EXCLUDES="--extend-exclude logs --extend-exclude .venv"
 
 # Set CGW_FORMAT_CMD="" to disable formatting checks.
 # Use +x (not :-) to distinguish "unset" from "explicitly set to empty string".
-[[ -z "${CGW_FORMAT_CMD+x}" ]] && CGW_FORMAT_CMD="ruff"
-[[ -z "${CGW_FORMAT_CHECK_ARGS+x}" ]] && CGW_FORMAT_CHECK_ARGS="format --check {files}"
-[[ -z "${CGW_FORMAT_FIX_ARGS+x}" ]] && CGW_FORMAT_FIX_ARGS="format {files}"
-[[ -z "${CGW_FORMAT_EXCLUDES+x}" ]] && CGW_FORMAT_EXCLUDES="--exclude logs --exclude .venv"
 
 # Set CGW_MARKDOWNLINT_CMD to enable a dedicated markdown lint step.
 # Unset (never configured -- the common case, since configure.sh writes no
@@ -238,7 +321,6 @@ export CGW_FREEFORM_MESSAGE_BRANCHES CGW_FREEFORM_MESSAGE_CHECK # consumed by co
 # edit -- mirrors how CGW_TARGET_BRANCH is auto-detected above. Explicitly set
 # to "" in .cgw.conf or the environment to opt out and keep the step disabled.
 # Use +x (not :-) to distinguish "unset" from "explicitly set to empty string".
-[[ -z "${CGW_MARKDOWNLINT_NPX_FALLBACK+x}" ]] && CGW_MARKDOWNLINT_NPX_FALLBACK=1
 _cgw_detect_markdownlint() {
   if command -v markdownlint-cli2 >/dev/null 2>&1; then
     echo "markdownlint-cli2"
@@ -258,12 +340,9 @@ fi
 # used only in audit/whole-repo mode (no explicit file list). The commit gate
 # passes staged *.md files instead of the PATHS glob, so an unrelated markdown
 # violation elsewhere no longer blocks a code-only commit.
-[[ -z "${CGW_MARKDOWNLINT_ARGS+x}" ]] && CGW_MARKDOWNLINT_ARGS="!CLAUDE.md !MEMORY.md"
-[[ -z "${CGW_MARKDOWNLINT_PATHS+x}" ]] && CGW_MARKDOWNLINT_PATHS="**/*.md"
 # CGW_MARKDOWNLINT_FIX_ARGS is the --fix invocation, applied the same way
 # CHECK_ARGS is (scoped file list in commit/modified-only mode, PATHS glob in
 # audit mode). Works unchanged for both markdownlint-cli2 and markdownlint.
-[[ -z "${CGW_MARKDOWNLINT_FIX_ARGS+x}" ]] && CGW_MARKDOWNLINT_FIX_ARGS="--fix"
 # Migration guard: the old single-var shape conflated the scan glob with
 # exclusions. Warn only on a bare glob token (exclusions like "!*.tmp" and
 # flags are legitimate ARGS content and must not trigger this). Tokenize with
@@ -284,16 +363,11 @@ unset _cgw_md_tok _cgw_md_toks
 # --- Modified-only lint file extensions ---
 # Space-separated glob patterns used by check_lint.sh / fix_lint.sh --modified-only.
 # Default matches Python files. Override for other languages (e.g. "*.js *.ts" or "*.go").
-[[ -z "${CGW_LINT_EXTENSIONS+x}" ]] && CGW_LINT_EXTENSIONS="*.py"
 
 # --- Runtime gate defaults (single source of truth) ---
 # These were previously only defaulted inline in callers via ${VAR:-...}, with no
 # definition here. Centralized so there is one authoritative default; callers keep
 # their inline fallbacks as defense-in-depth. Use +x to preserve an explicit empty.
-[[ -z "${CGW_SKIP_LINT+x}" ]] && CGW_SKIP_LINT=0
-[[ -z "${CGW_SKIP_MD_LINT+x}" ]] && CGW_SKIP_MD_LINT=0
-[[ -z "${CGW_SKIP_TYPECHECK+x}" ]] && CGW_SKIP_TYPECHECK=0
-[[ -z "${CGW_ALL+x}" ]] && CGW_ALL=0
 
 # --- Staged-blob congruence guard (commit_enhanced.sh) ---
 # commit_enhanced.sh's code-quality checks validate the WORKING TREE, but
@@ -303,7 +377,6 @@ unset _cgw_md_tok _cgw_md_toks
 # by default. Set to "1" to instead commit the staged blob as-is with a
 # warning. Bulk (--all) and --only commits are unaffected -- both stage
 # whole files, so the guard re-stages and re-verifies automatically there.
-[[ -z "${CGW_ALLOW_STAGED_DIVERGENCE+x}" ]] && CGW_ALLOW_STAGED_DIVERGENCE=0
 
 # --- Commit subject length (commit_enhanced.sh) ---
 # Pro Git's "Commit Guidelines" recommend keeping the subject line (the part
@@ -312,15 +385,9 @@ unset _cgw_md_tok _cgw_md_toks
 # Between soft and hard: non-blocking advisory tip. Past
 # CGW_COMMIT_SUBJECT_HARD_LEN: blocks via cgw_confirm (non-interactive: abort)
 # when CGW_ENFORCE_SUBJECT_LENGTH=1 (default) -- set to 0 to keep it advisory-only.
-[[ -z "${CGW_COMMIT_SUBJECT_SOFT_LEN+x}" ]] && CGW_COMMIT_SUBJECT_SOFT_LEN=50
-[[ -z "${CGW_COMMIT_SUBJECT_HARD_LEN+x}" ]] && CGW_COMMIT_SUBJECT_HARD_LEN=72
-[[ -z "${CGW_ENFORCE_SUBJECT_LENGTH+x}" ]] && CGW_ENFORCE_SUBJECT_LENGTH=1
 
 # --- Typecheck step (non-blocking pre-commit hook) ---
 # Empty CGW_TYPECHECK_CMD = typecheck step skipped. Example: "pyrefly".
-[[ -z "${CGW_TYPECHECK_CMD+x}" ]] && CGW_TYPECHECK_CMD=""
-[[ -z "${CGW_TYPECHECK_CHECK_ARGS+x}" ]] && CGW_TYPECHECK_CHECK_ARGS="check"
-[[ -z "${CGW_TYPECHECK_EXCLUDES+x}" ]] && CGW_TYPECHECK_EXCLUDES=""
 
 # --- Merge conflict style (merge_with_validation.sh) ---
 # Set to "merge" for git's default two-way markers (accepted explicitly, same
@@ -359,25 +426,20 @@ unset -f _cgw_validate_merge_conflict_style _cgw_git_supports_zdiff3
 # --- Merge whitespace handling (merge_with_validation.sh) ---
 # Set to "1" to add -Xignore-space-change to the merge command.
 # Prevents false conflicts caused by whitespace-only differences.
-CGW_MERGE_IGNORE_WHITESPACE="${CGW_MERGE_IGNORE_WHITESPACE:-0}"
 
 # --- Docs CI validation (merge_with_validation.sh) ---
 # Extended regex for allowed doc filenames. Empty = skip validation entirely.
 # Example: "^(README\.md|.*_GUIDE\.md|.*_REFERENCE\.md)$"
-CGW_DOCS_PATTERN="${CGW_DOCS_PATTERN:-}"
 
 # --- Dev-only file exclusions for cherry-pick warnings ---
 # Space-separated paths. Empty = no warning. Example: "tests/ pytest.ini"
-CGW_DEV_ONLY_FILES="${CGW_DEV_ONLY_FILES:-}"
 
 # --- Local-only file guard for merge / cherry-pick ---
 # Set to "1" to allow a merge or cherry-pick to carry CGW_LOCAL_FILES into shared
 # history (the guard otherwise aborts in non-interactive mode). Default 0.
-[[ -z "${CGW_ALLOW_LOCAL_FILES_IN_MERGE+x}" ]] && CGW_ALLOW_LOCAL_FILES_IN_MERGE=0
 
 # --- Tests directory cleanup on target branch ---
 # 0 = disabled (default), 1 = remove tests/ from target if gitignored
-CGW_CLEANUP_TESTS="${CGW_CLEANUP_TESTS:-0}"
 
 # --- Force-push protected branches (space-separated) ---
 # Branches requiring explicit --force flag + confirmation for force-push.
@@ -386,7 +448,6 @@ CGW_PROTECTED_BRANCHES="${CGW_PROTECTED_BRANCHES:-${CGW_TARGET_BRANCH}}"
 # --- Merge mode ---
 # "direct": merge locally via merge_with_validation.sh (default, no PR required)
 # "pr":     create a GitHub PR via create_pr.sh (triggers Charlie CI + GitHub Actions)
-CGW_MERGE_MODE="${CGW_MERGE_MODE:-direct}"
 
 # --- Commit and tag signing ---
 # GPG/SSH signing of commits and tags, matching Pro Git §"Signing Your Work".
@@ -395,13 +456,10 @@ CGW_MERGE_MODE="${CGW_MERGE_MODE:-direct}"
 # Both settings are additive: they never disable git's native commit.gpgsign/
 # tag.gpgsign config. Override per-invocation via --sign / --no-sign flags.
 # The signing key is whatever git is configured with (gpg.format, user.signingkey).
-CGW_SIGN_COMMITS="${CGW_SIGN_COMMITS:-0}"
-CGW_SIGN_TAGS="${CGW_SIGN_TAGS:-0}"
 
 # --- Published-commit rebase guard ---
 # CGW_ALLOW_REBASE_PUBLISHED: 0 = enforce (default), 1 = allow rebasing commits
 # already pushed to CGW_REMOTE.  Override in CI if you control a shared force-push workflow.
-CGW_ALLOW_REBASE_PUBLISHED="${CGW_ALLOW_REBASE_PUBLISHED:-0}"
 
 # --- Stale index.lock auto-recovery ---
 # CGW scripts detect and remove abandoned .git/index.lock files left by
@@ -412,38 +470,7 @@ CGW_ALLOW_REBASE_PUBLISHED="${CGW_ALLOW_REBASE_PUBLISHED:-0}"
 # Locks newer than MAX_AGE are given WAIT_SECONDS to clear before removal.
 #
 # Set CGW_AUTO_REMOVE_INDEX_LOCK=0 to disable auto-removal (warn-only mode).
-CGW_AUTO_REMOVE_INDEX_LOCK="${CGW_AUTO_REMOVE_INDEX_LOCK:-1}"
-CGW_INDEX_LOCK_MAX_AGE_SECONDS="${CGW_INDEX_LOCK_MAX_AGE_SECONDS:-30}"
-CGW_INDEX_LOCK_WAIT_SECONDS="${CGW_INDEX_LOCK_WAIT_SECONDS:-10}"
 
-# Numeric validation: non-numeric values would cause silent arithmetic bugs;
-# reset to defaults and warn the operator.
-_cgw_validate_int() {
-  local var_name="$1" default="$2"
-  local val="${!var_name}"
-  if ! [[ "${val}" =~ ^[0-9]+$ ]]; then
-    printf '[WARN] %s has non-numeric value "%s"; resetting to %s\n' \
-      "${var_name}" "${val}" "${default}" >&2
-    printf -v "${var_name}" '%s' "${default}"
-    export "${var_name?}"
-  fi
-}
-_cgw_validate_int CGW_AUTO_REMOVE_INDEX_LOCK 1
-_cgw_validate_int CGW_INDEX_LOCK_MAX_AGE_SECONDS 30
-_cgw_validate_int CGW_INDEX_LOCK_WAIT_SECONDS 10
-_cgw_validate_int CGW_COMMIT_SUBJECT_SOFT_LEN 50
-_cgw_validate_int CGW_COMMIT_SUBJECT_HARD_LEN 72
-unset -f _cgw_validate_int
-
-# ============================================================================
-# BACKWARD COMPATIBILITY
-# ============================================================================
-# Legacy CLAUDE_GIT_* env vars are mapped to CGW_* equivalents.
-
-[[ "${CLAUDE_GIT_NON_INTERACTIVE:-0}" == "1" ]] && CGW_NON_INTERACTIVE=1
-[[ "${CLAUDE_GIT_NO_VENV:-0}" == "1" ]] && CGW_NO_VENV=1
-[[ "${CLAUDE_GIT_STAGED_ONLY:-0}" == "1" ]] && CGW_STAGED_ONLY=1
-
-CGW_NON_INTERACTIVE="${CGW_NON_INTERACTIVE:-0}"
-CGW_NO_VENV="${CGW_NO_VENV:-0}"
-CGW_STAGED_ONLY="${CGW_STAGED_ONLY:-0}"
+# Callers source this file under `set -e`: always finish on a zero status,
+# whatever the last conditional above evaluated to.
+true

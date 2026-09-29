@@ -155,6 +155,16 @@ project only gets these two variables if added to its `.cgw.conf` by hand, or vi
 
 ---
 
+## config registry
+
+The single list of `CGW_*` settings and their facts: `name|default|kind|empty|scope`, where *kind* is `str`, `bool`, `int`, `enum:a/b`, or `computed` (default derived from the repo or other settings — target branch, markdownlint detection, protected branches, merge-conflict style); *empty* is `keep` (an explicit `CGW_X=""` is honoured, e.g. to disable a tool) or `fill` (empty falls back to the default); *scope* is `conf` (persistent — `.cgw.conf`, `cgw.conf.example`, docs table) or `env` (per-run switch — docs table only).
+
+**Implementation seam**: `_CGW_REGISTRY` / `cgw_config_registry` and `_cgw_apply_registry_defaults` in `scripts/git/_config.sh` — applies every non-computed default after env + `.cgw.conf` resolution and validates by kind. Adding a setting starts with a row here; `tests/unit/config_registry.bats` then fails until `cgw.conf.example`, the `docs/configuration.md` options table, the `configure.sh` generator and any inline `${CGW_X:-default}` fallback agree with it. The explanatory prose in each of those stays hand-written.
+
+**Callers**: `_config.sh` (sourced by every script and hook via `_common.sh`); the parity tests.
+
+---
+
 ## backup tag
 
 An annotated git tag recording the state of a branch immediately before a mutating CGW operation. Format: `pre-<op>-<YYYYMMDD_HHMMSS>-<pid>`. Created by `cgw_create_backup_tag <op>` before any merge, cherry-pick, rebase, bisect, or undo-commit. Enables `git reset --hard <tag>` rollback.
