@@ -1457,11 +1457,11 @@ _setup_uu_conflict() {
 # The non-interactive lint path and both markdown paths re-run the check after
 # auto-fix and abort if errors remain. The interactive lint "yes" branch used
 # to re-stage and fall straight through to the commit, so a fixer that could
-# not fix everything still produced a commit. A pty (script(1)) is required
-# because commit_enhanced.sh forces non-interactive mode when stdin is not a TTY.
+# not fix everything still produced a commit. --interactive drives the prompts
+# from piped answers (commit_enhanced.sh would otherwise go non-interactive
+# without a TTY).
 
 @test "interactive lint auto-fix aborts when errors remain after the fix" {
-  command -v script >/dev/null 2>&1 || skip "script(1) not available"
   install_mock_lint_with_errors
   printf 'x = 1\n' > "${TEST_REPO_DIR}/unfixable.py"
   git -C "${TEST_REPO_DIR}" add unfixable.py
@@ -1476,22 +1476,23 @@ _setup_uu_conflict() {
     export CGW_FORMAT_CMD=''
     export CGW_SKIP_MD_LINT=1
     unset CGW_NON_INTERACTIVE
-    printf 'yes\nyes\nyes\nyes\n' | script -qec \"bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --no-venv 'feat: unfixable lint'\" /dev/null
+    printf 'yes\nyes\nyes\nyes\n' | bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --interactive --no-venv 'feat: unfixable lint'
   "
   [[ "${output}" == *"Code quality errors remain after auto-fix"* ]]
   [[ "${output}" != *"COMMIT SUCCESSFUL"* ]]
   [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "${head_before}" ]
 }
 
-# ── Interactive auto-fix branches (characterization, via a pty) ──────────────
+# ── Interactive auto-fix branches (characterization) ─────────────────────────
 # Pins every interactive answer on both auto-fix prompts before the four
 # fix -> re-stage -> re-check copies in main() are consolidated.
 
-# _run_commit_pty <answers> <message> [KEY=VALUE ...]
-#   Runs commit_enhanced.sh under script(1) so stdin is a TTY, feeding
-#   <answers> (printf format) to the prompts. Lint/format/markdown default to
+# _run_commit_interactive <answers> <message> [KEY=VALUE ...]
+#   Runs commit_enhanced.sh --interactive, feeding <answers> (printf format) to
+#   its prompts on stdin. (A pty via script(1) was flaky on CI: some script(1)
+#   builds hang up the child once piped input hits EOF.) Lint/format/markdown default to
 #   off; pass KEY=VALUE pairs to enable what the test needs.
-_run_commit_pty() {
+_run_commit_interactive() {
   local answers="$1" msg="$2"
   shift 2
   local exports="" kv
@@ -1503,62 +1504,57 @@ _run_commit_pty() {
     export CGW_LINT_CMD='' CGW_FORMAT_CMD='' CGW_MARKDOWNLINT_CMD=''
     unset CGW_NON_INTERACTIVE
     ${exports}
-    printf '${answers}' | script -qec \"bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --no-venv '${msg}'\" /dev/null
+    printf '${answers}' | bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --interactive --no-venv '${msg}'
   "
 }
 
 @test "interactive lint auto-fix 'yes' commits when the fix clears the errors" {
-  command -v script >/dev/null 2>&1 || skip "script(1) not available"
   install_mock_lint_fixable
   printf 'x = 1\n' > "${TEST_REPO_DIR}/fixable.py"
   git -C "${TEST_REPO_DIR}" add fixable.py
-  run _run_commit_pty 'yes\nyes\nyes\n' 'feat: fixable lint' CGW_LINT_CMD=ruff
+  run _run_commit_interactive 'yes\nyes\nyes\n' 'feat: fixable lint' CGW_LINT_CMD=ruff
   [[ "${output}" == *"Code quality errors detected"* ]]
   [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
   [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" = "feat: fixable lint" ]
 }
 
 @test "interactive lint auto-fix 'skip' commits with a warning" {
-  command -v script >/dev/null 2>&1 || skip "script(1) not available"
   install_mock_lint_with_errors
   printf 'x = 1\n' > "${TEST_REPO_DIR}/skipped.py"
   git -C "${TEST_REPO_DIR}" add skipped.py
-  run _run_commit_pty 'skip\nyes\nyes\n' 'feat: skip lint' CGW_LINT_CMD=ruff
+  run _run_commit_interactive 'skip\nyes\nyes\n' 'feat: skip lint' CGW_LINT_CMD=ruff
   [[ "${output}" == *"Proceeding with code quality warnings"* ]]
   [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
 }
 
 @test "interactive lint auto-fix 'no' cancels the commit" {
-  command -v script >/dev/null 2>&1 || skip "script(1) not available"
   install_mock_lint_with_errors
   printf 'x = 1\n' > "${TEST_REPO_DIR}/declined.py"
   git -C "${TEST_REPO_DIR}" add declined.py
   local head_before
   head_before=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
-  run _run_commit_pty 'no\n' 'feat: declined lint' CGW_LINT_CMD=ruff
+  run _run_commit_interactive 'no\n' 'feat: declined lint' CGW_LINT_CMD=ruff
   [[ "${output}" == *"Commit cancelled -- fix code quality errors first"* ]]
   [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "${head_before}" ]
 }
 
 @test "interactive markdown auto-fix 'yes' aborts when errors remain after the fix" {
-  command -v script >/dev/null 2>&1 || skip "script(1) not available"
   MOCK_MDLINT_EXIT=1 install_mock_markdownlint
   echo "content" > "${TEST_REPO_DIR}/unfixable.md"
   git -C "${TEST_REPO_DIR}" add unfixable.md
   local head_before
   head_before=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
-  run _run_commit_pty 'yes\nyes\nyes\n' 'docs: unfixable md' CGW_MARKDOWNLINT_CMD=markdownlint-cli2
+  run _run_commit_interactive 'yes\nyes\nyes\n' 'docs: unfixable md' CGW_MARKDOWNLINT_CMD=markdownlint-cli2
   [[ "${output}" == *"Markdown lint errors remain after auto-fix"* ]]
   [[ "${output}" != *"COMMIT SUCCESSFUL"* ]]
   [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "${head_before}" ]
 }
 
 @test "interactive markdown auto-fix 'skip' commits with a warning" {
-  command -v script >/dev/null 2>&1 || skip "script(1) not available"
   MOCK_MDLINT_EXIT=1 install_mock_markdownlint
   echo "content" > "${TEST_REPO_DIR}/skipped.md"
   git -C "${TEST_REPO_DIR}" add skipped.md
-  run _run_commit_pty 'skip\nyes\nyes\n' 'docs: skip md' CGW_MARKDOWNLINT_CMD=markdownlint-cli2
+  run _run_commit_interactive 'skip\nyes\nyes\n' 'docs: skip md' CGW_MARKDOWNLINT_CMD=markdownlint-cli2
   [[ "${output}" == *"Proceeding with markdown lint warnings"* ]]
   [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
 }
@@ -1583,4 +1579,27 @@ _run_commit_pty() {
 0_0_0_1 0
 0_0_0_0 0
 TABLE
+}
+
+# ── Regression: --interactive also makes cgw_confirm prompt ────────────────
+# Without a TTY, commit_enhanced.sh sets CGW_NON_INTERACTIVE=1. --interactive
+# only reset the script's local flag, so its read -p prompts became
+# interactive while every cgw_confirm (branch check, proceed, stage-all) kept
+# auto-accepting under the non-interactive policy.
+
+@test "--interactive without a TTY makes the branch confirmation prompt too" {
+  echo "content" > "${TEST_REPO_DIR}/declined_branch.txt"
+  git -C "${TEST_REPO_DIR}" add declined_branch.txt
+  local head_before
+  head_before=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD='' CGW_FORMAT_CMD='' CGW_MARKDOWNLINT_CMD=''
+    unset CGW_NON_INTERACTIVE
+    printf 'no\n' | bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' --interactive --no-venv 'feat: declined at branch check'
+  "
+  [[ "${output}" != *"COMMIT SUCCESSFUL"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "${head_before}" ]
 }
