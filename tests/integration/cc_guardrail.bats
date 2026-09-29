@@ -392,6 +392,7 @@ EOF
 }
 
 @test "registered guardrail path resolves to an existing file (regression: MSYS path conversion)" {
+  _require_jq
   # Catches the bug where Git Bash MSYS converts /.claude/... inside a jq --arg
   # value to C:/Program Files/Git/.claude/... when crossing into jq.exe, producing
   # a non-existent path that the previous string-contains test did not detect.

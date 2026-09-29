@@ -231,60 +231,19 @@ echo.
 goto :eof
 :pp_do_update
 
-rem --- Record pre-existing state before staging, so :pp_cleanup_stage never
-rem     deletes content this invocation did not create (a project could
-rem     legitimately have its own top-level hooks\/skill\/command\ dirs).
-set "HOOKS_PREEXISTED=0"
-if exist "!P!\hooks\" set "HOOKS_PREEXISTED=1"
-set "SKILL_PREEXISTED=0"
-if exist "!P!\skill\" set "SKILL_PREEXISTED=1"
-set "COMMAND_PREEXISTED=0"
-if exist "!P!\command\" set "COMMAND_PREEXISTED=1"
-set "TEMPLATES_PREEXISTED=0"
-if exist "!P!\templates\" set "TEMPLATES_PREEXISTED=1"
-
-rem --- Stage payload (mirror cgw-install.cmd's copy block) ---
+rem --- Copy runtime scripts ---
 set "STAGE_OK=1"
 
 if not exist "!P!\scripts\git\" mkdir "!P!\scripts\git\"
 xcopy /y /q "!CGW_DIR!\scripts\git\*.sh" "!P!\scripts\git\" >nul
 if errorlevel 1 set "STAGE_OK=0"
 
-if not exist "!P!\hooks\" mkdir "!P!\hooks\"
-copy /y "!CGW_DIR!\hooks\pre-commit" "!P!\hooks\pre-commit" >nul
-if errorlevel 1 set "STAGE_OK=0"
-copy /y "!CGW_DIR!\hooks\pre-push" "!P!\hooks\pre-push" >nul
-if errorlevel 1 set "STAGE_OK=0"
-copy /y "!CGW_DIR!\hooks\pre-rebase" "!P!\hooks\pre-rebase" >nul
-if errorlevel 1 set "STAGE_OK=0"
-copy /y "!CGW_DIR!\hooks\cc-block-dangerous-git.sh" "!P!\hooks\cc-block-dangerous-git.sh" >nul
-if errorlevel 1 set "STAGE_OK=0"
-copy /y "!CGW_DIR!\hooks\agy-block-dangerous-git.sh" "!P!\hooks\agy-block-dangerous-git.sh" >nul
-if errorlevel 1 set "STAGE_OK=0"
-copy /y "!CGW_DIR!\hooks\agy-block-dangerous-git.cmd" "!P!\hooks\agy-block-dangerous-git.cmd" >nul
-if errorlevel 1 set "STAGE_OK=0"
-copy /y "!CGW_DIR!\hooks\_guardrail_core.sh" "!P!\hooks\_guardrail_core.sh" >nul
-if errorlevel 1 set "STAGE_OK=0"
-
-if not exist "!P!\skill\" mkdir "!P!\skill\"
-xcopy /y /q /e "!CGW_DIR!\skill\" "!P!\skill\" >nul
-if errorlevel 1 set "STAGE_OK=0"
-
-if not exist "!P!\command\" mkdir "!P!\command\"
-xcopy /y /q /e "!CGW_DIR!\command\" "!P!\command\" >nul
-if errorlevel 1 set "STAGE_OK=0"
-
-if not exist "!P!\templates\" mkdir "!P!\templates\"
-xcopy /y /q /e "!CGW_DIR!\templates\" "!P!\templates\" >nul
-if errorlevel 1 set "STAGE_OK=0"
-
 if exist "!CGW_DIR!\cgw.conf.example" copy /y "!CGW_DIR!\cgw.conf.example" "!P!\cgw.conf.example" >nul
 
 if not "!STAGE_OK!"=="0" goto :pp_stage_ok
-echo(  [FAIL] Failed to stage toolkit files into !P!
-call :pp_cleanup_stage "!P!"
+echo(  [FAIL] Failed to copy runtime scripts into !P!
 set /a FAILED+=1
->>"!FAIL_LOG!" echo(!P!  (failed to copy toolkit files)
+>>"!FAIL_LOG!" echo(!P!  (failed to copy runtime scripts)
 echo.
 goto :eof
 :pp_stage_ok
@@ -298,7 +257,6 @@ set "CFG_LOG=%TEMP%\cgw-batch-configure-%RANDOM%.log"
 pushd "!P!" 2>nul
 if not errorlevel 1 goto :pp_pushd_ok
 echo(  [FAIL] Cannot enter project directory: !P!
-call :pp_cleanup_stage "!P!"
 set /a FAILED+=1
 >>"!FAIL_LOG!" echo(!P!  (cannot enter directory)
 echo.
@@ -309,11 +267,9 @@ rem Always the absolute BASH_EXE resolved in BF-02, never bare "bash": we are
 rem inside the project now, and a project-local bash.cmd would win the cwd
 rem lookup and swallow the rest of this script (see BF-02).
 "!BASH_EXE!" -c "chmod +x scripts/git/*.sh 2>/dev/null" >nul 2>&1
-"!BASH_EXE!" scripts/git/configure.sh --non-interactive >"!CFG_LOG!" 2>&1
+"!BASH_EXE!" scripts/git/configure.sh --template-dir "!CGW_DIR!" --non-interactive >"!CFG_LOG!" 2>&1
 set "CFG_EXIT=!ERRORLEVEL!"
 popd
-
-call :pp_cleanup_stage "!P!"
 
 if not "!CFG_EXIT!"=="0" goto :pp_cfg_fail
 echo(  [OK] Updated: !P!
@@ -327,52 +283,6 @@ echo(         See log: !CFG_LOG!
 set /a FAILED+=1
 >>"!FAIL_LOG!" echo(!P!  (configure.sh exit !CFG_EXIT!, log: !CFG_LOG!)
 echo.
-goto :eof
-
-rem ============================================================
-rem :pp_cleanup_stage <path>
-rem   Remove the staged hooks\, skill\, command\, templates\ temp
-rem   dirs. These are staging directories only (same as
-rem   cgw-install.cmd's post-install cleanup) -- never the runtime
-rem   install location. Only removes a dir if HOOKS_PREEXISTED/
-rem   SKILL_PREEXISTED/COMMAND_PREEXISTED/TEMPLATES_PREEXISTED (set
-rem   in :process_project before staging) says this invocation
-rem   created it -- a project that legitimately already had one of
-rem   these top-level dirs keeps its content instead of it being
-rem   recursively deleted.
-rem   NOTE: goto-based on purpose, not "( ... echo( ... )" -- an
-rem   echo( inside a multi-line parenthesized block throws off
-rem   cmd.exe's paren-balance counting (see :process_project).
-rem ============================================================
-:pp_cleanup_stage
-set "CP=%~1"
-
-if "!HOOKS_PREEXISTED!"=="1" goto :pp_cleanup_hooks_kept
-if exist "!CP!\hooks\" rmdir /s /q "!CP!\hooks\" 2>nul
-goto :pp_cleanup_skill
-:pp_cleanup_hooks_kept
-if exist "!CP!\hooks\" echo(  [WARN] !CP!\hooks\ pre-existed -- left in place, not deleted
-:pp_cleanup_skill
-
-if "!SKILL_PREEXISTED!"=="1" goto :pp_cleanup_skill_kept
-if exist "!CP!\skill\" rmdir /s /q "!CP!\skill\" 2>nul
-goto :pp_cleanup_command
-:pp_cleanup_skill_kept
-if exist "!CP!\skill\" echo(  [WARN] !CP!\skill\ pre-existed -- left in place, not deleted
-:pp_cleanup_command
-
-if "!COMMAND_PREEXISTED!"=="1" goto :pp_cleanup_command_kept
-if exist "!CP!\command\" rmdir /s /q "!CP!\command\" 2>nul
-goto :pp_cleanup_templates
-:pp_cleanup_command_kept
-if exist "!CP!\command\" echo(  [WARN] !CP!\command\ pre-existed -- left in place, not deleted
-:pp_cleanup_templates
-
-if "!TEMPLATES_PREEXISTED!"=="1" goto :pp_cleanup_templates_kept
-if exist "!CP!\templates\" rmdir /s /q "!CP!\templates\" 2>nul
-goto :eof
-:pp_cleanup_templates_kept
-if exist "!CP!\templates\" echo(  [WARN] !CP!\templates\ pre-existed -- left in place, not deleted
 goto :eof
 
 :summary

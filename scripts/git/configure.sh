@@ -367,13 +367,34 @@ _build_typecheck_config() {
   esac
 }
 
-_install_hook() {
-  local hooks_template_dir="${SCRIPT_DIR}/../../hooks"
+# _resolve_template_dir <category>
+#   Resolves an asset template directory (hooks, skill, command, templates)
+#   using the priority chain:
+#     1. TEMPLATE_DIR (from --template-dir <path> or CGW_TEMPLATE_DIR env var)
+#     2. Sibling/parent relative lookup (${SCRIPT_DIR}/../../<category>)
+#   Returns 0 and prints absolute path on success; returns 1 on failure.
+_resolve_template_dir() {
+  local sub="${1:-}"
+  local resolved=""
+  if [[ -n "${TEMPLATE_DIR:-}" ]]; then
+    if resolved="$(cd "${TEMPLATE_DIR}/${sub}" 2>/dev/null && pwd)"; then
+      echo "${resolved}"
+      return 0
+    fi
+  fi
+  # Fallback: relative to SCRIPT_DIR (active when running in CGW source repo or legacy in-repo staging)
+  if resolved="$(cd "${SCRIPT_DIR}/../../${sub}" 2>/dev/null && pwd)"; then
+    echo "${resolved}"
+    return 0
+  fi
+  return 1
+}
 
-  # Try staging area first (present during install.cmd), then fall back to already-installed hook
-  hooks_template_dir="$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)" || {
+_install_hook() {
+  local hooks_template_dir
+  if ! hooks_template_dir="$(_resolve_template_dir hooks)"; then
     hooks_template_dir="${PROJECT_ROOT}/.cgw-hooks-template"
-  }
+  fi
 
   local hook_template="${hooks_template_dir}/pre-commit"
 
@@ -384,7 +405,7 @@ _install_hook() {
       return 0
     fi
     echo "  [!] Hook template not found at: ${hook_template}" >&2
-    echo "      Fix: copy the hooks/ directory from the CGW source repo into your project root," >&2
+    echo "      Fix: pass --template-dir <path-to-cgw-source> or set CGW_TEMPLATE_DIR," >&2
     echo "      then re-run: ./scripts/git/configure.sh" >&2
     return 1
   fi
@@ -507,9 +528,14 @@ _install_harness_skill() {
   local cmd_installed="${cmd_dst}/auto-git-workflow-cmd.md"
   [[ "${cmd_layout}" == "skill" ]] && cmd_installed="${cmd_dst}/SKILL.md"
 
-  # Try staging area first (present during install.cmd), then CGW source repo
-  if skill_src="$(cd "${SCRIPT_DIR}" && cd "../../skill" 2>/dev/null && pwd)"; then
-    cmd_src="${skill_src}/../command/auto-git-workflow-cmd.md"
+  # Try template source first, then already-installed fallback
+  if skill_src="$(_resolve_template_dir skill)"; then
+    if ! cmd_src="$(cd "${skill_src}/../command" 2>/dev/null && pwd)/auto-git-workflow-cmd.md" || [[ ! -f "${cmd_src}" ]]; then
+      local cmd_dir
+      if cmd_dir="$(_resolve_template_dir command)"; then
+        cmd_src="${cmd_dir}/auto-git-workflow-cmd.md"
+      fi
+    fi
   elif [[ "${cmd_layout}" == "skill" && -f "${skill_dst}/SKILL.md" && -f "${cmd_installed}" ]]; then
     # A skill-layout command is its own skill: require both to call it installed.
     echo "  [OK] ${label} skill + command already installed (${install_mode})"
@@ -519,8 +545,8 @@ _install_harness_skill() {
     return 0
   else
     echo "  [!] Skill template not found." >&2
-    echo "      Fix: copy skill/ and command/ from the CGW source repo into your" >&2
-    echo "      project root, then re-run: ./scripts/git/configure.sh" >&2
+    echo "      Fix: pass --template-dir <path-to-cgw-source> or set CGW_TEMPLATE_DIR," >&2
+    echo "      then re-run: ./scripts/git/configure.sh" >&2
     return 1
   fi
 
@@ -586,8 +612,8 @@ _offer_harness_install() {
 _install_markdownlint_config() {
   local template_src
 
-  # Try staging area first (present during install.cmd), then CGW source repo
-  if ! template_src="$(cd "${SCRIPT_DIR}" && cd "../../templates" 2>/dev/null && pwd)"; then
+  # Try template source first, then in-repo fallback
+  if ! template_src="$(_resolve_template_dir templates)"; then
     echo "  [!] Markdown lint template not found -- skipping" >&2
     return 0
   fi
@@ -806,18 +832,22 @@ PYEOF
 _install_cc_guardrail() {
   local install_mode="${1:-local}" # "local" or "global"
 
-  # Find source script (staging area during install.cmd, or already-installed copy)
-  local guardrail_src
-  guardrail_src="$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)/cc-block-dangerous-git.sh" 2>/dev/null || true
+  # Find source script from template directory, or fallback to already-installed copy
+  local guardrail_src=""
+  local hooks_dir
+  if hooks_dir="$(_resolve_template_dir hooks)"; then
+    guardrail_src="${hooks_dir}/cc-block-dangerous-git.sh"
+  fi
 
   if [[ ! -f "${guardrail_src:-}" ]]; then
     # Fallback: accept the already-installed copy so reconfigure works after
-    # the staging hooks/ directory has been cleaned up.
+    # staging has finished.
     if [[ -f "${PROJECT_ROOT}/.claude/hooks/cc-block-dangerous-git.sh" ]]; then
       guardrail_src="${PROJECT_ROOT}/.claude/hooks/cc-block-dangerous-git.sh"
     else
       echo "  [!] hooks/cc-block-dangerous-git.sh not found." >&2
-      echo "      Re-copy hooks/ from the CGW source directory, then re-run: ./scripts/git/configure.sh" >&2
+      echo "      Fix: pass --template-dir <path-to-cgw-source> or set CGW_TEMPLATE_DIR," >&2
+      echo "      then re-run: ./scripts/git/configure.sh" >&2
       return 1
     fi
   fi
@@ -896,9 +926,12 @@ _install_cc_guardrail() {
 _install_agy_guardrail() {
   local install_mode="${1:-local}" # "local" or "global"
 
-  local guardrail_src guardrail_cmd_src
-  guardrail_src="$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)/agy-block-dangerous-git.sh" 2>/dev/null || true
-  guardrail_cmd_src="$(cd "${SCRIPT_DIR}" && cd "../../hooks" 2>/dev/null && pwd)/agy-block-dangerous-git.cmd" 2>/dev/null || true
+  local guardrail_src="" guardrail_cmd_src=""
+  local hooks_dir
+  if hooks_dir="$(_resolve_template_dir hooks)"; then
+    guardrail_src="${hooks_dir}/agy-block-dangerous-git.sh"
+    guardrail_cmd_src="${hooks_dir}/agy-block-dangerous-git.cmd"
+  fi
 
   # No fallback to cc-block-dangerous-git.sh: a cc script older than the
   # Antigravity integration cannot parse the toolCall payload and would
@@ -908,7 +941,8 @@ _install_agy_guardrail() {
       guardrail_src="${PROJECT_ROOT}/.agents/hooks/agy-block-dangerous-git.sh"
     else
       echo "  [!] hooks/agy-block-dangerous-git.sh not found." >&2
-      echo "      Re-copy hooks/ from the CGW source directory, then re-run: ./scripts/git/configure.sh" >&2
+      echo "      Fix: pass --template-dir <path-to-cgw-source> or set CGW_TEMPLATE_DIR," >&2
+      echo "      then re-run: ./scripts/git/configure.sh" >&2
       return 1
     fi
   fi
@@ -1043,6 +1077,75 @@ _cleanup_legacy_artifacts() {
     rm -f "${PROJECT_ROOT}/scripts/git/README.md"
     echo "  [OK] Removed legacy scripts/git/README.md"
   fi
+
+  # Never clean staging directories when running inside the CGW source repository itself.
+  if [[ -f "${PROJECT_ROOT}/cgw-batch-install.cmd" && -f "${PROJECT_ROOT}/cgw-install.cmd" && -f "${PROJECT_ROOT}/tests/run.sh" ]]; then
+    return 0
+  fi
+
+  # Prune legacy staging directories in consumer projects if they carry CGW markers
+  if [[ -d "${PROJECT_ROOT}/skill" ]]; then
+    if [[ -f "${PROJECT_ROOT}/skill/SKILL.md" ]] && grep -q "auto-git-workflow" "${PROJECT_ROOT}/skill/SKILL.md" 2>/dev/null; then
+      rm -rf "${PROJECT_ROOT}/skill"
+      echo "  [OK] Removed legacy staging directory: skill/"
+    fi
+  fi
+  if [[ -d "${PROJECT_ROOT}/command" ]]; then
+    if [[ -f "${PROJECT_ROOT}/command/auto-git-workflow-cmd.md" ]] && grep -q "auto-git-workflow-cmd" "${PROJECT_ROOT}/command/auto-git-workflow-cmd.md" 2>/dev/null; then
+      rm -rf "${PROJECT_ROOT}/command"
+      echo "  [OK] Removed legacy staging directory: command/"
+    fi
+  fi
+  if [[ -d "${PROJECT_ROOT}/templates" ]]; then
+    if [[ -f "${PROJECT_ROOT}/templates/markdownlint.json" || -f "${PROJECT_ROOT}/templates/markdownlint-cli2.jsonc" ]]; then
+      local foreign_files=0
+      local f b
+      for f in "${PROJECT_ROOT}/templates/"*; do
+        [[ ! -e "${f}" ]] && continue
+        b="$(basename "${f}")"
+        case "${b}" in
+          markdownlint.json|markdownlint-cli2.jsonc)
+            ;;
+          *)
+            foreign_files=1
+            ;;
+        esac
+      done
+      if [[ ${foreign_files} -eq 0 ]]; then
+        rm -rf "${PROJECT_ROOT}/templates"
+        echo "  [OK] Removed legacy staging directory: templates/"
+      else
+        rm -f "${PROJECT_ROOT}/templates/markdownlint.json" "${PROJECT_ROOT}/templates/markdownlint-cli2.jsonc"
+        echo "  [OK] Removed legacy staging CGW template files from templates/"
+      fi
+    fi
+  fi
+  if [[ -d "${PROJECT_ROOT}/hooks" ]]; then
+    if [[ -f "${PROJECT_ROOT}/hooks/pre-commit" ]] && grep -q "claude-git-workflow" "${PROJECT_ROOT}/hooks/pre-commit" 2>/dev/null; then
+      local foreign_files=0
+      local f b
+      for f in "${PROJECT_ROOT}/hooks/"*; do
+        [[ ! -e "${f}" ]] && continue
+        b="$(basename "${f}")"
+        case "${b}" in
+          pre-commit|pre-push|pre-rebase|cc-block-dangerous-git.sh|agy-block-dangerous-git.sh|agy-block-dangerous-git.cmd|_guardrail_core.sh)
+            ;;
+          *)
+            foreign_files=1
+            ;;
+        esac
+      done
+      if [[ ${foreign_files} -eq 0 ]]; then
+        rm -rf "${PROJECT_ROOT}/hooks"
+        echo "  [OK] Removed legacy staging directory: hooks/"
+      else
+        rm -f "${PROJECT_ROOT}/hooks/pre-commit" "${PROJECT_ROOT}/hooks/pre-push" "${PROJECT_ROOT}/hooks/pre-rebase" \
+              "${PROJECT_ROOT}/hooks/cc-block-dangerous-git.sh" "${PROJECT_ROOT}/hooks/agy-block-dangerous-git.sh" \
+              "${PROJECT_ROOT}/hooks/agy-block-dangerous-git.cmd" "${PROJECT_ROOT}/hooks/_guardrail_core.sh"
+        echo "  [OK] Removed legacy staging CGW hook files from hooks/"
+      fi
+    fi
+  fi
 }
 
 # ============================================================================
@@ -1060,6 +1163,7 @@ main() {
   local enable_claude=0
   local enable_agy=0
   local global_skill=0
+  TEMPLATE_DIR="${TEMPLATE_DIR:-${CGW_TEMPLATE_DIR:-}}"
 
   while [[ $# -gt 0 ]]; do
     case "${1}" in
@@ -1071,6 +1175,7 @@ main() {
         echo "and installs skills/guardrails for Claude Code and Antigravity Agents."
         echo ""
         echo "Options:"
+        echo "  --template-dir <dir> Path to CGW source toolkit providing asset templates"
         echo "  --non-interactive    Accept all auto-detected defaults"
         echo "  --reconfigure        Overwrite existing .cgw.conf"
         echo "  --skip-hooks         Don't install git pre-commit hook"
@@ -1087,6 +1192,13 @@ main() {
         echo ""
         echo "After running, edit .cgw.conf to customize any detected values."
         exit 0
+        ;;
+      --template-dir)
+        shift
+        TEMPLATE_DIR="${1:-}"
+        ;;
+      --template-dir=*)
+        TEMPLATE_DIR="${1#*=}"
         ;;
       --non-interactive)
         non_interactive=1

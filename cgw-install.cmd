@@ -226,14 +226,16 @@ goto :abort
 
 rem --- Confirm ---
 echo --- Installation Summary ---
-echo.
 echo(  Will copy into: !TARGET_DIR!
-echo     scripts\git\    (shell scripts)
-echo     hooks\          (pre-commit, pre-push, pre-rebase, cc-block-dangerous-git.sh, agy-block-dangerous-git.sh/.cmd, _guardrail_core.sh)
-echo     skill\          (agent skill source)
-echo     command\        (slash command source)
-echo     templates\      (markdown lint baseline config)
+echo     scripts\git\     (shell scripts)
 echo     cgw.conf.example (config reference)
+echo.
+echo(  Will configure via templates in: !CGW_DIR!
+echo     git hooks        (pre-commit, pre-push, pre-rebase)
+echo     agent skills     (auto-git-workflow)
+echo     slash commands   (auto-git-workflow-cmd)
+echo     guardrails       (cc-block-dangerous-git, agy-block-dangerous-git)
+echo     templates        (markdownlint.json)
 echo.
 if "!INSTALL_CLAUDE!"=="1" (
     if "!GLOBAL_SKILL!"=="1" (
@@ -306,63 +308,6 @@ echo          Check that the target directory is writable and not locked by anot
 goto :abort
 :cp_scripts_done
 
-rem hooks/
-if not exist "!TARGET_DIR!\hooks\" mkdir "!TARGET_DIR!\hooks\"
-copy /y "!CGW_DIR!\hooks\pre-commit" "!TARGET_DIR!\hooks\pre-commit" >nul
-if errorlevel 1 goto :cp_hooks_fail
-copy /y "!CGW_DIR!\hooks\pre-push" "!TARGET_DIR!\hooks\pre-push" >nul
-if errorlevel 1 goto :cp_hooks_fail
-copy /y "!CGW_DIR!\hooks\pre-rebase" "!TARGET_DIR!\hooks\pre-rebase" >nul
-if errorlevel 1 goto :cp_hooks_fail
-copy /y "!CGW_DIR!\hooks\cc-block-dangerous-git.sh" "!TARGET_DIR!\hooks\cc-block-dangerous-git.sh" >nul
-if errorlevel 1 goto :cp_hooks_fail
-copy /y "!CGW_DIR!\hooks\agy-block-dangerous-git.sh" "!TARGET_DIR!\hooks\agy-block-dangerous-git.sh" >nul
-if errorlevel 1 goto :cp_hooks_fail
-copy /y "!CGW_DIR!\hooks\agy-block-dangerous-git.cmd" "!TARGET_DIR!\hooks\agy-block-dangerous-git.cmd" >nul
-if errorlevel 1 goto :cp_hooks_fail
-copy /y "!CGW_DIR!\hooks\_guardrail_core.sh" "!TARGET_DIR!\hooks\_guardrail_core.sh" >nul
-if errorlevel 1 goto :cp_hooks_fail
-echo   [OK] Copied hooks\ templates (pre-commit, pre-push, pre-rebase, cc-block-dangerous-git.sh, agy-block-dangerous-git.sh, agy-block-dangerous-git.cmd, _guardrail_core.sh)
-goto :cp_hooks_done
-:cp_hooks_fail
-echo   [ERR] Failed to copy hook templates from hooks\
-echo          Verify that hooks\pre-commit, hooks\pre-push, hooks\pre-rebase, cc-block-dangerous-git.sh, agy-block-dangerous-git.sh, and agy-block-dangerous-git.cmd exist in the CGW source directory.
-goto :abort
-:cp_hooks_done
-
-rem skill/
-if not exist "!TARGET_DIR!\skill\" mkdir "!TARGET_DIR!\skill\"
-xcopy /y /q /e "!CGW_DIR!\skill\" "!TARGET_DIR!\skill\" >nul
-if errorlevel 1 goto :cp_skill_fail
-echo   [OK] Copied skill\
-goto :cp_skill_done
-:cp_skill_fail
-echo   [ERR] Failed to copy skill\
-goto :abort
-:cp_skill_done
-
-rem command/
-if not exist "!TARGET_DIR!\command\" mkdir "!TARGET_DIR!\command\"
-xcopy /y /q /e "!CGW_DIR!\command\" "!TARGET_DIR!\command\" >nul
-if errorlevel 1 goto :cp_cmd_fail
-echo   [OK] Copied command\
-goto :cp_cmd_done
-:cp_cmd_fail
-echo   [ERR] Failed to copy command\
-goto :abort
-:cp_cmd_done
-
-rem templates/
-if not exist "!TARGET_DIR!\templates\" mkdir "!TARGET_DIR!\templates\"
-xcopy /y /q /e "!CGW_DIR!\templates\" "!TARGET_DIR!\templates\" >nul
-if errorlevel 1 goto :cp_templates_fail
-echo   [OK] Copied templates\
-goto :cp_templates_done
-:cp_templates_fail
-echo   [ERR] Failed to copy templates\
-goto :abort
-:cp_templates_done
-
 rem cgw.conf.example (optional)
 if not exist "!CGW_DIR!\cgw.conf.example" goto :cp_example_done
 copy /y "!CGW_DIR!\cgw.conf.example" "!TARGET_DIR!\cgw.conf.example" >nul
@@ -405,7 +350,7 @@ if "!GLOBAL_SKILL!"=="1"   set "CFG_FLAGS=!CFG_FLAGS! --global"
 if "!INSTALL_CLAUDE!"=="0" set "CFG_FLAGS=!CFG_FLAGS! --skip-claude"
 if "!INSTALL_AGY!"=="0"    set "CFG_FLAGS=!CFG_FLAGS! --skip-antigravity"
 
-"!BASH_EXE!" scripts/git/configure.sh !CFG_FLAGS!
+"!BASH_EXE!" scripts/git/configure.sh --template-dir "!CGW_DIR!" !CFG_FLAGS!
 set "CONFIGURE_EXIT=!ERRORLEVEL!"
 popd
 
@@ -414,43 +359,15 @@ if "!CONFIGURE_EXIT!"=="0" goto :cfg_ok
 echo   [WARN] configure.sh exited with code !CONFIGURE_EXIT!
 echo   Installation may be incomplete. Common causes:
 echo     - Branch detection failed (no remote configured yet -- this is OK, branches can be set in .cgw.conf)
-echo     - Hook or skill template directory not found (re-copy hooks\, skill\, command\ from the CGW source)
+echo     - Hook or skill template directory not found
 echo   To fix and re-run configure.sh manually (from your project root in Git Bash):
-echo(    cd "!TARGET_DIR!" ^&^& bash scripts/git/configure.sh
+echo(    cd "!TARGET_DIR!" ^&^& bash scripts/git/configure.sh --template-dir "!CGW_DIR!"
 set "EXIT_CODE=1"
 goto :cfg_done
 :cfg_ok
 echo   configure.sh completed successfully.
 :cfg_done
 
-rem --- Cleanup temp files ---
-echo.
-echo --- Post-Install Cleanup ---
-echo.
-echo   The following directories were needed only during installation
-echo   and can be safely removed from the target project:
-echo(    !TARGET_DIR!\hooks\
-echo(    !TARGET_DIR!\skill\
-echo(    !TARGET_DIR!\command\
-echo(    !TARGET_DIR!\templates\
-echo.
-set /p "CLEANUP=Remove temporary install files? (yes/no) [yes]: "
-if /i "!CLEANUP!"=="n"  goto :cleanup_skip
-if /i "!CLEANUP!"=="no" goto :cleanup_skip
-set "REMOVED_DIRS="
-if exist "!TARGET_DIR!\hooks\"     ( rmdir /s /q "!TARGET_DIR!\hooks\"     & if not exist "!TARGET_DIR!\hooks\"     set "REMOVED_DIRS=!REMOVED_DIRS! hooks\" )
-if exist "!TARGET_DIR!\skill\"     ( rmdir /s /q "!TARGET_DIR!\skill\"     & if not exist "!TARGET_DIR!\skill\"     set "REMOVED_DIRS=!REMOVED_DIRS! skill\" )
-if exist "!TARGET_DIR!\command\"   ( rmdir /s /q "!TARGET_DIR!\command\"   & if not exist "!TARGET_DIR!\command\"   set "REMOVED_DIRS=!REMOVED_DIRS! command\" )
-if exist "!TARGET_DIR!\templates\" ( rmdir /s /q "!TARGET_DIR!\templates\" & if not exist "!TARGET_DIR!\templates\" set "REMOVED_DIRS=!REMOVED_DIRS! templates\" )
-if "!REMOVED_DIRS!"=="" (
-    echo   [WARN] Could not fully remove temp directories (files may be locked)
-) else (
-    echo(  Removed:!REMOVED_DIRS!
-)
-goto :cleanup_done
-:cleanup_skip
-echo   Temp files kept.
-:cleanup_done
 
 rem --- Summary ---
 echo.

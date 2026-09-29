@@ -261,7 +261,7 @@ extract_shell_function() {
 # and prompt step.
 guardrail_installer_functions() {
   local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh" fn
-  for fn in _json_escape_string _guardrail_spec _guardrail_is_registered \
+  for fn in _resolve_template_dir _json_escape_string _guardrail_spec _guardrail_is_registered \
     _register_guardrail _install_guardrail_core _install_cc_guardrail _install_agy_guardrail \
     _harness_spec _install_harness_skill _offer_harness_install; do
     extract_shell_function "${cfg}" "${fn}"

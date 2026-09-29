@@ -48,24 +48,24 @@ teardown() {
   done
 }
 
-@test "cmd installers copy every hooks\\ file they require in the CGW source" {
-  # Regression: both installers required hooks\agy-block-dangerous-git.cmd in
-  # the source (SOURCE_OK) but never copied it, so configure.sh registered a
-  # .agents/hooks/agy-block-dangerous-git.cmd path in hooks.json on Windows
-  # that pointed at a file that was never installed.
-  local f name required copied missing=""
+@test "cmd installers pass --template-dir to configure.sh without in-repo staging" {
+  local f
   for f in cgw-install.cmd cgw-batch-install.cmd; do
-    required=$(grep -oE 'if not exist "!CGW_DIR!\\hooks\\[^"]+"' "${CGW_PROJECT_ROOT}/${f}" | sed -E 's/.*\\hooks\\([^"]+)"/\1/' | sort -u)
-    copied=$(grep -oE 'copy /y "!CGW_DIR!\\hooks\\[^"]+"' "${CGW_PROJECT_ROOT}/${f}" | sed -E 's/.*\\hooks\\([^"]+)"/\1/' | sort -u)
-    [ -n "${required}" ]
-    for name in ${required}; do
-      grep -qxF "${name}" <<<"${copied}" || missing+="${f}: ${name}"$'\n'
-    done
+    # Must pass --template-dir "!CGW_DIR!" to configure.sh
+    grep -qF 'scripts/git/configure.sh --template-dir "!CGW_DIR!"' "${CGW_PROJECT_ROOT}/${f}" || {
+      echo "${f} does not pass --template-dir \"!CGW_DIR!\" to configure.sh"
+      false
+    }
+    # Must never copy staging directories into the target project
+    ! grep -qE 'copy /y "!CGW_DIR!\\hooks\\' "${CGW_PROJECT_ROOT}/${f}" || {
+      echo "${f} still copies hooks into target staging directory"
+      false
+    }
+    ! grep -qE 'xcopy .* "!CGW_DIR!\\skill\\' "${CGW_PROJECT_ROOT}/${f}" || {
+      echo "${f} still copies skill into target staging directory"
+      false
+    }
   done
-  [ -z "${missing}" ] || {
-    printf 'required but never copied:\n%s' "${missing}"
-    false
-  }
 }
 
 # ── Behavioural (Windows only) ────────────────────────────────────────────────

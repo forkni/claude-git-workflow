@@ -1,4 +1,3 @@
-: << 'EOF'
 @echo off
 setlocal
 
@@ -8,8 +7,6 @@ rem Part of claude-git-workflow (CGW).
 rem
 rem Dispatches execution of agy-block-dangerous-git.sh to Git for Windows bash.exe,
 rem avoiding WSL bash (which lacks Windows path awareness and native tools).
-rem
-rem Windows cmd.exe executes this file directly; Unix sh skips the batch block.
 rem ==============================================================================
 
 rem 1. Resolve Git for Windows bash.exe
@@ -50,14 +47,3 @@ if not exist "%SH_SCRIPT%" (
 rem 3. Execute hook script via Git Bash, streaming stdin and stdout
 "%BASH_EXE%" "%SH_SCRIPT%"
 exit /b %ERRORLEVEL%
-EOF
-# ==============================================================================
-# Unix fallback if executed under sh / bash
-# ==============================================================================
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-if [[ -f "${SCRIPT_DIR}/agy-block-dangerous-git.sh" ]]; then
-  exec bash "${SCRIPT_DIR}/agy-block-dangerous-git.sh"
-else
-  printf '{"decision": "allow"}\n'
-  exit 0
-fi

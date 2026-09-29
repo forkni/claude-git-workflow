@@ -365,3 +365,44 @@ EOF
   [ -f "${TEST_REPO_DIR}/.claude/skills/auto-git-workflow/SKILL.md" ]
   [ -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow/SKILL.md" ]
 }
+
+@test "configure.sh with --template-dir locates templates outside project and installs assets" {
+  local ext_toolkit="${TEST_TMPDIR}/ext_cgw"
+  mkdir -p "${ext_toolkit}/hooks" "${ext_toolkit}/skill" "${ext_toolkit}/command" "${ext_toolkit}/templates"
+  cp -r "${CGW_PROJECT_ROOT}/hooks/"* "${ext_toolkit}/hooks/"
+  cp -r "${CGW_PROJECT_ROOT}/skill/"* "${ext_toolkit}/skill/"
+  cp -r "${CGW_PROJECT_ROOT}/command/"* "${ext_toolkit}/command/"
+  cp -r "${CGW_PROJECT_ROOT}/templates/"* "${ext_toolkit}/templates/"
+
+  mkdir -p "${TEST_REPO_DIR}/.claude" "${TEST_REPO_DIR}/.agents"
+  run _run_configure "--non-interactive" "--template-dir" "${ext_toolkit}"
+  [ "${status}" -eq 0 ]
+  [ -f "${TEST_REPO_DIR}/.git/hooks/pre-commit" ]
+  [ -f "${TEST_REPO_DIR}/.claude/skills/auto-git-workflow/SKILL.md" ]
+  [ -f "${TEST_REPO_DIR}/.claude/commands/auto-git-workflow-cmd.md" ]
+  [ -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow/SKILL.md" ]
+  [ -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow-cmd/SKILL.md" ]
+  [ ! -d "${TEST_REPO_DIR}/hooks" ]
+  [ ! -d "${TEST_REPO_DIR}/skill" ]
+  [ ! -d "${TEST_REPO_DIR}/command" ]
+  [ ! -d "${TEST_REPO_DIR}/templates" ]
+}
+
+@test "configure.sh _cleanup_legacy_artifacts prunes root-level staging dirs with CGW markers" {
+  mkdir -p "${TEST_REPO_DIR}/skill" "${TEST_REPO_DIR}/command" "${TEST_REPO_DIR}/templates" "${TEST_REPO_DIR}/hooks"
+  cp -r "${CGW_PROJECT_ROOT}/skill/"* "${TEST_REPO_DIR}/skill/"
+  cp -r "${CGW_PROJECT_ROOT}/command/"* "${TEST_REPO_DIR}/command/"
+  cp "${CGW_PROJECT_ROOT}/templates/markdownlint.json" "${TEST_REPO_DIR}/templates/"
+  cp "${CGW_PROJECT_ROOT}/hooks/pre-commit" "${TEST_REPO_DIR}/hooks/"
+
+  run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Removed legacy staging directory: skill/"* ]]
+  [[ "${output}" == *"Removed legacy staging directory: command/"* ]]
+  [[ "${output}" == *"Removed legacy staging directory: templates/"* ]]
+  [[ "${output}" == *"Removed legacy staging directory: hooks/"* ]]
+  [ ! -d "${TEST_REPO_DIR}/skill" ]
+  [ ! -d "${TEST_REPO_DIR}/command" ]
+  [ ! -d "${TEST_REPO_DIR}/templates" ]
+  [ ! -d "${TEST_REPO_DIR}/hooks" ]
+}
