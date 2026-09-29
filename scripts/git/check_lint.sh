@@ -124,7 +124,7 @@ main() {
     exit 1
   }
 
-  # Handle --modified-only mode (direct output, no section logging)
+  # Handle --modified-only mode (lint pipeline scoped to the modified files; console only)
   # Typecheck is deliberately NOT run here: a typechecker needs whole-program
   # context to resolve types across files, so scoping it to a diff's file
   # list (the way lint/format are scoped below) would misreport errors that
@@ -145,32 +145,18 @@ main() {
     echo "Files: $modified_files"
     echo ""
 
-    get_python_path 2>/dev/null || true
-    local lint_bin
-    lint_bin=$(cgw_resolve_lint_binary "${CGW_LINT_CMD}")
-
+    local -a files=()
+    read -r -a files <<<"${modified_files}"
+    # Same lint pipeline as full mode, scoped to the modified files; section
+    # output goes to the console only (no log file in this mode).
+    local logfile=/dev/null
     local EXIT_CODE=0
-
-    echo "[LINT CHECK]"
-    local lint_check_cmd_args
-    lint_check_cmd_args=$(cgw_strip_path_arg "${CGW_LINT_CHECK_ARGS}")
-    # shellcheck disable=SC2086
-    "${lint_bin}" ${lint_check_cmd_args} $modified_files || EXIT_CODE=1
-
-    if [[ -n "${CGW_FORMAT_CMD}" ]]; then
-      echo ""
-      echo "[FORMAT CHECK]"
-      local fmt_check_cmd_args
-      fmt_check_cmd_args=$(cgw_strip_path_arg "${CGW_FORMAT_CHECK_ARGS}")
-      local format_bin
-      format_bin=$(cgw_resolve_lint_binary "${CGW_FORMAT_CMD}")
-      # Non-blocking: mirrors full-mode (overall_status gates on lint+markdown
-      # only) and CI's shfmt continue-on-error. A format diff is reported but
-      # never gates the exit code -- only the lint step above does.
-      # shellcheck disable=SC2086
-      if ! "${format_bin}" ${fmt_check_cmd_args} $modified_files; then
-        echo "[WARN] Format issues found (non-blocking) -- run fix_lint.sh to auto-format"
-      fi
+    cgw_run_lint_check "${files[@]}" || EXIT_CODE=1
+    # Non-blocking: mirrors full-mode (overall_status gates on lint+markdown
+    # only) and CI's shfmt continue-on-error. A format diff is reported but
+    # never gates the exit code -- only the lint step above does.
+    if ! CGW_FORMAT_CHECK_NONBLOCKING=1 cgw_run_format_check "${files[@]}"; then
+      echo "[WARN] Format issues found (non-blocking) -- run fix_lint.sh to auto-format"
     fi
 
     exit $EXIT_CODE
