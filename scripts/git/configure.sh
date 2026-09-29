@@ -505,6 +505,29 @@ _json_escape_string() {
   printf '%s' "${s}"
 }
 
+# _install_guardrail_core <guardrail_src> <hook_dst>
+#   Both guardrail adapters source _guardrail_core.sh from their own directory,
+#   so the core travels with whichever adapter is installed: copied from next to
+#   the adapter's source into the adapter's destination directory. A missing
+#   core is reported here and caught again by each installer's smoke test (the
+#   adapter fails open without it).
+_install_guardrail_core() {
+  local core_src core_dst
+  core_src="$(dirname "${1}")/_guardrail_core.sh"
+  core_dst="$(dirname "${2}")/_guardrail_core.sh"
+  # A pre-core (self-contained) guardrail, e.g. an older installed copy picked
+  # up by the reconfigure fallback, carries its own classifier and needs none.
+  grep -qF "_guardrail_core.sh" "${1}" 2>/dev/null || return 0
+  if [[ ! -f "${core_src}" ]]; then
+    echo "  [!] ${core_src} not found — the guardrail cannot classify commands without it." >&2
+    echo "      Re-copy hooks/ from the CGW source directory, then re-run: ./scripts/git/configure.sh" >&2
+    return 1
+  fi
+  if [[ "${core_src}" != "${core_dst}" ]]; then
+    cp "${core_src}" "${core_dst}"
+  fi
+}
+
 _install_guardrail_nojq() {
   local settings_json="${1}"
   local hook_cmd="${2}"
@@ -609,6 +632,7 @@ _install_cc_guardrail() {
     cp "${guardrail_src}" "${hook_dst}"
   fi
   chmod +x "${hook_dst}"
+  _install_guardrail_core "${guardrail_src}" "${hook_dst}" || return 1
 
   # Merge into settings.json — jq preferred; Python fallback; manual instructions as last resort
   if ! command -v jq &>/dev/null; then
@@ -871,6 +895,7 @@ _install_agy_guardrail() {
     cp "${guardrail_src}" "${hook_dst}"
   fi
   chmod +x "${hook_dst}"
+  _install_guardrail_core "${guardrail_src}" "${hook_dst}" || return 1
 
   if [[ -f "${guardrail_cmd_src:-}" && "${guardrail_cmd_src}" != "${hook_cmd_dst}" ]]; then
     cp "${guardrail_cmd_src}" "${hook_cmd_dst}"

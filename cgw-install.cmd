@@ -150,6 +150,7 @@ if not exist "!CGW_DIR!\hooks\pre-rebase"                      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\cc-block-dangerous-git.sh"       set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\agy-block-dangerous-git.sh"      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\hooks\agy-block-dangerous-git.cmd"     set "SOURCE_OK=0"
+if not exist "!CGW_DIR!\hooks\_guardrail_core.sh"              set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\skill\SKILL.md"                        set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\command\auto-git-workflow-cmd.md"      set "SOURCE_OK=0"
 if not exist "!CGW_DIR!\templates\markdownlint.json"           set "SOURCE_OK=0"
@@ -161,6 +162,7 @@ echo   [FAIL] PI-04  CGW source missing required files
 echo          Expected: scripts\git\configure.sh, hooks\pre-commit, hooks\pre-push,
 echo                    hooks\pre-rebase, hooks\cc-block-dangerous-git.sh,
 echo                    hooks\agy-block-dangerous-git.sh, hooks\agy-block-dangerous-git.cmd,
+echo                    hooks\_guardrail_core.sh,
 echo                    skill\SKILL.md, command\auto-git-workflow-cmd.md,
 echo                    templates\markdownlint.json
 set "CHECKS_PASSED=0"
@@ -227,7 +229,7 @@ echo --- Installation Summary ---
 echo.
 echo(  Will copy into: !TARGET_DIR!
 echo     scripts\git\    (shell scripts)
-echo     hooks\          (pre-commit, pre-push, pre-rebase, cc-block-dangerous-git.sh, agy-block-dangerous-git.sh/.cmd)
+echo     hooks\          (pre-commit, pre-push, pre-rebase, cc-block-dangerous-git.sh, agy-block-dangerous-git.sh/.cmd, _guardrail_core.sh)
 echo     skill\          (agent skill source)
 echo     command\        (slash command source)
 echo     templates\      (markdown lint baseline config)
@@ -318,7 +320,9 @@ copy /y "!CGW_DIR!\hooks\agy-block-dangerous-git.sh" "!TARGET_DIR!\hooks\agy-blo
 if errorlevel 1 goto :cp_hooks_fail
 copy /y "!CGW_DIR!\hooks\agy-block-dangerous-git.cmd" "!TARGET_DIR!\hooks\agy-block-dangerous-git.cmd" >nul
 if errorlevel 1 goto :cp_hooks_fail
-echo   [OK] Copied hooks\ templates (pre-commit, pre-push, pre-rebase, cc-block-dangerous-git.sh, agy-block-dangerous-git.sh, agy-block-dangerous-git.cmd)
+copy /y "!CGW_DIR!\hooks\_guardrail_core.sh" "!TARGET_DIR!\hooks\_guardrail_core.sh" >nul
+if errorlevel 1 goto :cp_hooks_fail
+echo   [OK] Copied hooks\ templates (pre-commit, pre-push, pre-rebase, cc-block-dangerous-git.sh, agy-block-dangerous-git.sh, agy-block-dangerous-git.cmd, _guardrail_core.sh)
 goto :cp_hooks_done
 :cp_hooks_fail
 echo   [ERR] Failed to copy hook templates from hooks\

@@ -457,3 +457,44 @@ JSON_EOF
   [ "$(jq '[.hooks.PreToolUse[].hooks[].command] | length' "${settings_json}")" -eq 1 ]
   [ "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "${settings_json}")" == "${cmd}" ]
 }
+
+@test "install copies the shared guardrail core next to the adapter and the smoke test blocks" {
+  _require_jq
+  mkdir -p "${TEST_REPO_DIR}/.claude"
+  run _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.claude/hooks/_guardrail_core.sh" ]
+  [[ "${output}" == *"Smoke test passed: registered command blocks raw git commit"* ]]
+}
+
+@test "adapter without its core fails open with a warning" {
+  _require_jq
+  local lone="${TEST_REPO_DIR}/lone"
+  mkdir -p "${lone}"
+  cp "${GUARDRAIL_SCRIPT}" "${lone}/"
+  run bash "${lone}/cc-block-dangerous-git.sh" <<<'{"tool_input":{"command":"git commit -m x"}}'
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"_guardrail_core.sh not found"* ]]
+}
+
+@test "reconfigure keeps working from a pre-core installed guardrail when hooks/ is gone" {
+  _require_jq
+  # Upgrade path: the staging hooks/ dir was cleaned up after an older install,
+  # so configure.sh falls back to the installed, self-contained script, which
+  # has no core next to it and does not need one.
+  local fake_cgw="${TEST_REPO_DIR}/fake_cgw"
+  mkdir -p "${fake_cgw}/scripts/git" "${TEST_REPO_DIR}/.claude/hooks"
+  printf '#!/usr/bin/env bash\ncat >/dev/null\necho "BLOCKED: legacy" >&2\nexit 2\n' \
+    >"${TEST_REPO_DIR}/.claude/hooks/cc-block-dangerous-git.sh"
+  local cfg="${CGW_PROJECT_ROOT}/scripts/git/configure.sh"
+  run bash -c "
+    SCRIPT_DIR='${fake_cgw}/scripts/git'
+    PROJECT_ROOT='${TEST_REPO_DIR}'
+    $(extract_shell_function "${cfg}" _json_escape_string)
+    $(extract_shell_function "${cfg}" _install_guardrail_core)
+    $(extract_shell_function "${cfg}" _install_guardrail_nojq)
+    $(extract_shell_function "${cfg}" _install_cc_guardrail)
+    _install_cc_guardrail local
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"_guardrail_core.sh not found"* ]]
+}

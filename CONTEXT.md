@@ -178,6 +178,21 @@ The shared module for all binary yes/no confirmation prompts in CGW scripts. Con
 
 ---
 
+## guardrail
+
+An agent-harness PreToolUse hook that inspects each shell command an agent is about to run and blocks the raw git operations CGW exists to wrap (`git commit`, `git push --force`, `git reset --hard`, `--no-verify`, …), redirecting the agent to the matching CGW script. Defense-in-depth, not a sandbox: the git hooks remain the enforcement layer, and every guardrail fails open (with a warning) when it cannot classify — jq missing, core missing, unparseable input.
+
+**Implementation seam**: `cgw_guardrail_classify <command>` in `hooks/_guardrail_core.sh` — pure classifier (no stdin, no jq, no exit); returns 0 to allow, or 1 with the matched pattern and redirect guidance on stdout. Each harness has a thin adapter that owns only stdin parsing and that harness's allow/deny protocol, and sources the core from its own directory:
+
+- `hooks/cc-block-dangerous-git.sh` — Claude Code (`tool_input` payload; block = exit 2 + stderr).
+- `hooks/agy-block-dangerous-git.sh` — Antigravity (`toolCall` payload; block = `{"decision":"deny"}` on stdout), reached on Windows through the `hooks/agy-block-dangerous-git.cmd` runner.
+
+Both adapters currently accept both payload shapes; they differ only in which shape wins when a payload carries both, and in the response to an unrecognized shape.
+
+**Callers**: the two adapters. Installed (adapter + core, side by side) by `configure.sh` (`_install_cc_guardrail`, `_install_agy_guardrail`, via `_install_guardrail_core`) and staged by `cgw-install.cmd` / `cgw-batch-install.cmd`. Tests: `tests/integration/guardrail_hosts.bats` holds the shared verdict table run through both adapters and both payload shapes.
+
+---
+
 ## remote status
 
 The shared module for querying remote reachability, remote branch existence, and commit distance between two refs. Concentrates a seam previously scattered across ~10 inline `git rev-list --count` and `git ls-remote` call sites in 6+ scripts, several of which were untested (notably `repo_health.sh`).

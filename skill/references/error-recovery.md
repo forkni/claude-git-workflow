@@ -42,7 +42,7 @@ unset SKIP_CGW_GUARDRAIL
 **Permanent uninstall:**
 
 1. Remove the PreToolUse entry from `.claude/settings.json` (delete the object whose `command` contains `cc-block-dangerous-git`)
-2. Delete `.claude/hooks/cc-block-dangerous-git.sh`
+2. Delete `.claude/hooks/cc-block-dangerous-git.sh` and the shared classifier next to it, `.claude/hooks/_guardrail_core.sh`
 
 **Reinstall:** re-run `./scripts/git/configure.sh` and answer yes to the guardrail prompt.
 

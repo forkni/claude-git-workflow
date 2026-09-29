@@ -282,3 +282,22 @@ EOF
   [ ! -f "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.sh" ]
   [ ! -f "${TEST_REPO_DIR}/.agents/hooks.json" ]
 }
+
+@test "install copies the shared guardrail core next to the Antigravity adapter and the smoke test denies" {
+  _require_jq
+  mkdir -p "${TEST_REPO_DIR}/.agents"
+  run _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.agents/hooks/_guardrail_core.sh" ]
+  [[ "${output}" == *"Smoke test passed: registered Antigravity guardrail blocks raw git commit"* ]]
+}
+
+@test "Antigravity adapter without its core fails open with a warning and decision allow" {
+  _require_jq
+  local lone="${TEST_REPO_DIR}/lone"
+  mkdir -p "${lone}"
+  cp "${GUARDRAIL_SCRIPT}" "${lone}/"
+  run bash "${lone}/agy-block-dangerous-git.sh" <<<'{"toolCall":{"args":{"CommandLine":"git commit -m x"}}}'
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"_guardrail_core.sh not found"* ]]
+  [[ "${output}" =~ \"decision\":[[:space:]]*\"allow\" ]]
+}
