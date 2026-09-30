@@ -203,6 +203,8 @@ CGW_ALLOW_REBASE_PUBLISHED|0|bool|fill|conf
 CGW_AUTO_REMOVE_INDEX_LOCK|1|bool|fill|conf
 CGW_INDEX_LOCK_MAX_AGE_SECONDS|30|int|fill|conf
 CGW_INDEX_LOCK_WAIT_SECONDS|10|int|fill|conf
+CGW_LOCK_RETRY_ATTEMPTS|3|int|fill|conf
+CGW_LOCK_RETRY_DELAY|1|int|fill|conf
 CGW_NON_INTERACTIVE|0|bool|fill|env
 CGW_NO_VENV|0|bool|fill|env
 CGW_STAGED_ONLY|0|bool|fill|env'
@@ -497,6 +499,11 @@ CGW_PROTECTED_BRANCHES="${CGW_PROTECTED_BRANCHES:-${CGW_TARGET_BRANCH}}"
 # Locks newer than MAX_AGE are given WAIT_SECONDS to clear before removal.
 #
 # Set CGW_AUTO_REMOVE_INDEX_LOCK=0 to disable auto-removal (warn-only mode).
+#
+# --- Index lock race retry ---
+# CGW_LOCK_RETRY_ATTEMPTS: number of retry attempts for mutating git commands
+# when encountering an in-flight index.lock race or transient collision (default 3).
+# CGW_LOCK_RETRY_DELAY: base delay in seconds between retries with backoff (default 1).
 
 # Callers source this file under `set -e`: always finish on a zero status,
 # whatever the last conditional above evaluated to.

@@ -422,3 +422,11 @@ CGW_CI_REQUIRED_WORKFLOWS=""
 # When a fresh lock is present, poll up to this many seconds for it to clear
 # before escalating. Set to 0 to skip waiting.
 # CGW_INDEX_LOCK_WAIT_SECONDS=10
+#
+# Number of retry attempts when a git command encounters an in-flight
+# index.lock race or transient collision (e.g. background watcher or AV scan).
+# CGW_LOCK_RETRY_ATTEMPTS=3
+#
+# Base delay in seconds between lock retry attempts (uses backoff).
+# CGW_LOCK_RETRY_DELAY=1
+

@@ -335,6 +335,8 @@ main() {
     merge_extra_args+=("-Xignore-space-change")
   fi
 
+  ensure_no_stale_index_lock || exit 1
+
   # shellcheck disable=SC2068  # Intentional: empty array expands to zero words (${arr[@]+...} is Bash 3.x portable)
   if run_git_with_logging "GIT MERGE SOURCE" "$logfile" ${merge_cfg_args[@]+"${merge_cfg_args[@]}"} merge "${src_branch}" --no-ff -m "Merge ${src_branch} into ${tgt_branch}" ${merge_extra_args[@]+"${merge_extra_args[@]}"}; then
     echo "[OK] Merge completed without conflicts" | tee -a "$logfile"
@@ -360,6 +362,7 @@ main() {
     # [7/7] Complete the merge
     log_section_start "GIT COMMIT" "$logfile"
     if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+      ensure_no_stale_index_lock || exit 1
       if run_git_with_logging "GIT COMMIT MERGE" "$logfile" commit --no-edit; then
         echo "[OK] Merge commit completed" | tee -a "$logfile"
       else

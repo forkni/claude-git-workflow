@@ -1647,4 +1647,27 @@ TABLE
   [[ "${output}" == *"tracked changes were in local-only files and were excluded"* ]]
 }
 
+# ── Transient index.lock collision resilience ─────────────────────────────────
+
+@test "commit_enhanced.sh survives transient index.lock collision and succeeds" {
+  echo "content" > "${TEST_REPO_DIR}/retry_test.txt"
+  git -C "${TEST_REPO_DIR}" add retry_test.txt
+
+  # Inject a transient lock that disappears after 0.5s
+  (
+    sleep 0.2
+    touch "${TEST_REPO_DIR}/.git/index.lock" 2>/dev/null || true
+    sleep 0.5
+    rm -f "${TEST_REPO_DIR}/.git/index.lock" 2>/dev/null || true
+  ) &
+  local bg_pid=$!
+
+  run _run_commit "\"feat: commit under transient lock\""
+  wait "${bg_pid}" 2>/dev/null || true
+
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+}
+
+
 

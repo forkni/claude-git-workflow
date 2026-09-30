@@ -279,12 +279,36 @@ run_git_with_logging() {
 
   echo "Command: git $*" | tee -a "$log_path"
 
-  if [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]]; then
-    GIT_OUTPUT=$(GIT_TERMINAL_PROMPT="${GIT_TERMINAL_PROMPT:-0}" git "$@" 2>&1)
-  else
-    GIT_OUTPUT=$(git "$@" 2>&1)
-  fi
-  GIT_EXIT_CODE=$?
+  local max_attempts="${CGW_LOCK_RETRY_ATTEMPTS:-3}"
+  local retry_delay="${CGW_LOCK_RETRY_DELAY:-1}"
+  local attempt=1
+
+  while ((attempt <= max_attempts)); do
+    ensure_no_stale_index_lock || {
+      GIT_EXIT_CODE=1
+      GIT_OUTPUT="[cgw-lock] Refused due to active operation or stale lock"
+      break
+    }
+
+    if [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]]; then
+      GIT_OUTPUT=$(GIT_TERMINAL_PROMPT="${GIT_TERMINAL_PROMPT:-0}" git "$@" 2>&1)
+    else
+      GIT_OUTPUT=$(git "$@" 2>&1)
+    fi
+    GIT_EXIT_CODE=$?
+
+    if [[ ${GIT_EXIT_CODE} -ne 0 ]] && [[ "${GIT_OUTPUT}" =~ (index\.lock.*(File exists|Permission denied)|Unable to create.*index\.lock) ]]; then
+      if ((attempt < max_attempts)); then
+        local retry_msg="[cgw-lock] Index lock collision during 'git ${1:-command}' (attempt ${attempt}/${max_attempts}). Retrying in $((attempt * retry_delay))s..."
+        err_tee "${retry_msg}"
+        echo "${retry_msg}" >> "$log_path"
+        sleep $((attempt * retry_delay))
+        ((attempt++))
+        continue
+      fi
+    fi
+    break
+  done
 
   if [[ -n "$GIT_OUTPUT" ]]; then
     echo "$GIT_OUTPUT" | tee -a "$log_path"
@@ -543,24 +567,6 @@ ensure_no_stale_index_lock() {
   local lock_file="${git_dir}/index.lock"
   [[ -f "${lock_file}" ]] || return 0 # fast path: nothing to do
 
-  # Refuse if a git operation is actively in progress — removing the lock
-  # while rebase/merge/cherry-pick is paused (e.g. editor open) would corrupt it.
-  local -a active_op_sentinels=(
-    "${git_dir}/rebase-merge"
-    "${git_dir}/rebase-apply"
-    "${git_dir}/MERGE_HEAD"
-    "${git_dir}/CHERRY_PICK_HEAD"
-    "${git_dir}/REVERT_HEAD"
-    "${git_dir}/BISECT_LOG"
-  )
-  local sentinel
-  for sentinel in "${active_op_sentinels[@]}"; do
-    if [[ -e "${sentinel}" ]]; then
-      err_tee "[cgw-lock] REFUSED: git operation in progress (${sentinel##*/}). Resolve or abort it first."
-      return 1
-    fi
-  done
-
   # Compute lock age in seconds. Clamp negative values (clock skew) to 0.
   local now mtime age
   now="$(date +%s)"
@@ -595,6 +601,24 @@ ensure_no_stale_index_lock() {
     fi
   fi
 
+  # Refuse if a git operation is actively in progress — removing the lock
+  # while rebase/merge/cherry-pick is paused (e.g. editor open) would corrupt it.
+  local -a active_op_sentinels=(
+    "${git_dir}/rebase-merge"
+    "${git_dir}/rebase-apply"
+    "${git_dir}/MERGE_HEAD"
+    "${git_dir}/CHERRY_PICK_HEAD"
+    "${git_dir}/REVERT_HEAD"
+    "${git_dir}/BISECT_LOG"
+  )
+  local sentinel
+  for sentinel in "${active_op_sentinels[@]}"; do
+    if [[ -e "${sentinel}" ]]; then
+      err_tee "[cgw-lock] REFUSED: git operation in progress (${sentinel##*/}). Resolve or abort it first."
+      return 1
+    fi
+  done
+
   # Lock is stale. Remove it (or refuse if auto-remove is disabled).
   if [[ "${auto_remove}" != "1" ]]; then
     err_tee "[cgw-lock] Stale index.lock detected (age ${age}s). CGW_AUTO_REMOVE_INDEX_LOCK=0 — not removing."
@@ -608,6 +632,75 @@ ensure_no_stale_index_lock() {
     return 1
   fi
   return 0
+}
+
+# cgw_run_with_lock_retry - Execute a mutating git command with automatic
+# index.lock detection, waiting, and transient retry.
+#
+# Arguments:
+#   $@ - Full git command to execute (e.g. git commit -m "...")
+#
+# Behavior:
+#   1. Runs ensure_no_stale_index_lock before each attempt.
+#   2. Executes the command, capturing stderr to a temporary file.
+#   3. If the command succeeds, replays any captured stderr and returns 0.
+#   4. If the command fails specifically with an index.lock collision
+#      ("index.lock.*File exists" or "Unable to create.*index.lock"),
+#      waits with backoff and retries up to CGW_LOCK_RETRY_ATTEMPTS (default: 3).
+#   5. If retries are exhausted or the error is unrelated, prints stderr
+#      and returns the command's exit code.
+cgw_run_with_lock_retry() {
+  local max_attempts="${CGW_LOCK_RETRY_ATTEMPTS:-3}"
+  local retry_delay="${CGW_LOCK_RETRY_DELAY:-1}"
+  local attempt=1
+  local exit_code=0
+  local stderr_file
+  stderr_file="$(mktemp "${TMPDIR:-/tmp}/cgw_lock_retry.XXXXXX" 2>/dev/null || echo "${PROJECT_ROOT:-.}/.git/cgw_lock_retry.$$.tmp")"
+
+  local op_name="${1:-command}"
+  if [[ "${op_name}" == "git" && -n "${2:-}" ]]; then
+    op_name="git ${2}"
+  fi
+
+  while ((attempt <= max_attempts)); do
+    ensure_no_stale_index_lock || {
+      local lock_err=$?
+      rm -f "${stderr_file}" 2>/dev/null || true
+      return "${lock_err}"
+    }
+
+    if "$@" 2>"${stderr_file}"; then
+      if [[ -s "${stderr_file}" ]]; then
+        cat "${stderr_file}" >&2
+      fi
+      rm -f "${stderr_file}" 2>/dev/null || true
+      return 0
+    else
+      exit_code=$?
+      local err_content
+      err_content="$(cat "${stderr_file}" 2>/dev/null || true)"
+
+      # Check if error is specifically an index.lock collision
+      if [[ "${err_content}" =~ (index\.lock.*(File exists|Permission denied)|Unable to create.*index\.lock) ]]; then
+        if ((attempt < max_attempts)); then
+          err_tee "[cgw-lock] Index lock collision during '${op_name}' (attempt ${attempt}/${max_attempts}). Retrying in $((attempt * retry_delay))s..."
+          sleep $((attempt * retry_delay))
+          ((attempt++))
+          continue
+        fi
+      fi
+
+      # Unrelated error or retries exhausted
+      if [[ -n "${err_content}" ]]; then
+        printf '%s\n' "${err_content}" >&2
+      fi
+      rm -f "${stderr_file}" 2>/dev/null || true
+      return "${exit_code}"
+    fi
+  done
+
+  rm -f "${stderr_file}" 2>/dev/null || true
+  return "${exit_code}"
 }
 
 # cgw_rebase_in_progress — git-dir/worktree-safe rebase-in-progress check.

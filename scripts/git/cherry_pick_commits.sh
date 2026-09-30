@@ -355,6 +355,7 @@ main() {
   if [[ ${#only_paths[@]} -gt 0 ]]; then
     # Partial pick: apply without committing, drop unselected paths, commit
     # the rest under the original message plus a partial-pick note.
+    ensure_no_stale_index_lock || exit 1
     if ! run_git_with_logging "GIT CHERRY-PICK NO-COMMIT" "$logfile" cherry-pick --no-commit "${commit_hash}"; then
       log_section_end "GIT CHERRY-PICK" "$logfile" "1"
       echo "" | tee -a "$logfile"
@@ -397,6 +398,7 @@ main() {
     local _orig_msg _short_hash
     _orig_msg=$(git log -1 --format=%B "${commit_hash}")
     _short_hash=$(git rev-parse --short "${commit_hash}")
+    ensure_no_stale_index_lock || exit 1
     if ! run_git_with_logging "GIT COMMIT PARTIAL PICK" "$logfile" commit \
       -m "${_orig_msg}" \
       -m "(partial cherry-pick of ${_short_hash} -- only: ${only_paths[*]})"; then
@@ -404,7 +406,9 @@ main() {
       err_tee "[FAIL] Committing the partial pick failed -- check output above"
       exit 1
     fi
-  elif ! run_git_with_logging "GIT CHERRY-PICK COMMIT" "$logfile" cherry-pick "${commit_hash}"; then
+  else
+    ensure_no_stale_index_lock || exit 1
+    if ! run_git_with_logging "GIT CHERRY-PICK COMMIT" "$logfile" cherry-pick "${commit_hash}"; then
     log_section_end "GIT CHERRY-PICK" "$logfile" "1"
 
     # Detect redundant/empty cherry-pick (commit was already applied on this branch)
@@ -430,6 +434,7 @@ main() {
     echo "  git cherry-pick --continue" | tee -a "$logfile"
     echo "Backup available: git reset --hard ${backup_tag}" | tee -a "$logfile"
     exit 1
+  fi
   fi
 
   trap - EXIT INT TERM
