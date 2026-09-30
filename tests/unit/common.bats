@@ -3043,4 +3043,3 @@ UU b.py
     cgw_run_format_check --mode plain --result-var fmt_res || true
   [ "${fmt_res}" = "Format:WARN:0" ]
 }
-

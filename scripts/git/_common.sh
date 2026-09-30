@@ -2398,4 +2398,3 @@ cgw_require_clean_tree() {
   esac
   return 0
 }
-
