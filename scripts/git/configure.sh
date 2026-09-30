@@ -1107,8 +1107,7 @@ _cleanup_legacy_artifacts() {
         [[ ! -e "${f}" ]] && continue
         b="$(basename "${f}")"
         case "${b}" in
-          markdownlint.json|markdownlint-cli2.jsonc)
-            ;;
+          markdownlint.json | markdownlint-cli2.jsonc) ;;
           *)
             foreign_files=1
             ;;
@@ -1131,8 +1130,7 @@ _cleanup_legacy_artifacts() {
         [[ ! -e "${f}" ]] && continue
         b="$(basename "${f}")"
         case "${b}" in
-          pre-commit|pre-push|pre-rebase|cc-block-dangerous-git.sh|agy-block-dangerous-git.sh|agy-block-dangerous-git.cmd|_guardrail_core.sh)
-            ;;
+          pre-commit | pre-push | pre-rebase | cc-block-dangerous-git.sh | agy-block-dangerous-git.sh | agy-block-dangerous-git.cmd | _guardrail_core.sh) ;;
           *)
             foreign_files=1
             ;;
@@ -1143,8 +1141,8 @@ _cleanup_legacy_artifacts() {
         echo "  [OK] Removed legacy staging directory: hooks/"
       else
         rm -f "${PROJECT_ROOT}/hooks/pre-commit" "${PROJECT_ROOT}/hooks/pre-push" "${PROJECT_ROOT}/hooks/pre-rebase" \
-              "${PROJECT_ROOT}/hooks/cc-block-dangerous-git.sh" "${PROJECT_ROOT}/hooks/agy-block-dangerous-git.sh" \
-              "${PROJECT_ROOT}/hooks/agy-block-dangerous-git.cmd" "${PROJECT_ROOT}/hooks/_guardrail_core.sh"
+          "${PROJECT_ROOT}/hooks/cc-block-dangerous-git.sh" "${PROJECT_ROOT}/hooks/agy-block-dangerous-git.sh" \
+          "${PROJECT_ROOT}/hooks/agy-block-dangerous-git.cmd" "${PROJECT_ROOT}/hooks/_guardrail_core.sh"
         echo "  [OK] Removed legacy staging CGW hook files from hooks/"
       fi
     fi

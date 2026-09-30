@@ -49,7 +49,7 @@ cd your-project && ./scripts/git/configure.sh
 2. **Confirmation** — In interactive mode, shows detected values and lets you override each one. Press Enter to accept defaults.
 3. **Config generation** — Writes `.cgw.conf` (git-ignored), which tells all CGW scripts about your branches, lint tool, and local-only files.
 4. **Hook installation** — Copies the pre-commit, pre-push, and pre-rebase hook templates into `.githooks/`, then into `.git/hooks/`. Hooks read configuration from `.cgw.conf` at run time, so any changes to `CGW_LOCAL_FILES`, `CGW_EXTRA_PREFIXES`, `CGW_FREEFORM_MESSAGE_BRANCHES`, or `CGW_ALLOW_REBASE_PUBLISHED` take effect immediately without re-running this step.
-5. **Skill installation** — Copies the Claude Code skill and slash command definition into `.claude/` (project-local) or `~/.claude/` (global, with `--global`).
+5. **Skill installation** — Copies skills, slash commands, and PreToolUse guardrails for Claude Code (`.claude/` or `~/.claude/`) and Antigravity Agents (`.agents/` or `~/.gemini/config/`).
 
 ---
 
@@ -58,12 +58,13 @@ cd your-project && ./scripts/git/configure.sh
 | Flag | Effect |
 |------|--------|
 | *(none)* | Interactive: shows detected values, prompts to confirm or override |
+| `--template-dir <dir>` | Path to CGW source toolkit providing asset templates (decouples template sourcing from project root) |
 | `--non-interactive` | Accept all auto-detected defaults without prompting |
 | `--reconfigure` | Overwrite an existing `.cgw.conf` (re-run detection + confirmation); the previous file is saved to `.cgw.conf.bak` first |
 | `--skip-hooks` | Skip git pre-commit/pre-push/pre-rebase hook installation |
 | `--skip-skill` | Skip all skill installations (both Claude Code and Antigravity) |
 | `--skip-claude` | Skip Claude Code skill, command, and guardrail |
-| `--skip-antigravity` | Skip Antigravity skill and guardrail |
+| `--skip-antigravity` | Skip Antigravity skill, command, and guardrail |
 | `--skip-cc-guardrail` | Skip Claude Code PreToolUse guardrail |
 | `--skip-agy-skill` | Skip Antigravity skill installation |
 | `--skip-agy-guardrail` | Skip Antigravity PreToolUse guardrail |
@@ -168,9 +169,15 @@ If that also fails, check that `.git/hooks/` is writable by your user.
 
 ### "Skill template not found"
 
-The `skill/` or `command/` directory isn't where configure.sh expects it.
+The `skill/` or `command/` directory isn't found relative to the project root.
 
-**Fix:** Copy both directories from the CGW source repo into your project root:
+**Fix (recommended):** Pass `--template-dir` pointing to your CGW clone:
+
+```bash
+./scripts/git/configure.sh --template-dir /path/to/claude-git-workflow
+```
+
+Or copy staging directories directly into your project root:
 
 ```bash
 cp -r /path/to/claude-git-workflow/skill/ ./skill/
@@ -223,11 +230,21 @@ rm -f .cgw.conf
 # Remove Claude Code integration (if installed locally)
 rm -rf .claude/skills/auto-git-workflow/
 rm -f .claude/commands/auto-git-workflow-cmd.md
+
+# Remove Antigravity Agents integration (if installed locally)
+rm -rf .agents/skills/auto-git-workflow/
+rm -rf .agents/skills/auto-git-workflow-cmd/
+rm -f .agents/hooks/agy-block-dangerous-git.cmd .agents/hooks/agy-block-dangerous-git.sh
 ```
 
-To remove a globally-installed skill:
+To remove globally-installed skills:
 
 ```bash
+# Claude Code global removal
 rm -rf ~/.claude/skills/auto-git-workflow/
 rm -f ~/.claude/commands/auto-git-workflow-cmd.md
+
+# Antigravity Agents global removal
+rm -rf ~/.gemini/config/skills/auto-git-workflow/
+rm -rf ~/.gemini/config/skills/auto-git-workflow-cmd/
 ```

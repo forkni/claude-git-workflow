@@ -98,6 +98,10 @@ main() {
   [[ "${CGW_SKIP_TYPECHECK:-0}" == "1" ]] && skip_typecheck=1
   [[ "${CGW_NO_VENV:-0}" == "1" ]] && no_venv=1
 
+  if [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]]; then
+    export GIT_TERMINAL_PROMPT="${GIT_TERMINAL_PROMPT:-0}"
+  fi
+
   {
     echo "========================================="
     echo "Push Validated Log"

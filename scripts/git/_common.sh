@@ -279,7 +279,11 @@ run_git_with_logging() {
 
   echo "Command: git $*" | tee -a "$log_path"
 
-  GIT_OUTPUT=$(git "$@" 2>&1)
+  if [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]]; then
+    GIT_OUTPUT=$(GIT_TERMINAL_PROMPT="${GIT_TERMINAL_PROMPT:-0}" git "$@" 2>&1)
+  else
+    GIT_OUTPUT=$(git "$@" 2>&1)
+  fi
   GIT_EXIT_CODE=$?
 
   if [[ -n "$GIT_OUTPUT" ]]; then
@@ -1125,7 +1129,6 @@ cgw_modified_files_for_lint() {
   read -r -a lint_exts <<<"${CGW_LINT_EXTENSIONS:-*.py}"
   git diff --name-only --diff-filter=ACMR HEAD -- "${lint_exts[@]}"
 }
-
 
 # cgw_lint_plan <check|fix> [flags...]
 #   Pure query returning the execution plan for the lint pipeline.

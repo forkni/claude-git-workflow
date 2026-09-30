@@ -99,7 +99,7 @@ cp cgw.conf.example .cgw.conf
 | `CGW_CLEANUP_TESTS` | `0` | Remove `tests/` from target if gitignored |
 | `CGW_MERGE_MODE` | `direct` | Promotion mode: `direct` (merge locally) or `pr` (create GitHub PR) |
 | `CGW_PROTECTED_BRANCHES` | *(`CGW_TARGET_BRANCH`)* | Branches requiring `--force` for force-push (space-separated); defaults to the target branch |
-| `CGW_MERGE_CONFLICT_STYLE` | `` | Set to `diff3` to show base version in conflict markers |
+| `CGW_MERGE_CONFLICT_STYLE` | `` | Conflict marker style: `diff3` (three-way), `zdiff3` (three-way with non-conflicting hunks collapsed, git >= 2.35), or `merge` / empty (git default two-way) |
 | `CGW_MERGE_IGNORE_WHITESPACE` | `0` | Set to `1` to ignore whitespace differences during merge |
 | `CGW_SIGN_COMMITS` | `0` | Set to `1` to GPG/SSH-sign all commits (`git commit -S`). Overridable per-call with `--sign`/`--no-sign`. |
 | `CGW_SIGN_TAGS` | `0` | Set to `1` to create signed annotated tags (`git tag -s`). Overridable per-call with `--sign`/`--no-sign`. |
