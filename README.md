@@ -227,8 +227,8 @@ Contributions, bug reports, and suggestions are welcome!
 
 ### Development & Testing
 
-1. Ensure prerequisites are installed: `bash 4.0+`, `git`, `bats-core` (v1.13.0), `bats-support`, `bats-assert`, `shellcheck`, and `shfmt`.
-2. Run the test suite:
+- Ensure prerequisites are installed: `bash 4.0+`, `git`, `bats-core` (v1.13.0), `bats-support`, `bats-assert`, `shellcheck`, and `shfmt`.
+- Run the test suite:
 
 ```bash
 # Run unit and integration tests in parallel
@@ -238,7 +238,7 @@ tests/run.sh
 CGW_RUN_SLOW=1 tests/run.sh
 ```
 
-3. Run static analysis and formatting checks:
+- Run static analysis and formatting checks:
 
 ```bash
 # ShellCheck static analysis
