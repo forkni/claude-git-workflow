@@ -35,6 +35,13 @@ that target another project with its own message style (e.g. an upstream PR bran
 this check entirely via `CGW_FREEFORM_MESSAGE_BRANCHES="up/*"`. The source, target, and any
 protected branch are never exempted this way, even by a glob as broad as `"*"`.
 
+### Subject Line Length Rules (50/72 Rule)
+
+`commit_enhanced.sh` enforces Pro Git commit guidelines on the subject line (the text following the prefix):
+
+- **Soft length (50 characters)**: Subjects exceeding `CGW_COMMIT_SUBJECT_SOFT_LEN=50` display an advisory tip.
+- **Hard length (72 characters)**: Subjects exceeding `CGW_COMMIT_SUBJECT_HARD_LEN=72` block the commit (prompting confirmation in interactive mode or aborting non-interactively) when `CGW_ENFORCE_SUBJECT_LENGTH=1`. Set `CGW_ENFORCE_SUBJECT_LENGTH=0` to make this advisory-only.
+
 ---
 
 ## Common Operations
@@ -48,7 +55,7 @@ protected branch are never exempted this way, even by a glob as broad as `"*"`.
 # Skip .venv (use system lint tool)
 ./scripts/git/commit_enhanced.sh --no-venv "feat: add feature"
 
-# Non-interactive (CI/CD, Claude Code)
+# Non-interactive (CI/CD, Claude Code, Antigravity)
 ./scripts/git/commit_enhanced.sh --non-interactive "feat: add feature"
 
 # Stage only specific paths, then commit
@@ -75,6 +82,10 @@ protected branch are never exempted this way, even by a glob as broad as `"*"`.
 - Pre-staged files exist + unstaged changes exist → commits pre-staged only (warns about skipped files). Use `--all` to override.
 - Nothing pre-staged → auto-stages all tracked changes (legacy behaviour).
 - `--only <path>` → resets index, stages listed paths only.
+
+**Staged-Blob Congruence Guard:**
+
+`commit_enhanced.sh` validates code and markdown on the working tree, but `git commit` records index blobs. If a staged file's blob diverges from the disk content that was validated (e.g. from an un-staged format auto-fix or partial `git add -p`), the congruence guard fails closed (`CGW_ALLOW_STAGED_DIVERGENCE=0`) rather than committing unvalidated code. Set `CGW_ALLOW_STAGED_DIVERGENCE=1` only if you explicitly intend to record divergent staged blobs. See [ADR-0001](adr/0001-partial-staging-fails-closed.md).
 
 ### Merge to target branch (direct)
 
@@ -127,6 +138,10 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use PRs by default.
 ./scripts/git/push_validated.sh --no-venv     # use system lint tool (no .venv)
 ./scripts/git/push_validated.sh --branch hotfix/1.2  # push a different branch
 ```
+
+**Post-Push CI Verification Gate:**
+
+When operating through an AI agent harness (Claude Code or Antigravity), every push performed triggers the CI verification gate (`CGW_CI_VERIFY=1`). The agent automatically subscribes to and monitors triggered GitHub Actions or Charlie CI runs until they finish, automatically diagnosing, fixing, and retrying failures up to `CGW_CI_MAX_FIX_ROUNDS=3`. See [CI Setup](ci-setup.md#ci-verification-gate).
 
 ### Sync with remote
 
