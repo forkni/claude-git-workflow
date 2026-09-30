@@ -761,7 +761,7 @@ main() {
     local merge_msg_path
     merge_msg_path="$(git rev-parse --git-path MERGE_MSG 2>/dev/null)"
     if [[ -n "${merge_msg_path}" ]] && [[ -f "${merge_msg_path}" ]]; then
-      commit_msg="$(git stripspace --strip-comments < "${merge_msg_path}")"
+      commit_msg="$(git stripspace --strip-comments <"${merge_msg_path}")"
     fi
     if [[ -n "${commit_msg}" ]]; then
       echo "  [i] Merge in progress; using git's prepared merge message"

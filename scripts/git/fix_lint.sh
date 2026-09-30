@@ -85,10 +85,22 @@ main() {
   local _step _act _rsn
   while IFS=: read -r _step _act _rsn; do
     case "$_step" in
-      lint) lint_act="$_act"; lint_reason="$_rsn" ;;
-      format) format_act="$_act"; format_reason="$_rsn" ;;
-      typecheck) tc_act="$_act"; tc_reason="$_rsn" ;;
-      markdown) md_act="$_act"; md_reason="$_rsn" ;;
+      lint)
+        lint_act="$_act"
+        lint_reason="$_rsn"
+        ;;
+      format)
+        format_act="$_act"
+        format_reason="$_rsn"
+        ;;
+      typecheck)
+        tc_act="$_act"
+        tc_reason="$_rsn"
+        ;;
+      markdown)
+        md_act="$_act"
+        md_reason="$_rsn"
+        ;;
     esac
   done <<<"${plan}"
 

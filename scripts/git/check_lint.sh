@@ -82,10 +82,22 @@ main() {
   local _step _act _rsn
   while IFS=: read -r _step _act _rsn; do
     case "$_step" in
-      lint) lint_act="$_act"; lint_reason="$_rsn" ;;
-      format) format_act="$_act"; format_reason="$_rsn" ;;
-      typecheck) tc_act="$_act"; tc_reason="$_rsn" ;;
-      markdown) md_act="$_act"; md_reason="$_rsn" ;;
+      lint)
+        lint_act="$_act"
+        lint_reason="$_rsn"
+        ;;
+      format)
+        format_act="$_act"
+        format_reason="$_rsn"
+        ;;
+      typecheck)
+        tc_act="$_act"
+        tc_reason="$_rsn"
+        ;;
+      markdown)
+        md_act="$_act"
+        md_reason="$_rsn"
+        ;;
     esac
   done <<<"${plan}"
 
@@ -198,7 +210,10 @@ main() {
       if [[ "$tc_reason" == "--skip-typecheck" || "$tc_reason" == "CGW_SKIP_TYPECHECK=1" ]]; then
         echo "  (typecheck skipped -- ${tc_reason})" | tee -a "$logfile"
       fi
-    elif [[ -n "${CGW_TYPECHECK_CMD}" ]] && { get_python_path 2>/dev/null || true; ! command -v "$(cgw_resolve_lint_binary "${CGW_TYPECHECK_CMD}")" >/dev/null 2>&1; }; then
+    elif [[ -n "${CGW_TYPECHECK_CMD}" ]] && {
+      get_python_path 2>/dev/null || true
+      ! command -v "$(cgw_resolve_lint_binary "${CGW_TYPECHECK_CMD}")" >/dev/null 2>&1
+    }; then
       # A configured-but-absent checker would exit 127 with no diagnostics,
       # which reads as "FAILED, 0 errors" and would now BLOCK a push. That is
       # an environment gap, not a type error -- warn and skip instead, the

@@ -1130,7 +1130,6 @@ cgw_modified_files_for_lint() {
   git diff --name-only --diff-filter=ACMR HEAD -- "${lint_exts[@]}"
 }
 
-
 # cgw_lint_plan <check|fix> [flags...]
 #   Pure query returning the execution plan for the lint pipeline.
 #   Outputs line-delimited records: step:action:reason
