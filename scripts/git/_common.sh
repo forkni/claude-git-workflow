@@ -279,7 +279,11 @@ run_git_with_logging() {
 
   echo "Command: git $*" | tee -a "$log_path"
 
-  GIT_OUTPUT=$(git "$@" 2>&1)
+  if [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]]; then
+    GIT_OUTPUT=$(GIT_TERMINAL_PROMPT="${GIT_TERMINAL_PROMPT:-0}" git "$@" 2>&1)
+  else
+    GIT_OUTPUT=$(git "$@" 2>&1)
+  fi
   GIT_EXIT_CODE=$?
 
   if [[ -n "$GIT_OUTPUT" ]]; then

@@ -154,20 +154,38 @@ Source branch: [hash] "[message]"  CI: [green|n/a]
 Target branch: [hash] merged & pushed  CI: [green|n/a]
 ```
 
-## Section B: Windows cmd.exe (Bash-mediated)
+## Section B: Windows cmd.exe / PowerShell (Git Bash-mediated)
 
-```batch
-bash scripts/git/commit_enhanced.sh --non-interactive "feat: descriptive commit message"
-bash scripts/git/push_validated.sh --non-interactive --skip-lint
-bash -c "sha=$(git rev-parse HEAD); branch=$(git branch --show-current); gh run list --commit \"$sha\" --branch \"$branch\" --json databaseId --jq '.[].databaseId' | xargs -n1 gh run watch --exit-status --compact --interval 15"
-bash scripts/git/merge_with_validation.sh --non-interactive
-bash scripts/git/push_validated.sh --non-interactive --skip-lint
-bash -c "sha=$(git rev-parse HEAD); branch=$(git branch --show-current); gh run list --commit \"$sha\" --branch \"$branch\" --json databaseId --jq '.[].databaseId' | xargs -n1 gh run watch --exit-status --compact --interval 15"
+> [!IMPORTANT]
+> On Windows, do **not** invoke bare `bash` — on machines with WSL installed, bare `bash` resolves to WSL (`C:\Users\...\Microsoft\WindowsApps\bash.exe`), whose Linux git environment lacks access to the Windows Git Credential Manager (`credential.helper=manager`) and will hang waiting for terminal credentials. Always resolve and use Git for Windows (`C:\Program Files\Git\bin\bash.exe`), matching `cgw-install.cmd` (`PI-03`).
+
+In PowerShell:
+
+```powershell
+$BASH = "C:\Program Files\Git\bin\bash.exe"
+& $BASH scripts/git/commit_enhanced.sh --non-interactive "feat: descriptive commit message"
+& $BASH scripts/git/push_validated.sh --non-interactive --skip-lint
+& $BASH -c "sha=$(git rev-parse HEAD); branch=$(git branch --show-current); gh run list --commit \"$sha\" --branch \"$branch\" --json databaseId --jq '.[].databaseId' | xargs -n1 gh run watch --exit-status --compact --interval 15"
+& $BASH scripts/git/merge_with_validation.sh --non-interactive
+& $BASH scripts/git/push_validated.sh --non-interactive --skip-lint
+& $BASH -c "sha=$(git rev-parse HEAD); branch=$(git branch --show-current); gh run list --commit \"$sha\" --branch \"$branch\" --json databaseId --jq '.[].databaseId' | xargs -n1 gh run watch --exit-status --compact --interval 15"
+```
+
+In cmd.exe:
+
+```cmd
+set "BASH=C:\Program Files\Git\bin\bash.exe"
+"%BASH%" scripts/git/commit_enhanced.sh --non-interactive "feat: descriptive commit message"
+"%BASH%" scripts/git/push_validated.sh --non-interactive --skip-lint
+"%BASH%" -c "sha=$(git rev-parse HEAD); branch=$(git branch --show-current); gh run list --commit \"$sha\" --branch \"$branch\" --json databaseId --jq '.[].databaseId' | xargs -n1 gh run watch --exit-status --compact --interval 15"
+"%BASH%" scripts/git/merge_with_validation.sh --non-interactive
+"%BASH%" scripts/git/push_validated.sh --non-interactive --skip-lint
+"%BASH%" -c "sha=$(git rev-parse HEAD); branch=$(git branch --show-current); gh run list --commit \"$sha\" --branch \"$branch\" --json databaseId --jq '.[].databaseId' | xargs -n1 gh run watch --exit-status --compact --interval 15"
 ```
 
 Same gate as Section A applies at both watch points — see
 [references/ci-verification.md](ci-verification.md) for the full resolve/watch/verdict/fix-loop
-procedure; it's run via `bash -c "..."` here because the `gh` logic itself is shell-agnostic but
+procedure; it's run via `"$BASH" -c "..."` here because the `gh` logic itself is shell-agnostic but
 still needs a POSIX shell to invoke. Red and unfixable at the first watch point → stop before
 the merge step, same as Phase 3b. Red at the second → same prohibitions as Phase 5b (fix on
 `CGW_SOURCE_BRANCH`, never directly on `CGW_TARGET_BRANCH`).
