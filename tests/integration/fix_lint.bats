@@ -298,3 +298,9 @@ VENV_EOF
   grep -q "mock ruff format" "${MOCK_BIN_DIR}/ruff.log"
   ! grep -q "mock ruff check" "${MOCK_BIN_DIR}/ruff.log"
 }
+
+@test "fix_lint.sh rejects --skip-lint with exit 1" {
+  run run_script fix_lint.sh --skip-lint
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"[ERROR] Unknown flag: --skip-lint"* ]]
+}

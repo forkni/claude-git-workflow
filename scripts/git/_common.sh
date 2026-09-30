@@ -1617,7 +1617,7 @@ cgw_run_markdownlint_check() {
   local status_str="PASSED"
   if [[ ${_status} -ne 0 ]]; then
     status_str="FAILED"
-    if [[ ${_status} -eq 127 ]] || echo "${TOOL_OUTPUT}" | grep -qE "SyntaxError:|Cannot find module|command not found|Invalid regular expression"; then
+    if [[ "${TOOL_ERROR_COUNT:-0}" -eq 0 ]]; then
       ret=2
     else
       ret=1
