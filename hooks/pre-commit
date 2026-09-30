@@ -30,6 +30,16 @@ fi
 # shellcheck source=scripts/git/_common.sh
 source "${CGW_HOME}/scripts/git/_common.sh"
 
+# ── Project-local pre-commit hook extension ───────────────────────────
+if [[ -x "${REPO_ROOT}/.githooks/pre-commit.local" ]]; then
+  if ! "${REPO_ROOT}/.githooks/pre-commit.local" "$@"; then
+    echo "" >&2
+    echo "ERROR [pre-commit]: .githooks/pre-commit.local failed." >&2
+    echo "" >&2
+    exit 1
+  fi
+fi
+
 echo "Checking for local-only files..."
 
 mapfile -t PROBLEMATIC_FILES < <(

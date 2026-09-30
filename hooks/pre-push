@@ -44,8 +44,36 @@ source "${CGW_HOME}/scripts/git/_common.sh"
 # CGW_ALL_PREFIXES is computed by _config.sh (sourced via _common.sh above)
 # and includes CGW_EXTRA_PREFIXES from .cgw.conf automatically.
 
+# ── [0] Local test gate ────────────────────────────────────────────────
+# Runs once per push invocation (not per-ref, not per-commit) - it gates
+# the CURRENT working tree, not each historical commit. Deliberately
+# outside scripts/git/ so a CGW redeploy can never silently drop it.
+if [[ -x "${REPO_ROOT}/scripts/test/run_tests.sh" ]]; then
+  if ! "${REPO_ROOT}/scripts/test/run_tests.sh" </dev/null; then
+    echo "" >&2
+    echo "ERROR [pre-push]: local test gate failed." >&2
+    echo "  Fix the failure, or bypass once with SKIP_TESTS=1 git push." >&2
+    echo "" >&2
+    exit 1
+  fi
+fi
+
 # Collect push info from stdin (git passes it to pre-push)
-while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
+PUSH_INPUT="$(cat)"
+
+# ── [0.1] Project-local pre-push hook extension ───────────────────────
+if [[ -x "${REPO_ROOT}/.githooks/pre-push.local" ]]; then
+  if ! printf '%s\n' "${PUSH_INPUT}" | "${REPO_ROOT}/.githooks/pre-push.local" "$@"; then
+    echo "" >&2
+    echo "ERROR [pre-push]: .githooks/pre-push.local failed." >&2
+    echo "" >&2
+    exit 1
+  fi
+fi
+
+if [[ -n "${PUSH_INPUT}" ]]; then
+  while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
+    [[ -z "${LOCAL_SHA:-}" ]] && continue
   # Skip deletions (empty sha = 0000...0)
   if [[ "${LOCAL_SHA}" = "0000000000000000000000000000000000000000" ]]; then
     continue
@@ -157,8 +185,8 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
       fi
     done
   fi
-
-done
+  done <<<"${PUSH_INPUT}"
+fi
 
 echo "pre-push: all checks passed"
 echo ""

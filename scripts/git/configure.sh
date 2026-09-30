@@ -390,7 +390,59 @@ _resolve_template_dir() {
   return 1
 }
 
+_install_single_hook() {
+  local hook_name="$1"
+  local template_file="$2"
+  local overwrite="${3:-0}"
+  local target_file="${PROJECT_ROOT}/.githooks/${hook_name}"
+  local active_git_hook="${PROJECT_ROOT}/.git/hooks/${hook_name}"
+
+  [[ -f "${template_file}" ]] || return 0
+
+  mkdir -p "${PROJECT_ROOT}/.githooks"
+
+  # Case 1: .githooks/<hook> does not exist yet
+  if [[ ! -f "${target_file}" ]]; then
+    # If a pre-existing hook is in .git/hooks, back it up so it is never lost
+    if [[ -f "${active_git_hook}" ]] && ! cmp -s "${template_file}" "${active_git_hook}"; then
+      cp "${active_git_hook}" "${active_git_hook}.bak" 2>/dev/null || true
+      echo "  [INFO] Backed up pre-existing .git/hooks/${hook_name} -> .git/hooks/${hook_name}.bak"
+    fi
+    cp "${template_file}" "${target_file}"
+    chmod +x "${target_file}"
+    echo "  [OK] Installed .githooks/${hook_name}"
+    return 0
+  fi
+
+  # Case 2: .githooks/<hook> exists and matches template
+  if cmp -s "${template_file}" "${target_file}"; then
+    chmod +x "${target_file}"
+    echo "  [OK] .githooks/${hook_name} already up to date"
+    return 0
+  fi
+
+  # Case 3: .githooks/<hook> exists and differs from template
+  local do_overwrite="${overwrite}"
+  if [[ "${do_overwrite}" -eq 0 ]] && [[ "${non_interactive:-0}" -eq 0 ]]; then
+    if cgw_confirm "Existing .githooks/${hook_name} differs from template. Overwrite?" --default no; then
+      do_overwrite=1
+    fi
+  fi
+
+  if [[ "${do_overwrite}" -eq 1 ]]; then
+    cp "${target_file}" "${target_file}.bak"
+    echo "  [INFO] Backed up .githooks/${hook_name} -> .githooks/${hook_name}.bak"
+    cp "${template_file}" "${target_file}"
+    chmod +x "${target_file}"
+    echo "  [OK] Overwrote .githooks/${hook_name} (--overwrite-hooks)"
+  else
+    chmod +x "${target_file}"
+    echo "  [OK] Preserved locally established .githooks/${hook_name}"
+  fi
+}
+
 _install_hook() {
+  local overwrite_hooks="${1:-0}"
   local hooks_template_dir
   if ! hooks_template_dir="$(_resolve_template_dir hooks)"; then
     hooks_template_dir="${PROJECT_ROOT}/.cgw-hooks-template"
@@ -411,26 +463,14 @@ _install_hook() {
   fi
 
   # Hooks read CGW_LOCAL_FILES from .cgw.conf at run time — no pattern substitution needed.
-  echo "Installing pre-commit hook..."
-  mkdir -p "${PROJECT_ROOT}/.githooks"
-  cp "${hook_template}" "${PROJECT_ROOT}/.githooks/pre-commit"
-  chmod +x "${PROJECT_ROOT}/.githooks/pre-commit"
-
-  local pre_push_template="${hooks_template_dir}/pre-push"
-  if [[ -f "${pre_push_template}" ]]; then
-    cp "${pre_push_template}" "${PROJECT_ROOT}/.githooks/pre-push"
-    chmod +x "${PROJECT_ROOT}/.githooks/pre-push"
-  fi
-
-  local pre_rebase_template="${hooks_template_dir}/pre-rebase"
-  if [[ -f "${pre_rebase_template}" ]]; then
-    cp "${pre_rebase_template}" "${PROJECT_ROOT}/.githooks/pre-rebase"
-    chmod +x "${PROJECT_ROOT}/.githooks/pre-rebase"
-  fi
+  echo "Installing git hooks..."
+  _install_single_hook "pre-commit" "${hooks_template_dir}/pre-commit" "${overwrite_hooks}"
+  _install_single_hook "pre-push" "${hooks_template_dir}/pre-push" "${overwrite_hooks}"
+  _install_single_hook "pre-rebase" "${hooks_template_dir}/pre-rebase" "${overwrite_hooks}"
 
   # Run install_hooks.sh to copy to .git/hooks/
   if bash "${SCRIPT_DIR}/install_hooks.sh" >/dev/null 2>&1; then
-    echo "  [OK] Git hooks installed (pre-commit + pre-push + pre-rebase)"
+    echo "  [OK] Git hooks active (pre-commit + pre-push + pre-rebase)"
   else
     echo "  [!] Hooks written to .githooks/ but failed to copy to .git/hooks/" >&2
     echo "      Fix: run manually: ./scripts/git/install_hooks.sh" >&2
@@ -1156,6 +1196,7 @@ _cleanup_legacy_artifacts() {
 main() {
   local non_interactive=0
   local reconfigure=0
+  local overwrite_hooks=0
   local skip_hooks=0
   local skip_skill=0
   local skip_cc_guardrail=0
@@ -1179,6 +1220,7 @@ main() {
         echo "  --template-dir <dir> Path to CGW source toolkit providing asset templates"
         echo "  --non-interactive    Accept all auto-detected defaults"
         echo "  --reconfigure        Overwrite existing .cgw.conf"
+        echo "  --overwrite-hooks    Overwrite existing .githooks/* with templates (default: preserve)"
         echo "  --skip-hooks         Don't install git pre-commit hook"
         echo "  --skip-skill         Don't install skills (skips both Claude and Antigravity)"
         echo "  --skip-claude        Skip Claude Code integration (skill + guardrail)"
@@ -1206,6 +1248,7 @@ main() {
         CGW_NON_INTERACTIVE=1
         ;;
       --reconfigure) reconfigure=1 ;;
+      --overwrite-hooks) overwrite_hooks=1 ;;
       --skip-hooks) skip_hooks=1 ;;
       --skip-skill)
         skip_skill=1
@@ -1471,7 +1514,7 @@ main() {
     fi
 
     if [[ "${install_hook}" == "yes" ]]; then
-      _install_hook
+      _install_hook "${overwrite_hooks}"
     fi
   fi
 
