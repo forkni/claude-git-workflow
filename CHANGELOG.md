@@ -1,5 +1,130 @@
 # Changelog
 
+## v0.8.0 (2026-09-29)
+
+> Changes since `v0.7.0`
+
+### New Features
+
+- decouple template sourcing from target repository roots (4a66634)
+- add Antigravity Agents integration and guardrail (71d1296)
+- add CGW_FREEFORM_MESSAGE_BRANCHES for upstream PR branch exemption (89a1fd7)
+- add automated markdown lint auto-fixing to CGW toolkit (e002340)
+- add mandatory CI verification gate to every push (b6e63c0)
+- enforce Pro Git 50/72 commit subject-length rule (30cf0eb)
+- add cgw-batch-install.cmd to refresh CGW toolkit across multiple projects (c291543)
+- fail commit when staged blob diverges from validated working tree (#10) (1d25367)
+- fail commit when staged blob diverges from validated working tree (55011a5)
+
+### Bug Fixes
+
+- probe node capability for markdownlint detection (131dbe2)
+- resolve known issues C1, E1, Obs 1-8 with integration tests (ace6153)
+- guard rollback_merge root revert and recover reflog pipefail (e6ceb40)
+- accept documented --dry-run in branch_cleanup.sh and clean_build.sh (79f3f81)
+- fail closed on partial stages during auto-fix re-stage (1a89f0b)
+- use git config for merge conflict style instead of invalid merge flag (5927c58)
+- disable markdownlint npx fallback by default in test mocks (b29110a)
+- re-verify markdown lint after interactive auto-fix (f9f234e)
+- pin CGW_MARKDOWNLINT_CMD in fix_lint.bats to avoid CI-only npx fallback (61fe1ea)
+- correct fast-forward claim in CI-gate docs (07a5a6d)
+- suppress phantom CRLF divergence in commit guard (bf952c5)
+- exclude already-pushed commits in pre-push (39017cb)
+- strip commit prefix on bare colon, not colon+space (e9b5e11)
+- validate subject-length config as integers (1523c22)
+- preserve pre-existing hooks/skill/command dirs in batch install (cc7b50f)
+- measure subject line only in commit-length check (fa41e9e)
+- conclude merge commits when resolved tree matches HEAD (cb18356)
+- fail closed when staged file is missing or unhashable during divergence check (3c39cf3)
+
+### Documentation
+
+- fix MD032 list formatting in CONTEXT.md and ADR 0002 (009c99d)
+- reconcile commit-message policy with freeform-branch exemption (b8cb943)
+- add ADR 0001 for partial-staging fail-closed decision (63753af)
+- fix markdown lint errors (fenced-code-language, emphasis-as-heading) (b99eae4)
+- document merge as a valid CGW_MERGE_CONFLICT_STYLE value (a60c264)
+- fix markdownlint MD040/MD041 violations flagged by docs-validation CI (17d25d3)
+- add ci-verification.md reference doc (5ad04fc)
+
+### Refactoring
+
+- own lint plan and unify preconditions (7e735c0)
+
+### Code Style
+
+- remove trailing blank lines at EOF (3cf9da2)
+- apply shfmt formatting to _common.sh and_config.sh (9266437)
+
+### Maintenance
+
+- remove stale docs/STYLE_AUDIT.md and docs/architecture-deepening-plan.md (93b08f0)
+
+### Other Changes
+
+- fix(commit): make --interactive fully interactive; test prompts through it (8bf3c96)
+- refactor(configure): drive harness skill installs and prompts from one spec (f74d22b)
+- fix(merge): stay on the target branch after a successful merge (afdc02e)
+- fix(hooks): honour CGW_SKIP_LINT=1 for every pre-commit check (c612115)
+- feat(lint): check and fix a format-only config in every lint entry point (43700ef)
+- refactor(lint): run check_lint.sh --modified-only through the lint pipeline (2443541)
+- feat(config): validate 0/1 switches and enum settings like integers (649e838)
+- refactor(config): define every CGW_* setting once in a config registry (09a3bfe)
+- docs(config): bring the options table and cgw.conf.example in line (e8a5f48)
+- chore(hooks): stop tracking the generated .githooks/ copies (158f969)
+- refactor(commit): pull auto-fix, congruence guard and staging mode out of main() (f5f525d)
+- test(commit): pin every interactive auto-fix answer through a pty (cf60f33)
+- refactor(configure): register every harness guardrail through one spec-driven registrar (d7bba53)
+- feat(configure): merge the Antigravity guardrail entry instead of overwriting its key (bc21fa5)
+- fix(configure): judge Antigravity no-jq registration per entry (e63c030)
+- refactor(guardrail): share one classifier between the cc and agy guardrails (f4918e0)
+- test(guardrail): pin both guardrails to one verdict table across payload shapes (fd4948f)
+- fix(install): copy the Antigravity .cmd hook runner into target projects (204ddf6)
+- fix(rebase): print a restore command that restores the branch (ca8b976)
+- fix(configure): close two guardrail install gaps (ab3a5e9)
+- fix(lint): resolve CGW_FORMAT_CMD through the venv in --modified-only (1f99d1d)
+- fix(commit): re-check lint after an interactive auto-fix (70ea647)
+- feat(agy): add Antigravity guardrail hook runner and skill command integration (73926d8)
+- fix(configure): fail loudly when the guardrail jq merge cannot write (eb962ad)
+- fix(configure): JSON-escape hook commands on the no-jq write path (85309b2)
+- fix(hooks): restore stdin read in cc-block-dangerous-git.sh guardrail (010432a)
+- fix(install): resolve bash.exe from PATH, never a project-local bash.cmd (5586a91)
+- fix(push): keep a force-with-lease guard on new branches and failed probes (75f67f9)
+- fix(create-pr): fail closed on unresolvable origin owner/repo (a9cfd9c)
+- fix(branch-cleanup): always protect main/master, remote default and worktree branches (254b9e7)
+- fix(merge-conclusion): let commit_enhanced.sh finish a hand-resolved merge (dfde977)
+- fix(typecheck-gate): make typecheck failures fatal at push, not bypassable (31c5346)
+- feat!: block push on failing typecheck (was hook-only advisory) (1510b0a)
+- fix(tests): stop CGW_SOURCE_BRANCH tests depending on ambient .cgw.conf (cc4b344)
+- fix(freeform): never exempt source, target, or protected branches (dc3cc0d)
+- fix(pre-push): stop two freeform-branch exemption leaks (212fe07)
+- fix(create-pr): pass explicit --repo to avoid fork/upstream mistarget (d0e87b3)
+- fix(push): use explicit --force-with-lease instead of bare form (b0596e1)
+- docs(skill): correct check-ignore, hook, and reconfigure claims (2b7c18c)
+- docs(skill): add gitignore-templates reference content (40bebc6)
+- docs(skill): add gitignore-templates reference doc (dbc0336)
+- fix(configure): fail closed on backup failure, harden .gitignore append (5425ae8)
+- fix(configure): back up .cgw.conf on --reconfigure and clarify overwrite prompt (aae464c)
+- docs(uninstall): warn about junction recursion in linked worktrees (a452a79)
+- docs(worktree): fix unreachable link recovery command (8eac220)
+- fix(worktree): validate link targets, allow real dirs on remove (c3ed2e9)
+- fix(hooks): support git 2.0-2.4 without --git-common-dir (22554f3)
+- fix(worktree): fail closed on unresolvable link/remove paths (f21785d)
+- fix(hooks): correct install_hooks --help text for worktree-safe hook path (5536c36)
+- fix(hooks): scope guardrail checks to one shell invocation (ab4619a)
+- feat(worktree): make CGW tooling reachable from linked git worktrees (710fe3c)
+- fix(hooks): fail closed when CGW tooling is unreachable (37fd592)
+- fix(commit): validated-set guard blind to --skip-md-lint and no-linter case (bb9b241)
+- Install pr-review daemon (2873cb4)
+- fix(templates): include new markdownlint-cli2.jsonc files in prior commit (18601a5)
+- feat(markdownlint): expand rule baseline, add gitignore-aware tool config (73d6016)
+- fix(scripts/git): forward fix_lint.sh flags to its check_lint.sh verification (bb37e4d)
+- feat(cherry-pick): add --only partial-pick support (9c5af04)
+- docs(skill): add wrapper flag reference and conflict rules (b8f3237)
+- feat(configure): annotate conf options, add CGW_MERGE_MODE (c3b5dda)
+- fix(scripts/git): invoke check_lint.sh via bash to survive non-executable git mode (4db6937)
+- fix(scripts/git): close top wrapper gaps from round-1 report (7871ef6)
+
 ## v0.7.0 (2026-07-09)
 
 > Changes since `v0.6.0`

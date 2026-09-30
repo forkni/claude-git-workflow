@@ -83,6 +83,7 @@ format, and typecheck args uniformly.
 ### C1 · Local-file protection isn't applied at merge / cherry-pick / amend 🟡 — FIXED (2026-09-29)
 
 > **Status (2026-09-29, verified by Bats integration tests):** FIXED.
+>
 > - `merge_with_validation.sh` and `cherry_pick_commits.sh` enforce `cgw_guard_incoming_local_files` to block incoming commits carrying local-only files.
 > - `undo_last.sh amend-message` inspects staged index changes: hard-refuses (`exit 1`) if local-only files are staged, and warns/prompts (or aborts in non-interactive mode) if non-local staged changes exist.
 > - Verified by `merge_validation.bats`, `cherry_pick.bats`, and `undo_last.bats`.
@@ -117,6 +118,7 @@ also includes unrelated pre-staged files.
 ### E1 · `rollback_merge.sh --hard` takes no pre-rollback backup tag 🟢 — FIXED (2026-09-29)
 
 > **Status (2026-09-29, verified by `tests/integration/rollback_merge.bats`):** FULLY FIXED.
+>
 > - `rollback` was added to `CGW_BACKUP_OPS` and `rollback_merge.sh` creates a `pre-rollback-*` backup tag pointing at the discarded HEAD.
 > - In `--non-interactive` mode, hard rollback explicitly refuses (`exit 1`) when `--target` is omitted and no `pre-merge-*` backup tag exists, preventing accidental fallbacks to `HEAD~1`.
 
@@ -252,4 +254,3 @@ add the flag to their overrides too.
 
 All fixes apply to the upstream source at `github.com/forkni/claude-git-workflow`; the copy under
 `scripts/git/` here is vendored from it.
-
