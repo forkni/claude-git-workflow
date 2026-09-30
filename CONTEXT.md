@@ -32,6 +32,7 @@ The deterministic mapping from a `git status --short` two-letter porcelain pair 
 A file or directory that must never be committed to the remote repository. Configured via `CGW_LOCAL_FILES` in `.cgw.conf`. Match contract: literal name or trailing-slash directory entry, anchored on both ends — no globs, no substring matches.
 
 **Implementation seams & enforcement boundaries**:
+
 - `cgw_is_local_file` / `cgw_filter_local_files` / `cgw_guard_incoming_local_files` in `scripts/git/_common.sh`.
 - `commit_enhanced.sh`: automatically unstages tracked modifications via `unstage_local_only_files` before every commit. If the resulting Index has no remaining changes, the commit exits cleanly as a no-op with an explicit exclusion notice.
 - `merge_with_validation.sh`: inspects the incoming revision range (`HEAD..<source>`) for any commits introducing local files, aborting *before* taking a pre-merge backup tag.
@@ -44,15 +45,14 @@ A file or directory that must never be committed to the remote repository. Confi
 
 The shared module responsible for running lint, format, and markdownlint tool binaries against staged or modified files. Lives in `_common.sh` and is reused by `commit_enhanced.sh`, `check_lint.sh`, `fix_lint.sh`, and the pre-commit hook. Typecheck (`cgw_run_typecheck` below) is a sibling seam in the same file but is deliberately whole-project, not staged/modified-scoped — see its bullet for why.
 
-**Key seams**:
-
+- `cgw_lint_plan <check|fix> [flags…]` — pure query planning which lint pipeline steps run and why. Returns a line-delimited stream of `step:action:reason` entries (`lint`, `format`, `markdown`, `typecheck`). Unifies skip-folding across all callers: `CGW_SKIP_LINT=1` (or `--skip-lint`) acts as an umbrella skip for all steps, while individual skips (`CGW_SKIP_MD_LINT=1`, `CGW_SKIP_TYPECHECK=1`) gate specific stages.
 - `cgw_resolve_lint_binary <cmd>` — pure venv-aware path resolver. Given a binary name (e.g., `ruff`), returns the absolute venv path when it exists, or the bare name for system PATH lookup. Reads `PYTHON_BIN` / `PYTHON_EXT` (pre-populated by `get_python_path`). No side effects.
 - `run_tool_with_logging <section-name> <logfile> <cmd> [args…]` — runs a tool, captures stdout+stderr, writes to the named log section via `log_section_start`/`log_section_end`, returns the tool's exit code. Used by all lint/format/markdownlint invocations.
-- `cgw_run_lint_check [files…]` — runs `CGW_LINT_CMD` with `CGW_LINT_CHECK_ARGS` (and optional file list) via `run_tool_with_logging`. Skips silently when `CGW_SKIP_LINT=1` or `CGW_LINT_CMD` is empty.
-- `cgw_run_format_check [files…]` — runs `CGW_FORMAT_CMD` with `CGW_FORMAT_CHECK_ARGS` via `run_tool_with_logging`. Skips silently when `CGW_FORMAT_CMD` is empty.
+- `cgw_run_lint_check [--mode <logged|plain>] [--result-var <var>] [files…]` — runs `CGW_LINT_CMD` with `CGW_LINT_CHECK_ARGS` (and optional file list). Supports output mode and returns `name:status:count` in the result variable. Skips silently when `CGW_SKIP_LINT=1` or `CGW_LINT_CMD` is empty.
+- `cgw_run_format_check [--mode <logged|plain>] [--result-var <var>] [files…]` — runs `CGW_FORMAT_CMD` with `CGW_FORMAT_CHECK_ARGS`. Supports output mode and returns `name:status:count` in the result variable. Skips silently when `CGW_FORMAT_CMD` is empty.
 - `cgw_run_lint_fix [files…]` — bundled lint+format fix: runs lint `--fix` then format `--fix` in sequence. Skips silently when both CMDs are empty.
-- `cgw_run_markdownlint_check [files…]` — runs `CGW_MARKDOWNLINT_CMD` with `CGW_MARKDOWNLINT_ARGS` via `run_tool_with_logging`. Skips silently when `CGW_SKIP_MD_LINT=1` or `CGW_MARKDOWNLINT_CMD` is empty.
-- `cgw_run_typecheck` — runs `CGW_TYPECHECK_CMD` with `CGW_TYPECHECK_CHECK_ARGS` via `run_tool_with_logging`, overriding `CGW_TOOL_ERROR_REGEX` (as a `local`, dynamically scoped) to a pattern matching mypy/pyright/tsc/pyrefly diagnostic shapes instead of the ruff-shaped default. Skips silently when `CGW_SKIP_TYPECHECK=1` or `CGW_TYPECHECK_CMD` is empty. Always whole-project (no file-list parameter) — a type checker resolves imports across the whole project, so there is no honest way to scope it to staged/modified files. Call sites: advisory in `hooks/pre-commit` (skipped there, like lint and format, under `CGW_SKIP_LINT=1`); **blocking** in `check_lint.sh` (and therefore `push_validated.sh`, which delegates its pre-push lint check to `check_lint.sh`); not called under `check_lint.sh --modified-only`/`--md-only`; absent from `commit_enhanced.sh` entirely on purpose (see **validated path set** below for why whole-project scope can't feed that guard).
+- `cgw_run_markdownlint_check [--mode <logged|plain>] [--result-var <var>] [files…]` — runs `CGW_MARKDOWNLINT_CMD` with `CGW_MARKDOWNLINT_ARGS`. Supports output mode and returns `name:status:count` in the result variable. Skips silently (returns 0) when `CGW_SKIP_MD_LINT=1` or `CGW_MARKDOWNLINT_CMD` is empty. Returns 0 on clean pass, 1 when markdown formatting violations are matched (`TOOL_ERROR_COUNT > 0`), and 2 on tool infrastructure crash (`exit_code != 0` with `TOOL_ERROR_COUNT == 0`, e.g. Node RegExp `v` syntax error). Auto-detection in `_config.sh` (`_cgw_detect_markdownlint`) probes Node capability (`node -e 'new RegExp("","v")'`) before selecting the `npx` fallback, failing open to empty when Node is absent or < 20.
+- `cgw_run_typecheck [--mode <logged|plain>] [--result-var <var>]` — runs `CGW_TYPECHECK_CMD` with `CGW_TYPECHECK_CHECK_ARGS`, overriding `CGW_TOOL_ERROR_REGEX` (as a `local`, dynamically scoped) to a pattern matching mypy/pyright/tsc/pyrefly diagnostic shapes instead of the ruff-shaped default. Supports output mode and returns `name:status:count` in the result variable. Skips silently when `CGW_SKIP_TYPECHECK=1`, `CGW_SKIP_LINT=1`, or `CGW_TYPECHECK_CMD` is empty. Always whole-project (no file-list parameter) — a type checker resolves imports across the whole project, so there is no honest way to scope it to staged/modified files. Call sites: advisory in `hooks/pre-commit` (skipped there, like lint and format, under `CGW_SKIP_LINT=1`); **blocking** in `check_lint.sh` (and therefore `push_validated.sh`, which delegates its pre-push lint check to `check_lint.sh`); not called under `check_lint.sh --modified-only`/`--md-only`; absent from `commit_enhanced.sh` entirely on purpose (see **validated path set** below for why whole-project scope can't feed that guard).
 - `cgw_strip_path_arg <args-string>` — strips the trailing path token from a CGW args string (the `${ARGS% *}` idiom). Used when a file list is passed explicitly so the default path token doesn't conflict.
 - `cgw_modified_files_for_lint` — returns the space-separated list of `.py` files modified vs HEAD (for `--modified-only` mode in `check_lint.sh` / `fix_lint.sh`).
 - `cgw_paths_diverging_from_index` — the general divergence core, reading paths from stdin. Emits the subset whose working-tree content (what the checks above validate) differs from its staged blob (what `git commit` records). Primary detection via `git hash-object --path=<f> <f>` vs `git rev-parse :<f>` — immune to skip-worktree/assume-unchanged, unlike `git diff`. But `hash-object` never reads the index, so on a file whose index blob already has CRLF (`git add` preserves that forever — see `cgw_crlf_in_index_files`), it renormalizes to LF and permanently disagrees with a byte-identical, `git add`-clean disk file. A hash-object mismatch is arbitrated via index-aware `git diff --quiet` (using `cgw_path_is_diff_blind` to skip that arbitration on skip-worktree/assume-unchanged paths, where `git diff` can't see the truth) before being reported. Fails closed: a staged path missing from the working tree is reported as diverged, not skipped.
@@ -248,3 +248,23 @@ The external or repository directory tree containing the canonical template asse
 Legacy in-repo staging directories (`hooks/`, `skill/`, `command/`, `templates/` in the project root containing only CGW template artifacts) are automatically pruned by `_cleanup_legacy_artifacts` in `scripts/git/configure.sh` when running in a consumer project.
 
 **Callers**: `scripts/git/configure.sh` (`_install_hook`, `_install_harness_skill`, `_install_markdownlint_config`, `_cleanup_legacy_artifacts`), `cgw-install.cmd`, `cgw-batch-install.cmd`.
+
+---
+
+## operation preconditions
+
+The shared module responsible for asserting repository invariants (working tree cleanliness and branch protection policies) before mutating git state. Concentrates tree-cleanliness predicates and protected-branch set evaluations previously scattered across mutating wrappers.
+
+**Implementation seams** in `scripts/git/_common.sh`:
+
+- `cgw_require_clean_tree [--on-dirty <fail|stash|confirm-abort|confirm-stash>]` — verifies that the working tree has no uncommitted tracked changes and that no `skip-worktree` or `assume-unchanged` paths have diverged from HEAD (closing the `diff-index` blindness gap). Untracked files are excluded by default so scratch files never block clean operations. Dispatches the named on-dirty policy:
+  - `fail`: prints explanatory recovery guidance and exits non-zero.
+  - `stash`: creates an automatic stash and sets a sentinel so callers can restore state upon completion.
+  - `confirm-abort`: prompts the user interactively to confirm proceeding with dirty state; aborts in non-interactive mode.
+  - `confirm-stash`: prompts to stash dirty changes before proceeding; aborts if declined.
+- `cgw_branch_is_protected <branch> [--policy <guarded|cleanup|push>]` — pure predicate querying whether `<branch>` is protected under a named policy:
+  - `guarded` (default): `${CGW_SOURCE_BRANCH}`, `${CGW_TARGET_BRANCH}`, `${CGW_PROTECTED_BRANCHES}`. Used to guarantee that freeform-message branch globs never exempt policy-guarded branches.
+  - `cleanup`: `${CGW_SOURCE_BRANCH}`, `${CGW_TARGET_BRANCH}`, `main`, `master`, `${CGW_PROTECTED_BRANCHES}`. Used by branch cleanup to prevent accidental deletion of active, target, or root default branches.
+  - `push`: `${CGW_PROTECTED_BRANCHES}` only. Used by push wrappers to guard against force-pushing shared branches.
+
+**Callers**: `merge_with_validation.sh`, `rebase_safe.sh`, `rollback_merge.sh`, `sync_branches.sh`, `push_validated.sh`, `branch_cleanup.sh`.

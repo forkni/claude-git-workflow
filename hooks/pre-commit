@@ -59,6 +59,18 @@ fi
 
 echo "  No local-only files detected"
 
+# Query the lint pipeline plan
+plan=$(cgw_lint_plan check)
+
+lint_act="" format_act="" tc_act=""
+while IFS=: read -r _step _act _rsn; do
+  case "$_step" in
+    lint) lint_act="$_act" ;;
+    format) format_act="$_act" ;;
+    typecheck) tc_act="$_act" ;;
+  esac
+done <<<"${plan}"
+
 # CGW_SKIP_LINT=1 skips every code-quality check here -- lint, format and
 # typecheck -- the same meaning check_lint.sh gives it.
 if [[ "${CGW_SKIP_LINT:-0}" == "1" ]]; then
@@ -76,10 +88,9 @@ STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
 # .h/.cpp/.md files it would parse as Python and reject. Mirrors commit_enhanced.sh.
 mapfile -t LINT_FILES < <(cgw_staged_files_for_lint)
 
-if (( ${#LINT_FILES[@]} > 0 )) && [[ -n "${CGW_LINT_CMD:-}" ]]; then
+if (( ${#LINT_FILES[@]} > 0 )) && [[ "$lint_act" == "run" ]]; then
   echo ""
   echo "Checking lint (non-blocking)..."
-  logfile=/dev/null
   if cgw_run_lint_check "${LINT_FILES[@]}" >/dev/null 2>&1; then
     echo "  [PASS] Lint check passed"
   else
@@ -92,10 +103,9 @@ fi
 # Optional: format check for the same staged files using CGW_FORMAT_CMD
 # (non-blocking). Runs whether or not a linter is configured -- a format-only
 # config is checked too, as it is by commit_enhanced.sh and check_lint.sh.
-if (( ${#LINT_FILES[@]} > 0 )) && [[ -n "${CGW_FORMAT_CMD:-}" ]]; then
+if (( ${#LINT_FILES[@]} > 0 )) && [[ "$format_act" == "run" ]]; then
   echo ""
   echo "Checking format (non-blocking)..."
-  logfile=/dev/null
   if cgw_run_format_check "${LINT_FILES[@]}" >/dev/null 2>&1; then
     echo "  [PASS] Format check passed"
   else
@@ -106,10 +116,9 @@ if (( ${#LINT_FILES[@]} > 0 )) && [[ -n "${CGW_FORMAT_CMD:-}" ]]; then
 fi
 
 # Optional: typecheck using CGW_TYPECHECK_CMD (non-blocking)
-if [[ -n "${STAGED_FILES}" ]] && [[ -n "${CGW_TYPECHECK_CMD:-}" ]] && [[ "${CGW_SKIP_TYPECHECK:-0}" != "1" ]]; then
+if [[ -n "${STAGED_FILES}" ]] && [[ "$tc_act" == "run" ]]; then
   echo ""
   echo "Checking types (non-blocking)..."
-  logfile=/dev/null
   if cgw_run_typecheck >/dev/null 2>&1; then
     echo "  [PASS] Typecheck passed"
   else

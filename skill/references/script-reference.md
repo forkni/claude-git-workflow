@@ -622,7 +622,7 @@ Computes GitHub-compatible heading slugs locally (offline port of `gh-md-toc` �
 | `CGW_MARKDOWNLINT_CMD=<tool>` | Markdown lint tool; auto-detected at runtime if unset (`markdownlint-cli2` → `markdownlint` → `npx --yes markdownlint-cli2` fallback → disabled). Set to `""` to opt out, or to a specific tool to override |
 | `CGW_MARKDOWNLINT_ARGS=<args>` | Arguments passed to markdown lint tool |
 | `CGW_MARKDOWNLINT_FIX_ARGS=<args>` | Arguments for markdown auto-fix (default: `--fix`) |
-| `CGW_MARKDOWNLINT_NPX_FALLBACK=0` | Disable the `npx --yes markdownlint-cli2` fallback when no markdownlint binary is on `PATH` (default: `1` = enabled) |
+| `CGW_MARKDOWNLINT_NPX_FALLBACK=0` | Disable the `npx --yes markdownlint-cli2` fallback when no markdownlint binary is on `PATH` (default: `1` = enabled; auto-disabled if Node < 20 lacks RegExp `v` flag support) |
 
 ### Advanced lint/format arguments
 

@@ -793,6 +793,207 @@ UU b.py
   cgw_branch_is_freeform "up/x"
 }
 
+# ── cgw_branch_is_protected() ─────────────────────────────────────────────────
+
+@test "cgw_branch_is_protected: empty branch returns 1" {
+  run cgw_branch_is_protected ""
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_branch_is_protected: policy guarded (default) matches source, target, and protected branches" {
+  CGW_SOURCE_BRANCH="development"
+  CGW_TARGET_BRANCH="main"
+  CGW_PROTECTED_BRANCHES="staging prod"
+
+  cgw_branch_is_protected "development"
+  cgw_branch_is_protected "main"
+  cgw_branch_is_protected "staging"
+  cgw_branch_is_protected "prod"
+  cgw_branch_is_protected "refs/heads/main"
+
+  run cgw_branch_is_protected "feature/new"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_branch_is_protected: policy cleanup protects source, target, main, master, and protected" {
+  CGW_SOURCE_BRANCH="development"
+  CGW_TARGET_BRANCH="release/1.0"
+  CGW_PROTECTED_BRANCHES="staging"
+
+  cgw_branch_is_protected "development" --policy cleanup
+  cgw_branch_is_protected "release/1.0" --policy cleanup
+  cgw_branch_is_protected "main" --policy cleanup
+  cgw_branch_is_protected "master" --policy cleanup
+  cgw_branch_is_protected "staging" --policy cleanup
+
+  run cgw_branch_is_protected "feature/cleanup-me" --policy cleanup
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_branch_is_protected: policy push only protects configured protected branches" {
+  CGW_SOURCE_BRANCH="development"
+  CGW_TARGET_BRANCH="main"
+  CGW_PROTECTED_BRANCHES="main staging"
+
+  cgw_branch_is_protected "main" --policy push
+  cgw_branch_is_protected "staging" --policy push
+
+  run cgw_branch_is_protected "development" --policy push
+  [ "${status}" -eq 1 ]
+  run cgw_branch_is_protected "feature/x" --policy push
+  [ "${status}" -eq 1 ]
+}
+
+# ── cgw_is_tree_clean() & cgw_require_clean_tree() ────────────────────────────
+
+@test "cgw_is_tree_clean: returns 0 on clean repository" {
+  cd "${TEST_REPO_DIR}"
+  cgw_is_tree_clean
+}
+
+@test "cgw_is_tree_clean: returns 1 on unstaged tracked modification" {
+  cd "${TEST_REPO_DIR}"
+  echo "dirty" >> README.md
+  run cgw_is_tree_clean
+  git checkout HEAD -- README.md
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_is_tree_clean: returns 1 on staged modification" {
+  cd "${TEST_REPO_DIR}"
+  echo "staged dirty" >> README.md
+  git add README.md
+  run cgw_is_tree_clean
+  git reset HEAD README.md
+  git checkout HEAD -- README.md
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_is_tree_clean: returns 0 when only untracked files are present" {
+  cd "${TEST_REPO_DIR}"
+  echo "scratch" > untracked_scratch_file.txt
+  run cgw_is_tree_clean
+  rm -f untracked_scratch_file.txt
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_is_tree_clean: returns 1 when skip-worktree file is modified on disk" {
+  cd "${TEST_REPO_DIR}"
+  git update-index --skip-worktree README.md
+  echo "skip-worktree edit" >> README.md
+  run cgw_is_tree_clean
+  git update-index --no-skip-worktree README.md
+  git checkout HEAD -- README.md
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_is_tree_clean: returns 1 when skip-worktree file is deleted on disk" {
+  cd "${TEST_REPO_DIR}"
+  git update-index --skip-worktree README.md
+  rm -f README.md
+  run cgw_is_tree_clean
+  git update-index --no-skip-worktree README.md
+  git checkout HEAD -- README.md
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_tree_dirty_paths: emits deleted skip-worktree file" {
+  cd "${TEST_REPO_DIR}"
+  git update-index --skip-worktree README.md
+  rm -f README.md
+  run cgw_tree_dirty_paths
+  git update-index --no-skip-worktree README.md
+  git checkout HEAD -- README.md
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"README.md"* ]]
+}
+
+@test "cgw_require_clean_tree: returns 0 when tree is clean" {
+  cd "${TEST_REPO_DIR}"
+  cgw_require_clean_tree --on-dirty fail
+  [ "${_CGW_TREE_WAS_STASHED}" -eq 0 ]
+}
+
+@test "cgw_require_clean_tree: --on-dirty fail exits 1 with recovery notice" {
+  cd "${TEST_REPO_DIR}"
+  echo "dirty" >> README.md
+  run cgw_require_clean_tree --on-dirty fail --reason "merge test"
+  git checkout HEAD -- README.md
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"[FAIL] Working tree has uncommitted changes -- merge test"* ]]
+  [[ "${output}" == *"stash_work.sh push"* ]]
+}
+
+@test "cgw_require_clean_tree: --on-dirty stash auto-stashes changes" {
+  cd "${TEST_REPO_DIR}"
+  echo "dirty" >> README.md
+  run cgw_require_clean_tree --on-dirty stash --stash-msg "test stash"
+  [ "${status}" -eq 0 ]
+  cgw_is_tree_clean
+}
+
+@test "cgw_require_clean_tree: --on-dirty confirm-abort aborts in non-interactive mode" {
+  cd "${TEST_REPO_DIR}"
+  echo "dirty" >> README.md
+  CGW_NON_INTERACTIVE=1 run cgw_require_clean_tree --on-dirty confirm-abort --reason "rollback test"
+  git checkout HEAD -- README.md
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"These changes will be LOST during rollback test!"* ]]
+}
+
+@test "cgw_require_clean_tree: --on-dirty confirm-stash stashes changes and sets sentinel" {
+  cd "${TEST_REPO_DIR}"
+  echo "dirty" >> README.md
+  _CGW_TREE_WAS_STASHED=0
+  CGW_NON_INTERACTIVE=1 cgw_require_clean_tree --on-dirty confirm-stash --reason "sync test"
+  [ "${_CGW_TREE_WAS_STASHED}" -eq 1 ]
+  cgw_is_tree_clean
+  git stash pop
+  git checkout HEAD -- README.md
+}
+
+@test "cgw_require_clean_tree: --on-dirty confirm-stash aborts when non-interactive refuses" {
+  cd "${TEST_REPO_DIR}"
+  echo "dirty" >> README.md
+  # Simulate non-interactive denial by running with a mock or echo "n" | ...
+  # When input is empty in interactive mode without accept policy, or echo n:
+  run bash -c "
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cd '${TEST_REPO_DIR}'
+    echo 'n' | cgw_require_clean_tree --on-dirty confirm-stash --reason 'sync test'
+  "
+  git checkout HEAD -- README.md
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Aborted -- commit or stash manually"* ]]
+}
+
+@test "cgw_require_clean_tree: --on-dirty confirm-stash returns 1 and leaves sentinel unset if stash fails" {
+  cd "${TEST_REPO_DIR}"
+  echo "dirty" >> README.md
+  run bash -c "
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cd '${TEST_REPO_DIR}'
+    git() {
+      if [[ \"\$*\" == *\"stash push\"* ]]; then
+        echo 'fatal: mock stash push failure' >&2
+        return 1
+      fi
+      command git \"\$@\"
+    }
+    _CGW_TREE_WAS_STASHED=0
+    CGW_NON_INTERACTIVE=1 cgw_require_clean_tree --on-dirty confirm-stash --reason 'sync test'
+    rc=\$?
+    echo \"rc=\${rc}\"
+    echo \"sentinel=\${_CGW_TREE_WAS_STASHED}\"
+    exit \${rc}
+  "
+  git checkout HEAD -- README.md
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"rc=1"* ]]
+  [[ "${output}" == *"sentinel=0"* ]]
+  [[ "${output}" == *"Failed to stash changes"* ]]
+}
+
 # ── cgw_freeform_message_check() ──────────────────────────────────────────────
 
 @test "cgw_freeform_message_check: unset CGW_FREEFORM_MESSAGE_CHECK returns 0" {
@@ -1679,6 +1880,16 @@ UU b.py
   chmod +x "${fake_bin}"
   CGW_MARKDOWNLINT_CMD="${fake_bin}" CGW_MARKDOWNLINT_ARGS="" logfile=/dev/null run cgw_run_markdownlint_check
   [ "${status}" -eq 1 ]
+  rm -f "${fake_bin}"
+}
+
+@test "cgw_run_markdownlint_check: returns 2 when tool exits non-zero with 0 matched lint errors (infrastructure crash)" {
+  local fake_bin
+  fake_bin="$(mktemp)"
+  printf '#!/usr/bin/env bash\necho "SyntaxError: Invalid regular expression flags"\nexit 1\n' > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  CGW_MARKDOWNLINT_CMD="${fake_bin}" CGW_MARKDOWNLINT_ARGS="" logfile=/dev/null run cgw_run_markdownlint_check
+  [ "${status}" -eq 2 ]
   rm -f "${fake_bin}"
 }
 
@@ -2789,4 +3000,130 @@ UU b.py
   run cgw_remote_branch_exists "${TEST_REPO_DIR}/no-such-remote-path" "main"
   [ "${status}" -ne 0 ]
   [ "${status}" -ne 2 ]
+}
+
+# ── cgw_lint_plan() ──────────────────────────────────────────────────────────
+
+@test "cgw_lint_plan: check mode with all tools configured produces 4 run entries" {
+  CGW_LINT_CMD="ruff" CGW_FORMAT_CMD="ruff" CGW_TYPECHECK_CMD="mypy" CGW_MARKDOWNLINT_CMD="markdownlint-cli2" \
+    run cgw_lint_plan check
+  [ "${status}" -eq 0 ]
+  [ "${lines[0]}" = "lint:run:configured" ]
+  [ "${lines[1]}" = "format:run:configured" ]
+  [ "${lines[2]}" = "typecheck:run:configured" ]
+  [ "${lines[3]}" = "markdown:run:configured" ]
+}
+
+@test "cgw_lint_plan: check mode with --skip-lint umbrella skip" {
+  CGW_LINT_CMD="ruff" CGW_FORMAT_CMD="ruff" CGW_TYPECHECK_CMD="mypy" CGW_MARKDOWNLINT_CMD="markdownlint-cli2" \
+    run cgw_lint_plan check --skip-lint
+  [ "${status}" -eq 0 ]
+  [ "${lines[0]}" = "lint:skip:--skip-lint" ]
+  [ "${lines[1]}" = "format:skip:--skip-lint" ]
+  [ "${lines[2]}" = "typecheck:skip:--skip-lint" ]
+  [ "${lines[3]}" = "markdown:skip:--skip-lint" ]
+}
+
+@test "cgw_lint_plan: check mode with CGW_SKIP_LINT=1 umbrella skip" {
+  CGW_SKIP_LINT="1" CGW_LINT_CMD="ruff" CGW_FORMAT_CMD="ruff" CGW_TYPECHECK_CMD="mypy" CGW_MARKDOWNLINT_CMD="markdownlint-cli2" \
+    run cgw_lint_plan check
+  [ "${status}" -eq 0 ]
+  [ "${lines[0]}" = "lint:skip:CGW_SKIP_LINT=1" ]
+  [ "${lines[1]}" = "format:skip:CGW_SKIP_LINT=1" ]
+  [ "${lines[2]}" = "typecheck:skip:CGW_SKIP_LINT=1" ]
+  [ "${lines[3]}" = "markdown:skip:CGW_SKIP_LINT=1" ]
+}
+
+@test "cgw_lint_plan: check mode with --skip-typecheck and --skip-md-lint" {
+  CGW_LINT_CMD="ruff" CGW_FORMAT_CMD="ruff" CGW_TYPECHECK_CMD="mypy" CGW_MARKDOWNLINT_CMD="markdownlint-cli2" \
+    run cgw_lint_plan check --skip-typecheck --skip-md-lint
+  [ "${status}" -eq 0 ]
+  [ "${lines[0]}" = "lint:run:configured" ]
+  [ "${lines[1]}" = "format:run:configured" ]
+  [ "${lines[2]}" = "typecheck:skip:--skip-typecheck" ]
+  [ "${lines[3]}" = "markdown:skip:--skip-md-lint" ]
+}
+
+@test "cgw_lint_plan: check mode with --md-only" {
+  CGW_LINT_CMD="ruff" CGW_FORMAT_CMD="ruff" CGW_TYPECHECK_CMD="mypy" CGW_MARKDOWNLINT_CMD="markdownlint-cli2" \
+    run cgw_lint_plan check --md-only
+  [ "${status}" -eq 0 ]
+  [ "${lines[0]}" = "lint:skip:--md-only" ]
+  [ "${lines[1]}" = "format:skip:--md-only" ]
+  [ "${lines[2]}" = "typecheck:skip:--md-only" ]
+  [ "${lines[3]}" = "markdown:run:configured" ]
+}
+
+@test "cgw_lint_plan: check mode with --modified-only" {
+  CGW_LINT_CMD="ruff" CGW_FORMAT_CMD="ruff" CGW_TYPECHECK_CMD="mypy" CGW_MARKDOWNLINT_CMD="markdownlint-cli2" \
+    run cgw_lint_plan check --modified-only
+  [ "${status}" -eq 0 ]
+  [ "${lines[0]}" = "lint:run:configured" ]
+  [ "${lines[1]}" = "format:run:configured" ]
+  [ "${lines[2]}" = "typecheck:skip:--modified-only" ]
+  [ "${lines[3]}" = "markdown:skip:--modified-only" ]
+}
+
+@test "cgw_lint_plan: fix mode skips typecheck and runs markdown under --modified-only" {
+  CGW_LINT_CMD="ruff" CGW_FORMAT_CMD="ruff" CGW_TYPECHECK_CMD="mypy" CGW_MARKDOWNLINT_CMD="markdownlint-cli2" \
+    run cgw_lint_plan fix --modified-only
+  [ "${status}" -eq 0 ]
+  [ "${lines[0]}" = "lint:run:configured" ]
+  [ "${lines[1]}" = "format:run:configured" ]
+  [ "${lines[2]}" = "typecheck:skip:no fix support" ]
+  [ "${lines[3]}" = "markdown:run:configured" ]
+}
+
+@test "cgw_lint_plan: rejects invalid mode or mutually exclusive flags" {
+  run cgw_lint_plan invalid_mode
+  [ "${status}" -ne 0 ]
+
+  run cgw_lint_plan check --skip-md-lint --md-only
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"mutually exclusive"* ]]
+
+  run cgw_lint_plan check --modified-only --md-only
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"not supported together"* ]]
+}
+
+# ── cgw_run_*() result-var and mode ──────────────────────────────────────────
+
+@test "cgw_run_lint_check: returns Lint:PASSED:0 in result-var on clean run" {
+  local mock_bin="${BATS_TEST_TMPDIR}/mock_ruff_pass"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${mock_bin}"
+  chmod +x "${mock_bin}"
+
+  local my_result=""
+  CGW_LINT_CMD="${mock_bin}" cgw_run_lint_check --mode plain --result-var my_result
+  [ "${my_result}" = "Lint:PASSED:0" ]
+}
+
+@test "cgw_run_lint_check: plain mode suppresses section headers/footers" {
+  local mock_bin="${BATS_TEST_TMPDIR}/mock_ruff_plain"
+  printf '#!/usr/bin/env bash\necho "plain output test"\nexit 0\n' > "${mock_bin}"
+  chmod +x "${mock_bin}"
+
+  CGW_LINT_CMD="${mock_bin}" run cgw_run_lint_check --mode plain
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"plain output test"* ]]
+  [[ "${output}" != *"========================================"* ]]
+  [[ "${output}" != *"[LINT CHECK] Started"* ]]
+}
+
+@test "cgw_run_typecheck: honors CGW_SKIP_LINT=1 umbrella skip" {
+  local my_res=""
+  CGW_SKIP_LINT=1 CGW_TYPECHECK_CMD="fake-tc" cgw_run_typecheck --mode plain --result-var my_res
+  [ "${my_res}" = "Typecheck:SKIPPED:0" ]
+}
+
+@test "cgw_run_format_check: reports Format:WARN on failure when non-blocking" {
+  local mock_bin="${BATS_TEST_TMPDIR}/mock_format_fail"
+  printf '#!/usr/bin/env bash\necho "format error"\nexit 1\n' > "${mock_bin}"
+  chmod +x "${mock_bin}"
+
+  local fmt_res=""
+  CGW_FORMAT_CHECK_NONBLOCKING=1 CGW_FORMAT_CMD="${mock_bin}" \
+    cgw_run_format_check --mode plain --result-var fmt_res || true
+  [ "${fmt_res}" = "Format:WARN:0" ]
 }

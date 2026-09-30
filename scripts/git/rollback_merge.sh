@@ -128,22 +128,13 @@ main() {
   # [2/5] Check for uncommitted changes
   log_section_start "UNCOMMITTED CHANGES CHECK" "$logfile"
 
-  if ! git diff-index --quiet HEAD --; then
-    echo "[!] WARNING: Uncommitted changes detected" | tee -a "$logfile"
-    echo "" | tee -a "$logfile"
-    git status --short | tee -a "$logfile"
-    echo "" | tee -a "$logfile"
-    echo "These changes will be LOST during rollback!" | tee -a "$logfile"
-    echo "" | tee -a "$logfile"
-    if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
-      echo "" | tee -a "$logfile"
-      echo "Rollback cancelled" | tee -a "$logfile"
-      echo "Please commit or stash changes first"
+  if cgw_is_tree_clean; then
+    echo "[OK] No uncommitted changes" | tee -a "$logfile"
+  else
+    if ! cgw_require_clean_tree --on-dirty confirm-abort --reason "rollback"; then
       log_section_end "UNCOMMITTED CHANGES CHECK" "$logfile" "1"
       exit 1
     fi
-  else
-    echo "[OK] No uncommitted changes" | tee -a "$logfile"
   fi
   log_section_end "UNCOMMITTED CHANGES CHECK" "$logfile" "0"
   echo "" | tee -a "$logfile"

@@ -73,11 +73,11 @@ cp cgw.conf.example .cgw.conf
 | `CGW_LINT_EXCLUDES` | `--extend-exclude logs --extend-exclude .venv` | Exclusion flags appended to lint commands |
 | `CGW_FORMAT_EXCLUDES` | `--exclude logs --exclude .venv` | Exclusion flags appended to format commands |
 | `CGW_LINT_EXTENSIONS` | `*.py` | File globs for `--modified-only` lint mode (e.g. `*.js *.ts`) |
-| `CGW_MARKDOWNLINT_CMD` | *(auto-detected)* | Markdown lint tool; auto-detected at runtime if unset (`markdownlint-cli2` → `markdownlint` → `npx --yes markdownlint-cli2` fallback → disabled). Set explicitly to override, or to `""` to opt out |
+| `CGW_MARKDOWNLINT_CMD` | *(auto-detected)* | Markdown lint tool; auto-detected at runtime if unset (`markdownlint-cli2` → `markdownlint` → `npx --yes markdownlint-cli2` fallback (requires Node >= 20 with RegExp `v` flag support) → disabled). Set explicitly to override, or to `""` to opt out |
 | `CGW_MARKDOWNLINT_ARGS` | `!CLAUDE.md !MEMORY.md` | Flags/exclusions only (never a scan-target glob) |
 | `CGW_MARKDOWNLINT_PATHS` | `**/*.md` | Default scan target for audit mode (`check_lint.sh`/`push_validated.sh`); the commit gate scopes to staged `*.md` instead |
 | `CGW_MARKDOWNLINT_FIX_ARGS` | `--fix` | Arguments for markdown auto-fix (`fix_lint.sh`, commit-gate auto-fix) |
-| `CGW_MARKDOWNLINT_NPX_FALLBACK` | `1` | Set to `0` to disable the `npx --yes markdownlint-cli2` fallback when no markdownlint binary is on `PATH` |
+| `CGW_MARKDOWNLINT_NPX_FALLBACK` | `1` | Set to `0` to disable the `npx --yes markdownlint-cli2` fallback when no markdownlint binary is on `PATH`. Note: fallback is also automatically disabled if Node lacks RegExp `v` flag support (Node < 20), avoiding runtime `SyntaxError`s |
 | `CGW_SKIP_LINT` | `0` | Set to `1` to skip all lint checks at runtime |
 | `CGW_SKIP_MD_LINT` | `0` | Set to `1` to skip only the markdown lint step; also narrows the `[3.5]` staged-blob congruence guard's scope, excluding `*.md` from what it considers "validated" this run |
 | `CGW_TYPECHECK_CMD` | `` | Typecheck tool; set to e.g. `pyrefly` to enable (`""` to disable). Blocking in `check_lint.sh`/`push_validated.sh`, advisory in the pre-commit hook -- see [Typecheck](#typecheck) |

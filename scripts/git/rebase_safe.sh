@@ -239,16 +239,13 @@ _check_pushed_commits() {
 _handle_dirty_tree() {
   local autostash="${1}"
 
-  if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+  if ! cgw_is_tree_clean; then
     if [[ "${autostash}" -eq 1 ]]; then
-      echo "  Stashing uncommitted changes..." | tee -a "$logfile"
-      if git stash push -m "rebase_safe auto-stash $(date +%Y%m%d_%H%M%S)" 2>&1 | tee -a "$logfile"; then
-        _rebase_stash_created=1
-        echo "  [OK] Changes stashed" | tee -a "$logfile"
-      else
+      if ! cgw_require_clean_tree --on-dirty stash --stash-msg "rebase_safe auto-stash $(date +%Y%m%d_%H%M%S)"; then
         err "Failed to stash changes -- resolve conflicts first"
         exit 1
       fi
+      [[ "${_CGW_TREE_WAS_STASHED:-0}" -eq 1 ]] && _rebase_stash_created=1
     else
       err "Working tree has uncommitted changes. Use --autostash or commit/stash first."
       git diff --stat | head -10 | while IFS= read -r line; do printf '  %s\n' "${line}"; done
