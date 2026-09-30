@@ -2393,12 +2393,26 @@ cgw_require_clean_tree() {
       fi
       local s_msg="${stash_msg:-cgw auto-stash $(date +%Y%m%d_%H%M%S)}"
       if [[ -n "${logfile:-}" && -f "${logfile}" ]]; then
-        git stash push -m "${s_msg}" >>"$logfile" 2>&1 || true
+        echo "  Stashing uncommitted changes..." | tee -a "$logfile"
+        if git stash push -m "${s_msg}" >>"$logfile" 2>&1; then
+          _CGW_TREE_WAS_STASHED=1
+          echo "  [OK] Changes stashed" | tee -a "$logfile"
+          return 0
+        else
+          echo "[ERROR] Failed to stash changes" | tee -a "$logfile" >&2
+          return 1
+        fi
       else
-        git stash push -m "${s_msg}" >/dev/null 2>&1 || true
+        echo "  Stashing uncommitted changes..."
+        if git stash push -m "${s_msg}" >/dev/null 2>&1; then
+          _CGW_TREE_WAS_STASHED=1
+          echo "  [OK] Changes stashed"
+          return 0
+        else
+          echo "[ERROR] Failed to stash changes" >&2
+          return 1
+        fi
       fi
-      _CGW_TREE_WAS_STASHED=1
-      return 0
       ;;
   esac
   return 0

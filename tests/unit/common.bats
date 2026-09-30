@@ -941,6 +941,59 @@ UU b.py
   [[ "${output}" == *"These changes will be LOST during rollback test!"* ]]
 }
 
+@test "cgw_require_clean_tree: --on-dirty confirm-stash stashes changes and sets sentinel" {
+  cd "${TEST_REPO_DIR}"
+  echo "dirty" >> README.md
+  _CGW_TREE_WAS_STASHED=0
+  CGW_NON_INTERACTIVE=1 cgw_require_clean_tree --on-dirty confirm-stash --reason "sync test"
+  [ "${_CGW_TREE_WAS_STASHED}" -eq 1 ]
+  cgw_is_tree_clean
+  git stash pop
+  git checkout HEAD -- README.md
+}
+
+@test "cgw_require_clean_tree: --on-dirty confirm-stash aborts when non-interactive refuses" {
+  cd "${TEST_REPO_DIR}"
+  echo "dirty" >> README.md
+  # Simulate non-interactive denial by running with a mock or echo "n" | ...
+  # When input is empty in interactive mode without accept policy, or echo n:
+  run bash -c "
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cd '${TEST_REPO_DIR}'
+    echo 'n' | cgw_require_clean_tree --on-dirty confirm-stash --reason 'sync test'
+  "
+  git checkout HEAD -- README.md
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Aborted -- commit or stash manually"* ]]
+}
+
+@test "cgw_require_clean_tree: --on-dirty confirm-stash returns 1 and leaves sentinel unset if stash fails" {
+  cd "${TEST_REPO_DIR}"
+  echo "dirty" >> README.md
+  run bash -c "
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cd '${TEST_REPO_DIR}'
+    git() {
+      if [[ \"\$*\" == *\"stash push\"* ]]; then
+        echo 'fatal: mock stash push failure' >&2
+        return 1
+      fi
+      command git \"\$@\"
+    }
+    _CGW_TREE_WAS_STASHED=0
+    CGW_NON_INTERACTIVE=1 cgw_require_clean_tree --on-dirty confirm-stash --reason 'sync test'
+    rc=\$?
+    echo \"rc=\${rc}\"
+    echo \"sentinel=\${_CGW_TREE_WAS_STASHED}\"
+    exit \${rc}
+  "
+  git checkout HEAD -- README.md
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"rc=1"* ]]
+  [[ "${output}" == *"sentinel=0"* ]]
+  [[ "${output}" == *"Failed to stash changes"* ]]
+}
+
 # ── cgw_freeform_message_check() ──────────────────────────────────────────────
 
 @test "cgw_freeform_message_check: unset CGW_FREEFORM_MESSAGE_CHECK returns 0" {

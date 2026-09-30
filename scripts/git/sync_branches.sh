@@ -34,7 +34,7 @@ ensure_no_stale_index_lock || exit 1
 
 _sync_original_branch=""
 _sync_did_checkout=0
-_SYNC_AUTOSTASH=0
+_sync_tree_was_stashed=0
 _sync_dry_run=0
 _SYNC_PROTECTED_FILES=()
 _sync_current_old_head=""
@@ -47,12 +47,18 @@ _cleanup_sync() {
     echo "[!] Interrupted mid-sync -- restoring protected skip-worktree files" >&2
     _sync_restore_skip_worktree "${_sync_current_old_head:-HEAD}" >&2 2>&1 || true
   fi
+  git rebase --abort 2>/dev/null || true
   if [[ ${_sync_did_checkout} -eq 1 ]] && [[ -n "${_sync_original_branch}" ]] &&
     [[ "${current}" != "${_sync_original_branch}" ]]; then
     echo "" >&2
     echo "[!] Interrupted -- returning to: ${_sync_original_branch}" >&2
-    git rebase --abort 2>/dev/null || true
     git checkout "${_sync_original_branch}" 2>/dev/null || true
+  fi
+  if [[ ${_sync_tree_was_stashed:-0} -eq 1 ]]; then
+    echo "" >&2
+    echo "[!] Restoring auto-stashed changes..." >&2
+    git stash pop >&2 2>&1 || true
+    _sync_tree_was_stashed=0
   fi
 }
 trap _cleanup_sync EXIT INT TERM
@@ -230,7 +236,6 @@ sync_one_branch() {
   _sync_protect_skip_worktree
 
   local rebase_args=(pull --rebase "${CGW_REMOTE}" "${branch}")
-  [[ "${_SYNC_AUTOSTASH}" == "1" ]] && rebase_args=(pull --rebase --autostash "${CGW_REMOTE}" "${branch}")
   if run_git_with_logging "GIT REBASE ${branch}" "$logfile" "${rebase_args[@]}"; then
     echo "  [OK] ${branch} synced successfully" | tee -a "$logfile"
     _sync_restore_skip_worktree "${_sync_current_old_head}"
@@ -335,11 +340,13 @@ main() {
   echo "[1/4] Checking working tree..." | tee -a "$logfile"
   if cgw_is_tree_clean; then
     echo "[OK] Working tree clean" | tee -a "$logfile"
+  elif [[ ${dry_run} -eq 1 ]]; then
+    echo "[!] Uncommitted changes detected (dry run -- skipping auto-stash)" | tee -a "$logfile"
   else
     if ! cgw_require_clean_tree --on-dirty confirm-stash --reason "sync"; then
       exit 0
     fi
-    [[ "${_CGW_TREE_WAS_STASHED:-0}" -eq 1 ]] && _SYNC_AUTOSTASH=1
+    [[ "${_CGW_TREE_WAS_STASHED:-0}" -eq 1 ]] && _sync_tree_was_stashed=1
   fi
   # diff-index above ignores skip-worktree files by design (that's the bug
   # class this hardening targets) -- surface real disk divergence separately
@@ -386,6 +393,18 @@ main() {
   if [[ "${current_after}" != "${_sync_original_branch}" ]]; then
     git checkout "${_sync_original_branch}" >>"$logfile" 2>&1
     echo "Returned to: ${_sync_original_branch}" | tee -a "$logfile"
+    echo "" | tee -a "$logfile"
+  fi
+
+  # Restore auto-stashed changes
+  if [[ ${_sync_tree_was_stashed} -eq 1 ]]; then
+    echo "Restoring auto-stashed changes..." | tee -a "$logfile"
+    if git stash pop >>"$logfile" 2>&1; then
+      echo "  [OK] Auto-stashed changes restored" | tee -a "$logfile"
+    else
+      echo "  [!] Auto-stashed changes restored with conflicts (stash retained)" | tee -a "$logfile" >&2
+    fi
+    _sync_tree_was_stashed=0
     echo "" | tee -a "$logfile"
   fi
 

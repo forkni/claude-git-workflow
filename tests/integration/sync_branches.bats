@@ -182,13 +182,42 @@ _push_remote_commit() {
 
 # ── Uncommitted changes ───────────────────────────────────────────────────────
 
-@test "uncommitted changes trigger autostash in non-interactive" {
-  echo "dirty" > "${TEST_REPO_DIR}/dirty.txt"
+@test "uncommitted changes trigger autostash and restore in non-interactive" {
+  echo "dirty content" > "${TEST_REPO_DIR}/dirty.txt"
   git -C "${TEST_REPO_DIR}" add dirty.txt
 
   run _run_sync ""
   [ "${status}" -eq 0 ]
   [[ "${output}" == *"auto-stash"* ]] || [[ "${output}" == *"Auto-stash"* ]] || [[ "${output}" == *"autostash"* ]]
+  [[ "${output}" == *"restored"* ]] || [[ "${output}" == *"Restoring"* ]]
+  [ -f "${TEST_REPO_DIR}/dirty.txt" ]
+  [ "$(cat "${TEST_REPO_DIR}/dirty.txt")" = "dirty content" ]
+}
+
+@test "uncommitted changes are restored after rebase when branch is behind" {
+  _push_remote_commit "development" "remote_file.txt"
+  echo "local dirty" > "${TEST_REPO_DIR}/dirty_file.txt"
+  git -C "${TEST_REPO_DIR}" add dirty_file.txt
+
+  run _run_sync ""
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Restoring auto-stashed changes"* ]]
+  [[ "${output}" == *"Auto-stashed changes restored"* ]]
+  [ -f "${TEST_REPO_DIR}/dirty_file.txt" ]
+  [ "$(cat "${TEST_REPO_DIR}/dirty_file.txt")" = "local dirty" ]
+  [ -f "${TEST_REPO_DIR}/remote_file.txt" ]
+}
+
+@test "uncommitted changes are not stashed during dry-run" {
+  echo "dry run dirty" > "${TEST_REPO_DIR}/dirty_dry.txt"
+  git -C "${TEST_REPO_DIR}" add dirty_dry.txt
+
+  run _run_sync "--dry-run"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"skipping auto-stash"* ]]
+  [ -f "${TEST_REPO_DIR}/dirty_dry.txt" ]
+  run git -C "${TEST_REPO_DIR}" status --porcelain
+  [[ "${output}" == *"A  dirty_dry.txt"* ]]
 }
 
 # ── Unknown flag ──────────────────────────────────────────────────────────────

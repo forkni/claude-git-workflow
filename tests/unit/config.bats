@@ -260,10 +260,14 @@ teardown() {
     command() {
       case \"\$2\" in
         markdownlint-cli2|markdownlint) return 1 ;;
-        npx) return 0 ;;
+        npx|node) return 0 ;;
         *) builtin command \"\$@\" ;;
       esac
     }
+    node() {
+      return 0
+    }
+    export -f node
     unset CGW_MARKDOWNLINT_CMD CGW_MARKDOWNLINT_NPX_FALLBACK
     source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
     echo \"CMD=[\${CGW_MARKDOWNLINT_CMD}]\"
