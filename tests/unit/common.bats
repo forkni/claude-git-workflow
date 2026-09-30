@@ -877,6 +877,37 @@ UU b.py
   [ "${status}" -eq 0 ]
 }
 
+@test "cgw_is_tree_clean: returns 1 when skip-worktree file is modified on disk" {
+  cd "${TEST_REPO_DIR}"
+  git update-index --skip-worktree README.md
+  echo "skip-worktree edit" >> README.md
+  run cgw_is_tree_clean
+  git update-index --no-skip-worktree README.md
+  git checkout HEAD -- README.md
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_is_tree_clean: returns 1 when skip-worktree file is deleted on disk" {
+  cd "${TEST_REPO_DIR}"
+  git update-index --skip-worktree README.md
+  rm -f README.md
+  run cgw_is_tree_clean
+  git update-index --no-skip-worktree README.md
+  git checkout HEAD -- README.md
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_tree_dirty_paths: emits deleted skip-worktree file" {
+  cd "${TEST_REPO_DIR}"
+  git update-index --skip-worktree README.md
+  rm -f README.md
+  run cgw_tree_dirty_paths
+  git update-index --no-skip-worktree README.md
+  git checkout HEAD -- README.md
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"README.md"* ]]
+}
+
 @test "cgw_require_clean_tree: returns 0 when tree is clean" {
   cd "${TEST_REPO_DIR}"
   cgw_require_clean_tree --on-dirty fail

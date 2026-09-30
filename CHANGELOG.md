@@ -18,6 +18,7 @@
 
 ### Bug Fixes
 
+- fail closed on deleted diff-blind files in clean tree scan
 - probe node capability for markdownlint detection (131dbe2)
 - resolve known issues C1, E1, Obs 1-8 with integration tests (ace6153)
 - guard rollback_merge root revert and recover reflog pipefail (e6ceb40)

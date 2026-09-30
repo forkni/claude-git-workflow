@@ -2217,22 +2217,27 @@ cgw_branch_is_protected() {
 
 # cgw_tree_dirty_paths
 #   Emits the paths of uncommitted tracked changes and any skip-worktree /
-#   assume-unchanged files whose disk content diverged from HEAD.
-#   Untracked files are excluded. Pure scanner, no side effects.
+#   assume-unchanged files whose disk content diverged from HEAD (including
+#   files deleted on disk). Untracked files are excluded. Pure scanner, no side effects.
 cgw_tree_dirty_paths() {
   # 1. Uncommitted tracked changes (both staged and unstaged)
   git status --porcelain --untracked-files=no 2>/dev/null | sed -e 's/^...//'
 
   # 2. Skip-worktree or assume-unchanged paths that diverged from HEAD
   local sw_files f
-  sw_files=$(git ls-files -v 2>/dev/null | grep '^[a-zS]' | awk '{print $2}')
+  sw_files=$(git ls-files -v 2>/dev/null | grep '^[a-zS]' | cut -c3-)
   if [[ -n "${sw_files}" ]]; then
     while IFS= read -r f; do
       [[ -z "${f}" ]] && continue
       local disk_hash index_hash
-      disk_hash=$(git hash-object --path="${f}" "${f}" 2>/dev/null || true)
       index_hash=$(git rev-parse ":${f}" 2>/dev/null || true)
-      if [[ -n "${disk_hash}" && -n "${index_hash}" && "${disk_hash}" != "${index_hash}" ]]; then
+      [[ -z "${index_hash}" ]] && continue
+      if [[ ! -e "${f}" ]]; then
+        echo "${f}"
+        continue
+      fi
+      disk_hash=$(git hash-object --path="${f}" "${f}" 2>/dev/null || true)
+      if [[ -z "${disk_hash}" || "${disk_hash}" != "${index_hash}" ]]; then
         echo "${f}"
       fi
     done <<<"${sw_files}"
