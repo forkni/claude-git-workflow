@@ -23,8 +23,8 @@ main() {
   local skip_md_lint=0
   local md_only=0
 
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
+  for arg in "$@"; do
+    case "$arg" in
       --help | -h)
         echo "Usage: ./scripts/git/fix_lint.sh [OPTIONS]"
         echo ""
@@ -49,43 +49,57 @@ main() {
       --non-interactive)
         non_interactive=1
         CGW_NON_INTERACTIVE=1
-        shift
         ;;
       --no-venv)
         CGW_NO_VENV=1
         SKIP_VENV=1
-        shift
         ;;
       --modified-only)
         modified_only=1
-        shift
         ;;
       --skip-md-lint)
         skip_md_lint=1
-        shift
         ;;
       --md-only)
         md_only=1
-        shift
+        ;;
+      --skip-lint)
         ;;
       *)
-        echo "[ERROR] Unknown flag: $1" >&2
+        echo "[ERROR] Unknown flag: $arg" >&2
         exit 1
         ;;
     esac
   done
 
-  [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
-  [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]] && skip_md_lint=1
-
-  if [[ "${skip_md_lint}" -eq 1 ]] && [[ "${md_only}" -eq 1 ]]; then
-    echo "[ERROR] --skip-md-lint and --md-only are mutually exclusive" >&2
+  # Query the lint pipeline plan
+  local plan
+  if ! plan=$(cgw_lint_plan fix "$@"); then
     exit 1
   fi
 
-  if [[ -z "${CGW_LINT_CMD}" ]] && [[ -z "${CGW_FORMAT_CMD}" ]] && [[ -z "${CGW_MARKDOWNLINT_CMD}" ]]; then
-    echo "[OK] Lint fix skipped (CGW_LINT_CMD, CGW_FORMAT_CMD, and CGW_MARKDOWNLINT_CMD not set)"
-    exit 0
+  local lint_act="" lint_reason=""
+  local format_act="" format_reason=""
+  local tc_act="" tc_reason=""
+  local md_act="" md_reason=""
+  local _step _act _rsn
+  while IFS=: read -r _step _act _rsn; do
+    case "$_step" in
+      lint) lint_act="$_act"; lint_reason="$_rsn" ;;
+      format) format_act="$_act"; format_reason="$_rsn" ;;
+      typecheck) tc_act="$_act"; tc_reason="$_rsn" ;;
+      markdown) md_act="$_act"; md_reason="$_rsn" ;;
+    esac
+  done <<<"${plan}"
+
+  if [[ "$lint_act" == "skip" && "$format_act" == "skip" && "$md_act" == "skip" ]]; then
+    if [[ "$lint_reason" == "CGW_LINT_CMD not set" && "$format_reason" == "CGW_FORMAT_CMD not set" && "$md_reason" == "CGW_MARKDOWNLINT_CMD not set" ]]; then
+      echo "[OK] Lint fix skipped (CGW_LINT_CMD, CGW_FORMAT_CMD, and CGW_MARKDOWNLINT_CMD not set)"
+      exit 0
+    elif [[ "$lint_reason" == "--skip-lint" || "$lint_reason" == "CGW_SKIP_LINT=1" ]]; then
+      echo "[OK] Lint fix skipped (${lint_reason})"
+      exit 0
+    fi
   fi
 
   cd "${PROJECT_ROOT}" || {
@@ -100,7 +114,7 @@ main() {
     local EXIT_CODE=0
     local ran_something=0
 
-    if [[ "${md_only}" -eq 0 ]]; then
+    if [[ "$lint_act" == "run" || "$format_act" == "run" ]]; then
       local modified_files
       modified_files=$(cgw_modified_files_for_lint)
       if [[ -n "$modified_files" ]]; then
@@ -114,12 +128,11 @@ main() {
         # Same lint pipeline as full mode, scoped to the modified files:
         # lint --fix then format --fix, each skipped when its tool is unset.
         # Section output goes to the console only (no log file in this mode).
-        local logfile=/dev/null
         cgw_run_lint_fix "${files[@]}" || EXIT_CODE=1
       fi
     fi
 
-    if [[ "${skip_md_lint}" -eq 0 ]]; then
+    if [[ "$md_act" == "run" ]]; then
       local modified_md
       modified_md=$(cgw_modified_files_for_md)
       if [[ -n "$modified_md" ]]; then
@@ -135,8 +148,6 @@ main() {
         echo "Files: $modified_md"
         echo ""
         echo "[MARKDOWN FIX]"
-        # No log file in --modified-only mode (init_logging hasn't run).
-        local logfile="/dev/null"
         cgw_run_markdownlint_fix "${modified_md_arr[@]}" || EXIT_CODE=1
       fi
     fi
@@ -167,14 +178,14 @@ main() {
 
   local fix_failed=0
 
-  if [[ "${md_only}" -eq 0 ]]; then
+  if [[ "$lint_act" == "run" || "$format_act" == "run" ]]; then
     cgw_run_lint_fix || {
       echo "[!] Lint tool: some issues may not be auto-fixable" | tee -a "$logfile"
       fix_failed=1
     }
   fi
 
-  if [[ "${skip_md_lint}" -eq 0 ]]; then
+  if [[ "$md_act" == "run" ]]; then
     cgw_run_markdownlint_fix || {
       echo "[!] Markdown lint: some issues may not be auto-fixable" | tee -a "$logfile"
       fix_failed=1

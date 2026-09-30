@@ -333,17 +333,13 @@ main() {
 
   # [1/4] Check working tree
   echo "[1/4] Checking working tree..." | tee -a "$logfile"
-  if ! git diff-index --quiet HEAD -- 2>/dev/null; then
-    echo "[!] Uncommitted changes detected -- will auto-stash during rebase" | tee -a "$logfile"
-    git status --short | tee -a "$logfile"
-    echo "" | tee -a "$logfile"
-    if ! cgw_confirm "Auto-stash changes and sync?" --non-interactive accept; then
-      echo "Aborted -- commit or stash manually before syncing" | tee -a "$logfile"
+  if cgw_is_tree_clean; then
+    echo "[OK] Working tree clean" | tee -a "$logfile"
+  else
+    if ! cgw_require_clean_tree --on-dirty confirm-stash --reason "sync"; then
       exit 0
     fi
-    _SYNC_AUTOSTASH=1
-  else
-    echo "[OK] Working tree clean" | tee -a "$logfile"
+    [[ "${_CGW_TREE_WAS_STASHED:-0}" -eq 1 ]] && _SYNC_AUTOSTASH=1
   fi
   # diff-index above ignores skip-worktree files by design (that's the bug
   # class this hardening targets) -- surface real disk divergence separately

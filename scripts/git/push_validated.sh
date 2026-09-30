@@ -137,14 +137,7 @@ main() {
 
   # Check force-push protection against configured protected branches
   local is_protected=0
-  local -a _pb_arr=()
-  read -r -a _pb_arr <<<"${CGW_PROTECTED_BRANCHES:-}" || true
-  for protected in "${_pb_arr[@]+"${_pb_arr[@]}"}"; do
-    if [[ "${target_branch}" == "${protected}" ]]; then
-      is_protected=1
-      break
-    fi
-  done
+  cgw_branch_is_protected "${target_branch}" --policy push && is_protected=1
 
   if [[ ${is_protected} -eq 1 ]] && [[ ${force_push} -eq 1 ]]; then
     echo "[!] WARNING: Force-push to protected branch '${target_branch}' requested!" | tee -a "$logfile"

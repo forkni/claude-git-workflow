@@ -1126,77 +1126,364 @@ cgw_modified_files_for_lint() {
   git diff --name-only --diff-filter=ACMR HEAD -- "${lint_exts[@]}"
 }
 
-# cgw_run_lint_check [files...]
+
+# cgw_lint_plan <check|fix> [flags...]
+#   Pure query returning the execution plan for the lint pipeline.
+#   Outputs line-delimited records: step:action:reason
+#     step:   lint | format | typecheck | markdown
+#     action: run | skip
+#     reason: explanation (e.g. configured, CGW_SKIP_LINT=1, --skip-lint,
+#             CGW_LINT_CMD not set, --skip-typecheck, --md-only, --modified-only, etc.)
+#   Validates flag combinations (e.g. --skip-md-lint + --md-only is an error).
+#   Returns 0 on successful plan generation, 1 on invalid arguments or mutually exclusive flags.
+cgw_lint_plan() {
+  local mode="${1:-}"
+  if [[ "${mode}" != "check" && "${mode}" != "fix" ]]; then
+    echo "cgw_lint_plan: mode must be 'check' or 'fix'" >&2
+    return 1
+  fi
+  shift
+
+  local skip_lint_flag=0
+  local skip_md_lint_flag=0
+  local skip_typecheck_flag=0
+  local md_only=0
+  local modified_only=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --skip-lint)
+        skip_lint_flag=1
+        shift
+        ;;
+      --skip-md-lint)
+        skip_md_lint_flag=1
+        shift
+        ;;
+      --skip-typecheck)
+        skip_typecheck_flag=1
+        shift
+        ;;
+      --md-only)
+        md_only=1
+        shift
+        ;;
+      --modified-only)
+        modified_only=1
+        shift
+        ;;
+      --no-venv | --interactive | --non-interactive | --all | --staged-only | --sign | --no-sign | -h | --help)
+        # Recognized harmless flags that do not alter the step plan
+        shift
+        ;;
+      --only)
+        shift 2 2>/dev/null || shift
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  if [[ ${skip_md_lint_flag} -eq 1 ]] && [[ ${md_only} -eq 1 ]]; then
+    echo "cgw_lint_plan: --skip-md-lint and --md-only are mutually exclusive" >&2
+    return 1
+  fi
+
+  if [[ "${mode}" == "check" ]] && [[ ${modified_only} -eq 1 ]] && [[ ${md_only} -eq 1 ]]; then
+    echo "cgw_lint_plan: --modified-only and --md-only are not supported together" >&2
+    return 1
+  fi
+
+  # Umbrella skip resolution: --skip-lint or CGW_SKIP_LINT=1
+  local umbrella_reason=""
+  if [[ ${skip_lint_flag} -eq 1 ]]; then
+    umbrella_reason="--skip-lint"
+  elif [[ "${CGW_SKIP_LINT:-0}" == "1" ]]; then
+    umbrella_reason="CGW_SKIP_LINT=1"
+  fi
+
+  if [[ -n "${umbrella_reason}" ]]; then
+    echo "lint:skip:${umbrella_reason}"
+    echo "format:skip:${umbrella_reason}"
+    echo "typecheck:skip:${umbrella_reason}"
+    echo "markdown:skip:${umbrella_reason}"
+    return 0
+  fi
+
+  # If --md-only
+  if [[ ${md_only} -eq 1 ]]; then
+    echo "lint:skip:--md-only"
+    echo "format:skip:--md-only"
+    echo "typecheck:skip:--md-only"
+    if [[ ${skip_md_lint_flag} -eq 1 ]]; then
+      echo "markdown:skip:--skip-md-lint"
+    elif [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]]; then
+      echo "markdown:skip:CGW_SKIP_MD_LINT=1"
+    elif [[ -z "${CGW_MARKDOWNLINT_CMD:-}" ]]; then
+      echo "markdown:skip:CGW_MARKDOWNLINT_CMD not set"
+    else
+      echo "markdown:run:configured"
+    fi
+    return 0
+  fi
+
+  # Step: lint
+  if [[ -z "${CGW_LINT_CMD:-}" ]]; then
+    echo "lint:skip:CGW_LINT_CMD not set"
+  else
+    echo "lint:run:configured"
+  fi
+
+  # Step: format
+  if [[ -z "${CGW_FORMAT_CMD:-}" ]]; then
+    echo "format:skip:CGW_FORMAT_CMD not set"
+  else
+    echo "format:run:configured"
+  fi
+
+  # Step: typecheck
+  if [[ "${mode}" == "fix" ]]; then
+    echo "typecheck:skip:no fix support"
+  elif [[ ${modified_only} -eq 1 ]]; then
+    echo "typecheck:skip:--modified-only"
+  elif [[ ${skip_typecheck_flag} -eq 1 ]]; then
+    echo "typecheck:skip:--skip-typecheck"
+  elif [[ "${CGW_SKIP_TYPECHECK:-0}" == "1" ]]; then
+    echo "typecheck:skip:CGW_SKIP_TYPECHECK=1"
+  elif [[ -z "${CGW_TYPECHECK_CMD:-}" ]]; then
+    echo "typecheck:skip:CGW_TYPECHECK_CMD not set"
+  else
+    echo "typecheck:run:configured"
+  fi
+
+  # Step: markdown
+  if [[ "${mode}" == "check" ]] && [[ ${modified_only} -eq 1 ]]; then
+    echo "markdown:skip:--modified-only"
+  elif [[ ${skip_md_lint_flag} -eq 1 ]]; then
+    echo "markdown:skip:--skip-md-lint"
+  elif [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]]; then
+    echo "markdown:skip:CGW_SKIP_MD_LINT=1"
+  elif [[ -z "${CGW_MARKDOWNLINT_CMD:-}" ]]; then
+    echo "markdown:skip:CGW_MARKDOWNLINT_CMD not set"
+  else
+    echo "markdown:run:configured"
+  fi
+
+  return 0
+}
+
+# _cgw_run_pipeline_tool <mode> <section_name> <log_path> <cmd...>
+#   Executes a tool under either 'logged' mode (via run_tool_with_logging)
+#   or 'plain' mode (raw command output, no log section headers/footers).
+#   In both modes, TOOL_OUTPUT and TOOL_ERROR_COUNT are set dynamically.
+#   Returns the exit code of the executed command.
+_cgw_run_pipeline_tool() {
+  local mode="$1"
+  local section_name="$2"
+  local log_path="$3"
+  shift 3
+
+  if [[ "${mode}" == "plain" ]]; then
+    TOOL_OUTPUT=$("$@" 2>&1)
+    local exit_code=$?
+    TOOL_ERROR_COUNT=$(echo "$TOOL_OUTPUT" | grep -cE "${CGW_TOOL_ERROR_REGEX:-^[^:]+:[0-9]+:[0-9]+:}" || true)
+    if [[ -n "$TOOL_OUTPUT" ]]; then
+      echo "$TOOL_OUTPUT"
+    fi
+    return $exit_code
+  else
+    run_tool_with_logging "${section_name}" "${log_path:-/dev/null}" "$@"
+  fi
+}
+
+# cgw_run_lint_check [--mode <logged|plain>] [--result-var <var>] [files...]
 #   Runs ${CGW_LINT_CMD} check against the project (no files) or a given file
 #   list (strips trailing path token from CGW_LINT_CHECK_ARGS when files given).
 #   Honors CGW_SKIP_LINT=1 and empty CGW_LINT_CMD (returns 0, emits skip line).
-#   Reads ${logfile} from caller scope. Sets TOOL_ERROR_COUNT via run_tool_with_logging.
+#   Assigns 'Lint:status:count' into the result variable (default: CGW_RESULT).
+#   Sets TOOL_ERROR_COUNT for backward compatibility.
 #   Returns 0 = clean, 1 = errors found.
 cgw_run_lint_check() {
+  local mode="logged"
+  local result_var="CGW_RESULT"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --mode)
+        mode="$2"
+        shift 2
+        ;;
+      --mode=*)
+        mode="${1#*=}"
+        shift
+        ;;
+      --result-var)
+        result_var="$2"
+        shift 2
+        ;;
+      --result-var=*)
+        result_var="${1#*=}"
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
   if [[ "${CGW_SKIP_LINT:-0}" == "1" ]]; then
-    echo "  (lint check skipped -- CGW_SKIP_LINT=1)"
+    [[ "${mode}" != "plain" ]] && echo "  (lint check skipped -- CGW_SKIP_LINT=1)"
+    printf -v "${result_var}" '%s:%s:%s' "Lint" "SKIPPED" "0"
+    TOOL_ERROR_COUNT=0
     return 0
   fi
   if [[ -z "${CGW_LINT_CMD:-}" ]]; then
-    echo "  (lint check skipped -- CGW_LINT_CMD not set)"
+    [[ "${mode}" != "plain" ]] && echo "  (lint check skipped -- CGW_LINT_CMD not set)"
+    printf -v "${result_var}" '%s:%s:%s' "Lint" "SKIPPED" "0"
+    TOOL_ERROR_COUNT=0
     return 0
   fi
   get_python_path 2>/dev/null || true
   local lint_bin
   lint_bin=$(cgw_resolve_lint_binary "${CGW_LINT_CMD}")
+  local status=0
   if [[ $# -gt 0 ]]; then
     local stripped_args
     stripped_args=$(cgw_strip_path_arg "${CGW_LINT_CHECK_ARGS:-}")
     # shellcheck disable=SC2086  # Word splitting intentional: stripped_args contains multiple flags
-    run_tool_with_logging "LINT CHECK" "${logfile}" "${lint_bin}" ${stripped_args} "$@"
+    _cgw_run_pipeline_tool "${mode}" "LINT CHECK" "${logfile:-/dev/null}" "${lint_bin}" ${stripped_args} "$@" || status=$?
   else
     local filled_args
     filled_args=$(cgw_fill_path_placeholder "${CGW_LINT_CHECK_ARGS:-}")
     # shellcheck disable=SC2086  # Word splitting intentional: filled_args/CGW_LINT_EXCLUDES contain multiple flags
-    run_tool_with_logging "LINT CHECK" "${logfile}" "${lint_bin}" ${filled_args} ${CGW_LINT_EXCLUDES:-}
+    _cgw_run_pipeline_tool "${mode}" "LINT CHECK" "${logfile:-/dev/null}" "${lint_bin}" ${filled_args} ${CGW_LINT_EXCLUDES:-} || status=$?
   fi
+  local status_str="PASSED"
+  [[ ${status} -ne 0 ]] && status_str="FAILED"
+  printf -v "${result_var}" '%s:%s:%s' "Lint" "${status_str}" "${TOOL_ERROR_COUNT:-0}"
+  return $status
 }
 
-# cgw_run_format_check [files...]
+# cgw_run_format_check [--mode <logged|plain>] [--result-var <var>] [files...]
 #   Runs ${CGW_FORMAT_CMD} format check. Same file-list and skip conventions as
 #   cgw_run_lint_check. Returns 0 silently when CGW_FORMAT_CMD is unset.
 #   Honors CGW_FORMAT_CHECK_NONBLOCKING=1 (internal knob, not meant to be
 #   exported by users) -- when set, a failing check's log-section footer
 #   reads "WARN" instead of "FAILED" (via CGW_SECTION_FAIL_LABEL below).
+#   Assigns 'Format:status:count' into the result variable (default: CGW_RESULT).
 #   The exit code / return value are unaffected either way; callers that
 #   want non-blocking behavior (check_lint.sh) decide that separately by
 #   not gating their own overall_status on this function's return code.
 cgw_run_format_check() {
+  local mode="logged"
+  local result_var="CGW_RESULT"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --mode)
+        mode="$2"
+        shift 2
+        ;;
+      --mode=*)
+        mode="${1#*=}"
+        shift
+        ;;
+      --result-var)
+        result_var="$2"
+        shift 2
+        ;;
+      --result-var=*)
+        result_var="${1#*=}"
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
   if [[ "${CGW_SKIP_LINT:-0}" == "1" ]]; then
+    printf -v "${result_var}" '%s:%s:%s' "Format" "SKIPPED" "0"
+    TOOL_ERROR_COUNT=0
     return 0
   fi
-  [[ -z "${CGW_FORMAT_CMD:-}" ]] && return 0
+  if [[ -z "${CGW_FORMAT_CMD:-}" ]]; then
+    printf -v "${result_var}" '%s:%s:%s' "Format" "SKIPPED" "0"
+    TOOL_ERROR_COUNT=0
+    return 0
+  fi
   get_python_path 2>/dev/null || true
   local format_bin
   format_bin=$(cgw_resolve_lint_binary "${CGW_FORMAT_CMD}")
   # shellcheck disable=SC2034  # read via dynamic scope by log_section_end
   local CGW_SECTION_FAIL_LABEL=""
   [[ "${CGW_FORMAT_CHECK_NONBLOCKING:-0}" == "1" ]] && CGW_SECTION_FAIL_LABEL="WARN"
+  local status=0
   if [[ $# -gt 0 ]]; then
     local stripped_args
     stripped_args=$(cgw_strip_path_arg "${CGW_FORMAT_CHECK_ARGS:-}")
     # shellcheck disable=SC2086
-    run_tool_with_logging "FORMAT CHECK" "${logfile}" "${format_bin}" ${stripped_args} "$@"
+    _cgw_run_pipeline_tool "${mode}" "FORMAT CHECK" "${logfile:-/dev/null}" "${format_bin}" ${stripped_args} "$@" || status=$?
   else
     local filled_args
     filled_args=$(cgw_fill_path_placeholder "${CGW_FORMAT_CHECK_ARGS:-}")
     # shellcheck disable=SC2086
-    run_tool_with_logging "FORMAT CHECK" "${logfile}" "${format_bin}" ${filled_args} ${CGW_FORMAT_EXCLUDES:-}
+    _cgw_run_pipeline_tool "${mode}" "FORMAT CHECK" "${logfile:-/dev/null}" "${format_bin}" ${filled_args} ${CGW_FORMAT_EXCLUDES:-} || status=$?
   fi
+  local status_str="PASSED"
+  if [[ ${status} -ne 0 ]]; then
+    status_str="${CGW_SECTION_FAIL_LABEL:-FAILED}"
+  fi
+  printf -v "${result_var}" '%s:%s:%s' "Format" "${status_str}" "${TOOL_ERROR_COUNT:-0}"
+  return $status
 }
 
-# cgw_run_lint_fix [files...]
+# cgw_run_lint_fix [--mode <logged|plain>] [--result-var <var>] [files...]
 #   Runs lint --fix then format --fix (bundled, since every caller pairs them).
 #   Honors CGW_SKIP_LINT=1. Returns 0 if all fixers exited clean; 1 on any error.
 #   Returns 0 when neither CGW_LINT_CMD nor CGW_FORMAT_CMD is set.
+#   Assigns 'LintFix:status:count' into the result variable (default: CGW_RESULT).
 cgw_run_lint_fix() {
+  local mode="logged"
+  local result_var="CGW_RESULT"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --mode)
+        mode="$2"
+        shift 2
+        ;;
+      --mode=*)
+        mode="${1#*=}"
+        shift
+        ;;
+      --result-var)
+        result_var="$2"
+        shift 2
+        ;;
+      --result-var=*)
+        result_var="${1#*=}"
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
   if [[ "${CGW_SKIP_LINT:-0}" == "1" ]]; then
-    echo "  (lint fix skipped -- CGW_SKIP_LINT=1)"
+    [[ "${mode}" != "plain" ]] && echo "  (lint fix skipped -- CGW_SKIP_LINT=1)"
+    printf -v "${result_var}" '%s:%s:%s' "LintFix" "SKIPPED" "0"
     return 0
   fi
   local fix_failed=0
@@ -1208,12 +1495,12 @@ cgw_run_lint_fix() {
       local stripped_args
       stripped_args=$(cgw_strip_path_arg "${CGW_LINT_FIX_ARGS:-}")
       # shellcheck disable=SC2086
-      run_tool_with_logging "LINT AUTO-FIX" "${logfile}" "${lint_bin}" ${stripped_args} "$@" || fix_failed=1
+      _cgw_run_pipeline_tool "${mode}" "LINT AUTO-FIX" "${logfile:-/dev/null}" "${lint_bin}" ${stripped_args} "$@" || fix_failed=1
     else
       local filled_args
       filled_args=$(cgw_fill_path_placeholder "${CGW_LINT_FIX_ARGS:-}")
       # shellcheck disable=SC2086
-      run_tool_with_logging "LINT AUTO-FIX" "${logfile}" "${lint_bin}" ${filled_args} ${CGW_LINT_EXCLUDES:-} || fix_failed=1
+      _cgw_run_pipeline_tool "${mode}" "LINT AUTO-FIX" "${logfile:-/dev/null}" "${lint_bin}" ${filled_args} ${CGW_LINT_EXCLUDES:-} || fix_failed=1
     fi
   fi
   if [[ -n "${CGW_FORMAT_CMD:-}" ]]; then
@@ -1224,31 +1511,77 @@ cgw_run_lint_fix() {
       local stripped_args
       stripped_args=$(cgw_strip_path_arg "${CGW_FORMAT_FIX_ARGS:-}")
       # shellcheck disable=SC2086
-      run_tool_with_logging "FORMAT FIX" "${logfile}" "${format_bin}" ${stripped_args} "$@" || fix_failed=1
+      _cgw_run_pipeline_tool "${mode}" "FORMAT FIX" "${logfile:-/dev/null}" "${format_bin}" ${stripped_args} "$@" || fix_failed=1
     else
       local filled_args
       filled_args=$(cgw_fill_path_placeholder "${CGW_FORMAT_FIX_ARGS:-}")
       # shellcheck disable=SC2086
-      run_tool_with_logging "FORMAT FIX" "${logfile}" "${format_bin}" ${filled_args} ${CGW_FORMAT_EXCLUDES:-} || fix_failed=1
+      _cgw_run_pipeline_tool "${mode}" "FORMAT FIX" "${logfile:-/dev/null}" "${format_bin}" ${filled_args} ${CGW_FORMAT_EXCLUDES:-} || fix_failed=1
     fi
   fi
+  local status_str="PASSED"
+  [[ ${fix_failed} -ne 0 ]] && status_str="FAILED"
+  printf -v "${result_var}" '%s:%s:%s' "LintFix" "${status_str}" "0"
   return $fix_failed
 }
 
-# cgw_run_markdownlint_check [files...]
-#   Runs ${CGW_MARKDOWNLINT_CMD}. Honors CGW_SKIP_MD_LINT=1 and empty
+# cgw_run_markdownlint_check [--mode <logged|plain>] [--result-var <var>] [files...]
+#   Runs ${CGW_MARKDOWNLINT_CMD}. Honors CGW_SKIP_MD_LINT=1, CGW_SKIP_LINT=1, and empty
 #   CGW_MARKDOWNLINT_CMD (returns 0 silently when unconfigured).
-#   Returns 0 = clean (or skipped/unconfigured), 1 = errors found.
+#   Assigns 'Markdown:status:count' into the result variable (default: CGW_RESULT).
+#   Returns 0 = clean (or skipped/unconfigured), 1 = errors found, 2 = tool crash.
 #   CGW_MARKDOWNLINT_CMD is word-split into an array (not exec'd as a single
 #   token) because auto-detection (_config.sh) can resolve it to a multi-word
 #   command -- "npx --yes markdownlint-cli2" -- which must reach exec as three
 #   argv entries, not one nonexistent binary named with embedded spaces.
 cgw_run_markdownlint_check() {
-  if [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]]; then
-    echo "  (markdown lint skipped -- CGW_SKIP_MD_LINT=1)"
+  local mode="logged"
+  local result_var="CGW_RESULT"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --mode)
+        mode="$2"
+        shift 2
+        ;;
+      --mode=*)
+        mode="${1#*=}"
+        shift
+        ;;
+      --result-var)
+        result_var="$2"
+        shift 2
+        ;;
+      --result-var=*)
+        result_var="${1#*=}"
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  if [[ "${CGW_SKIP_LINT:-0}" == "1" ]]; then
+    [[ "${mode}" != "plain" ]] && echo "  (markdown lint skipped -- CGW_SKIP_LINT=1)"
+    printf -v "${result_var}" '%s:%s:%s' "Markdown" "SKIPPED" "0"
+    TOOL_ERROR_COUNT=0
     return 0
   fi
-  [[ -z "${CGW_MARKDOWNLINT_CMD:-}" ]] && return 0
+  if [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]]; then
+    [[ "${mode}" != "plain" ]] && echo "  (markdown lint skipped -- CGW_SKIP_MD_LINT=1)"
+    printf -v "${result_var}" '%s:%s:%s' "Markdown" "SKIPPED" "0"
+    TOOL_ERROR_COUNT=0
+    return 0
+  fi
+  if [[ -z "${CGW_MARKDOWNLINT_CMD:-}" ]]; then
+    printf -v "${result_var}" '%s:%s:%s' "Markdown" "SKIPPED" "0"
+    TOOL_ERROR_COUNT=0
+    return 0
+  fi
   # markdownlint-cli2 diagnostics are "file:line[:col] MDxxx/rule ..." -- no
   # trailing colon after the position, so the default file:line:col: pattern
   # counts them as 0 errors.
@@ -1264,7 +1597,7 @@ cgw_run_markdownlint_check() {
     # come after the target, not before (verified: reversing this order
     # silently stops excluding CLAUDE.md/MEMORY.md from the scan).
     # shellcheck disable=SC2086
-    run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${_md_cmd[@]}" "$@" ${CGW_MARKDOWNLINT_ARGS:-} || _status=$?
+    _cgw_run_pipeline_tool "${mode}" "MARKDOWN LINT" "${logfile:-/dev/null}" "${_md_cmd[@]}" "$@" ${CGW_MARKDOWNLINT_ARGS:-} || _status=$?
   else
     # Audit/whole-repo: the default PATHS glob, then flags/exclusions -- same
     # target-before-exclusion ordering as the scoped branch above. PATHS is
@@ -1275,46 +1608,96 @@ cgw_run_markdownlint_check() {
     local -a _md_paths=()
     read -r -a _md_paths <<<"${CGW_MARKDOWNLINT_PATHS:-}"
     # shellcheck disable=SC2086
-    run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${_md_cmd[@]}" "${_md_paths[@]}" ${CGW_MARKDOWNLINT_ARGS:-} || _status=$?
+    _cgw_run_pipeline_tool "${mode}" "MARKDOWN LINT" "${logfile:-/dev/null}" "${_md_cmd[@]}" "${_md_paths[@]}" ${CGW_MARKDOWNLINT_ARGS:-} || _status=$?
   fi
+  local ret=0
+  local status_str="PASSED"
   if [[ ${_status} -ne 0 ]]; then
+    status_str="FAILED"
     if [[ ${_status} -eq 127 ]] || echo "${TOOL_OUTPUT}" | grep -qE "SyntaxError:|Cannot find module|command not found|Invalid regular expression"; then
-      return 2
+      ret=2
+    else
+      ret=1
     fi
-    return 1
   fi
-  return 0
+  printf -v "${result_var}" '%s:%s:%s' "Markdown" "${status_str}" "${TOOL_ERROR_COUNT:-0}"
+  return $ret
 }
 
-# cgw_run_markdownlint_fix [files...]
+# cgw_run_markdownlint_fix [--mode <logged|plain>] [--result-var <var>] [files...]
 #   Runs ${CGW_MARKDOWNLINT_CMD} ${CGW_MARKDOWNLINT_FIX_ARGS}. Same skip/unset/
 #   scoping conventions as cgw_run_markdownlint_check (including the word-split
 #   for a multi-word auto-detected command, e.g. the npx fallback).
+#   Assigns 'MarkdownFix:status:count' into the result variable (default: CGW_RESULT).
 #   Returns 0 = all fixed (or skipped/unconfigured), 1 = unfixable errors remain.
 cgw_run_markdownlint_fix() {
-  if [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]]; then
-    echo "  (markdown fix skipped -- CGW_SKIP_MD_LINT=1)"
+  local mode="logged"
+  local result_var="CGW_RESULT"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --mode)
+        mode="$2"
+        shift 2
+        ;;
+      --mode=*)
+        mode="${1#*=}"
+        shift
+        ;;
+      --result-var)
+        result_var="$2"
+        shift 2
+        ;;
+      --result-var=*)
+        result_var="${1#*=}"
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  if [[ "${CGW_SKIP_LINT:-0}" == "1" ]]; then
+    [[ "${mode}" != "plain" ]] && echo "  (markdown fix skipped -- CGW_SKIP_LINT=1)"
+    printf -v "${result_var}" '%s:%s:%s' "MarkdownFix" "SKIPPED" "0"
     return 0
   fi
-  [[ -z "${CGW_MARKDOWNLINT_CMD:-}" ]] && return 0
+  if [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]]; then
+    [[ "${mode}" != "plain" ]] && echo "  (markdown fix skipped -- CGW_SKIP_MD_LINT=1)"
+    printf -v "${result_var}" '%s:%s:%s' "MarkdownFix" "SKIPPED" "0"
+    return 0
+  fi
+  [[ -z "${CGW_MARKDOWNLINT_CMD:-}" ]] && {
+    printf -v "${result_var}" '%s:%s:%s' "MarkdownFix" "SKIPPED" "0"
+    return 0
+  }
   # Same diagnostic shape as cgw_run_markdownlint_check -- unfixable errors
   # print as "file:line[:col] MDxxx/rule ..." and must count.
   # shellcheck disable=SC2034  # read via dynamic scope by run_tool_with_logging
   local CGW_TOOL_ERROR_REGEX='^[^:]+:[0-9]+(:[0-9]+)? [A-Za-z]'
   local -a _md_cmd=()
   read -r -a _md_cmd <<<"${CGW_MARKDOWNLINT_CMD}"
+  local status=0
   if [[ $# -gt 0 ]]; then
     # --fix is a flag (order-independent); the target file list must still
     # precede the ARGS exclusion globs -- see cgw_run_markdownlint_check.
     # shellcheck disable=SC2086
-    run_tool_with_logging "MARKDOWN FIX" "${logfile}" "${_md_cmd[@]}" ${CGW_MARKDOWNLINT_FIX_ARGS:-} "$@" ${CGW_MARKDOWNLINT_ARGS:-}
+    _cgw_run_pipeline_tool "${mode}" "MARKDOWN FIX" "${logfile:-/dev/null}" "${_md_cmd[@]}" ${CGW_MARKDOWNLINT_FIX_ARGS:-} "$@" ${CGW_MARKDOWNLINT_ARGS:-} || status=$?
   else
     # PATHS word-split via read, not left unquoted -- see cgw_run_markdownlint_check.
     local -a _md_paths=()
     read -r -a _md_paths <<<"${CGW_MARKDOWNLINT_PATHS:-}"
     # shellcheck disable=SC2086
-    run_tool_with_logging "MARKDOWN FIX" "${logfile}" "${_md_cmd[@]}" ${CGW_MARKDOWNLINT_FIX_ARGS:-} "${_md_paths[@]}" ${CGW_MARKDOWNLINT_ARGS:-}
+    _cgw_run_pipeline_tool "${mode}" "MARKDOWN FIX" "${logfile:-/dev/null}" "${_md_cmd[@]}" ${CGW_MARKDOWNLINT_FIX_ARGS:-} "${_md_paths[@]}" ${CGW_MARKDOWNLINT_ARGS:-} || status=$?
   fi
+  local status_str="PASSED"
+  [[ ${status} -ne 0 ]] && status_str="FAILED"
+  printf -v "${result_var}" '%s:%s:%s' "MarkdownFix" "${status_str}" "${TOOL_ERROR_COUNT:-0}"
+  return $status
 }
 
 # cgw_staged_files_for_md
@@ -1501,12 +1884,14 @@ cgw_crlf_in_index_files() {
   done < <(git ls-files --eol -z)
 }
 
-# cgw_run_typecheck [files...]
+# cgw_run_typecheck [--mode <logged|plain>] [--result-var <var>] [files...]
 #   Runs ${CGW_TYPECHECK_CMD} against the project (no files) or a given file
 #   list (strips trailing path token from CGW_TYPECHECK_CHECK_ARGS when files
-#   given). Honors CGW_SKIP_TYPECHECK=1 and empty CGW_TYPECHECK_CMD (returns 0,
-#   emits skip line). Reads ${logfile} from caller scope. Returns 0 = clean,
-#   1 = errors found.
+#   given). Honors CGW_SKIP_TYPECHECK=1, CGW_SKIP_LINT=1, and empty CGW_TYPECHECK_CMD
+#   (returns 0, emits skip line).
+#   Assigns 'Typecheck:status:count' into the result variable (default: CGW_RESULT).
+#   Sets TOOL_ERROR_COUNT for backward compatibility.
+#   Returns 0 = clean, 1 = errors found.
 #
 #   Overrides CGW_TOOL_ERROR_REGEX (see run_tool_with_logging) because the
 #   default ruff-shaped `^[^:]+:[0-9]+:[0-9]+:` misses every supported
@@ -1518,12 +1903,52 @@ cgw_crlf_in_index_files() {
 #   pyrefly, mypy, and pyright output (2026-09-12); tsc's documented
 #   `file.ts(10,5): error TS2322:` form is covered by the first alternative.
 cgw_run_typecheck() {
+  local mode="logged"
+  local result_var="CGW_RESULT"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --mode)
+        mode="$2"
+        shift 2
+        ;;
+      --mode=*)
+        mode="${1#*=}"
+        shift
+        ;;
+      --result-var)
+        result_var="$2"
+        shift 2
+        ;;
+      --result-var=*)
+        result_var="${1#*=}"
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  if [[ "${CGW_SKIP_LINT:-0}" == "1" ]]; then
+    [[ "${mode}" != "plain" ]] && echo "  (typecheck skipped -- CGW_SKIP_LINT=1)"
+    printf -v "${result_var}" '%s:%s:%s' "Typecheck" "SKIPPED" "0"
+    TOOL_ERROR_COUNT=0
+    return 0
+  fi
   if [[ "${CGW_SKIP_TYPECHECK:-0}" == "1" ]]; then
-    echo "  (typecheck skipped -- CGW_SKIP_TYPECHECK=1)"
+    [[ "${mode}" != "plain" ]] && echo "  (typecheck skipped -- CGW_SKIP_TYPECHECK=1)"
+    printf -v "${result_var}" '%s:%s:%s' "Typecheck" "SKIPPED" "0"
+    TOOL_ERROR_COUNT=0
     return 0
   fi
   if [[ -z "${CGW_TYPECHECK_CMD:-}" ]]; then
-    echo "  (typecheck skipped -- CGW_TYPECHECK_CMD not set)"
+    [[ "${mode}" != "plain" ]] && echo "  (typecheck skipped -- CGW_TYPECHECK_CMD not set)"
+    printf -v "${result_var}" '%s:%s:%s' "Typecheck" "SKIPPED" "0"
+    TOOL_ERROR_COUNT=0
     return 0
   fi
   get_python_path 2>/dev/null || true
@@ -1531,17 +1956,22 @@ cgw_run_typecheck() {
   tc_bin=$(cgw_resolve_lint_binary "${CGW_TYPECHECK_CMD}")
   # shellcheck disable=SC2034  # read via dynamic scope by run_tool_with_logging
   local CGW_TOOL_ERROR_REGEX='^[[:space:]]*[^[:space:]]+[:(][0-9]+[,:)][^[:space:]]*[[:space:]]*(-[[:space:]]+)?error|^ERROR[[:space:]]'
+  local status=0
   if [[ $# -gt 0 ]]; then
     local stripped_args
     stripped_args=$(cgw_strip_path_arg "${CGW_TYPECHECK_CHECK_ARGS-check}")
     # shellcheck disable=SC2086  # Word splitting intentional: stripped_args contains multiple flags
-    run_tool_with_logging "TYPECHECK" "${logfile}" "${tc_bin}" ${stripped_args} "$@"
+    _cgw_run_pipeline_tool "${mode}" "TYPECHECK" "${logfile:-/dev/null}" "${tc_bin}" ${stripped_args} "$@" || status=$?
   else
     local filled_args
     filled_args=$(cgw_fill_path_placeholder "${CGW_TYPECHECK_CHECK_ARGS-check}")
     # shellcheck disable=SC2086  # Word splitting intentional: filled_args/CGW_TYPECHECK_EXCLUDES contain multiple flags
-    run_tool_with_logging "TYPECHECK" "${logfile}" "${tc_bin}" ${filled_args} ${CGW_TYPECHECK_EXCLUDES:-}
+    _cgw_run_pipeline_tool "${mode}" "TYPECHECK" "${logfile:-/dev/null}" "${tc_bin}" ${filled_args} ${CGW_TYPECHECK_EXCLUDES:-} || status=$?
   fi
+  local status_str="PASSED"
+  [[ ${status} -ne 0 ]] && status_str="FAILED"
+  printf -v "${result_var}" '%s:%s:%s' "Typecheck" "${status_str}" "${TOOL_ERROR_COUNT:-0}"
+  return $status
 }
 
 # ── commit-message format module ───────────────────────────────────────────────
@@ -1588,14 +2018,9 @@ cgw_branch_matches_freeform_glob() {
 #   predicate, no output -- callers print their own "pattern ignored" notice
 #   once they know which case applies.
 cgw_branch_is_freeform() {
-  local branch="$1" _guarded
+  local branch="$1"
   cgw_branch_matches_freeform_glob "${branch}" || return 1
-
-  local -a _guarded_arr=()
-  read -r -a _guarded_arr <<<"${CGW_PROTECTED_BRANCHES:-}" || true
-  for _guarded in "${CGW_SOURCE_BRANCH:-}" "${CGW_TARGET_BRANCH:-}" "${_guarded_arr[@]+"${_guarded_arr[@]}"}"; do
-    [[ -n "${_guarded}" && "${branch}" == "${_guarded}" ]] && return 1
-  done
+  cgw_branch_is_protected "${branch}" --policy guarded && return 1
   return 0
 }
 
@@ -1605,13 +2030,7 @@ cgw_branch_is_freeform() {
 #   is not allowed to exempt. Pure predicate, no output. Used by callers to
 #   decide whether to print the "pattern ignored" notice.
 cgw_branch_is_guarded() {
-  local branch="$1" _guarded
-  local -a _guarded_arr=()
-  read -r -a _guarded_arr <<<"${CGW_PROTECTED_BRANCHES:-}" || true
-  for _guarded in "${CGW_SOURCE_BRANCH:-}" "${CGW_TARGET_BRANCH:-}" "${_guarded_arr[@]+"${_guarded_arr[@]}"}"; do
-    [[ -n "${_guarded}" && "${branch}" == "${_guarded}" ]] && return 0
-  done
-  return 1
+  cgw_branch_is_protected "$1" --policy guarded
 }
 
 # cgw_freeform_message_check <msg>
@@ -1729,3 +2148,254 @@ cgw_confirm() {
     esac
   fi
 }
+
+# ── operation preconditions module ──────────────────────────────────────────
+# Centralises repository invariant checks: branch protection policies and
+# working-tree cleanliness verification before mutating operations.
+
+# cgw_branch_is_protected <branch> [--policy <guarded|cleanup|push>]
+#   Pure predicate. Returns 0 if <branch> is protected under the named policy.
+#   Returns 1 if not protected or <branch> is empty.
+#
+# Policies:
+#   guarded (default):
+#     CGW_SOURCE_BRANCH, CGW_TARGET_BRANCH, and any entry of CGW_PROTECTED_BRANCHES.
+#     Used by freeform branch checks so globs never exempt policy branches.
+#   cleanup:
+#     CGW_SOURCE_BRANCH, CGW_TARGET_BRANCH, main, master, $(cgw_default_branch),
+#     and any entry of CGW_PROTECTED_BRANCHES.
+#     Used by branch_cleanup.sh to prevent deleting active or stable branches.
+#   push:
+#     Any entry of CGW_PROTECTED_BRANCHES.
+#     Used by push_validated.sh to require FORCE confirmation tokens.
+cgw_branch_is_protected() {
+  local branch="${1:-}"
+  shift || return 1
+  [[ -z "${branch}" ]] && return 1
+  branch="${branch#refs/heads/}"
+
+  local policy="guarded"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --policy)
+        policy="${2:-guarded}"
+        shift 2
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  local -a _protected_set=()
+  local -a _pb_arr=()
+  read -r -a _pb_arr <<<"${CGW_PROTECTED_BRANCHES:-}" || true
+
+  case "${policy}" in
+    push)
+      _protected_set=("${_pb_arr[@]+"${_pb_arr[@]}"}")
+      ;;
+    cleanup)
+      _protected_set=("${CGW_TARGET_BRANCH:-}" "${CGW_SOURCE_BRANCH:-}" main master)
+      local def_branch
+      def_branch=$(cgw_default_branch 2>/dev/null || echo "")
+      [[ -n "${def_branch}" ]] && _protected_set+=("${def_branch}")
+      _protected_set+=("${_pb_arr[@]+"${_pb_arr[@]}"}")
+      ;;
+    guarded | *)
+      _protected_set=("${CGW_SOURCE_BRANCH:-}" "${CGW_TARGET_BRANCH:-}" "${_pb_arr[@]+"${_pb_arr[@]}"}")
+      ;;
+  esac
+
+  [[ ${#_protected_set[@]} -eq 0 ]] && return 1
+  local pb
+  for pb in "${_protected_set[@]+"${_protected_set[@]}"}"; do
+    [[ -n "${pb}" && "${branch}" == "${pb}" ]] && return 0
+  done
+  return 1
+}
+
+# cgw_tree_dirty_paths
+#   Emits the paths of uncommitted tracked changes and any skip-worktree /
+#   assume-unchanged files whose disk content diverged from HEAD.
+#   Untracked files are excluded. Pure scanner, no side effects.
+cgw_tree_dirty_paths() {
+  # 1. Uncommitted tracked changes (both staged and unstaged)
+  git status --porcelain --untracked-files=no 2>/dev/null | sed -e 's/^...//'
+
+  # 2. Skip-worktree or assume-unchanged paths that diverged from HEAD
+  local sw_files f
+  sw_files=$(git ls-files -v 2>/dev/null | grep '^[a-zS]' | awk '{print $2}')
+  if [[ -n "${sw_files}" ]]; then
+    while IFS= read -r f; do
+      [[ -z "${f}" ]] && continue
+      local disk_hash index_hash
+      disk_hash=$(git hash-object --path="${f}" "${f}" 2>/dev/null || true)
+      index_hash=$(git rev-parse ":${f}" 2>/dev/null || true)
+      if [[ -n "${disk_hash}" && -n "${index_hash}" && "${disk_hash}" != "${index_hash}" ]]; then
+        echo "${f}"
+      fi
+    done <<<"${sw_files}"
+  fi
+}
+
+# cgw_is_tree_clean
+#   Pure predicate. Returns 0 if working tree has no uncommitted tracked changes
+#   and no diverged skip-worktree paths; returns 1 if dirty.
+cgw_is_tree_clean() {
+  local dirty
+  dirty=$(cgw_tree_dirty_paths | head -n 1)
+  [[ -z "${dirty}" ]]
+}
+
+# cgw_require_clean_tree [--on-dirty <fail|stash|confirm-abort|confirm-stash>]
+#                        [--reason <text>] [--stash-msg <text>]
+#   Asserts that the working tree is clean. On dirty state, executes the named
+#   policy:
+#     fail (default):
+#       Prints explanatory error and recovery steps to stderr/log, returns 1.
+#     stash:
+#       Auto-stashes changes via `git stash push`, sets _CGW_TREE_WAS_STASHED=1,
+#       returns 0 on success, 1 on stash failure.
+#     confirm-abort:
+#       Warns changes will be lost, prompts user to continue; aborts (returns 1)
+#       if rejected or in non-interactive mode.
+#     confirm-stash:
+#       Prompts user to auto-stash; stashes and sets _CGW_TREE_WAS_STASHED=1
+#       on accept, or aborts (returns 1) if declined.
+cgw_require_clean_tree() {
+  local on_dirty="fail"
+  local reason="operation needs a clean tree"
+  local stash_msg=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --on-dirty)
+        on_dirty="${2:-fail}"
+        shift 2
+        ;;
+      --reason)
+        reason="${2:-operation needs a clean tree}"
+        shift 2
+        ;;
+      --stash-msg)
+        stash_msg="${2:-}"
+        shift 2
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  _CGW_TREE_WAS_STASHED=0
+
+  cgw_is_tree_clean && return 0
+
+  case "${on_dirty}" in
+    fail)
+      local msg="[FAIL] Working tree has uncommitted changes -- ${reason}"
+      if [[ -n "${logfile:-}" && -f "${logfile}" ]]; then
+        echo "${msg}" | tee -a "$logfile" >&2
+        {
+          echo "  Recovery:"
+          echo "    1. ./scripts/git/stash_work.sh push   # set aside local changes"
+          echo "    2. re-run this operation"
+          echo "    3. ./scripts/git/stash_work.sh pop    # restore your changes"
+          echo "  Or commit them first: ./scripts/git/commit_enhanced.sh \"<type>: <msg>\""
+        } | tee -a "$logfile" >&2
+      else
+        echo "${msg}" >&2
+        echo "  Recovery:" >&2
+        echo "    1. ./scripts/git/stash_work.sh push   # set aside local changes" >&2
+        echo "    2. re-run this operation" >&2
+        echo "    3. ./scripts/git/stash_work.sh pop    # restore your changes" >&2
+        echo "  Or commit them first: ./scripts/git/commit_enhanced.sh \"<type>: <msg>\"" >&2
+      fi
+      return 1
+      ;;
+    stash)
+      local s_msg="${stash_msg:-cgw auto-stash $(date +%Y%m%d_%H%M%S)}"
+      if [[ -n "${logfile:-}" && -f "${logfile}" ]]; then
+        echo "  Stashing uncommitted changes..." | tee -a "$logfile"
+        if git stash push -m "${s_msg}" 2>&1 | tee -a "$logfile"; then
+          _CGW_TREE_WAS_STASHED=1
+          echo "  [OK] Changes stashed" | tee -a "$logfile"
+          return 0
+        else
+          echo "[ERROR] Failed to stash changes -- resolve conflicts first" | tee -a "$logfile" >&2
+          return 1
+        fi
+      else
+        echo "  Stashing uncommitted changes..."
+        if git stash push -m "${s_msg}" 2>&1; then
+          _CGW_TREE_WAS_STASHED=1
+          echo "  [OK] Changes stashed"
+          return 0
+        else
+          echo "[ERROR] Failed to stash changes -- resolve conflicts first" >&2
+          return 1
+        fi
+      fi
+      ;;
+    confirm-abort)
+      if [[ -n "${logfile:-}" && -f "${logfile}" ]]; then
+        echo "[!] WARNING: Uncommitted changes detected" | tee -a "$logfile"
+        echo "" | tee -a "$logfile"
+        git status --short | tee -a "$logfile"
+        echo "" | tee -a "$logfile"
+        echo "These changes will be LOST during ${reason}!" | tee -a "$logfile"
+        echo "" | tee -a "$logfile"
+      else
+        echo "[!] WARNING: Uncommitted changes detected"
+        echo ""
+        git status --short
+        echo ""
+        echo "These changes will be LOST during ${reason}!"
+        echo ""
+      fi
+      if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
+        if [[ -n "${logfile:-}" && -f "${logfile}" ]]; then
+          echo "" | tee -a "$logfile"
+          echo "Operation cancelled" | tee -a "$logfile"
+          echo "Please commit or stash changes first" | tee -a "$logfile"
+        else
+          echo ""
+          echo "Operation cancelled"
+          echo "Please commit or stash changes first"
+        fi
+        return 1
+      fi
+      return 0
+      ;;
+    confirm-stash)
+      if [[ -n "${logfile:-}" && -f "${logfile}" ]]; then
+        echo "[!] Uncommitted changes detected -- will auto-stash during ${reason}" | tee -a "$logfile"
+        git status --short | tee -a "$logfile"
+        echo "" | tee -a "$logfile"
+      else
+        echo "[!] Uncommitted changes detected -- will auto-stash during ${reason}"
+        git status --short
+        echo ""
+      fi
+      if ! cgw_confirm "Auto-stash changes and proceed?" --non-interactive accept; then
+        if [[ -n "${logfile:-}" && -f "${logfile}" ]]; then
+          echo "Aborted -- commit or stash manually before ${reason}" | tee -a "$logfile"
+        else
+          echo "Aborted -- commit or stash manually before ${reason}"
+        fi
+        return 1
+      fi
+      local s_msg="${stash_msg:-cgw auto-stash $(date +%Y%m%d_%H%M%S)}"
+      if [[ -n "${logfile:-}" && -f "${logfile}" ]]; then
+        git stash push -m "${s_msg}" >>"$logfile" 2>&1 || true
+      else
+        git stash push -m "${s_msg}" >/dev/null 2>&1 || true
+      fi
+      _CGW_TREE_WAS_STASHED=1
+      return 0
+      ;;
+  esac
+  return 0
+}
+

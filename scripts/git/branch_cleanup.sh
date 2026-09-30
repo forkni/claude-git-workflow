@@ -107,25 +107,14 @@ main() {
   echo ""
   [[ ${execute} -eq 0 ]] && echo "  (dry run -- pass --execute to actually delete)" && echo ""
 
-  # Build set of protected branches. main/master and the repo's actual
-  # default branch are always protected -- CGW_TARGET_BRANCH can be
-  # overridden per invocation, and without this, the real stable branch
-  # would look "merged into" the overridden target and get deleted.
-  local -a protected=("${CGW_TARGET_BRANCH}" "${CGW_SOURCE_BRANCH}" main master)
-  protected+=("$(cgw_default_branch)")
-  local -a _pb_arr=()
-  read -r -a _pb_arr <<<"${CGW_PROTECTED_BRANCHES:-}" || true
-  for pb in "${_pb_arr[@]+"${_pb_arr[@]}"}"; do
-    protected+=("${pb}")
-  done
-
   local current_branch
   current_branch=$(git branch --show-current 2>/dev/null || echo "")
 
   # Also protect any branch checked out in another worktree -- deleting it
   # would fail loudly there, but it's still not this script's call to make.
+  local -a wt_branches=()
   while IFS= read -r _wt_branch; do
-    [[ -n "${_wt_branch}" ]] && protected+=("${_wt_branch#refs/heads/}")
+    [[ -n "${_wt_branch}" ]] && wt_branches+=("${_wt_branch#refs/heads/}")
   done < <(git worktree list --porcelain 2>/dev/null | grep '^branch ' | cut -d' ' -f2-)
 
   # -- [1] Merged local branches ---------------------------------------------
@@ -136,12 +125,15 @@ main() {
     # Skip empty
     [[ -z "${branch}" ]] && continue
 
-    # Skip protected branches
-    local is_protected=0
-    for pb in "${protected[@]}"; do
-      [[ "${branch}" == "${pb}" ]] && is_protected=1 && break
+    # Skip protected branches (main, master, source, target, default, and CGW_PROTECTED_BRANCHES)
+    cgw_branch_is_protected "${branch}" --policy cleanup && continue
+
+    # Skip branches checked out in other worktrees
+    local in_wt=0
+    for wb in "${wt_branches[@]+"${wt_branches[@]}"}"; do
+      [[ "${branch}" == "${wb}" ]] && in_wt=1 && break
     done
-    [[ ${is_protected} -eq 1 ]] && continue
+    [[ ${in_wt} -eq 1 ]] && continue
 
     # Skip current branch
     [[ "${branch}" == "${current_branch}" ]] && continue
