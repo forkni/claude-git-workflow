@@ -1893,6 +1893,11 @@ UU b.py
   rm -f "${fake_bin}"
 }
 
+@test "cgw_run_markdownlint_check: returns 2 on zero-diagnostic failure without syntax error strings (e.g. false or silent exit 1)" {
+  CGW_MARKDOWNLINT_CMD="false" CGW_MARKDOWNLINT_ARGS="" logfile=/dev/null run cgw_run_markdownlint_check
+  [ "${status}" -eq 2 ]
+}
+
 # ── PATHS glob quoting + ARGS ordering regressions (Verification) ────────────
 # Both bugs were latent in the mocked tests above (which never exercised a
 # real glob or a real exclusion) and only surfaced when fix_lint.sh was run

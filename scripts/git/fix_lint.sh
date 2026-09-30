@@ -63,7 +63,6 @@ main() {
       --md-only)
         md_only=1
         ;;
-      --skip-lint) ;;
       *)
         echo "[ERROR] Unknown flag: $arg" >&2
         exit 1

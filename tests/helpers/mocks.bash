@@ -219,7 +219,10 @@ fi
 rc=0
 for f in "${files[@]}"; do
   [[ -f "$f" ]] || continue
-  grep -q -x "$marker" "$f" && rc=1
+  if grep -q -x "$marker" "$f"; then
+    echo "${f}:1 MD001/heading-increment mock error"
+    rc=1
+  fi
 done
 exit $rc
 MOCK_EOF
@@ -281,7 +284,10 @@ for a in "$@"; do
   # Skip flags, exclusions, and glob patterns — inspect only concrete files.
   [[ "$a" == -* || "$a" == !* || "$a" == *'*'* ]] && continue
   [[ -f "$a" ]] || continue
-  grep -q "MDLINT-BAD" "$a" && rc=1
+  if grep -q "MDLINT-BAD" "$a"; then
+    echo "${a}:1 MD001/heading-increment mock error"
+    rc=1
+  fi
 done
 exit $rc
 EOF
