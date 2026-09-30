@@ -292,6 +292,48 @@ teardown() {
   [[ "${output}" == *"CMD=[]"* ]]
 }
 
+@test "A: no binary, npx present, but node lacks RegExp v (< 20) -> resolves empty" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    command() {
+      case \"\$2\" in
+        markdownlint-cli2|markdownlint) return 1 ;;
+        npx|node) return 0 ;;
+        *) builtin command \"\$@\" ;;
+      esac
+    }
+    node() {
+      return 1
+    }
+    export -f node
+    unset CGW_MARKDOWNLINT_CMD CGW_MARKDOWNLINT_NPX_FALLBACK
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"CMD=[\${CGW_MARKDOWNLINT_CMD}]\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"CMD=[]"* ]]
+}
+
+@test "A: no binary, npx present, but node missing from PATH -> resolves empty" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    command() {
+      case \"\$2\" in
+        markdownlint-cli2|markdownlint|node) return 1 ;;
+        npx) return 0 ;;
+        *) builtin command \"\$@\" ;;
+      esac
+    }
+    unset CGW_MARKDOWNLINT_CMD CGW_MARKDOWNLINT_NPX_FALLBACK
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"CMD=[\${CGW_MARKDOWNLINT_CMD}]\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"CMD=[]"* ]]
+}
+
 @test "A: markdownlint-cli2 present -> takes priority over markdownlint and npx" {
   run bash -c "
     cd '${TEST_REPO_DIR}'

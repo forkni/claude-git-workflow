@@ -340,13 +340,21 @@ export CGW_FREEFORM_MESSAGE_BRANCHES CGW_FREEFORM_MESSAGE_CHECK # consumed by co
 # edit -- mirrors how CGW_TARGET_BRANCH is auto-detected above. Explicitly set
 # to "" in .cgw.conf or the environment to opt out and keep the step disabled.
 # Use +x (not :-) to distinguish "unset" from "explicitly set to empty string".
+_cgw_node_supports_markdownlint() {
+  command -v node >/dev/null 2>&1 && node -e 'new RegExp("", "v")' >/dev/null 2>&1
+}
+
 _cgw_detect_markdownlint() {
   if command -v markdownlint-cli2 >/dev/null 2>&1; then
     echo "markdownlint-cli2"
   elif command -v markdownlint >/dev/null 2>&1; then
     echo "markdownlint"
   elif [[ "${CGW_MARKDOWNLINT_NPX_FALLBACK}" != "0" ]] && command -v npx >/dev/null 2>&1; then
-    echo "npx --yes markdownlint-cli2"
+    if _cgw_node_supports_markdownlint; then
+      echo "npx --yes markdownlint-cli2"
+    else
+      echo ""
+    fi
   else
     echo ""
   fi

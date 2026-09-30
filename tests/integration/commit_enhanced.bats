@@ -1001,6 +1001,25 @@ _setup_uu_conflict() {
     [[ "${output}" == *"MARKDOWN"* ]]
 }
 
+@test "markdownlint infrastructure crash bypasses auto-fix and succeeds in non-interactive mode" {
+  install_mock_markdownlint_crash
+  echo "content" > "${TEST_REPO_DIR}/sample.md"
+  git -C "${TEST_REPO_DIR}" add sample.md
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD='markdownlint-cli2'
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' 'docs: test crash bypass'
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Markdown lint tool failed to execute"* ]]
+  [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+}
+
 # ── markdown lint scoping (A1) ────────────────────────────────────────────────
 
 @test "markdown lint is scoped to staged .md (unrelated dirty .md does not block)" {

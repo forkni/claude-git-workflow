@@ -159,7 +159,22 @@ echo "mock ${cmd_name} \$*" >> "${MOCK_BIN_DIR}/mdlint.log"
 for a in "\$@"; do
   [[ "\$a" == "--fix" ]] && echo "FIX_FLAG_SEEN" >> "${MOCK_BIN_DIR}/mdlint.log"
 done
+if [[ ${exit_code} -ne 0 ]]; then
+  echo "mock.md:1 MD001/heading-increment mock error"
+fi
 exit ${exit_code}
+EOF
+  chmod +x "${MOCK_BIN_DIR}/${cmd_name}"
+}
+
+# install_mock_markdownlint_crash
+# Simulates a tool runtime/engine crash (SyntaxError, exit 1, no file:line diagnostics).
+install_mock_markdownlint_crash() {
+  local cmd_name="${1:-markdownlint-cli2}"
+  cat > "${MOCK_BIN_DIR}/${cmd_name}" << EOF
+#!/usr/bin/env bash
+echo "SyntaxError: Invalid regular expression flags" >&2
+exit 1
 EOF
   chmod +x "${MOCK_BIN_DIR}/${cmd_name}"
 }

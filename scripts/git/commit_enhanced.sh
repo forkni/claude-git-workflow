@@ -675,7 +675,27 @@ main() {
         echo "  (markdown lint skipped -- no staged .md files)"
       else
         local md_lint_error=0
-        cgw_run_markdownlint_check "${staged_md[@]}" || md_lint_error=1
+        cgw_run_markdownlint_check "${staged_md[@]}"
+        local _md_check_status=$?
+
+        if [[ ${_md_check_status} -eq 2 ]]; then
+          echo "[!] Markdown lint tool failed to execute (environment/runtime failure, not markdown formatting errors)."
+          echo "    Log details available in: ${logfile}"
+          if [[ ${non_interactive} -eq 1 ]]; then
+            echo "    [Non-interactive] Skipping markdown check and proceeding with commit."
+            skip_md_lint=1
+          else
+            if cgw_confirm "Proceed with commit despite markdown tool failure?" --default yes; then
+              echo "[!] Proceeding with commit (markdown check bypassed)"
+              skip_md_lint=1
+            else
+              echo "Commit cancelled -- fix markdown tool runtime error first"
+              exit 1
+            fi
+          fi
+        elif [[ ${_md_check_status} -eq 1 ]]; then
+          md_lint_error=1
+        fi
 
         if [[ ${md_lint_error} -eq 1 ]]; then
           echo "[!] Markdown lint errors detected"
@@ -697,7 +717,7 @@ main() {
                 ;;
             esac
           fi
-        else
+        elif [[ ${_md_check_status} -eq 0 ]]; then
           echo "[OK] Markdown lint checks passed"
         fi
       fi

@@ -151,6 +151,7 @@ log_message() {
 log_section_start() {
   local section_name="$1"
   local log_path="$2"
+  declare -g -A _SECTION_START_TIMES 2>/dev/null || true
   local time_str
   time_str=$(date +%H:%M:%S)
   _SECTION_START_TIMES["${section_name}"]=$(date +%s)
@@ -1255,6 +1256,7 @@ cgw_run_markdownlint_check() {
   local CGW_TOOL_ERROR_REGEX='^[^:]+:[0-9]+(:[0-9]+)? [A-Za-z]'
   local -a _md_cmd=()
   read -r -a _md_cmd <<<"${CGW_MARKDOWNLINT_CMD}"
+  local _status=0
   if [[ $# -gt 0 ]]; then
     # Scoped: the explicit file list, then flags/exclusions. markdownlint-cli2
     # (globby) resolves glob args in order -- a "!CLAUDE.md" exclusion only
@@ -1262,7 +1264,7 @@ cgw_run_markdownlint_check() {
     # come after the target, not before (verified: reversing this order
     # silently stops excluding CLAUDE.md/MEMORY.md from the scan).
     # shellcheck disable=SC2086
-    run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${_md_cmd[@]}" "$@" ${CGW_MARKDOWNLINT_ARGS:-}
+    run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${_md_cmd[@]}" "$@" ${CGW_MARKDOWNLINT_ARGS:-} || _status=$?
   else
     # Audit/whole-repo: the default PATHS glob, then flags/exclusions -- same
     # target-before-exclusion ordering as the scoped branch above. PATHS is
@@ -1273,8 +1275,15 @@ cgw_run_markdownlint_check() {
     local -a _md_paths=()
     read -r -a _md_paths <<<"${CGW_MARKDOWNLINT_PATHS:-}"
     # shellcheck disable=SC2086
-    run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${_md_cmd[@]}" "${_md_paths[@]}" ${CGW_MARKDOWNLINT_ARGS:-}
+    run_tool_with_logging "MARKDOWN LINT" "${logfile}" "${_md_cmd[@]}" "${_md_paths[@]}" ${CGW_MARKDOWNLINT_ARGS:-} || _status=$?
   fi
+  if [[ ${_status} -ne 0 ]]; then
+    if [[ ${_status} -eq 127 ]] || echo "${TOOL_OUTPUT}" | grep -qE "SyntaxError:|Cannot find module|command not found|Invalid regular expression"; then
+      return 2
+    fi
+    return 1
+  fi
+  return 0
 }
 
 # cgw_run_markdownlint_fix [files...]

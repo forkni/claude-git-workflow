@@ -1682,6 +1682,16 @@ UU b.py
   rm -f "${fake_bin}"
 }
 
+@test "cgw_run_markdownlint_check: returns 2 when tool exits non-zero with 0 matched lint errors (infrastructure crash)" {
+  local fake_bin
+  fake_bin="$(mktemp)"
+  printf '#!/usr/bin/env bash\necho "SyntaxError: Invalid regular expression flags"\nexit 1\n' > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  CGW_MARKDOWNLINT_CMD="${fake_bin}" CGW_MARKDOWNLINT_ARGS="" logfile=/dev/null run cgw_run_markdownlint_check
+  [ "${status}" -eq 2 ]
+  rm -f "${fake_bin}"
+}
+
 # ── PATHS glob quoting + ARGS ordering regressions (Verification) ────────────
 # Both bugs were latent in the mocked tests above (which never exercised a
 # real glob or a real exclusion) and only surfaced when fix_lint.sh was run
