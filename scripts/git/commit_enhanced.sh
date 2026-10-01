@@ -915,8 +915,6 @@ main() {
     _commit_cmd+=(--allow-empty)
   fi
 
-  ensure_no_stale_index_lock || exit 1
-
   if cgw_run_with_lock_retry "${_commit_cmd[@]}"; then
     echo ""
     echo "===================================="

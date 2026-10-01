@@ -405,8 +405,11 @@ _install_single_hook() {
   if [[ ! -f "${target_file}" ]]; then
     # If a pre-existing hook is in .git/hooks, back it up so it is never lost
     if [[ -f "${active_git_hook}" ]] && ! cmp -s "${template_file}" "${active_git_hook}"; then
-      cp "${active_git_hook}" "${active_git_hook}.bak" 2>/dev/null || true
-      echo "  [INFO] Backed up pre-existing .git/hooks/${hook_name} -> .git/hooks/${hook_name}.bak"
+      if _bak="$(cgw_backup_file "${active_git_hook}")"; then
+        echo "  [INFO] Backed up pre-existing .git/hooks/${hook_name} -> ${_bak#"${PROJECT_ROOT}"/}"
+      else
+        echo "  [!] Could not back up .git/hooks/${hook_name}" >&2
+      fi
     fi
     cp "${template_file}" "${target_file}"
     chmod +x "${target_file}"
@@ -424,20 +427,32 @@ _install_single_hook() {
   # Case 3: .githooks/<hook> exists and differs from template
   local do_overwrite="${overwrite}"
   if [[ "${do_overwrite}" -eq 0 ]] && [[ "${non_interactive:-0}" -eq 0 ]]; then
-    if cgw_confirm "Existing .githooks/${hook_name} differs from template. Overwrite?" --default no; then
+    # deny: CGW_NON_INTERACTIVE=1 from the environment (CI, agent shell) must keep the
+    # local hook, not abort the whole configure run via cgw_confirm's default policy.
+    if cgw_confirm "Existing .githooks/${hook_name} differs from template. Overwrite?" --default no --non-interactive deny; then
       do_overwrite=1
     fi
   fi
 
   if [[ "${do_overwrite}" -eq 1 ]]; then
-    cp "${target_file}" "${target_file}.bak"
-    echo "  [INFO] Backed up .githooks/${hook_name} -> .githooks/${hook_name}.bak"
+    if _bak="$(cgw_backup_file "${target_file}")"; then
+      echo "  [INFO] Backed up .githooks/${hook_name} -> ${_bak#"${PROJECT_ROOT}"/}"
+    else
+      err "Could not back up .githooks/${hook_name}; leaving it unchanged"
+      chmod +x "${target_file}"
+      return 1
+    fi
     cp "${template_file}" "${target_file}"
     chmod +x "${target_file}"
     echo "  [OK] Overwrote .githooks/${hook_name} (--overwrite-hooks)"
   else
     chmod +x "${target_file}"
     echo "  [OK] Preserved locally established .githooks/${hook_name}"
+    # A differing hook is either a deliberate customisation or an outdated stock copy;
+    # we cannot tell which, so say so -- a silent keep leaves old fixes uninstalled.
+    echo "  [!]  It differs from the current CGW template. If it is an outdated stock copy,"
+    echo "       refresh it with --overwrite-hooks (a .bak is kept). Keep project-specific"
+    echo "       additions in .githooks/${hook_name}.local so the stock hook can stay current."
   fi
 }
 

@@ -358,7 +358,6 @@ _cmd_rebase_onto() {
 
   log_section_start "GIT REBASE ONTO" "$logfile"
 
-  ensure_no_stale_index_lock || exit 1
   local rebase_exit=0
   if ! cgw_run_with_lock_retry git rebase "${onto_ref}" 2>&1 | tee -a "$logfile"; then
     rebase_exit=1
@@ -495,7 +494,6 @@ _cmd_squash_last() {
   local rebase_args=(-i "HEAD~${squash_n}")
   [[ "${autosquash}" -eq 1 ]] && rebase_args=(-i --autosquash "HEAD~${squash_n}")
 
-  ensure_no_stale_index_lock || exit 1
   # shellcheck disable=SC2068  # Intentional: rebase_args expands correctly
   if ! cgw_run_with_lock_retry git rebase "${rebase_args[@]}" 2>&1 | tee -a "$logfile"; then
     rebase_exit=1
@@ -592,7 +590,6 @@ _cmd_continue() {
   fi
 
   echo "  Continuing rebase..." | tee -a "$logfile"
-  ensure_no_stale_index_lock || exit 1
   if GIT_EDITOR=true cgw_run_with_lock_retry git rebase --continue 2>&1 | tee -a "$logfile"; then
     echo ""
     echo "[OK] Rebase continued"
@@ -634,7 +631,6 @@ _cmd_skip() {
   git log ORIG_HEAD -1 --oneline 2>/dev/null | while IFS= read -r line; do printf '    %s\n' "${line}"; done || true
   echo ""
 
-  ensure_no_stale_index_lock || exit 1
   if cgw_run_with_lock_retry git rebase --skip 2>&1 | tee -a "$logfile"; then
     echo ""
     echo "[OK] Commit skipped"

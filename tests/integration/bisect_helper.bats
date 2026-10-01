@@ -96,3 +96,24 @@ teardown() {
   [ "${status}" -eq 0 ]
   [[ "${output}" == *"feat: introduce bad file"* ]]
 }
+
+@test "--run uses the running bash, not a PATH-first bash shim" {
+  local shim_dir="${TEST_TMPDIR}/shimbin"
+  mkdir -p "${shim_dir}"
+  # Delegate script runs (run_script uses bash from PATH); only `bash -c` -- how
+  # bisect's --run command is launched -- counts as shim use and fails.
+  printf '#!/bin/sh\nif [ "$1" = "-c" ]; then echo SHIM_USED > "%s/shim_marker"; exit 1; fi\nexec "%s" "$@"\n' \
+    "${TEST_TMPDIR}" "${BASH}" > "${shim_dir}/bash"
+  chmod +x "${shim_dir}/bash"
+
+  echo "x" > "${TEST_REPO_DIR}/bad.txt"
+  git -C "${TEST_REPO_DIR}" add bad.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: introduce bad"
+  echo "y" > "${TEST_REPO_DIR}/after.txt"
+  git -C "${TEST_REPO_DIR}" add after.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: after bad"
+
+  PATH="${shim_dir}:${PATH}" run run_script bisect_helper.sh --good v0.1.0 --non-interactive --run 'test ! -e bad.txt'
+  [ ! -f "${TEST_TMPDIR}/shim_marker" ]
+  [[ "${output}" == *"feat: introduce bad"* ]]
+}

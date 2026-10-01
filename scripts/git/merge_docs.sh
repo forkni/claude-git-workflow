@@ -231,7 +231,6 @@ main() {
   # [7/7] Commit the merge
   log_section_start "GIT COMMIT" "$logfile"
 
-  ensure_no_stale_index_lock || exit 1
   if run_git_with_logging "GIT COMMIT DOCS" "$logfile" commit \
     -m "docs: Sync documentation from ${src_branch}" \
     -m "- Updated docs/ directory from ${src_branch} branch" \

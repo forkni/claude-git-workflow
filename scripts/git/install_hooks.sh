@@ -130,8 +130,11 @@ main() {
       echo "  [OK] core.hooksPath=${hooks_dir} — pre-commit already in place" | tee -a "$logfile"
     else
       if [[ -f "${hooks_dir}/pre-commit" ]] && ! cmp -s "${githooks_src}/pre-commit" "${hooks_dir}/pre-commit"; then
-        cp "${hooks_dir}/pre-commit" "${hooks_dir}/pre-commit.bak" >>"$logfile" 2>&1 || true
-        echo "  [INFO] Backed up ${hooks_dir}/pre-commit -> ${hooks_dir}/pre-commit.bak" | tee -a "$logfile"
+        if _bak="$(cgw_backup_file "${hooks_dir}/pre-commit")"; then
+          echo "  [INFO] Backed up ${hooks_dir}/pre-commit -> ${_bak}" | tee -a "$logfile"
+        else
+          echo "  [!] Could not back up ${hooks_dir}/pre-commit" | tee -a "$logfile"
+        fi
       fi
       if cp "${githooks_src}/pre-commit" "${hooks_dir}/pre-commit" >>"$logfile" 2>&1; then
         chmod +x "${hooks_dir}/pre-commit" >>"$logfile" 2>&1
@@ -155,8 +158,11 @@ main() {
       echo "  [OK] core.hooksPath=${hooks_dir} — pre-push already in place" | tee -a "$logfile"
     else
       if [[ -f "${hooks_dir}/pre-push" ]] && ! cmp -s "${githooks_src}/pre-push" "${hooks_dir}/pre-push"; then
-        cp "${hooks_dir}/pre-push" "${hooks_dir}/pre-push.bak" >>"$logfile" 2>&1 || true
-        echo "  [INFO] Backed up ${hooks_dir}/pre-push -> ${hooks_dir}/pre-push.bak" | tee -a "$logfile"
+        if _bak="$(cgw_backup_file "${hooks_dir}/pre-push")"; then
+          echo "  [INFO] Backed up ${hooks_dir}/pre-push -> ${_bak}" | tee -a "$logfile"
+        else
+          echo "  [!] Could not back up ${hooks_dir}/pre-push" | tee -a "$logfile"
+        fi
       fi
       if cp "${githooks_src}/pre-push" "${hooks_dir}/pre-push" >>"$logfile" 2>&1; then
         chmod +x "${hooks_dir}/pre-push" >>"$logfile" 2>&1
@@ -174,8 +180,11 @@ main() {
       echo "  [OK] core.hooksPath=${hooks_dir} — pre-rebase already in place" | tee -a "$logfile"
     else
       if [[ -f "${hooks_dir}/pre-rebase" ]] && ! cmp -s "${githooks_src}/pre-rebase" "${hooks_dir}/pre-rebase"; then
-        cp "${hooks_dir}/pre-rebase" "${hooks_dir}/pre-rebase.bak" >>"$logfile" 2>&1 || true
-        echo "  [INFO] Backed up ${hooks_dir}/pre-rebase -> ${hooks_dir}/pre-rebase.bak" | tee -a "$logfile"
+        if _bak="$(cgw_backup_file "${hooks_dir}/pre-rebase")"; then
+          echo "  [INFO] Backed up ${hooks_dir}/pre-rebase -> ${_bak}" | tee -a "$logfile"
+        else
+          echo "  [!] Could not back up ${hooks_dir}/pre-rebase" | tee -a "$logfile"
+        fi
       fi
       if cp "${githooks_src}/pre-rebase" "${hooks_dir}/pre-rebase" >>"$logfile" 2>&1; then
         chmod +x "${hooks_dir}/pre-rebase" >>"$logfile" 2>&1

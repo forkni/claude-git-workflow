@@ -182,7 +182,6 @@ _cmd_undo_commit() {
   cgw_create_backup_tag undo-commit
   local backup_tag="${CGW_BACKUP_TAG}"
 
-  ensure_no_stale_index_lock || exit 1
   if cgw_run_with_lock_retry git reset --soft HEAD~1; then
     echo ""
     echo "[OK] COMMIT UNDONE"
@@ -253,7 +252,6 @@ _cmd_unstage() {
     exit 0
   fi
 
-  ensure_no_stale_index_lock || exit 1
   for f in "${to_unstage[@]}"; do
     if cgw_run_with_lock_retry git reset HEAD "${f}" 2>/dev/null; then
       echo "  [OK] Unstaged: ${f}"
@@ -433,7 +431,6 @@ _cmd_amend_message() {
     exit 0
   fi
 
-  ensure_no_stale_index_lock || exit 1
   if cgw_run_with_lock_retry git commit --amend --no-edit -m "${new_msg}"; then
     echo ""
     echo "[OK] Message updated: $(git log -1 --oneline)"

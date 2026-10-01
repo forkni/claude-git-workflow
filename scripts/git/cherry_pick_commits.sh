@@ -369,7 +369,6 @@ main() {
   if [[ ${#only_paths[@]} -gt 0 ]]; then
     # Partial pick: apply without committing, drop unselected paths, commit
     # the rest under the original message plus a partial-pick note.
-    ensure_no_stale_index_lock || exit 1
     if ! run_git_with_logging "GIT CHERRY-PICK NO-COMMIT" "$logfile" cherry-pick --no-commit "${commit_hash}"; then
       log_section_end "GIT CHERRY-PICK" "$logfile" "1"
       echo "" | tee -a "$logfile"
@@ -424,7 +423,6 @@ main() {
       _full_hash=$(git rev-parse "${commit_hash}")
       _origin_trailer=(-m "(cherry picked from commit ${_full_hash})")
     fi
-    ensure_no_stale_index_lock || exit 1
     if ! run_git_with_logging "GIT COMMIT PARTIAL PICK" "$logfile" commit \
       -m "${_orig_msg}" \
       -m "(partial cherry-pick of ${_short_hash} -- only: ${only_paths[*]})" \
@@ -434,7 +432,6 @@ main() {
       exit 1
     fi
   else
-    ensure_no_stale_index_lock || exit 1
     local -a _pick_flags=()
     [[ ${record_origin} -eq 1 ]] && _pick_flags=(-x)
     if ! run_git_with_logging "GIT CHERRY-PICK COMMIT" "$logfile" cherry-pick ${_pick_flags[@]+"${_pick_flags[@]}"} "${commit_hash}"; then

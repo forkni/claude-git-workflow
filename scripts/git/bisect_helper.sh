@@ -293,8 +293,9 @@ main() {
     echo "" | tee -a "$logfile"
     # git bisect run exits 0 when first-bad-commit is found, non-0 on error
     # run_cmd is a shell command line (quotes, pipes, &&): hand it to bash intact
-    # instead of word-splitting it into git bisect's argv.
-    if git bisect run bash -c "${run_cmd}" 2>&1 | tee -a "$logfile"; then
+    # instead of word-splitting it into git bisect's argv. ${BASH} is the interpreter
+    # running this script, so a PATH-first WSL launcher (System32\bash.exe) is never used.
+    if git bisect run "${BASH:-bash}" -c "${run_cmd}" 2>&1 | tee -a "$logfile"; then
       bisect_result=0
     else
       bisect_result=1

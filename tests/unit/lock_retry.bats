@@ -104,3 +104,87 @@ EOF
   [ "${status}" -eq 0 ]
   [[ "${output}" == *"advisory warning from pre-commit hook"* ]]
 }
+
+# ── stderr streaming (code-review follow-up) ──────────────────────────────────
+
+@test "cgw_run_with_lock_retry: streams stderr live instead of after the command exits" {
+  local release="${TEST_TMPDIR}/release"
+  local seen="${TEST_TMPDIR}/seen.txt"
+  local mock_cmd="${TEST_TMPDIR}/slow_hook.sh"
+  cat << EOF > "${mock_cmd}"
+#!/usr/bin/env bash
+echo "early hook output" >&2
+for _ in \$(seq 1 100); do
+  [[ -e "${release}" ]] && exit 0
+  sleep 0.1
+done
+exit 1
+EOF
+  chmod +x "${mock_cmd}"
+
+  cgw_run_with_lock_retry "${mock_cmd}" 2>"${seen}" &
+  local pid=$!
+  local streamed=0 i
+  for i in $(seq 1 40); do
+    if grep -q "early hook output" "${seen}" 2>/dev/null; then
+      streamed=1
+      break
+    fi
+    sleep 0.1
+  done
+  : >"${release}"
+  wait "${pid}"
+  [ "${streamed}" -eq 1 ]
+}
+
+@test "cgw_run_with_lock_retry: keeps stdout and stderr separate" {
+  local mock_cmd="${TEST_TMPDIR}/both.sh"
+  cat << 'EOF' > "${mock_cmd}"
+#!/usr/bin/env bash
+echo "to-stdout"
+echo "to-stderr" >&2
+exit 0
+EOF
+  chmod +x "${mock_cmd}"
+
+  run --separate-stderr cgw_run_with_lock_retry "${mock_cmd}"
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "to-stdout" ]
+  [ "${stderr}" = "to-stderr" ]
+}
+
+@test "cgw_run_with_lock_retry: prints an unrelated failure's stderr exactly once" {
+  local mock_cmd="${TEST_TMPDIR}/fail_once.sh"
+  cat << 'EOF' > "${mock_cmd}"
+#!/usr/bin/env bash
+echo "hook rejected the commit" >&2
+exit 3
+EOF
+  chmod +x "${mock_cmd}"
+
+  run cgw_run_with_lock_retry "${mock_cmd}"
+  [ "${status}" -eq 3 ]
+  local count
+  count="$(printf '%s\n' "${output}" | grep -c "hook rejected the commit")"
+  [ "${count}" -eq 1 ]
+}
+
+# ── ensure_no_stale_index_lock: active operation is refused immediately ───────
+
+@test "ensure_no_stale_index_lock: paused merge + fresh lock refuses at once with the real reason" {
+  local git_dir
+  git_dir="$(git -C "${TEST_REPO_DIR}" rev-parse --absolute-git-dir)"
+  : >"${git_dir}/index.lock"
+  git -C "${TEST_REPO_DIR}" rev-parse HEAD >"${git_dir}/MERGE_HEAD"
+
+  local start end
+  start=$(date +%s)
+  CGW_INDEX_LOCK_WAIT_SECONDS=8 run ensure_no_stale_index_lock
+  end=$(date +%s)
+
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"git operation in progress (MERGE_HEAD)"* ]]
+  [[ "${output}" != *"waiting up to"* ]]
+  [[ "${output}" != *"Another git process may be active"* ]]
+  [ $((end - start)) -lt 4 ]
+}

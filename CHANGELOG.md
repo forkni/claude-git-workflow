@@ -16,6 +16,11 @@
 - `bisect_helper.sh --run` no longer word-splits quoted arguments
 - `commit_enhanced.sh --only` clears pre-staged files on an unborn HEAD
 - error output goes to stderr in hooks, `_common.sh` and `branch_cleanup.sh`
+- `configure.sh` honours env-only `CGW_NON_INTERACTIVE` (a differing hook is kept, not aborted) and warns when a preserved hook differs from the template, pointing at `--overwrite-hooks` and `.githooks/<hook>.local`
+- `configure.sh` / `install_hooks.sh` never overwrite an existing `.bak` (timestamped `.bak.<ts>-<pid>` instead, via `cgw_backup_file`)
+- `hooks/pre-push` runs the local test gate only for branch updates (not tag pushes or deletions) and honours `SKIP_TESTS=1`
+- `cgw_run_with_lock_retry` streams stderr live; the active-operation check now precedes the fresh-lock wait; redundant mid-script lock checks removed
+- `bisect_helper.sh --run` launches the command with the running bash (`${BASH}`), not whatever `bash` is first on `PATH`
 
 ### Maintenance
 

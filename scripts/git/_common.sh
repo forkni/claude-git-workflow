@@ -581,6 +581,26 @@ ensure_no_stale_index_lock() {
   local wait_sec="${CGW_INDEX_LOCK_WAIT_SECONDS:-10}"
   local auto_remove="${CGW_AUTO_REMOVE_INDEX_LOCK:-1}"
 
+  # Refuse if a git operation is actively in progress — removing the lock
+  # while rebase/merge/cherry-pick is paused (e.g. editor open) would corrupt it.
+  # Checked BEFORE the fresh-lock wait so the refusal names the real cause
+  # immediately instead of after a pointless poll and a misleading message.
+  local -a active_op_sentinels=(
+    "${git_dir}/rebase-merge"
+    "${git_dir}/rebase-apply"
+    "${git_dir}/MERGE_HEAD"
+    "${git_dir}/CHERRY_PICK_HEAD"
+    "${git_dir}/REVERT_HEAD"
+    "${git_dir}/BISECT_LOG"
+  )
+  local sentinel
+  for sentinel in "${active_op_sentinels[@]}"; do
+    if [[ -e "${sentinel}" ]]; then
+      err_tee "[cgw-lock] REFUSED: git operation in progress (${sentinel##*/}). Resolve or abort it first."
+      return 1
+    fi
+  done
+
   if ((age < max_age)); then
     # Lock is fresh — may belong to a concurrent git process. Poll briefly.
     err_tee "[cgw-lock] index.lock is ${age}s old (threshold ${max_age}s); waiting up to ${wait_sec}s..."
@@ -600,24 +620,6 @@ ensure_no_stale_index_lock() {
       return 1
     fi
   fi
-
-  # Refuse if a git operation is actively in progress — removing the lock
-  # while rebase/merge/cherry-pick is paused (e.g. editor open) would corrupt it.
-  local -a active_op_sentinels=(
-    "${git_dir}/rebase-merge"
-    "${git_dir}/rebase-apply"
-    "${git_dir}/MERGE_HEAD"
-    "${git_dir}/CHERRY_PICK_HEAD"
-    "${git_dir}/REVERT_HEAD"
-    "${git_dir}/BISECT_LOG"
-  )
-  local sentinel
-  for sentinel in "${active_op_sentinels[@]}"; do
-    if [[ -e "${sentinel}" ]]; then
-      err_tee "[cgw-lock] REFUSED: git operation in progress (${sentinel##*/}). Resolve or abort it first."
-      return 1
-    fi
-  done
 
   # Lock is stale. Remove it (or refuse if auto-remove is disabled).
   if [[ "${auto_remove}" != "1" ]]; then
@@ -642,13 +644,14 @@ ensure_no_stale_index_lock() {
 #
 # Behavior:
 #   1. Runs ensure_no_stale_index_lock before each attempt.
-#   2. Executes the command, capturing stderr to a temporary file.
-#   3. If the command succeeds, replays any captured stderr and returns 0.
+#   2. Executes the command, streaming its stderr live (hook output, editor
+#      hints, progress) while also tee-ing a copy to a temporary file.
+#   3. If the command succeeds, returns 0.
 #   4. If the command fails specifically with an index.lock collision
 #      ("index.lock.*File exists" or "Unable to create.*index.lock"),
 #      waits with backoff and retries up to CGW_LOCK_RETRY_ATTEMPTS (default: 3).
-#   5. If retries are exhausted or the error is unrelated, prints stderr
-#      and returns the command's exit code.
+#   5. If retries are exhausted or the error is unrelated, returns the
+#      command's exit code (stderr was already shown as it happened).
 cgw_run_with_lock_retry() {
   local max_attempts="${CGW_LOCK_RETRY_ATTEMPTS:-3}"
   local retry_delay="${CGW_LOCK_RETRY_DELAY:-1}"
@@ -669,14 +672,18 @@ cgw_run_with_lock_retry() {
       return "${lock_err}"
     }
 
-    if "$@" 2>"${stderr_file}"; then
-      if [[ -s "${stderr_file}" ]]; then
-        cat "${stderr_file}" >&2
-      fi
+    # stdout goes straight through fd 3; stderr is tee'd so the user sees hook and
+    # editor output as it happens while a copy is kept for the collision check.
+    # A pipe (not process substitution) keeps this synchronous and bash-3.2 safe.
+    : >"${stderr_file}"
+    {
+      "$@" 2>&1 1>&3 | tee "${stderr_file}" >&2
+      exit_code=${PIPESTATUS[0]}
+    } 3>&1
+    if ((exit_code == 0)); then
       rm -f "${stderr_file}" 2>/dev/null || true
       return 0
     else
-      exit_code=$?
       local err_content
       err_content="$(cat "${stderr_file}" 2>/dev/null || true)"
 
@@ -690,10 +697,7 @@ cgw_run_with_lock_retry() {
         fi
       fi
 
-      # Unrelated error or retries exhausted
-      if [[ -n "${err_content}" ]]; then
-        printf '%s\n' "${err_content}" >&2
-      fi
+      # Unrelated error or retries exhausted (stderr was already streamed above)
       rm -f "${stderr_file}" 2>/dev/null || true
       return "${exit_code}"
     fi
@@ -701,6 +705,20 @@ cgw_run_with_lock_retry() {
 
   rm -f "${stderr_file}" 2>/dev/null || true
   return "${exit_code}"
+}
+
+# cgw_backup_file <path> — back up <path> without ever clobbering an earlier backup.
+#
+# The first backup is <path>.bak; if that already exists (e.g. the user's original hook
+# saved by an earlier install), the new copy goes to <path>.bak.<YYYYMMDD_HHMMSS> so the
+# original survives every later update. Prints the backup path on stdout.
+# Returns 0 on success, 1 if the copy failed.
+cgw_backup_file() {
+  local src="$1"
+  local dest="${src}.bak"
+  [[ -e "${dest}" ]] && dest="${src}.bak.$(date +%Y%m%d_%H%M%S)-$$"
+  cp "${src}" "${dest}" 2>/dev/null || return 1
+  printf '%s\n' "${dest}"
 }
 
 # cgw_rebase_in_progress — git-dir/worktree-safe rebase-in-progress check.

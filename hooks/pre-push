@@ -44,11 +44,29 @@ source "${CGW_HOME}/scripts/git/_common.sh"
 # CGW_ALL_PREFIXES is computed by _config.sh (sourced via _common.sh above)
 # and includes CGW_EXTRA_PREFIXES from .cgw.conf automatically.
 
+# Collect push info from stdin (git passes it to pre-push)
+PUSH_INPUT="$(cat)"
+
 # ── [0] Local test gate ────────────────────────────────────────────────
 # Runs once per push invocation (not per-ref, not per-commit) - it gates
 # the CURRENT working tree, not each historical commit. Deliberately
 # outside scripts/git/ so a CGW redeploy can never silently drop it.
-if [[ -x "${REPO_ROOT}/scripts/test/run_tests.sh" ]]; then
+# Skipped when nothing code-bearing is pushed (only branch deletions and/or
+# tags -- the working tree is not what is being published) and when the
+# caller bypasses it once with SKIP_TESTS=1.
+_gate_needed=1
+if [[ -n "${PUSH_INPUT}" ]]; then
+  _gate_needed=0
+  while read -r _g_local_ref _g_local_sha _g_remote_ref _g_remote_sha; do
+    [[ -z "${_g_local_sha:-}" ]] && continue
+    [[ "${_g_local_sha}" == "0000000000000000000000000000000000000000" ]] && continue
+    [[ "${_g_remote_ref}" == refs/heads/* ]] && _gate_needed=1
+  done <<<"${PUSH_INPUT}"
+fi
+if [[ "${SKIP_TESTS:-0}" == "1" ]]; then
+  [[ ${_gate_needed} -eq 1 && -x "${REPO_ROOT}/scripts/test/run_tests.sh" ]] &&
+    echo "pre-push: SKIP_TESTS=1 -- local test gate skipped" >&2
+elif [[ ${_gate_needed} -eq 1 && -x "${REPO_ROOT}/scripts/test/run_tests.sh" ]]; then
   if ! "${REPO_ROOT}/scripts/test/run_tests.sh" </dev/null; then
     echo "" >&2
     echo "ERROR [pre-push]: local test gate failed." >&2
@@ -57,9 +75,6 @@ if [[ -x "${REPO_ROOT}/scripts/test/run_tests.sh" ]]; then
     exit 1
   fi
 fi
-
-# Collect push info from stdin (git passes it to pre-push)
-PUSH_INPUT="$(cat)"
 
 # ── [0.1] Project-local pre-push hook extension ───────────────────────
 if [[ -x "${REPO_ROOT}/.githooks/pre-push.local" ]]; then
