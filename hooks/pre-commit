@@ -46,24 +46,26 @@ mapfile -t PROBLEMATIC_FILES < <(
   git diff --cached --name-only --diff-filter=AM | cgw_filter_local_files || true
 )
 
-if (( ${#PROBLEMATIC_FILES[@]} > 0 )); then
-  echo "ERROR: Attempting to add or modify local-only files!"
-  echo ""
-  echo "The following files must remain local only:"
-  printf '  %s\n' "${PROBLEMATIC_FILES[@]}"
-  echo ""
-  echo "DELETIONS are allowed (removing from git tracking)"
-  echo "ADDITIONS/MODIFICATIONS are blocked"
-  echo ""
-  echo "To fix: git reset HEAD <file>"
-  echo ""
+if ((${#PROBLEMATIC_FILES[@]} > 0)); then
+  {
+    echo "ERROR: Attempting to add or modify local-only files!"
+    echo ""
+    echo "The following files must remain local only:"
+    printf '  %s\n' "${PROBLEMATIC_FILES[@]}"
+    echo ""
+    echo "DELETIONS are allowed (removing from git tracking)"
+    echo "ADDITIONS/MODIFICATIONS are blocked"
+    echo ""
+    echo "To fix: git reset HEAD <file>"
+    echo ""
+  } >&2
   exit 1
 fi
 
 mapfile -t DELETED_FILES < <(
   git diff --cached --name-only --diff-filter=D | cgw_filter_local_files || true
 )
-if (( ${#DELETED_FILES[@]} > 0 )); then
+if ((${#DELETED_FILES[@]} > 0)); then
   echo "  Local-only files being removed from git tracking (allowed)"
 fi
 
@@ -98,7 +100,7 @@ STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
 # .h/.cpp/.md files it would parse as Python and reject. Mirrors commit_enhanced.sh.
 mapfile -t LINT_FILES < <(cgw_staged_files_for_lint)
 
-if (( ${#LINT_FILES[@]} > 0 )) && [[ "$lint_act" == "run" ]]; then
+if ((${#LINT_FILES[@]} > 0)) && [[ "$lint_act" == "run" ]]; then
   echo ""
   echo "Checking lint (non-blocking)..."
   if cgw_run_lint_check "${LINT_FILES[@]}" >/dev/null 2>&1; then
@@ -113,7 +115,7 @@ fi
 # Optional: format check for the same staged files using CGW_FORMAT_CMD
 # (non-blocking). Runs whether or not a linter is configured -- a format-only
 # config is checked too, as it is by commit_enhanced.sh and check_lint.sh.
-if (( ${#LINT_FILES[@]} > 0 )) && [[ "$format_act" == "run" ]]; then
+if ((${#LINT_FILES[@]} > 0)) && [[ "$format_act" == "run" ]]; then
   echo ""
   echo "Checking format (non-blocking)..."
   if cgw_run_format_check "${LINT_FILES[@]}" >/dev/null 2>&1; then

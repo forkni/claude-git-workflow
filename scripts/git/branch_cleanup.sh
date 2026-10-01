@@ -245,7 +245,7 @@ _delete_local_branches() {
       echo "  [OK] Deleted: ${branch}"
       ((deleted++)) || true
     else
-      echo "  [FAIL] Failed: ${branch} (may not be fully merged -- use git branch -D to force)"
+      echo "  [FAIL] Failed: ${branch} (may not be fully merged -- use git branch -D to force)" >&2
       ((failed++)) || true
     fi
   done

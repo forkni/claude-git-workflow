@@ -842,7 +842,7 @@ _register_guardrail() {
   local py_cmd
   for py_cmd in python3 python; do
     if command -v "${py_cmd}" &>/dev/null; then
-      if "${py_cmd}" - "${json}" "${pfx}" "${sfx}" "${has_slash}" "${k1}" "${k2}" "${matcher}" "${marker}" 2>/dev/null <<'PYEOF'; then
+      if "${py_cmd}" - "${json}" "${pfx}" "${sfx}" "${has_slash}" "${k1}" "${k2}" "${matcher}" "${marker}" 2>/dev/null <<'PYEOF'
 import json, sys
 path, pfx, sfx, has_slash, k1, k2, matcher, marker = sys.argv[1:9]
 cmd = f"{pfx}/{sfx}" if has_slash == "true" else pfx
@@ -859,6 +859,7 @@ ptu.append({'matcher': matcher, 'hooks': [{'type': 'command', 'command': cmd}]})
 with open(path, 'w', encoding='utf-8') as f:
     json.dump(data, f, indent=2)
 PYEOF
+      then
         echo "  [OK] ${label} registered in ${json} (via python)"
         return 0
       fi

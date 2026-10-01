@@ -153,3 +153,12 @@ EOF
   [ ! -f "${fake_tc}.ran" ]
   rm -f "${fake_tc}" "${fake_tc}.ran"
 }
+
+@test "pre-commit writes its local-only error to stderr, not stdout (ST5)" {
+  echo "# Claude" >"${TEST_REPO_DIR}/CLAUDE.md"
+  git -C "${TEST_REPO_DIR}" add CLAUDE.md
+  run --separate-stderr git -C "${TEST_REPO_DIR}" commit -m "docs: leak CLAUDE.md"
+  [ "${status}" -ne 0 ]
+  [[ "${stderr}" == *"Attempting to add or modify local-only files"* ]]
+  [[ "${output}" != *"Attempting to add or modify local-only files"* ]]
+}

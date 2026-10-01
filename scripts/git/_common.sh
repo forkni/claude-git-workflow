@@ -301,7 +301,7 @@ run_git_with_logging() {
       if ((attempt < max_attempts)); then
         local retry_msg="[cgw-lock] Index lock collision during 'git ${1:-command}' (attempt ${attempt}/${max_attempts}). Retrying in $((attempt * retry_delay))s..."
         err_tee "${retry_msg}"
-        echo "${retry_msg}" >> "$log_path"
+        echo "${retry_msg}" >>"$log_path"
         sleep $((attempt * retry_delay))
         ((attempt++))
         continue
@@ -316,7 +316,7 @@ run_git_with_logging() {
 
   log_section_end "$section_name" "$log_path" "$GIT_EXIT_CODE"
 
-  return $GIT_EXIT_CODE
+  return "${GIT_EXIT_CODE}"
 }
 
 validate_branch_pair() {
@@ -804,6 +804,7 @@ cgw_is_local_file() {
 
 # Filter paths from stdin (one per line) or positional args.
 # Echoes only matching paths to stdout; returns 0 if any matched, 1 if none.
+# shellcheck disable=SC2120  # callers pipe paths on stdin; args are optional
 cgw_filter_local_files() {
   local p any=1
   if (($# > 0)); then
@@ -1000,7 +1001,7 @@ cgw_resolve_safe_conflicts() {
     if git rm "${f}" >/dev/null 2>&1; then
       echo "  [OK] Removed: ${f}"
     else
-      echo "  [FAIL] Failed to remove ${f}"
+      echo "  [FAIL] Failed to remove ${f}" >&2
       resolution_failed=1
     fi
   done
@@ -1011,7 +1012,7 @@ cgw_resolve_safe_conflicts() {
     if git rm "${f}" >/dev/null 2>&1; then
       echo "  [OK] Removed (both deleted): ${f}"
     else
-      echo "  [FAIL] Failed to remove ${f}"
+      echo "  [FAIL] Failed to remove ${f}" >&2
       resolution_failed=1
     fi
   done
@@ -1998,6 +1999,7 @@ cgw_crlf_in_index_files() {
 #   the *next* line (` --> file.py:10:8`). Verified against real 1.0.0/1.3.0
 #   pyrefly, mypy, and pyright output (2026-09-12); tsc's documented
 #   `file.ts(10,5): error TS2322:` form is covered by the first alternative.
+# shellcheck disable=SC2120  # all arguments are optional flags
 cgw_run_typecheck() {
   local mode="logged"
   local result_var="CGW_RESULT"

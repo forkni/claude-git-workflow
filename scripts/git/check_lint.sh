@@ -75,7 +75,7 @@ main() {
   fi
 
   local lint_act="" lint_reason=""
-  local format_act="" format_reason=""
+  local format_act=""
   local tc_act="" tc_reason=""
   local md_act="" md_reason=""
   local _step _act _rsn
@@ -87,7 +87,6 @@ main() {
         ;;
       format)
         format_act="$_act"
-        format_reason="$_rsn"
         ;;
       typecheck)
         tc_act="$_act"
@@ -173,7 +172,7 @@ main() {
   } >"$logfile"
 
   local -a results=()
-  local lint_status=0 format_status=0 md_lint_status=0 typecheck_status=0
+  local lint_status=0 md_lint_status=0 typecheck_status=0
 
   if [[ ${md_only} -eq 0 ]]; then
     # LINT CHECK
@@ -195,7 +194,7 @@ main() {
     if [[ "$format_act" == "run" ]]; then
       local format_start format_end format_duration format_res
       format_start=$(date +%s)
-      CGW_FORMAT_CHECK_NONBLOCKING=1 cgw_run_format_check --result-var format_res || format_status=1
+      CGW_FORMAT_CHECK_NONBLOCKING=1 cgw_run_format_check --result-var format_res || true
       format_end=$(date +%s)
       format_duration=$((format_end - format_start))
       IFS=':' read -r _f_name _f_status _f_errors <<<"${format_res}"

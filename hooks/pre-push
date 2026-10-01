@@ -74,117 +74,121 @@ fi
 if [[ -n "${PUSH_INPUT}" ]]; then
   while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     [[ -z "${LOCAL_SHA:-}" ]] && continue
-  # Skip deletions (empty sha = 0000...0)
-  if [[ "${LOCAL_SHA}" = "0000000000000000000000000000000000000000" ]]; then
-    continue
-  fi
-
-  # Determine commit range to check. In both cases, exclude commits already
-  # reachable from a remote-tracking ref that was itself vetted -- a commit
-  # already vetted and pushed on one branch (e.g. development) must not be
-  # re-flagged just because it's the first time that history reaches a
-  # different branch (e.g. a long-lived development -> main merge). Only
-  # genuinely new, never-vetted commits need checking here.
-  if [[ "${REMOTE_SHA}" = "0000000000000000000000000000000000000000" ]]; then
-    # New branch being pushed — check all commits not in any vetted remote branch
-    RANGE="${LOCAL_SHA}"
-  else
-    RANGE="${REMOTE_SHA}..${LOCAL_SHA}"
-  fi
-
-  # Only a refs/heads/* destination can be a freeform branch. A tag or other
-  # non-branch update is never exempt -- falling back to LOCAL_REF would let
-  # `git push origin up/x:refs/tags/v1` inherit up/x's exemption for the
-  # tag's commit range, even though the pushed ref itself isn't a branch.
-  _BRANCH=""
-  [[ "${REMOTE_REF}" == refs/heads/* ]] && _BRANCH="${REMOTE_REF#refs/heads/}"
-
-  # "Already pushed ⇒ already vetted" (--not --remotes) only holds for
-  # remote-tracking refs that were themselves subject to conventional-format
-  # validation. A freeform branch (CGW_FREEFORM_MESSAGE_BRANCHES) is pushed
-  # WITHOUT that validation, so a commit that only reached development/main
-  # via a freeform branch must still be checked here. When the push target
-  # itself is freeform, skip this narrowing entirely — the range is about to
-  # go through the freeform/delegated check below, not plain rev-list -- and
-  # keep the cheap `--not --remotes` fast path when the feature is unused.
-  _EXCLUDE=(--not --remotes)
-  if [[ -n "${CGW_FREEFORM_MESSAGE_BRANCHES:-}" ]] && ! cgw_branch_is_freeform "${_BRANCH}"; then
-    _EXCLUDE=()
-    while IFS= read -r _rref; do
-      _rbranch="${_rref#refs/remotes/}" # e.g. origin/up/x
-      _rbranch="${_rbranch#*/}"         # e.g. up/x
-      cgw_branch_matches_freeform_glob "${_rbranch}" && continue
-      _EXCLUDE+=("${_rref}")
-    done < <(git for-each-ref --format='%(refname)' refs/remotes 2>/dev/null)
-    ((${#_EXCLUDE[@]} > 0)) && _EXCLUDE=(--not "${_EXCLUDE[@]}")
-  fi
-  COMMITS=$(git rev-list "${RANGE}" "${_EXCLUDE[@]+"${_EXCLUDE[@]}"}" 2>/dev/null || true)
-
-  [[ -z "${COMMITS}" ]] && continue
-
-  echo "pre-push: checking $(echo "${COMMITS}" | wc -l | tr -d ' ') commit(s) in ${LOCAL_REF}..."
-
-  # ── [1] Local-only file check ──────────────────────────────────────────
-  for COMMIT in ${COMMITS}; do
-    mapfile -t PROBLEM < <(
-      git diff-tree --no-commit-id -r --name-only --diff-filter=AM "${COMMIT}" 2>/dev/null \
-        | cgw_filter_local_files || true
-    )
-    if (( ${#PROBLEM[@]} > 0 )); then
-      echo ""
-      echo "ERROR [pre-push]: Commit ${COMMIT} contains local-only files:"
-      printf '  %s\n' "${PROBLEM[@]}"
-      echo ""
-      echo "To fix: git rebase -i HEAD~N and drop/edit the offending commit"
-      echo ""
-      exit 1
+    # Skip deletions (empty sha = 0000...0)
+    if [[ "${LOCAL_SHA}" = "0000000000000000000000000000000000000000" ]]; then
+      continue
     fi
-  done
 
-  # ── [2] Conventional commit format check ──────────────────────────────
-  # _BRANCH was already derived above (refs/heads/* destinations only) so
-  # the tag-fallback bug can't reappear here.
-  if cgw_branch_is_freeform "${_BRANCH}"; then
-    echo "pre-push: ${_BRANCH} matches CGW_FREEFORM_MESSAGE_BRANCHES, commit-format check skipped"
+    # Determine commit range to check. In both cases, exclude commits already
+    # reachable from a remote-tracking ref that was itself vetted -- a commit
+    # already vetted and pushed on one branch (e.g. development) must not be
+    # re-flagged just because it's the first time that history reaches a
+    # different branch (e.g. a long-lived development -> main merge). Only
+    # genuinely new, never-vetted commits need checking here.
+    if [[ "${REMOTE_SHA}" = "0000000000000000000000000000000000000000" ]]; then
+      # New branch being pushed — check all commits not in any vetted remote branch
+      RANGE="${LOCAL_SHA}"
+    else
+      RANGE="${REMOTE_SHA}..${LOCAL_SHA}"
+    fi
+
+    # Only a refs/heads/* destination can be a freeform branch. A tag or other
+    # non-branch update is never exempt -- falling back to LOCAL_REF would let
+    # `git push origin up/x:refs/tags/v1` inherit up/x's exemption for the
+    # tag's commit range, even though the pushed ref itself isn't a branch.
+    _BRANCH=""
+    [[ "${REMOTE_REF}" == refs/heads/* ]] && _BRANCH="${REMOTE_REF#refs/heads/}"
+
+    # "Already pushed ⇒ already vetted" (--not --remotes) only holds for
+    # remote-tracking refs that were themselves subject to conventional-format
+    # validation. A freeform branch (CGW_FREEFORM_MESSAGE_BRANCHES) is pushed
+    # WITHOUT that validation, so a commit that only reached development/main
+    # via a freeform branch must still be checked here. When the push target
+    # itself is freeform, skip this narrowing entirely — the range is about to
+    # go through the freeform/delegated check below, not plain rev-list -- and
+    # keep the cheap `--not --remotes` fast path when the feature is unused.
+    _EXCLUDE=(--not --remotes)
+    if [[ -n "${CGW_FREEFORM_MESSAGE_BRANCHES:-}" ]] && ! cgw_branch_is_freeform "${_BRANCH}"; then
+      _EXCLUDE=()
+      while IFS= read -r _rref; do
+        _rbranch="${_rref#refs/remotes/}" # e.g. origin/up/x
+        _rbranch="${_rbranch#*/}"         # e.g. up/x
+        cgw_branch_matches_freeform_glob "${_rbranch}" && continue
+        _EXCLUDE+=("${_rref}")
+      done < <(git for-each-ref --format='%(refname)' refs/remotes 2>/dev/null)
+      ((${#_EXCLUDE[@]} > 0)) && _EXCLUDE=(--not "${_EXCLUDE[@]}")
+    fi
+    COMMITS=$(git rev-list "${RANGE}" "${_EXCLUDE[@]+"${_EXCLUDE[@]}"}" 2>/dev/null || true)
+
+    [[ -z "${COMMITS}" ]] && continue
+
+    echo "pre-push: checking $(echo "${COMMITS}" | wc -l | tr -d ' ') commit(s) in ${LOCAL_REF}..."
+
+    # ── [1] Local-only file check ──────────────────────────────────────────
     for COMMIT in ${COMMITS}; do
-      # Skip merge commits (they often have non-conventional messages)
-      PARENT_COUNT=$(git cat-file -p "${COMMIT}" 2>/dev/null | grep -c "^parent " || true)
-      [[ "${PARENT_COUNT}" -ge 2 ]] && continue
-
-      MSG_FULL=$(git log -1 --format="%B" "${COMMIT}" 2>/dev/null || true)
-      if ! cgw_freeform_message_check "${MSG_FULL}"; then
-        echo ""
-        echo "ERROR [pre-push]: Commit ${COMMIT} rejected by CGW_FREEFORM_MESSAGE_CHECK"
-        echo ""
+      mapfile -t PROBLEM < <(
+        git diff-tree --no-commit-id -r --name-only --diff-filter=AM "${COMMIT}" 2>/dev/null |
+          cgw_filter_local_files || true
+      )
+      if ((${#PROBLEM[@]} > 0)); then
+        {
+          echo ""
+          echo "ERROR [pre-push]: Commit ${COMMIT} contains local-only files:"
+          printf '  %s\n' "${PROBLEM[@]}"
+          echo ""
+          echo "To fix: git rebase -i HEAD~N and drop/edit the offending commit"
+          echo ""
+        } >&2
         exit 1
       fi
     done
-  elif [[ -n "${CGW_ALL_PREFIXES}" ]]; then
-    if cgw_branch_matches_freeform_glob "${_BRANCH}" && cgw_branch_is_guarded "${_BRANCH}"; then
-      echo "pre-push: ${_BRANCH} is a protected/source/target branch; CGW_FREEFORM_MESSAGE_BRANCHES ignored"
-    fi
-    for COMMIT in ${COMMITS}; do
-      MSG=$(git log -1 --format="%s" "${COMMIT}" 2>/dev/null || true)
 
-      # Skip merge commits (they often have non-conventional messages)
-      PARENT_COUNT=$(git cat-file -p "${COMMIT}" 2>/dev/null | grep -c "^parent " || true)
-      [[ "${PARENT_COUNT}" -ge 2 ]] && continue
+    # ── [2] Conventional commit format check ──────────────────────────────
+    # _BRANCH was already derived above (refs/heads/* destinations only) so
+    # the tag-fallback bug can't reappear here.
+    if cgw_branch_is_freeform "${_BRANCH}"; then
+      echo "pre-push: ${_BRANCH} matches CGW_FREEFORM_MESSAGE_BRANCHES, commit-format check skipped"
+      for COMMIT in ${COMMITS}; do
+        # Skip merge commits (they often have non-conventional messages)
+        PARENT_COUNT=$(git cat-file -p "${COMMIT}" 2>/dev/null | grep -c "^parent " || true)
+        [[ "${PARENT_COUNT}" -ge 2 ]] && continue
 
-      if ! cgw_validate_commit_message "${MSG}"; then
-        echo ""
-        echo "WARNING [pre-push]: Commit ${COMMIT} has non-conventional message:"
-        echo "  ${MSG}"
-        echo ""
-        echo "Expected format: <type>: <description>"
-        echo "Types: ${CGW_ALL_PREFIXES}"
-        echo ""
-        echo "Push blocked. Fix with: ./scripts/git/undo_last.sh amend-message '<type>: <msg>'"
-        echo "Or bypass (not recommended): git push --no-verify"
-        echo ""
-        exit 1
+        MSG_FULL=$(git log -1 --format="%B" "${COMMIT}" 2>/dev/null || true)
+        if ! cgw_freeform_message_check "${MSG_FULL}"; then
+          {
+            echo ""
+            echo "ERROR [pre-push]: Commit ${COMMIT} rejected by CGW_FREEFORM_MESSAGE_CHECK"
+            echo ""
+          } >&2
+          exit 1
+        fi
+      done
+    elif [[ -n "${CGW_ALL_PREFIXES}" ]]; then
+      if cgw_branch_matches_freeform_glob "${_BRANCH}" && cgw_branch_is_guarded "${_BRANCH}"; then
+        echo "pre-push: ${_BRANCH} is a protected/source/target branch; CGW_FREEFORM_MESSAGE_BRANCHES ignored"
       fi
-    done
-  fi
+      for COMMIT in ${COMMITS}; do
+        MSG=$(git log -1 --format="%s" "${COMMIT}" 2>/dev/null || true)
+
+        # Skip merge commits (they often have non-conventional messages)
+        PARENT_COUNT=$(git cat-file -p "${COMMIT}" 2>/dev/null | grep -c "^parent " || true)
+        [[ "${PARENT_COUNT}" -ge 2 ]] && continue
+
+        if ! cgw_validate_commit_message "${MSG}"; then
+          echo ""
+          echo "WARNING [pre-push]: Commit ${COMMIT} has non-conventional message:"
+          echo "  ${MSG}"
+          echo ""
+          echo "Expected format: <type>: <description>"
+          echo "Types: ${CGW_ALL_PREFIXES}"
+          echo ""
+          echo "Push blocked. Fix with: ./scripts/git/undo_last.sh amend-message '<type>: <msg>'"
+          echo "Or bypass (not recommended): git push --no-verify"
+          echo ""
+          exit 1
+        fi
+      done
+    fi
   done <<<"${PUSH_INPUT}"
 fi
 

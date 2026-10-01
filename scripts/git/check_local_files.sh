@@ -22,7 +22,6 @@ while [[ $# -gt 0 ]]; do
       exit 1
       ;;
   esac
-  shift
 done
 
 mapfile -t hits < <(git ls-files | cgw_filter_local_files || true)
