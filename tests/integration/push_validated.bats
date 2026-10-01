@@ -344,3 +344,25 @@ _run_push() {
   run _run_push "--force --dry-run --skip-lint"
   [ "${status}" -ne 0 ]
 }
+
+# ── behind-check fetch failure is surfaced (D2) ───────────────────────────────
+
+@test "fetch failure warns that the behind-remote check may use stale data (D2)" {
+  # ls-remote (reachability) keeps working, but the tracking-ref fetch fails --
+  # shadow git so only `git fetch <remote> +refs/heads/...` errors out.
+  local real_git
+  real_git=$(command -v git)
+  cat >"${MOCK_BIN_DIR}/git" <<GIT_MOCK
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "fetch" && "\${3:-}" == +refs/heads/* ]]; then
+  echo "fatal: simulated fetch failure" >&2
+  exit 128
+fi
+exec "${real_git}" "\$@"
+GIT_MOCK
+  chmod +x "${MOCK_BIN_DIR}/git"
+
+  run _run_push "--dry-run --skip-lint"
+  [[ "${output}" == *"fetch of origin/development failed"* ]]
+  [[ "${output}" == *"may use stale data"* ]]
+}

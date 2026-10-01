@@ -292,8 +292,9 @@ main() {
     echo "Running automated bisect: git bisect run ${run_cmd}" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
     # git bisect run exits 0 when first-bad-commit is found, non-0 on error
-    # shellcheck disable=SC2086  # run_cmd intentionally word-splits (it's a shell command)
-    if git bisect run ${run_cmd} 2>&1 | tee -a "$logfile"; then
+    # run_cmd is a shell command line (quotes, pipes, &&): hand it to bash intact
+    # instead of word-splitting it into git bisect's argv.
+    if git bisect run bash -c "${run_cmd}" 2>&1 | tee -a "$logfile"; then
       bisect_result=0
     else
       bisect_result=1

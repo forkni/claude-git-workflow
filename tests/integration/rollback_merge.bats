@@ -58,7 +58,7 @@ teardown() {
 
 # ── --target with explicit ref ─────────────────────────────────────────────────
 
-@test "--non-interactive with no backup tag falls back to HEAD~1" {
+@test "--target HEAD~1 resets non-interactively to the previous commit" {
   # Create a second commit so HEAD~1 exists
   echo "extra" > "${TEST_REPO_DIR}/extra.txt"
   git -C "${TEST_REPO_DIR}" add extra.txt
@@ -151,4 +151,151 @@ teardown() {
   [[ "${output}" == *"Refusing hard rollback: no --target specified and no pre-merge backup tag found"* ]]
 }
 
+# ── --revert / hard-mode target guards (R3/R4) ─────────────────────────────────
 
+# Two --no-ff merges into main (feature-1 then feature-2), with pre-merge tags
+# taken before each one. Sets MERGE1_SHA, MERGE2_SHA, TAG1, TAG2.
+_two_merge_history() {
+  local repo="${TEST_REPO_DIR}"
+  local n
+  for n in 1 2; do
+    git -C "${repo}" checkout --quiet -b "feature-${n}" main
+    echo "f${n}" >"${repo}/feature${n}.txt"
+    git -C "${repo}" add "feature${n}.txt"
+    git -C "${repo}" commit --quiet -m "feat: feature ${n}"
+    git -C "${repo}" checkout --quiet main
+    git -C "${repo}" tag "pre-merge-2025010${n}_000000-${n}" main
+    git -C "${repo}" merge --quiet --no-ff -m "Merge feature-${n}" "feature-${n}"
+    if [[ ${n} -eq 1 ]]; then
+      MERGE1_SHA=$(git -C "${repo}" rev-parse HEAD)
+    else
+      MERGE2_SHA=$(git -C "${repo}" rev-parse HEAD)
+    fi
+  done
+  TAG1="pre-merge-20250101_000000-1"
+  TAG2="pre-merge-20250102_000000-2"
+}
+
+@test "--revert --non-interactive reverts the merge at HEAD, not the previous merge (R3)" {
+  _two_merge_history
+
+  run run_script rollback_merge.sh --non-interactive --revert
+  [ "${status}" -eq 0 ]
+
+  # Feature 2 is gone, feature 1 (the previous merge) is untouched.
+  [ ! -f "${TEST_REPO_DIR}/feature2.txt" ]
+  [ -f "${TEST_REPO_DIR}/feature1.txt" ]
+  [[ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" == "Revert \"Merge feature-2\""* ]]
+}
+
+@test "--revert --non-interactive refuses when HEAD is not a merge and no --target (R3)" {
+  _two_merge_history
+  echo "plain" >"${TEST_REPO_DIR}/plain.txt"
+  git -C "${TEST_REPO_DIR}" add plain.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: plain commit"
+  local head_before
+  head_before=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+
+  run run_script rollback_merge.sh --non-interactive --revert
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"HEAD is not a merge commit"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "${head_before}" ]
+}
+
+@test "--revert with an explicit merge --target reverts that merge" {
+  _two_merge_history
+
+  run run_script rollback_merge.sh --non-interactive --revert --target "${MERGE1_SHA}"
+  [ "${status}" -eq 0 ]
+  [ ! -f "${TEST_REPO_DIR}/feature1.txt" ]
+  [ -f "${TEST_REPO_DIR}/feature2.txt" ]
+}
+
+@test "--revert accepts an annotated tag on a merge as --target (peeled)" {
+  _two_merge_history
+  git -C "${TEST_REPO_DIR}" tag -a -m "release" rel-1 "${MERGE2_SHA}"
+
+  run run_script rollback_merge.sh --non-interactive --revert --target rel-1
+  [ "${status}" -eq 0 ]
+  [ ! -f "${TEST_REPO_DIR}/feature2.txt" ]
+}
+
+@test "--revert success prints the revert-the-revert re-merge warning" {
+  _two_merge_history
+
+  run run_script rollback_merge.sh --non-interactive --revert
+  [ "${status}" -eq 0 ]
+  local revert_sha
+  revert_sha=$(git -C "${TEST_REPO_DIR}" rev-parse --short HEAD)
+  [[ "${output}" == *"revert the revert"* ]]
+  [[ "${output}" == *"git revert ${revert_sha}"* ]]
+}
+
+@test "--revert --dry-run does not change HEAD" {
+  _two_merge_history
+  local head_before
+  head_before=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+
+  run run_script rollback_merge.sh --non-interactive --revert --dry-run
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Would revert merge"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "${head_before}" ]
+}
+
+@test "hard rollback auto-picks the backup tag that equals HEAD^1 (R4)" {
+  _two_merge_history
+
+  run run_script rollback_merge.sh --non-interactive
+  [ "${status}" -eq 0 ]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "$(git -C "${TEST_REPO_DIR}" rev-parse "${TAG2}^{commit}")" ]
+  [ ! -f "${TEST_REPO_DIR}/feature2.txt" ]
+  [ -f "${TEST_REPO_DIR}/feature1.txt" ]
+}
+
+@test "hard rollback refuses a stale latest backup tag that is not HEAD^1 (R4)" {
+  _two_merge_history
+  # Unrelated later work on top of the last merge: the newest tag is now stale.
+  echo "later" >"${TEST_REPO_DIR}/later.txt"
+  git -C "${TEST_REPO_DIR}" add later.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: later work"
+  git -C "${TEST_REPO_DIR}" commit --quiet --allow-empty -m "chore: even later work"
+  local head_before
+  head_before=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+
+  run run_script rollback_merge.sh --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"is not the state just before HEAD's merge"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "${head_before}" ]
+  [ -f "${TEST_REPO_DIR}/later.txt" ]
+}
+
+@test "hard rollback refuses a backup tag that is not an ancestor of HEAD (R4)" {
+  local repo="${TEST_REPO_DIR}"
+  git -C "${repo}" checkout --quiet -b elsewhere
+  echo "x" >"${repo}/elsewhere.txt"
+  git -C "${repo}" add elsewhere.txt
+  git -C "${repo}" commit --quiet -m "chore: elsewhere"
+  git -C "${repo}" tag "pre-merge-20250301_000000-9" elsewhere
+  git -C "${repo}" checkout --quiet main
+  echo "extra" >"${repo}/extra.txt"
+  git -C "${repo}" add extra.txt
+  git -C "${repo}" commit --quiet -m "chore: extra"
+  local head_before
+  head_before=$(git -C "${repo}" rev-parse HEAD)
+
+  run run_script rollback_merge.sh --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"unrelated"* ]]
+  [ "$(git -C "${repo}" rev-parse HEAD)" = "${head_before}" ]
+}
+
+@test "hard rollback --target still accepts a stale tag explicitly (unchanged behaviour)" {
+  _two_merge_history
+  echo "later" >"${TEST_REPO_DIR}/later.txt"
+  git -C "${TEST_REPO_DIR}" add later.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: later work"
+
+  run run_script rollback_merge.sh --non-interactive --target "${TAG1}"
+  [ "${status}" -eq 0 ]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "$(git -C "${TEST_REPO_DIR}" rev-parse "${TAG1}^{commit}")" ]
+}

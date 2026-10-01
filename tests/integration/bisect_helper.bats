@@ -81,3 +81,18 @@ teardown() {
   run run_script bisect_helper.sh --continue
   [ "${status}" -eq 0 ]
 }
+
+# ── --run command is a shell command line (ST4) ───────────────────────────────
+
+@test "--run honours quoted arguments containing spaces" {
+  echo "x" > "${TEST_REPO_DIR}/bad file.txt"
+  git -C "${TEST_REPO_DIR}" add "bad file.txt"
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: introduce bad file"
+  echo "y" > "${TEST_REPO_DIR}/after.txt"
+  git -C "${TEST_REPO_DIR}" add after.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: after bad file"
+
+  run run_script bisect_helper.sh --good v0.1.0 --non-interactive --run 'test ! -e "bad file.txt"'
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"feat: introduce bad file"* ]]
+}

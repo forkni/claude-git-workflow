@@ -52,6 +52,13 @@ _cleanup_cherry_pick() {
 }
 trap _cleanup_cherry_pick EXIT INT TERM
 
+# _cp_return_to_original <branch> - leave the target branch on an error path; if that
+# fails, say so (the EXIT trap retries quietly, but the user must know where they are).
+_cp_return_to_original() {
+  git checkout "$1" ||
+    err_tee "[!] Could not return to $1 -- you are still on $(git branch --show-current)"
+}
+
 main() {
   local non_interactive=0
   local dry_run=0
@@ -193,7 +200,7 @@ main() {
     echo "[4/6] Using --commit: ${commit_hash}" | tee -a "$logfile"
   elif [[ ${non_interactive} -eq 1 ]]; then
     echo "[FAIL] [Non-interactive] --commit <hash> is required" >&2
-    git checkout "${original_branch}"
+    _cp_return_to_original "${original_branch}"
     exit 1
   else
     echo "[4/6] Select commit to cherry-pick..."
@@ -203,14 +210,14 @@ main() {
     if [[ "${commit_hash}" == "cancel" ]]; then
       echo ""
       log_message "Cherry-pick cancelled" "${logfile}"
-      git checkout "${original_branch}"
+      _cp_return_to_original "${original_branch}"
       exit 0
     fi
   fi
 
   if ! git rev-parse "${commit_hash}" >/dev/null 2>&1; then
     log_message "[FAIL] ERROR: Invalid commit hash: ${commit_hash}" "${logfile}"
-    git checkout "${original_branch}"
+    _cp_return_to_original "${original_branch}"
     exit 1
   fi
 
@@ -219,7 +226,7 @@ main() {
     echo "[!] WARNING: ${commit_hash} is not an ancestor of ${src_branch}" | tee -a "$logfile"
     if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
       log_message "Cherry-pick cancelled" "${logfile}"
-      git checkout "${original_branch}"
+      _cp_return_to_original "${original_branch}"
       exit 0
     fi
   fi
@@ -248,7 +255,7 @@ main() {
     if [[ ${#_sel_files[@]} -eq 0 ]]; then
       err_tee "[FAIL] --only matched no files in ${commit_hash}"
       err_tee "  Commit touches: ${_all_files[*]+"${_all_files[*]}"}"
-      git checkout "${original_branch}"
+      _cp_return_to_original "${original_branch}"
       exit 1
     fi
 
@@ -281,7 +288,7 @@ main() {
     else
       echo "Would cherry-pick: ${commit_hash}" | tee -a "$logfile"
     fi
-    git checkout "${original_branch}"
+    _cp_return_to_original "${original_branch}"
     exit 0
   fi
 
@@ -320,7 +327,7 @@ main() {
       if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
         echo ""
         log_message "Cherry-pick cancelled" "${logfile}"
-        git checkout "${original_branch}"
+        _cp_return_to_original "${original_branch}"
         exit 0
       fi
     fi
@@ -337,7 +344,7 @@ main() {
   fi
   if [[ ${_guard_failed} -eq 1 ]]; then
     log_message "Cherry-pick cancelled (local-only files)" "${logfile}"
-    git checkout "${original_branch}"
+    _cp_return_to_original "${original_branch}"
     exit 1
   fi
 
@@ -370,7 +377,7 @@ main() {
         git cherry-pick --quit 2>/dev/null || true
         git reset --hard HEAD >/dev/null 2>&1 || true
       fi
-      git checkout "${original_branch}"
+      _cp_return_to_original "${original_branch}"
       exit 1
     fi
 
@@ -381,7 +388,13 @@ main() {
     for _drop in "${_skip_files[@]+"${_skip_files[@]}"}"; do
       git reset -q HEAD -- "${_drop}" 2>/dev/null || true
       if git cat-file -e "HEAD:${_drop}" 2>/dev/null; then
-        git checkout -q HEAD -- "${_drop}"
+        if ! git checkout -q HEAD -- "${_drop}"; then
+          err_tee "[FAIL] Could not restore ${_drop} while dropping unselected paths -- aborting, nothing applied"
+          git cherry-pick --quit 2>/dev/null || true
+          git reset --hard HEAD >/dev/null 2>&1 || true # tree was clean before the pick
+          _cp_return_to_original "${original_branch}"
+          exit 1
+        fi
       else
         rm -f -- "${_drop}" # the commit added this file; it wasn't selected
       fi
@@ -391,7 +404,7 @@ main() {
       log_section_end "GIT CHERRY-PICK" "$logfile" "1"
       err_tee "[FAIL] Selected path(s) produce no change on this branch (already applied?)"
       git cherry-pick --quit 2>/dev/null || true
-      git checkout "${original_branch}"
+      _cp_return_to_original "${original_branch}"
       exit 1
     fi
 
@@ -409,32 +422,32 @@ main() {
   else
     ensure_no_stale_index_lock || exit 1
     if ! run_git_with_logging "GIT CHERRY-PICK COMMIT" "$logfile" cherry-pick "${commit_hash}"; then
-    log_section_end "GIT CHERRY-PICK" "$logfile" "1"
+      log_section_end "GIT CHERRY-PICK" "$logfile" "1"
 
-    # Detect redundant/empty cherry-pick (commit was already applied on this branch)
-    local unmerged_count
-    unmerged_count=$(git status --porcelain | grep -cE '^(U.|.U|AA|DD)' || true)
-    if git diff --cached --quiet && [[ ${unmerged_count} -eq 0 ]]; then
-      err_tee "[FAIL] Commit ${commit_hash} produces no changes on ${tgt_branch} (already applied?)"
-      git cherry-pick --abort 2>/dev/null || git reset --hard HEAD 2>/dev/null || true
-      git checkout "${original_branch}"
+      # Detect redundant/empty cherry-pick (commit was already applied on this branch)
+      local unmerged_count
+      unmerged_count=$(git status --porcelain | grep -cE '^(U.|.U|AA|DD)' || true)
+      if git diff --cached --quiet && [[ ${unmerged_count} -eq 0 ]]; then
+        err_tee "[FAIL] Commit ${commit_hash} produces no changes on ${tgt_branch} (already applied?)"
+        git cherry-pick --abort 2>/dev/null || git reset --hard HEAD 2>/dev/null || true
+        _cp_return_to_original "${original_branch}"
+        exit 1
+      fi
+
+      echo "" | tee -a "$logfile"
+      echo "[!] Cherry-pick conflicts detected - analyzing..." | tee -a "$logfile"
+
+      if ! cgw_resolve_safe_conflicts cherry-pick "${original_branch}"; then
+        exit 1
+      fi
+
+      # All conflicts auto-resolved; cherry-pick is still paused — user must --continue.
+      echo "" | tee -a "$logfile"
+      echo "[OK] All conflicts auto-resolved. To complete the cherry-pick:" | tee -a "$logfile"
+      echo "  git cherry-pick --continue" | tee -a "$logfile"
+      echo "Backup available: git reset --hard ${backup_tag}" | tee -a "$logfile"
       exit 1
     fi
-
-    echo "" | tee -a "$logfile"
-    echo "[!] Cherry-pick conflicts detected - analyzing..." | tee -a "$logfile"
-
-    if ! cgw_resolve_safe_conflicts cherry-pick "${original_branch}"; then
-      exit 1
-    fi
-
-    # All conflicts auto-resolved; cherry-pick is still paused — user must --continue.
-    echo "" | tee -a "$logfile"
-    echo "[OK] All conflicts auto-resolved. To complete the cherry-pick:" | tee -a "$logfile"
-    echo "  git cherry-pick --continue" | tee -a "$logfile"
-    echo "Backup available: git reset --hard ${backup_tag}" | tee -a "$logfile"
-    exit 1
-  fi
   fi
 
   trap - EXIT INT TERM
