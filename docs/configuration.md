@@ -66,10 +66,10 @@ cp cgw.conf.example .cgw.conf
 | `CGW_LOCAL_FILES_EXEMPT` | `` | Exact paths let through `CGW_LOCAL_FILES` protection (space-separated) — for a tracked file inside a blocked directory |
 | `CGW_LINT_CMD` | `ruff` | Lint tool (`""` to disable) |
 | `CGW_FORMAT_CMD` | `ruff` | Format tool (`""` to disable) |
-| `CGW_LINT_CHECK_ARGS` | `check {files}` | Arguments for lint check (`{files}` = scan target; legacy `.` also works) |
-| `CGW_LINT_FIX_ARGS` | `check --fix {files}` | Arguments for lint auto-fix |
-| `CGW_FORMAT_CHECK_ARGS` | `format --check {files}` | Arguments for format check |
-| `CGW_FORMAT_FIX_ARGS` | `format {files}` | Arguments for format auto-fix |
+| `CGW_LINT_CHECK_ARGS` | `check --force-exclude {files}` | Arguments for lint check (`{files}` = scan target; legacy `.` also works) |
+| `CGW_LINT_FIX_ARGS` | `check --fix --force-exclude {files}` | Arguments for lint auto-fix |
+| `CGW_FORMAT_CHECK_ARGS` | `format --check --force-exclude {files}` | Arguments for format check |
+| `CGW_FORMAT_FIX_ARGS` | `format --force-exclude {files}` | Arguments for format auto-fix |
 | `CGW_LINT_EXCLUDES` | `--extend-exclude logs --extend-exclude .venv` | Exclusion flags appended to lint commands |
 | `CGW_FORMAT_EXCLUDES` | `--exclude logs --exclude .venv` | Exclusion flags appended to format commands |
 | `CGW_LINT_EXTENSIONS` | `*.py` | File globs for `--modified-only` lint mode (e.g. `*.js *.ts`) |
@@ -141,11 +141,11 @@ For the complete list of all options with detailed descriptions, see [`cgw.conf.
 
 ```bash
 CGW_LINT_CMD="ruff"
-CGW_LINT_CHECK_ARGS="check {files}"
-CGW_LINT_FIX_ARGS="check --fix {files}"
+CGW_LINT_CHECK_ARGS="check --force-exclude {files}"
+CGW_LINT_FIX_ARGS="check --fix --force-exclude {files}"
 CGW_FORMAT_CMD="ruff"
-CGW_FORMAT_CHECK_ARGS="format --check {files}"
-CGW_FORMAT_FIX_ARGS="format {files}"
+CGW_FORMAT_CHECK_ARGS="format --check --force-exclude {files}"
+CGW_FORMAT_FIX_ARGS="format --force-exclude {files}"
 ```
 
 ### JavaScript / TypeScript (ESLint + Prettier)

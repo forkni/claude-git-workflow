@@ -406,10 +406,10 @@ teardown() {
     echo \"FF=\${CGW_FORMAT_FIX_ARGS}\"
   "
   [ "${status}" -eq 0 ]
-  [[ "${output}" == *"LC=check {files}"* ]]
-  [[ "${output}" == *"LF=check --fix {files}"* ]]
-  [[ "${output}" == *"FC=format --check {files}"* ]]
-  [[ "${output}" == *"FF=format {files}"* ]]
+  [[ "${output}" == *"LC=check --force-exclude {files}"* ]]
+  [[ "${output}" == *"LF=check --fix --force-exclude {files}"* ]]
+  [[ "${output}" == *"FC=format --check --force-exclude {files}"* ]]
+  [[ "${output}" == *"FF=format --force-exclude {files}"* ]]
 }
 
 # ── CGW_ALL_PREFIXES construction ──────────────────────────────────────────────

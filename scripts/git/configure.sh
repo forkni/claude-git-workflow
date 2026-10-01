@@ -245,12 +245,12 @@ _build_lint_config() {
         excludes="${excludes} --extend-exclude ${venv_dir}"
       fi
       echo "CGW_LINT_CMD=\"ruff\""
-      echo "CGW_LINT_CHECK_ARGS=\"check {files}\""
-      echo "CGW_LINT_FIX_ARGS=\"check --fix {files}\""
+      echo "CGW_LINT_CHECK_ARGS=\"check --force-exclude {files}\""
+      echo "CGW_LINT_FIX_ARGS=\"check --fix --force-exclude {files}\""
       echo "CGW_LINT_EXCLUDES=\"${excludes}\""
       echo "CGW_FORMAT_CMD=\"ruff\""
-      echo "CGW_FORMAT_CHECK_ARGS=\"format --check {files}\""
-      echo "CGW_FORMAT_FIX_ARGS=\"format {files}\""
+      echo "CGW_FORMAT_CHECK_ARGS=\"format --check --force-exclude {files}\""
+      echo "CGW_FORMAT_FIX_ARGS=\"format --force-exclude {files}\""
       local fmt_excludes="--exclude logs"
       if [[ -n "${venv_dir}" ]]; then fmt_excludes="${fmt_excludes} --exclude ${venv_dir}"; fi
       echo "CGW_FORMAT_EXCLUDES=\"${fmt_excludes}\""

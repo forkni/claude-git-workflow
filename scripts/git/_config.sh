@@ -165,12 +165,12 @@ CGW_EXTRA_PREFIXES||str|fill|conf
 CGW_FREEFORM_MESSAGE_BRANCHES||str|fill|conf
 CGW_FREEFORM_MESSAGE_CHECK||str|fill|conf
 CGW_LINT_CMD|ruff|str|keep|conf
-CGW_LINT_CHECK_ARGS|check {files}|str|keep|conf
-CGW_LINT_FIX_ARGS|check --fix {files}|str|keep|conf
+CGW_LINT_CHECK_ARGS|check --force-exclude {files}|str|keep|conf
+CGW_LINT_FIX_ARGS|check --fix --force-exclude {files}|str|keep|conf
 CGW_LINT_EXCLUDES|--extend-exclude logs --extend-exclude .venv|str|keep|conf
 CGW_FORMAT_CMD|ruff|str|keep|conf
-CGW_FORMAT_CHECK_ARGS|format --check {files}|str|keep|conf
-CGW_FORMAT_FIX_ARGS|format {files}|str|keep|conf
+CGW_FORMAT_CHECK_ARGS|format --check --force-exclude {files}|str|keep|conf
+CGW_FORMAT_FIX_ARGS|format --force-exclude {files}|str|keep|conf
 CGW_FORMAT_EXCLUDES|--exclude logs --exclude .venv|str|keep|conf
 CGW_MARKDOWNLINT_NPX_FALLBACK|1|bool|keep|conf
 CGW_MARKDOWNLINT_CMD||computed|keep|conf

@@ -1211,6 +1211,41 @@ UU b.py
   rm -f "${fake_bin}"
 }
 
+@test "A4: default ruff args honour extend-exclude for explicitly passed files" {
+  command -v ruff >/dev/null 2>&1 || skip "ruff not installed"
+  local work
+  work="$(mktemp -d)"
+  mkdir -p "${work}/gen" "${work}/src"
+  printf '[tool.ruff]
+extend-exclude = ["gen"]
+' > "${work}/pyproject.toml"
+  printf 'import os
+' > "${work}/gen/bad.py"
+  printf 'import os
+' > "${work}/src/bad.py"
+  run bash -c "
+    cd '${work}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    unset CGW_LINT_CHECK_ARGS CGW_LINT_EXCLUDES CGW_LINT_CMD
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_NO_VENV=1 logfile=/dev/null
+    cgw_run_lint_check gen/bad.py
+  "
+  local excluded_status="${status}"
+  run bash -c "
+    cd '${work}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    unset CGW_LINT_CHECK_ARGS CGW_LINT_EXCLUDES CGW_LINT_CMD
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_NO_VENV=1 logfile=/dev/null
+    cgw_run_lint_check src/bad.py
+  "
+  local included_status="${status}"
+  rm -rf "${work}"
+  [ "${excluded_status}" -eq 0 ]
+  [ "${included_status}" -ne 0 ]
+}
+
 # ── cgw_run_format_check() ────────────────────────────────────────────────────
 
 @test "cgw_run_format_check: returns 0 silently when CGW_FORMAT_CMD is empty" {

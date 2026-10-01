@@ -95,12 +95,12 @@ CGW_FREEFORM_MESSAGE_CHECK=""
 #
 # ── Python / ruff (default) ──────────────────────────────
 CGW_LINT_CMD="ruff"
-CGW_LINT_CHECK_ARGS="check {files}"
-CGW_LINT_FIX_ARGS="check --fix {files}"
+CGW_LINT_CHECK_ARGS="check --force-exclude {files}"
+CGW_LINT_FIX_ARGS="check --fix --force-exclude {files}"
 CGW_LINT_EXCLUDES="--extend-exclude logs --extend-exclude .venv"
 CGW_FORMAT_CMD="ruff"
-CGW_FORMAT_CHECK_ARGS="format --check {files}"
-CGW_FORMAT_FIX_ARGS="format {files}"
+CGW_FORMAT_CHECK_ARGS="format --check --force-exclude {files}"
+CGW_FORMAT_FIX_ARGS="format --force-exclude {files}"
 CGW_FORMAT_EXCLUDES="--exclude logs --exclude .venv"
 #
 # ── JavaScript / ESLint + Prettier ──────────────────────
