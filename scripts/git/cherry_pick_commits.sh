@@ -17,6 +17,9 @@
 #                        Applies with --no-commit, drops unselected paths, commits
 #                        the rest with the original message + a partial-pick note.
 #                        Conflicts abort cleanly (no hand-over in partial mode).
+#   --no-x               Do not record the source commit. By default the pick gets a
+#                        "(cherry picked from commit <sha>)" trailer (git cherry-pick -x),
+#                        so the origin stays traceable once the branches diverge.
 #   --dry-run            Show commit details without cherry-picking
 #   --source <branch>    Override source branch for this invocation
 #   --target <branch>    Override target branch for this invocation
@@ -64,6 +67,7 @@ main() {
   local dry_run=0
   local commit_hash_flag=""
   local only_paths=()
+  local record_origin=1
   local src_branch="${CGW_SOURCE_BRANCH}"
   local tgt_branch="${CGW_TARGET_BRANCH}"
 
@@ -81,6 +85,8 @@ main() {
         echo "                       Unselected paths are dropped; the commit keeps the"
         echo "                       original message plus a partial-pick note. On conflict"
         echo "                       the partial pick aborts (nothing applied)."
+        echo "  --no-x               Do not append the '(cherry picked from commit <sha>)' trailer"
+        echo "                       (default: recorded, as with git cherry-pick -x)"
         echo "  --dry-run            Show commit details without cherry-picking"
         echo "  --source <branch>    Override source branch for this invocation"
         echo "  --target <branch>    Override target branch for this invocation"
@@ -100,6 +106,7 @@ main() {
         CGW_NON_INTERACTIVE=1
         ;;
       --dry-run) dry_run=1 ;;
+      --no-x) record_origin=0 ;;
       --commit)
         commit_hash_flag="${2:-}"
         shift
@@ -408,20 +415,29 @@ main() {
       exit 1
     fi
 
-    local _orig_msg _short_hash
+    local _orig_msg _short_hash _full_hash
+    local -a _origin_trailer=()
     _orig_msg=$(git log -1 --format=%B "${commit_hash}")
     _short_hash=$(git rev-parse --short "${commit_hash}")
+    # Same trailer `git cherry-pick -x` writes, so partial picks stay traceable too.
+    if [[ ${record_origin} -eq 1 ]]; then
+      _full_hash=$(git rev-parse "${commit_hash}")
+      _origin_trailer=(-m "(cherry picked from commit ${_full_hash})")
+    fi
     ensure_no_stale_index_lock || exit 1
     if ! run_git_with_logging "GIT COMMIT PARTIAL PICK" "$logfile" commit \
       -m "${_orig_msg}" \
-      -m "(partial cherry-pick of ${_short_hash} -- only: ${only_paths[*]})"; then
+      -m "(partial cherry-pick of ${_short_hash} -- only: ${only_paths[*]})" \
+      ${_origin_trailer[@]+"${_origin_trailer[@]}"}; then
       log_section_end "GIT CHERRY-PICK" "$logfile" "1"
       err_tee "[FAIL] Committing the partial pick failed -- check output above"
       exit 1
     fi
   else
     ensure_no_stale_index_lock || exit 1
-    if ! run_git_with_logging "GIT CHERRY-PICK COMMIT" "$logfile" cherry-pick "${commit_hash}"; then
+    local -a _pick_flags=()
+    [[ ${record_origin} -eq 1 ]] && _pick_flags=(-x)
+    if ! run_git_with_logging "GIT CHERRY-PICK COMMIT" "$logfile" cherry-pick ${_pick_flags[@]+"${_pick_flags[@]}"} "${commit_hash}"; then
       log_section_end "GIT CHERRY-PICK" "$logfile" "1"
 
       # Detect redundant/empty cherry-pick (commit was already applied on this branch)
