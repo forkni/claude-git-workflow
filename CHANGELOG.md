@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Behaviour changes
+
+- `cherry_pick_commits.sh` records the source commit (`cherry-pick -x`, also on `--only` partial picks); opt out with `--no-x`.
+- `rollback_merge.sh` separates the reset point (hard mode) from the merge under revert (`--revert`); `--revert` never reverts `HEAD~1` or a tag, hard mode only auto-picks a `pre-merge` tag that is `HEAD^1`, and a revert prints the revert-the-revert step.
+- `sync_branches.sh` pulls protected branches `--ff-only` (diverged = refuse + reconcile options) and others `--rebase=merges`.
+- `push_validated.sh` adds `--set-upstream` only when the branch has no upstream.
+
+### Bug Fixes
+
+- default ruff args include `--force-exclude` (A4)
+- check restore/rollback/checkout results instead of reporting false success (sync, merge, cherry-pick)
+- `bisect_helper.sh --run` no longer word-splits quoted arguments
+- `commit_enhanced.sh --only` clears pre-staged files on an unborn HEAD
+- error output goes to stderr in hooks, `_common.sh` and `branch_cleanup.sh`
+
+### Maintenance
+
+- shellcheck and shfmt clean across `scripts/` and `hooks/`; CI shfmt/shellcheck cover `hooks/`
+
 ## v0.8.0 (2026-09-29)
 
 > Changes since `v0.7.0`

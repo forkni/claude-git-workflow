@@ -201,17 +201,19 @@ Workflow: validate → backup tag (`pre-merge-<timestamp>-<pid>`, created via `c
 
 | Flag | Purpose |
 |------|---------|
-| `--non-interactive` | Skip prompts; auto-selects latest backup tag |
-| `--target <ref>` | Specify rollback target (tag, hash, HEAD~1) |
+| `--non-interactive` | Skip prompts. Hard mode auto-selects the latest `pre-merge` tag only if it is `HEAD^1` (else refuses; pass `--target`). `--revert` uses `HEAD` only if it is a merge (else refuses) |
+| `--target <ref>` | Hard mode: the reset point (tag, hash, `HEAD~1`). `--revert`: the merge commit to undo |
 | `--dry-run` | Show target without resetting |
 | `--revert` | Safe mode: `git revert -m 1` instead of `git reset --hard` — preserves history, no force-push needed |
 
-Must be on target branch. Requires typing `ROLLBACK` to confirm in interactive mode.
+Must be on target branch. Requires typing `ROLLBACK` to confirm in interactive mode. After a
+revert, the script prints the **revert-the-revert** step needed before the same branch can be
+merged again (see `error-recovery.md`).
 
 **`cherry_pick_commits.sh`** — Cherry-pick commit from source to target
 
 ```bash
-./scripts/git/cherry_pick_commits.sh [--non-interactive] [--commit <hash>] [--dry-run]
+./scripts/git/cherry_pick_commits.sh [--non-interactive] [--commit <hash>] [--no-x] [--dry-run]
 ./scripts/git/cherry_pick_commits.sh --source feature/hotfix --target release/1.2 --commit abc1234
 ./scripts/git/cherry_pick_commits.sh --commit abc1234 --only src/a.py --only docs/   # partial pick
 ```
@@ -221,6 +223,7 @@ Must be on target branch. Requires typing `ROLLBACK` to confirm in interactive m
 | `--non-interactive` | Skip prompts; requires `--commit` |
 | `--commit <hash>` | Specify commit hash to cherry-pick |
 | `--only <pathspec>` | Partial pick: keep only matching files (repeatable, one pathspec per flag). Commits under the original message + a partial-pick note; no match = error; conflicts abort (no hand-over) |
+| `--no-x` | Don't record the source commit. By default the pick carries `(cherry picked from commit <sha>)` (`git cherry-pick -x`; partial picks add the same trailer) |
 | `--dry-run` | Show commit details without cherry-picking |
 | `--source <branch>` | Override source branch for this invocation |
 | `--target <branch>` | Override target branch for this invocation |
@@ -242,6 +245,9 @@ With `--only`, the dev-only and local-only file guards check the selected subset
 | `--target <branch>` | Override target branch for this invocation |
 
 Merges only `docs/` changes. Warns if non-docs changes exist. Creates `pre-docs-merge-<timestamp>-<pid>` backup tag.
+Not a real merge: it checks `docs/` out of the source and makes an ordinary one-parent commit, so git records
+no merge ancestry -- a later full merge of the same branch will re-apply those docs changes (usually
+conflict-free if untouched).
 
 **`create_pr.sh`** — Create a GitHub PR from source to target branch
 
@@ -496,6 +502,8 @@ token at a real terminal.
 | `--branch <name>` | Override push target branch |
 
 Safety checks: verifies remote reachability, warns if behind remote, blocks unguarded force-push to protected branches.
+Adds `--set-upstream` only when the branch has no upstream yet; an existing upstream is never changed (a notice
+is printed if it tracks a differently named remote branch).
 
 **`sync_branches.sh`** — Sync local branches with remote
 
@@ -511,7 +519,9 @@ Safety checks: verifies remote reachability, warns if behind remote, blocks ungu
 | `--prune` | Remove stale remote-tracking refs during fetch |
 | `--non-interactive` | Abort (instead of prompt) if uncommitted changes found |
 
-Runs `git fetch ${CGW_REMOTE}` then `git pull --rebase` on each target.
+Runs `git fetch ${CGW_REMOTE}` then pulls each target: `--ff-only` for protected branches
+(`CGW_PROTECTED_BRANCHES`; a diverged one is refused with reconcile options), `--rebase=merges`
+for everything else so local merge commits are preserved.
 
 **Skip-worktree protection:** the git skip-worktree bit hides local disk edits from
 `git status`/`diff-index`, but does not stop `pull --rebase` from refusing when the incoming

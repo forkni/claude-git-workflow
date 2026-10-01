@@ -141,7 +141,7 @@ When you need to undo a merge to the target branch:
 # Interactive (shows options):
 ./scripts/git/rollback_merge.sh
 
-# Non-interactive (auto-selects latest backup tag):
+# Non-interactive (uses the latest backup tag only if it is HEAD^1, else refuses):
 ./scripts/git/rollback_merge.sh --non-interactive
 
 # Dry-run (shows target without resetting):
@@ -151,13 +151,15 @@ When you need to undo a merge to the target branch:
 ./scripts/git/rollback_merge.sh --non-interactive --target pre-merge-20260101_120000-12345
 ```
 
-Interactive mode prompts for rollback target:
+Hard mode resets to a **reset point**. Interactive mode offers:
 
-1. Latest `pre-merge-*` tag (recommended)
-2. `HEAD~1` (commit before merge)
-3. Specific commit hash
+1. Latest `pre-merge-*` tag (recommended; warns if it is an older ancestor of `HEAD^1`,
+   rejects tags that are `HEAD` itself or unrelated to the branch)
+2. Specific commit hash
 
-Requires typing `ROLLBACK` to confirm (interactive mode). Force-push warning shown afterward.
+It prints how many commits will be discarded and requires typing `ROLLBACK` to confirm.
+Force-push warning shown afterward. `--target` with a tag, hash or `HEAD~1` is always
+honoured.
 
 **Safe revert (preserves history — preferred for shared/already-pushed branches):**
 
@@ -168,6 +170,23 @@ Requires typing `ROLLBACK` to confirm (interactive mode). Force-push warning sho
 # Revert a specific merge commit (requires merge commit hash):
 ./scripts/git/rollback_merge.sh --revert --target <merge-commit-hash>
 ```
+
+`--revert` undoes the **merge under revert**, which defaults to `HEAD` and only when `HEAD`
+is a merge commit (non-interactive refuses otherwise). It never falls back to `HEAD~1` or a
+backup tag: on a `--no-ff` history `HEAD~1` is the *previous* merge, and reverting it would
+undo unrelated work.
+
+**Re-merging after a revert: revert the revert first.** The revert undoes the merge's
+*changes* but git still considers the branch merged, so merging it again brings in only the
+commits made since -- the original work silently stays out. Before promoting the same branch
+again, undo the revert (the script prints the exact command with the revert's SHA):
+
+```bash
+git revert <revert-sha>          # restores the reverted changes on the target branch
+./scripts/git/merge_with_validation.sh   # now merge the branch (with its new commits) again
+```
+
+Alternatively, rebase or recreate the feature branch as new commits and merge that.
 
 **Manual rollback** (if script unavailable):
 

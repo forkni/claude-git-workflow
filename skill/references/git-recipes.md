@@ -103,9 +103,15 @@ GIT_COMMITTER_DATE="$(git show --format=%aD --no-patch abc1234)" \
 - Unstage a file → `./scripts/git/undo_last.sh unstage <file>`
 - Fix the last commit message (before push) → `./scripts/git/undo_last.sh amend-message "..."`
 - Roll back a merge already on the target branch → `./scripts/git/rollback_merge.sh --revert`
-  (safe, no force-push) or without `--revert` (hard reset + requires typing `ROLLBACK`)
+  (safe, no force-push) or without `--revert` (hard reset + requires typing `ROLLBACK`).
+  To merge that branch again later, first revert the revert (see below)
 - Recover a commit no longer reachable from any branch → `./scripts/git/recover.sh dangling`
   then `./scripts/git/recover.sh restore <sha> --branch <name>`
+
+**Re-merging a branch whose merge was reverted:** the revert leaves the branch recorded as
+already merged, so a second merge brings in only commits made after the first one. Run
+`git revert <revert-sha>` on the target branch first (reverting the revert), then merge the
+branch again -- or merge a fresh branch holding the work as new commits.
 
 Raw equivalent for a published range revert (when no wrapper fits — e.g.
 reverting several already-pushed commits at once without rewriting history).

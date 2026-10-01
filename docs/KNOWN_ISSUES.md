@@ -4,8 +4,9 @@ Audit of the `scripts/git/` wrappers + `_common.sh` / `_config.sh`, 2026-07. Tri
 found and fixed in `commit_enhanced.sh` (`dbd3b0e`, `494fc0c`): a lint gate that silently scanned the
 whole repo, and a fragile arg-parsing helper. This catalogues **similar** gaps found elsewhere.
 
-Nothing here is fixed yet (except where noted). Severities are calibrated against real failure
-scenarios, not worst-case. Line numbers verified 2026-07; re-grep before editing.
+Each item's heading carries its status; everything below is fixed except where a heading says
+otherwise (re-audit 2026-10: see "Found and fixed in the 2026-10 audit"). Severities are calibrated
+against real failure scenarios, not worst-case. Line numbers verified 2026-07; re-grep before editing.
 
 **Fix-difficulty legend:** 🟢 safe/small · 🟡 non-trivial or behavior-changing · 🔴 larger structural.
 
@@ -136,6 +137,9 @@ was discarded.
 reconsider whether `--non-interactive` should default to `abort` (not `accept`) for a `--hard`
 rollback. The `--revert` mode (safe default alternative) is unaffected.
 
+> **Follow-up (2026-10):** the `HEAD~1` fallback survived in `--revert` mode and in the interactive
+> menu, and the auto-picked tag was never validated -- see R3 and R4 below.
+
 ---
 
 ## LOW
@@ -220,12 +224,91 @@ i.e. any real repo) every `||` fallback ran. Fix: decide on the captured text. R
 `--force-exclude` is set. The old whole-repo `.` scan honored `ruff.toml` excludes; the file-scoped
 gate passes staged files explicitly — so staging a `.py` under an excluded directory got it linted
 and (in the non-interactive auto-fix path) reformatted against the project's own lint config.
+> **Correction (2026-10):** the entry below was recorded as applied, but `_config.sh` never contained
+> the flag. It was actually added in `0d4212c`, with a test.
+
 **Fix applied:** `--force-exclude` added to all four ruff arg defaults
 (`CGW_LINT_CHECK_ARGS`, `CGW_LINT_FIX_ARGS`, `CGW_FORMAT_CHECK_ARGS`, `CGW_FORMAT_FIX_ARGS`).
 Harmless on whole-repo scans; makes explicit-file calls honor the same excludes as traversal.
 Verified: a deliberately-broken staged file under an excluded dir is skipped ("No Python files
 found"), a repo-root one is still flagged. Projects that override these args in `.cgw.conf` should
 add the flag to their overrides too.
+
+## Found and fixed in the 2026-10 audit
+
+Audit against *Pro Git*, *Advanced Git*, *Git for Teams* and the shell style guide. Commits:
+`0d4212c` (A4), `b586052` (R3, R4, S1, ST1-ST4, D1 edge case), `d54ba1e` (cherry-pick `-x`, upstream,
+help text), `6806ec0` (ST5, ST6). Every fix has a Bats test.
+
+### R3 · `rollback_merge.sh --revert` could revert the wrong merge — FIXED 🔴
+
+**Problem:** `--revert` with no `--target` (or interactive option 2) reverted `HEAD~1`. On a `--no-ff`
+`main`, `HEAD~1` is the *previous* merge, so the script reverted unrelated work and reported success.
+**Fix:** the reset point (hard mode) and the merge under revert (`--revert`) are separate. Revert uses
+`HEAD` only when it has two or more parents, or an explicit `--target` peeled with `^{commit}`;
+non-interactive refuses otherwise. After a revert the script prints the **revert-the-revert** command
+needed before the same branch is merged again (Pro Git, "Undoing Merges").
+
+### R4 · Hard rollback never checked the auto-picked backup tag — FIXED 🟠
+
+**Problem:** the latest `pre-merge-*` tag was used without checking that it was an ancestor of `HEAD`
+or how far back it was, so a hard reset could discard unrelated later commits.
+**Fix:** non-interactive hard mode auto-picks the tag only when `HEAD^1` equals it, else refuses and
+asks for `--target`. Interactive mode warns on an older ancestor, rejects `HEAD` itself or an
+unrelated tag, and shows the number of commits that will be discarded.
+
+### S1 · `sync_branches.sh` flattened local merge commits — FIXED 🟠
+
+**Problem:** `git pull --rebase` rewrote local `--no-ff` merge commits on `main`.
+**Fix:** protected branches pull `--ff-only` (diverged = refuse + reconcile options); others pull
+`--rebase=merges`. See `docs/adr/0004-protected-branches-sync-fast-forward-only.md`.
+
+### ST1-ST4 · Unchecked results in rollback paths and word splitting — FIXED 🟡
+
+- **ST1** `sync_branches.sh`: the skip-worktree backup `cp`, restore `cp`, `checkout` and `update-index`
+  results are checked; a backup is kept (not deleted) when the restore failed.
+- **ST2** `merge_with_validation.sh`: the docs-policy rollback/abort/checkout and the `tests/` amend
+  report failure instead of a false `[OK]`.
+- **ST3** `cherry_pick_commits.sh`: return-to-branch checkouts and the partial-pick path-drop restore
+  are checked (`_cp_return_to_original`); a failed restore aborts the pick with nothing applied.
+- **ST4** `bisect_helper.sh`: `git bisect run bash -c "${run_cmd}"` replaces an unquoted word split.
+
+### ST5 · Error output on stdout — FIXED 🟢
+
+`hooks/pre-commit`, `hooks/pre-push`, `_common.sh` conflict-resolution failures and `branch_cleanup.sh`
+now write errors to stderr.
+
+### ST6 · Lint hygiene — FIXED 🟢
+
+`shellcheck -x scripts/git/*.sh hooks/*` is clean (SC2119/SC2120, SC2034, SC2086, SC2317, SC1091);
+`shfmt -d -i 2 -ci scripts/ hooks/` is clean and CI now checks `hooks/` too.
+
+### Other fixes from the same audit
+
+- **D1 edge case:** `commit_enhanced.sh --only` on an unborn HEAD now empties the index so pre-staged
+  files cannot ride along.
+- **Cherry-pick origin:** `cherry_pick_commits.sh` records `(cherry picked from commit <sha>)`
+  (`cherry-pick -x`; partial picks add the same trailer). `--no-x` opts out.
+- **First push:** `push_validated.sh` adds `--set-upstream` only when none is configured; an existing
+  upstream is never overwritten. The skill no longer tells agents to run a raw `git push --set-upstream`.
+- **`rebase_safe.sh` help** said it "refuses" pushed commits; it warns and asks, and cancels in
+  non-interactive mode. `--onto` is documented as a plain target branch, not git's three-argument form.
+- **Tests added** for D1, D2 and the Obs 1 "Configured types" line, which had none.
+- **Documented, not changed:** `merge_docs.sh` makes a one-parent commit and records no merge
+  ancestry; the shell scripts' deliberate style-guide deviations are listed in `CLAUDE.md`.
+
+### Deferred (low priority, from the book comparison)
+
+Not implemented; recorded so they are not rediscovered:
+
+- `merge.conflictStyle zdiff3` offer in conflict docs (*Pro Git*, advanced merging)
+- `--force-if-includes` alongside the explicit-SHA lease (*Pro Git*, git push)
+- `rebase --update-refs` for stacked branches (*Advanced Git*)
+- `git stash branch` recipe (*Pro Git*, stashing)
+- `git maintenance` as an alternative to manual `gc` in `repo_health.sh`
+- an imperative-mood tip next to the 50/72 subject rule (*Pro Git*, commit guidelines)
+
+---
 
 ## Non-findings (checked clean — recorded so they aren't re-audited)
 
@@ -251,6 +334,7 @@ add the flag to their overrides too.
   - **Local-only & Index Safety:** C1 (local-file protection at merge, cherry-pick, and amend-message).
   - **Error handling & Safeguards:** D1 (`--only` reset verification), E1 (`rollback_merge.sh --hard` backup tag + non-interactive refusal), F2 (`_config.sh` centralized defaults), D2 (push behind-check fetch warning).
   - **Operational & CLI ergonomics:** Obs 1 through Obs 8 (all fixed and verified in integration tests).
+  - **2026-10 audit:** A4 (really applied), R3, R4, S1, ST1-ST6, D1 unborn-HEAD edge case, cherry-pick `-x`, automatic upstream, `rebase_safe.sh` help.
 
 All fixes apply to the upstream source at `github.com/forkni/claude-git-workflow`; the copy under
 `scripts/git/` here is vendored from it.
