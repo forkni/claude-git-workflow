@@ -251,10 +251,12 @@ If a `bisect_helper.sh` session gets interrupted or abandoned:
 ./scripts/git/bisect_helper.sh --abort   # resets bisect and returns to original branch
 ```
 
-Restore from backup tag if needed:
+If `--abort` could not return you (the backup tag only marks where the session started):
 
 ```bash
-git checkout pre-bisect-<timestamp>-<pid>
+git bisect reset                 # leave bisect mode
+git switch <original-branch>     # not `git checkout <tag>` -- that detaches HEAD
+git log --oneline -1 pre-bisect-<timestamp>-<pid>   # confirm the starting commit
 ```
 
 ---
