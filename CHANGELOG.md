@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.9.0 (2026-10-01)
+
+> Changes since `v0.8.0`
+
 ### Behaviour changes
 
 - `cherry_pick_commits.sh` records the source commit (`cherry-pick -x`, also on `--only` partial picks); opt out with `--no-x`.
