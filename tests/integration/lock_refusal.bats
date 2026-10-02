@@ -69,6 +69,9 @@ _run_cgw() {
 
 @test "rebase --onto: lock refusal is not reported as conflicts and the autostash is not lost" {
   git -C "${TEST_REPO_DIR}" checkout --quiet development
+  # Make development's commit local-only: a pushed commit would (correctly) stop at the
+  # published-history prompt before the rebase -- and the lock path -- is ever reached.
+  git -C "${TEST_REPO_DIR}" update-ref -d refs/remotes/origin/development
   echo "wip content" >>"${TEST_REPO_DIR}/DEV.md"
 
   run _run_cgw rebase_safe.sh --onto main --autostash --non-interactive

@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Behaviour changes
+
+- **Modify/delete (`DU`) conflicts now halt** in `merge_with_validation.sh`, `cherry_pick_commits.sh` and every other caller of `cgw_resolve_safe_conflicts`, instead of silently `git rm`-ing the file and dropping the other side's changes. The message lists the files and the two choices (`git rm <file>` / `git add <file>`). Set `CGW_AUTO_RESOLVE_MODIFY_DELETE=1` to restore auto-removal for text files; binary files (gitattributes `binary`/`-diff`, or a NUL byte) always halt. Both-deleted (`DD`) is still auto-resolved. See `docs/adr/0005-modify-delete-conflicts-halt.md`.
+
+### New Features
+
+- `merge_pr.sh <N>`: merges a GitHub PR with a merge commit (`gh pr merge --merge`, explicit `--repo`), refuses a non-OPEN PR, and prints the merge SHA with the `rollback_merge.sh --revert` hint. `--retarget <M>` (repeatable) moves stacked PRs onto the merged PR's base after the merge, `--delete-branch` removes the head branch last, `--dry-run` previews. `--squash`/`--rebase` need `--allow-non-merge` in non-interactive mode and warn that the PR can't be reverted as one unit.
+- `rebase_safe.sh --onto <newbase> --upstream <ref>`: git's three-argument `rebase --onto <newbase> <upstream>`, replaying only `<upstream>..HEAD`.
+- `worktree_manage.sh add <path> [<branch> [<base>]]` / `--base <ref>`: create the new branch from a base ref instead of HEAD.
+- `create_release.sh --allow-non-semver`: tag with any valid ref name (archive/snapshot tags); no `v` prefix is added and the output notes that `release.yml` fires only on `v*`.
+- `configure.sh --hooks-only`: refresh only the git hooks (with `--overwrite-hooks` / `--template-dir`) without touching `.cgw.conf`, the skill, command or guardrails.
+- `CGW_AUTO_RESOLVE_MODIFY_DELETE` config key (default `0`).
+
+### Bug Fixes
+
+- `rebase_safe.sh` counted *unpushed* commits as "already pushed" (`origin/<br>..HEAD`), so the published-history warning fired for local-only work and stayed silent for pushed commits. It now counts commits reachable from `${CGW_REMOTE}/*`, matching `hooks/pre-rebase`; `--squash-last` uses the same count.
+- `worktree_manage.sh add` exited 1 after a successful add.
+
 ## v0.9.0 (2026-10-01)
 
 > Changes since `v0.8.0`
@@ -370,7 +388,7 @@
 
 ### Maintenance
 
-- add clean_pycache.cmd helper for clearing __pycache__ and Claude temp files (4909314)
+- add clean_pycache.cmd helper for clearing **pycache** and Claude temp files (4909314)
 
 ## v0.2.1 (2026-04-17)
 
