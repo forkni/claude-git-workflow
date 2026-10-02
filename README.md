@@ -140,6 +140,7 @@ CGW provides 29 user-facing scripts and 2 internal core modules in `scripts/git/
 | `check_lint.sh` | Read-only lint, format, typecheck, and Markdown validation (`--modified-only`, `--skip-md-lint`, `--skip-typecheck`) |
 | `fix_lint.sh` | Auto-fix code lint, code formatting, and Markdown issues (`--modified-only`, `--md-only`, `--skip-md-lint`) |
 | `create_pr.sh` | Create GitHub PR from source to target branch via `gh` CLI (triggers Charlie CI and GitHub Actions) |
+| `merge_pr.sh` | Guarded, logged wrapper around `gh pr merge --merge` with an explicit `--repo`; refuses non-OPEN PRs, `--retarget <M>` for stacked PRs, `--squash`/`--rebase` need `--allow-non-merge` (`--delete-branch`, `--dry-run`) |
 | `pr_checkout.sh` | Guarded, logged wrapper around `gh pr checkout <N>` for reviewing PRs locally (`--branch`, `--force`, `--detach`, `--dry-run`) |
 | `install_hooks.sh` | Install git hooks (`pre-commit`, `pre-push`, `pre-rebase`) into `.githooks/` and `.git/hooks/` |
 | `setup_attributes.sh` | Generate `.gitattributes` for binary, text, and asset handling (Python, TouchDesigner, GLSL, LF line endings) |

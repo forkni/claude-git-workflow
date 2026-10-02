@@ -113,7 +113,8 @@ echo "${CGW_MERGE_MODE:-direct}"
   Charlie's review is tracked separately from checks (a reviewer, not a required check) —
   mention its status but don't block on it. Stop here regardless — merging into
   `CGW_TARGET_BRANCH` happens on GitHub once the PR is approved and merged, outside this
-  pipeline, so Phase 5/5b do not apply in PR mode.
+  pipeline, so Phase 5/5b do not apply in PR mode. (If the user asks you to merge the PR,
+  use `./scripts/git/merge_pr.sh <N>` — never without their go.)
 
 ### Phase 5 — Push target branch (direct mode only)
 

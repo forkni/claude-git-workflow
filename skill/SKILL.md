@@ -374,6 +374,17 @@ Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login
 
 Always passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own URL — bare `gh pr create` resolves its own target repo and, when `CGW_REMOTE` is a fork, defaults to the fork's parent/upstream repo instead. If `CGW_REMOTE`'s URL can't be resolved to a `github.com` owner/repo, the script aborts rather than falling back to gh's own resolution. If this script ever fails or is unavailable, do not drop to raw `gh pr create` without `--repo`: it silently targets the wrong repo on a fork remote.
 
+**Merging a PR** (only when the user asks; `CGW_MERGE_MODE="pr"`):
+
+```bash
+./scripts/git/merge_pr.sh 42                          # merge commit (default)
+./scripts/git/merge_pr.sh 42 --dry-run                # validate + preview, no merge
+./scripts/git/merge_pr.sh 42 --retarget 43            # then retarget stacked PR #43 onto 42's base
+./scripts/git/merge_pr.sh 42 --squash --allow-non-merge   # flattens the PR; needs the explicit ack
+```
+
+Merges with `--merge` so the feature stays one revertable unit (`rollback_merge.sh --revert --target <merge-sha>`, printed on success). `--squash`/`--rebase` are refused non-interactively without `--allow-non-merge`. Refuses a PR that isn't OPEN. For stacked PRs, `--retarget <M>` (repeatable) is validated before anything is merged (M's base must be this PR's head), then run after the merge and before any `--delete-branch`; the head branch is never deleted by default. Passes the same explicit `--repo` as `create_pr.sh`. Do not merge a PR without the user's go.
+
 **Syncing with remote:**
 
 ```bash

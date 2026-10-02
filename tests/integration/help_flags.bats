@@ -33,10 +33,11 @@ CGW_SCRIPTS=(
   rebase_safe.sh
   branch_diff.sh
   pr_checkout.sh
+  merge_pr.sh
   md_toc.sh
 )
 
-# One repo + one mock-bin shared across all 51 --help tests.
+# One repo + one mock-bin shared across all 52 --help tests.
 # None of these tests mutate the repo; BATS_FILE_TMPDIR auto-cleaned by Bats.
 
 setup_file() {
@@ -281,6 +282,11 @@ setup() {
   [ "${status}" -eq 0 ]
 }
 
+@test "merge_pr.sh --help exits 0" {
+  run run_script merge_pr.sh --help
+  [ "${status}" -eq 0 ]
+}
+
 @test "md_toc.sh --help exits 0" {
   run run_script md_toc.sh --help
   [ "${status}" -eq 0 ]
@@ -345,6 +351,11 @@ setup() {
 
 @test "pr_checkout.sh unknown flag exits 1" {
   run run_script pr_checkout.sh --foobar
+  [ "${status}" -eq 1 ]
+}
+
+@test "merge_pr.sh unknown flag exits 1" {
+  run run_script merge_pr.sh --foobar
   [ "${status}" -eq 1 ]
 }
 

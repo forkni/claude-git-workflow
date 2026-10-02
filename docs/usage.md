@@ -127,6 +127,20 @@ The overrides are ephemeral — they do not mutate `CGW_SOURCE_BRANCH` / `CGW_TA
 Requires: `gh` CLI installed and authenticated (`gh auth login`).
 Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use PRs by default.
 
+### Merge PR
+
+```bash
+./scripts/git/merge_pr.sh 42                    # merge commit (keeps the feature revertable as a unit)
+./scripts/git/merge_pr.sh 42 --dry-run          # validate and preview only
+./scripts/git/merge_pr.sh 42 --retarget 43      # then retarget stacked PR #43 onto 42's base
+./scripts/git/merge_pr.sh 42 --squash --allow-non-merge   # flattens the PR; explicit ack required
+```
+
+`--retarget` is for stacked PRs in repos that don't auto-delete merged branches: it is validated
+before the merge (PR 43's base must be PR 42's head) and run right after it. The head branch is
+never deleted unless you pass `--delete-branch`. Undo a merge with
+`./scripts/git/rollback_merge.sh --revert --target <merge-sha>` (the SHA is printed on success).
+
 ### Push
 
 ```bash

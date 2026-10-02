@@ -577,6 +577,27 @@ Read-only; safe with a dirty working tree. Default branch resolves via `${CGW_RE
 
 Wraps `gh pr checkout`. Requires `gh` CLI authenticated (`gh auth login`). Refuses to switch branches with uncommitted tracked changes unless `--force` is given — stash first with `./scripts/git/stash_work.sh push`.
 
+**`merge_pr.sh`** — Merge a GitHub PR with a merge commit; optionally retarget stacked PRs
+
+```bash
+./scripts/git/merge_pr.sh 42
+./scripts/git/merge_pr.sh 42 --retarget 43 --retarget 44
+./scripts/git/merge_pr.sh 42 --dry-run
+./scripts/git/merge_pr.sh 42 --squash --allow-non-merge
+```
+
+| Flag | Purpose |
+|------|---------|
+| `<PR-number>` | PR number to merge (positional, or `--pr <N>`) |
+| `--squash` / `--rebase` | Flatten instead of a merge commit; refused non-interactively without `--allow-non-merge` (the PR can no longer be reverted as one unit) |
+| `--allow-non-merge` | Acknowledge the flattening |
+| `--retarget <M>` | After the merge, `gh pr edit <M> --base <this PR's base>`; M's base must equal this PR's head (checked before merging). Repeatable |
+| `--delete-branch` | Delete the head branch after merge and retarget (never by default) |
+| `--dry-run` | Validate and print the `gh` commands without merging |
+| `--non-interactive` | Accept all defaults, no prompts |
+
+Wraps `gh pr merge --merge`. Requires `gh` CLI authenticated. Passes an explicit `--repo` resolved from `CGW_REMOTE`'s URL (like `create_pr.sh`) and aborts if it can't. Refuses a PR that isn't OPEN. On success prints the merge SHA and the undo command `rollback_merge.sh --revert --target <sha>`.
+
 **`md_toc.sh`** — Generate/insert a Markdown Table of Contents
 
 ```bash
@@ -620,7 +641,7 @@ Computes GitHub-compatible heading slugs locally (offline port of `gh-md-toc` �
 | `CGW_LOCAL_FILES=<paths>` | Space-separated files never committed (default: `CLAUDE.md MEMORY.md .claude/ logs/`) |
 | `CGW_LOCAL_FILES_EXEMPT=<paths>` | Space-separated paths exempt from the block (e.g. `.claude/settings.json` inside the blocked `.claude/`) |
 | `CGW_PROTECTED_BRANCHES=<list>` | Space-separated branches requiring `--force` confirmation for force-push |
-| `CGW_MERGE_MODE=<mode>` | `"direct"` (default, use `merge_with_validation.sh`) or `"pr"` (use `create_pr.sh`) |
+| `CGW_MERGE_MODE=<mode>` | `"direct"` (default, use `merge_with_validation.sh`) or `"pr"` (use `create_pr.sh`, then `merge_pr.sh`) |
 | `CGW_DOCS_PATTERN=<regex>` | Extended regex for allowed doc filenames in `merge_with_validation.sh` |
 | `CGW_CLEANUP_TESTS=1` | Remove `tests/` from target branch if gitignored on target (default: `0`) |
 | `CGW_DEV_ONLY_FILES=<paths>` | Space-separated dev-only paths; cherry-pick warns if these are included |
