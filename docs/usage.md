@@ -305,6 +305,7 @@ Linked worktrees let you check out multiple branches simultaneously in separate 
 ./scripts/git/worktree_manage.sh list                            # show all worktrees
 ./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent     # add linked worktree (creates branch)
 ./scripts/git/worktree_manage.sh add ../review existing-branch   # check out existing branch
+./scripts/git/worktree_manage.sh add ../part2 feat/part-2 feat/part-1  # new branch starting at <base>
 ./scripts/git/worktree_manage.sh link                            # link CGW tooling into the current worktree
 ./scripts/git/worktree_manage.sh remove --execute ../hotfix      # remove worktree link
 ./scripts/git/worktree_manage.sh prune                           # dry-run: show stale admin files

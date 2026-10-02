@@ -405,6 +405,7 @@ Always protected, regardless of `CGW_TARGET_BRANCH`: `main`, `master`, the repo'
 ./scripts/git/worktree_manage.sh list                            # list all worktrees
 ./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent     # add with new branch
 ./scripts/git/worktree_manage.sh add ../review review-feature    # add with existing branch
+./scripts/git/worktree_manage.sh add ../part2 feat/part-2 feat/part-1  # new branch starting at another branch
 ./scripts/git/worktree_manage.sh link                            # link CGW tooling into this worktree
 ./scripts/git/worktree_manage.sh remove --execute ../hotfix      # remove (--execute required)
 ./scripts/git/worktree_manage.sh prune                           # dry-run: show stale admin files
@@ -414,7 +415,7 @@ Always protected, regardless of `CGW_TARGET_BRANCH`: `main`, `master`, the repo'
 | Subcommand | Purpose |
 |------------|---------|
 | `list` | All worktrees via `git worktree list --porcelain` |
-| `add <path> [<branch>]` | Add linked worktree; creates branch with `-b` if new; auto-links CGW tooling |
+| `add <path> [<branch> [<base>]]` | Add linked worktree; creates branch with `-b` if new (from `<base>`, default HEAD; `--base <ref>` is the flag form; a base for an existing branch is refused); auto-links CGW tooling |
 | `link [<path>]` | Link `scripts/git` and `.githooks` from the main worktree (default: current dir) |
 | `remove [--execute] <path>` | Unlink CGW tooling, then remove worktree (dry-run default) |
 | `prune [--execute]` | Remove stale admin files for missing paths (dry-run default) |

@@ -9,7 +9,8 @@
 #
 # Subcommands:
 #   list              List all worktrees (main + linked)
-#   add  <path> [<branch>]   Add a linked worktree (creates branch if needed)
+#   add  <path> [<branch> [<base>]]   Add a linked worktree (creates branch if needed,
+#                            from <base> -- default HEAD -- like git worktree add -b)
 #   link [<path>]            Link scripts/git and .githooks from the main worktree
 #   remove <path>            Remove a linked worktree (dry-run default)
 #   prune                    Remove stale administrative files (dry-run default)
@@ -307,7 +308,7 @@ _cmd_list() {
 # Subcommand: add
 # ---------------------------------------------------------------------------
 _cmd_add() {
-  local path="" branch="" dry_run=0
+  local path="" branch="" base="" dry_run=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -319,6 +320,14 @@ _cmd_add() {
         dry_run=1
         shift
         ;;
+      --base)
+        if [[ -z "${2:-}" ]]; then
+          echo "[ERROR] --base requires a ref" >&2
+          exit 1
+        fi
+        base="$2"
+        shift 2
+        ;;
       -*)
         echo "[ERROR] Unknown option: $1" >&2
         exit 1
@@ -328,6 +337,8 @@ _cmd_add() {
           path="$1"
         elif [[ -z "${branch}" ]]; then
           branch="$1"
+        elif [[ -z "${base}" ]]; then
+          base="$1"
         else
           echo "[ERROR] Unexpected argument: $1" >&2
           exit 1
@@ -338,7 +349,12 @@ _cmd_add() {
   done
 
   if [[ -z "${path}" ]]; then
-    echo "[ERROR] Usage: worktree_manage.sh add <path> [<branch>]" >&2
+    echo "[ERROR] Usage: worktree_manage.sh add <path> [<branch> [<base>]]" >&2
+    exit 1
+  fi
+
+  if [[ -n "${base}" ]] && [[ -z "${branch}" ]]; then
+    echo "[ERROR] A base ref needs a branch to create from it: add <path> <branch> <base>" >&2
     exit 1
   fi
 
@@ -354,11 +370,24 @@ _cmd_add() {
     echo "  Tip: provide a branch name to check it out: worktree_manage.sh add ${path} <branch>"
     git_args=("${path}")
   else
-    # If the branch doesn't exist, pass -b to create it.
+    # If the branch doesn't exist, pass -b to create it (from <base>, default HEAD).
     if ! git rev-parse --verify --quiet "refs/heads/${branch}" >/dev/null 2>&1; then
-      echo "  Branch: ${branch} (new — will be created from HEAD)"
-      git_args=(-b "${branch}" "${path}")
+      if [[ -n "${base}" ]]; then
+        if ! git rev-parse --verify --quiet "${base}^{commit}" >/dev/null 2>&1; then
+          echo "[ERROR] Invalid base ref: ${base}" >&2
+          exit 1
+        fi
+        echo "  Branch: ${branch} (new — will be created from ${base})"
+        git_args=(-b "${branch}" "${path}" "${base}")
+      else
+        echo "  Branch: ${branch} (new — will be created from HEAD)"
+        git_args=(-b "${branch}" "${path}")
+      fi
     else
+      if [[ -n "${base}" ]]; then
+        echo "[ERROR] Branch '${branch}' already exists; a base ref only applies to a new branch" >&2
+        exit 1
+      fi
       echo "  Branch: ${branch}"
       git_args=("${path}" "${branch}")
     fi
@@ -395,7 +424,9 @@ _cmd_add() {
       log_section_start "LINK TOOLING" "${logfile}"
       _cgw_do_link "${abs_path}" 0 | tee -a "${logfile}" || link_status=1
       log_section_end "LINK TOOLING" "${logfile}" "${link_status}"
-      [[ "${link_status}" -ne 0 ]] && echo "  [WARN] Linking failed — run: ./scripts/git/worktree_manage.sh link ${path}" >&2
+      if [[ "${link_status}" -ne 0 ]]; then
+        echo "  [WARN] Linking failed — run: ./scripts/git/worktree_manage.sh link ${path}" >&2
+      fi
     fi
   else
     echo "[ERROR] Failed to add worktree" >&2
@@ -569,12 +600,15 @@ _show_help() {
   echo ""
   echo "Subcommands:"
   echo "  list                      List all worktrees (main + linked)"
-  echo "  add  <path> [<branch>]    Add a linked worktree; creates branch if needed"
+  echo "  add  <path> [<branch> [<base>]]"
+  echo "                            Add a linked worktree; creates the branch if needed,"
+  echo "                            starting from <base> (default HEAD)"
   echo "  link [<path>]             Link scripts/git and .githooks from the main worktree"
   echo "  remove [--execute] <path> Remove a linked worktree (dry-run by default)"
   echo "  prune  [--execute]        Remove stale admin files (dry-run by default)"
   echo ""
   echo "Options (add):"
+  echo "  --base <ref>        Start a new branch from <ref> (same as the 3rd positional)"
   echo "  --dry-run           Preview without adding"
   echo "  --non-interactive   Skip confirmation prompt"
   echo ""
@@ -589,6 +623,7 @@ _show_help() {
   echo "Examples:"
   echo "  ./scripts/git/worktree_manage.sh list"
   echo "  ./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent-fix"
+  echo "  ./scripts/git/worktree_manage.sh add ../pr2 feat/part-2 feat/part-1   # branch off another branch"
   echo "  ./scripts/git/worktree_manage.sh link          # link the current worktree"
   echo "  ./scripts/git/worktree_manage.sh link ../hotfix"
   echo "  ./scripts/git/worktree_manage.sh remove --execute ../hotfix"
