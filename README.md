@@ -9,7 +9,7 @@ Drop-in git automation and safety toolkit for any software repository. Provides 
 
 ## About
 
-`claude-git-workflow` (CGW) replaces error-prone raw `git` commands with a suite of 29 modular, defensive shell scripts. It bridges human developers and autonomous AI coding agents: developers get reliable safety rails against accidental commits of secrets or local environment files, while AI agents are guided away from destructive git commands via PreToolUse guardrails, conventional commit enforcement, and automated CI test monitoring.
+`claude-git-workflow` (CGW) replaces error-prone raw `git` commands with a suite of 30 modular, defensive shell scripts. It bridges human developers and autonomous AI coding agents: developers get reliable safety rails against accidental commits of secrets or local environment files, while AI agents are guided away from destructive git commands via PreToolUse guardrails, conventional commit enforcement, and automated CI test monitoring.
 
 ## Features
 
@@ -123,7 +123,7 @@ See [Claude Code Integration](docs/claude-code-integration.md) for detailed conf
 
 ## What's Included
 
-CGW provides 29 user-facing scripts and 2 internal core modules in `scripts/git/`:
+CGW provides 30 user-facing scripts and 2 internal core modules in `scripts/git/`:
 
 | Script | Purpose |
 |--------|---------|

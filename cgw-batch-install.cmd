@@ -294,7 +294,7 @@ if not "!CFG_EXIT!"=="0" goto :pp_cfg_fail
 rem configure.sh prints "[!] ..." for anything needing attention (e.g. a customised
 rem hook it kept). "[!]" is its only one-character tag, so match it by regex -- a
 rem literal "!" would be eaten by delayed expansion.
-findstr /r /c:"^ *\[.\] " "!CFG_LOG!" >nul 2>&1
+findstr /r /c:"^ *\[.\] " /c:"\[WARN\]" "!CFG_LOG!" >nul 2>&1
 if not errorlevel 1 goto :pp_cfg_warned
 echo(  [OK] Updated: !P!
 set /a UPDATED+=1
@@ -305,7 +305,7 @@ goto :eof
 echo(  [OK] Updated ^(with warnings^): !P!
 set /a UPDATED+=1
 set /a WARNED+=1
-findstr /r /c:"^ *\[.\] " "!CFG_LOG!"
+findstr /r /c:"^ *\[.\] " /c:"\[WARN\]" "!CFG_LOG!"
 >>"!WARN_LOG!" echo(!P!  ^(log: !CFG_LOG!^)
 echo.
 goto :eof

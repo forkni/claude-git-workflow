@@ -116,6 +116,10 @@ main() {
 
   if [[ ${allow_non_semver} -eq 1 ]]; then
     # Archive/snapshot tags: any valid ref name, used exactly as given.
+    if [[ "${version}" == -* ]]; then
+      echo "[ERROR] '${version}' starts with '-' and would be parsed as an option" >&2
+      exit 1
+    fi
     if ! git check-ref-format "refs/tags/${version}"; then
       echo "[ERROR] '${version}' is not a valid tag name" >&2
       exit 1

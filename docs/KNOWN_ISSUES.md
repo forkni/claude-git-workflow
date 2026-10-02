@@ -307,8 +307,9 @@ now write errors to stderr.
   superseded by `--upstream`.
 - **Not a bug:** the revert-the-revert step is already printed by `rollback_merge.sh --revert`.
   Hooks that differ from the templates are expected: they are copied verbatim, never templated, and an
-  existing `.githooks/<hook>` that differs is kept unless `--overwrite-hooks` is passed. Refresh them with
-  `configure.sh --hooks-only --overwrite-hooks --template-dir <cgw>`.
+  existing `.githooks/<hook>` that is an unmodified older CGW version is refreshed automatically; one that
+  matches no CGW version (customised) is kept, with a warning, unless `--overwrite-hooks` is passed. Replace
+  those with `configure.sh --hooks-only --overwrite-hooks --template-dir <cgw>` (a `.bak` is kept).
 - **Deferred — `cherry_pick_commits.sh` handles one commit per call.** There is no `A..B` range or
   multi-`--commit` form, the `--target` branch must already exist (it does not create it), and each call
   creates its own `pre-cherry-pick-*` backup tag. The tag-per-call behaviour is by design (every

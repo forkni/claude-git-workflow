@@ -146,3 +146,9 @@ teardown() {
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"ntracked"* ]]
 }
+
+@test "--allow-non-semver rejects a tag name starting with a dash" {
+  run run_script create_release.sh -- -oops --allow-non-semver --non-interactive
+  [ "${status}" -ne 0 ]
+  ! git -C "${TEST_REPO_DIR}" tag -l | grep -q -- '-oops'
+}

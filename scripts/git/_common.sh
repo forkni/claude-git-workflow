@@ -761,7 +761,8 @@ cgw_rebase_in_progress() {
 # To add an op: edit this array AND add a cgw_create_backup_tag call to the script.
 declare -gra CGW_BACKUP_OPS=(merge cherry-pick docs-merge bisect rebase undo-commit recover rollback) 2>/dev/null || true
 
-# Create a lightweight tag pre-<op>-<timestamp>-<pid> at HEAD.
+# Create a lightweight tag pre-<op>-<timestamp>-<pid> at HEAD, or at <ref> when given as $2
+# (e.g. a remote tip, for an operation that mutates a branch other than the checked-out one).
 # Sets global CGW_BACKUP_TAG. Warns but always proceeds on git tag failure.
 # Returns 1 only if <op> is not in CGW_BACKUP_OPS (programming error in caller).
 cgw_create_backup_tag() {
@@ -780,7 +781,7 @@ cgw_create_backup_tag() {
   [[ -z "${timestamp:-}" ]] && get_timestamp
   CGW_BACKUP_TAG="pre-${op}-${timestamp}-$$"
   local _log="${logfile:-/dev/null}"
-  if git tag "${CGW_BACKUP_TAG}" >>"${_log}" 2>&1; then
+  if git tag "${CGW_BACKUP_TAG}" ${2:+"$2"} >>"${_log}" 2>&1; then
     echo "[OK] Created backup tag: ${CGW_BACKUP_TAG}" | tee -a "${_log}"
   else
     echo "[!] Could not create backup tag: ${CGW_BACKUP_TAG} (continuing)" | tee -a "${_log}"

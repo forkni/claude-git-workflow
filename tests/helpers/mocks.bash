@@ -121,7 +121,11 @@ EOF
 #                               e.g. MOCK_GH_PR_43_BASEREFNAME. Defaults: state=OPEN,
 #                               baseRefName=main, headRefName=feature, mergeCommit=abc1234def5678.
 #                               An empty-string override is not distinguishable from unset.
-#   - `gh pr merge`     → exits $MOCK_GH_MERGE_EXIT (default 0)
+#   - `gh pr merge N`   → exits $MOCK_GH_MERGE_EXIT (default 0); afterwards `pr view N state` reads
+#                         $MOCK_GH_POSTMERGE_STATE (default MERGED, e.g. set QUEUED/OPEN for a merge queue)
+#   - `gh api ...`      → exits $MOCK_GH_API_EXIT (default 0)
+#   - `gh pr view --json headRepository,headRepositoryOwner` → MOCK_GH_PR_HEADREPOSITORY_HEADREPOSITORYOWNER
+#                         (owner/name of the PR's head repo; default forkni/claude-git-workflow)
 #   - All calls are logged to $MOCK_BIN_DIR/gh.log
 install_mock_gh() {
   local auth_exit="${MOCK_GH_AUTH_EXIT:-0}"
@@ -142,22 +146,30 @@ if [[ "\$1" == "pr" && "\$2" == "view" ]]; then
     [[ "\$1" == "--json" ]] && field="\$2"
     shift
   done
-  upper=\$(echo "\$field" | tr 'a-z' 'A-Z')
+  upper=\$(echo "\$field" | tr 'a-z,' 'A-Z_')
   v_n="MOCK_GH_PR_\${n}_\${upper}"
   v_all="MOCK_GH_PR_\${upper}"
   val="\${!v_n:-\${!v_all:-}}"
+  if [[ "\$field" == "state" && -f "${MOCK_BIN_DIR}/merged.\$n" ]]; then
+    val="\${MOCK_GH_POSTMERGE_STATE:-MERGED}"
+  fi
   if [[ -z "\$val" ]]; then
     case "\$field" in
       state) val=OPEN ;;
       baseRefName) val=main ;;
       headRefName) val=feature ;;
       mergeCommit) val=abc1234def5678 ;;
+      headRepository,headRepositoryOwner) val=forkni/claude-git-workflow ;;
     esac
   fi
   echo "\$val"
   exit 0
 fi
+if [[ "\$1" == "api" ]]; then
+  exit \${MOCK_GH_API_EXIT:-0}
+fi
 if [[ "\$1" == "pr" && "\$2" == "merge" ]]; then
+  : >"${MOCK_BIN_DIR}/merged.\$3"
   exit \${MOCK_GH_MERGE_EXIT:-0}
 fi
 exit 0

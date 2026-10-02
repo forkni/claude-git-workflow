@@ -242,6 +242,17 @@ main() {
     log_section_end "VALIDATE PR" "$logfile" "1"
     exit 1
   fi
+  # The head branch lives in the PR's head repository (a fork for cross-repository PRs), which
+  # is not necessarily pr_repo. Resolve it before merging so a bad lookup refuses up front.
+  local head_repo=""
+  if [[ ${delete_branch} -eq 1 ]]; then
+    head_repo=$(_pr_view "${pr_number}" headRepository,headRepositoryOwner '(.headRepositoryOwner.login) + "/" + (.headRepository.name)') || head_repo=""
+    if [[ ! "${head_repo}" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
+      err_tee "[ERROR] Cannot determine PR #${pr_number}'s head repository (deleted fork?) -- refusing --delete-branch"
+      log_section_end "VALIDATE PR" "$logfile" "1"
+      exit 1
+    fi
+  fi
   log_section_end "VALIDATE PR" "$logfile" "0"
   echo "" | tee -a "$logfile"
 
@@ -255,7 +266,7 @@ main() {
       echo "Would run: gh pr edit ${m} --repo ${pr_repo} --base ${base_branch}" | tee -a "$logfile"
     done
     [[ ${delete_branch} -eq 1 ]] &&
-      echo "Would delete branch: ${head_branch}" | tee -a "$logfile"
+      echo "Would delete branch: ${head_branch} in ${head_repo}" | tee -a "$logfile"
     exit 0
   fi
 
@@ -274,6 +285,14 @@ main() {
     fi
   fi
 
+  # Recovery point: the merge happens on the remote, so tag the base branch's current remote tip.
+  # The merge commit's first parent will be exactly this commit (rollback_merge.sh's HEAD^1 guard).
+  if git fetch --quiet "${CGW_REMOTE}" "${base_branch}" >>"$logfile" 2>&1; then
+    cgw_create_backup_tag merge "refs/remotes/${CGW_REMOTE}/${base_branch}"
+  else
+    err_tee "[!] Could not fetch ${CGW_REMOTE}/${base_branch} -- no pre-merge backup tag created (continuing)"
+  fi
+
   # [3/4] Merge
   log_section_start "GH PR MERGE" "$logfile"
   if gh pr merge "${merge_args[@]}" 2>&1 | tee -a "$logfile"; then
@@ -282,6 +301,17 @@ main() {
     log_section_end "GH PR MERGE" "$logfile" "1"
     err "gh pr merge failed -- check log: ${logfile}"
     exit 1
+  fi
+
+  # A merge queue or auto-merge makes gh exit 0 before the PR is actually merged: re-read the state
+  # and, if it is not MERGED, leave the retarget/delete (which assume a merged PR) to the user.
+  local post_state
+  post_state=$(_pr_view "${pr_number}" state .state) || post_state=""
+  if [[ "${post_state}" != "MERGED" ]]; then
+    echo "[!] PR #${pr_number} is ${post_state:-in an unknown state}, not merged yet (merge queue or auto-merge pending)" | tee -a "$logfile"
+    echo "    Skipping --retarget and --delete-branch; rerun them once the PR shows MERGED." | tee -a "$logfile"
+    echo "Full log: $logfile"
+    exit 0
   fi
   echo "[OK] Merged PR #${pr_number} into ${base_branch} (--${method})" | tee -a "$logfile"
   echo "" | tee -a "$logfile"
@@ -308,11 +338,13 @@ main() {
       err_tee "[WARN] Skipping --delete-branch: a stacked PR could still be based on ${head_branch}"
     else
       log_section_start "DELETE HEAD BRANCH" "$logfile"
-      if gh api --method DELETE "repos/${pr_repo}/git/refs/heads/${head_branch}" 2>&1 | tee -a "$logfile"; then
-        echo "[OK] Deleted remote branch ${head_branch}" | tee -a "$logfile"
+      # head_repo, not pr_repo: for a cross-repository PR the branch lives in the head repository.
+      if gh api --method DELETE "repos/${head_repo}/git/refs/heads/${head_branch}" 2>&1 | tee -a "$logfile"; then
+        echo "[OK] Deleted remote branch ${head_branch} (${head_repo})" | tee -a "$logfile"
         log_section_end "DELETE HEAD BRANCH" "$logfile" "0"
       else
-        err_tee "[WARN] Could not delete remote branch ${head_branch} (already gone, or no permission)"
+        err_tee "[ERROR] Could not delete remote branch ${head_branch} in ${head_repo} (already gone, or no permission)"
+        failed=1
         log_section_end "DELETE HEAD BRANCH" "$logfile" "1"
       fi
     fi

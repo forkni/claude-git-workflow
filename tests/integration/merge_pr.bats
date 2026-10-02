@@ -213,6 +213,47 @@ _run_merge_pr() {
   [ "${edit_line}" -lt "${del_line}" ]
 }
 
+@test "--delete-branch deletes in the PR's head repository, not the base repository" {
+  install_mock_gh
+  export MOCK_GH_PR_42_HEADREFNAME=feature-a
+  export MOCK_GH_PR_HEADREPOSITORY_HEADREPOSITORYOWNER=contributor/claude-git-workflow
+  run _run_merge_pr 42 --delete-branch
+  [ "${status}" -eq 0 ]
+  grep -q -- "api --method DELETE repos/contributor/claude-git-workflow/git/refs/heads/feature-a" "${GH_LOG}"
+  ! grep -q -- "repos/forkni/claude-git-workflow/git/refs/heads" "${GH_LOG}"
+}
+
+@test "--delete-branch failure makes the script exit non-zero" {
+  install_mock_gh
+  export MOCK_GH_API_EXIT=1
+  run _run_merge_pr 42 --delete-branch
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"Could not delete remote branch"* ]]
+  # the merge itself still happened and is reported
+  grep -q "pr merge 42" "${GH_LOG}"
+}
+
+# ── pre-merge recovery point ──────────────────────────────────────────────────
+
+@test "a pre-merge backup tag is created at the base branch tip before merging" {
+  install_mock_gh
+  local base_tip
+  base_tip=$(git -C "${TEST_REPO_DIR}" rev-parse origin/main)
+  run _run_merge_pr 42
+  [ "${status}" -eq 0 ]
+  local tag
+  tag=$(git -C "${TEST_REPO_DIR}" tag --list 'pre-merge-*' | head -1)
+  [ -n "${tag}" ]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse "${tag}")" = "${base_tip}" ]
+}
+
+@test "--dry-run creates no backup tag" {
+  install_mock_gh
+  run _run_merge_pr 42 --dry-run
+  [ "${status}" -eq 0 ]
+  [ -z "$(git -C "${TEST_REPO_DIR}" tag --list 'pre-merge-*')" ]
+}
+
 # ── --dry-run ─────────────────────────────────────────────────────────────────
 
 @test "--dry-run validates and prints the commands but mutates nothing" {
@@ -233,4 +274,19 @@ _run_merge_pr() {
   install_mock_gh
   MOCK_GH_PR_STATE=CLOSED run _run_merge_pr 42 --dry-run
   [ "${status}" -eq 1 ]
+}
+
+# ── merge queue / auto-merge: gh returns 0 but the PR is not MERGED yet ───────
+
+@test "a PR still not MERGED after gh pr merge is reported as pending and skips retarget/delete" {
+  install_mock_gh
+  export MOCK_GH_PR_42_HEADREFNAME=feature-a
+  export MOCK_GH_PR_43_BASEREFNAME=feature-a
+  export MOCK_GH_POSTMERGE_STATE=OPEN
+  run _run_merge_pr 42 --retarget 43 --delete-branch
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"[OK] Merged PR #42"* ]]
+  [[ "${output}" == *"not merged yet"* ]]
+  ! grep -q -- "pr edit 43" "${GH_LOG}"
+  ! grep -q -- "api --method DELETE" "${GH_LOG}"
 }

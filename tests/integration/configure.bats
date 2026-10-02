@@ -29,6 +29,12 @@ _run_configure() {
 
 # ── --non-interactive config generation ───────────────────────────────────────
 
+@test "generated .cgw.conf documents the CGW_AUTO_RESOLVE_MODIFY_DELETE opt-in" {
+  run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  grep -q '^# CGW_AUTO_RESOLVE_MODIFY_DELETE="0"' "${TEST_REPO_DIR}/.cgw.conf"
+}
+
 @test "--non-interactive generates .cgw.conf" {
   run _run_configure "--non-interactive"
   [ "${status}" -eq 0 ]
