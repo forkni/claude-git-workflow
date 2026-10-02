@@ -207,6 +207,7 @@ by hand. No-op when nothing has diverged.
 ./scripts/git/create_release.sh v1.2.3 --push     # tag + push (triggers release.yml)
 ./scripts/git/create_release.sh v1.2.3 --sign --push  # GPG/SSH-signed tag + push
 ./scripts/git/create_release.sh v1.2.3 --dry-run  # preview
+./scripts/git/create_release.sh archive/pre-rewrite --allow-non-semver  # non-semver archive tag (release.yml fires only on v*)
 ```
 
 Enable signing globally in `.cgw.conf`: `CGW_SIGN_TAGS=1`. Requires a GPG or SSH signing key configured in git (`gpg.signingKey` / `gpg.format=ssh`). Verify a tag with: `git tag -v v1.2.3`.

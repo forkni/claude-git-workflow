@@ -145,7 +145,7 @@ CGW provides 29 user-facing scripts and 2 internal core modules in `scripts/git/
 | `install_hooks.sh` | Install git hooks (`pre-commit`, `pre-push`, `pre-rebase`) into `.githooks/` and `.git/hooks/` |
 | `setup_attributes.sh` | Generate `.gitattributes` for binary, text, and asset handling (Python, TouchDesigner, GLSL, LF line endings) |
 | `clean_build.sh` | Safe cleanup of build artifacts with dry-run default (`--dry-run`, `--force`) |
-| `create_release.sh` | Create annotated version tags to trigger GitHub Release workflows (`--sign` for GPG/SSH tags) |
+| `create_release.sh` | Create annotated version tags to trigger GitHub Release workflows (`--sign` for GPG/SSH tags, `--allow-non-semver` for archive tags) |
 | `stash_work.sh` | Safe stash wrapper with untracked file support, named stashes, non-interactive drop/clear, and logging |
 | `repo_health.sh` | Repository health inspection: integrity verification (`git fsck`), repository size report, large file discovery, git gc |
 | `bisect_helper.sh` | Guided git bisect with backup tag, automated good-ref detection, and test script runner |

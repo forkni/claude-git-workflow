@@ -370,6 +370,7 @@ Always protected, regardless of `CGW_TARGET_BRANCH`: `main`, `master`, the repo'
 ./scripts/git/create_release.sh v1.2.3 --push       # create tag + push (triggers release.yml)
 ./scripts/git/create_release.sh v1.2.3 --sign --push  # GPG/SSH-signed annotated tag + push
 ./scripts/git/create_release.sh v1.2.3 --dry-run    # preview
+./scripts/git/create_release.sh archive/pre-rewrite --allow-non-semver  # archive tag: any valid ref name, no v prefix, release.yml won't fire
 ```
 
 | Flag | Purpose |

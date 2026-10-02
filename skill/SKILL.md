@@ -612,6 +612,7 @@ be needed.
 ./scripts/git/create_release.sh v1.2.3 --push             # tag + push (triggers GitHub Release)
 ./scripts/git/create_release.sh v1.2.3 --push --sign      # GPG/SSH-signed annotated tag
 ./scripts/git/create_release.sh v1.2.3 --dry-run
+./scripts/git/create_release.sh archive/pre-rewrite --allow-non-semver   # non-semver archive tag (no GitHub Release)
 ```
 
 `--push` triggers `release.yml` (tag push matching `v*`) — Rule 6 applies: watch that run
