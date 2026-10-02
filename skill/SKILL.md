@@ -530,6 +530,10 @@ merge of the branch re-applies those docs changes.
 # Rebase with auto-stash (stash dirty tree before, restore after):
 ./scripts/git/rebase_safe.sh --onto main --autostash
 
+# Move only this branch's own commits (everything after 'server') onto main
+# (git rebase --onto main server):
+./scripts/git/rebase_safe.sh --onto main --upstream server
+
 # Squash last N commits (opens editor):
 ./scripts/git/rebase_safe.sh --squash-last 3
 

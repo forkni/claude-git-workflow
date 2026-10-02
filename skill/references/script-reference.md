@@ -277,6 +277,7 @@ Passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own
 
 ```bash
 ./scripts/git/rebase_safe.sh --onto <branch>        # rebase onto branch
+./scripts/git/rebase_safe.sh --onto <new> --upstream <old>   # 3-arg: replay only <old>..HEAD onto <new>
 ./scripts/git/rebase_safe.sh --squash-last <N>       # interactive squash of last N commits
 ./scripts/git/rebase_safe.sh --abort                 # abort in-progress rebase
 ./scripts/git/rebase_safe.sh --continue              # continue after resolving conflicts
@@ -286,6 +287,7 @@ Passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own
 | Flag | Purpose | When to Use |
 |------|---------|-------------|
 | `--onto <branch>` | Rebase current branch onto this ref | Sync feature branch with main |
+| `--upstream <ref>` | With `--onto`: `git rebase --onto <new> <ref>` — replay only `<ref>..HEAD` | Move a topic branch off an intermediate branch (Pro Git p.101-103) |
 | `--squash-last <N>` | Squash last N commits (opens editor) | Clean up commit history before PR |
 | `--autosquash` | Apply `fixup!`/`squash!` prefixes automatically | With `--squash-last` for automated squash |
 | `--autostash` | Auto-stash dirty working tree before rebase | Rebase with uncommitted changes |
@@ -295,7 +297,7 @@ Passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own
 | `--non-interactive` | Skip confirmation prompts (requires `--autosquash` with `--squash-last`) | Automation |
 | `--dry-run` | Show plan without rebasing | Preview |
 
-Creates `pre-rebase-<timestamp>-<pid>` backup tag before any rebase. Warns if commits already pushed.
+Creates `pre-rebase-<timestamp>-<pid>` backup tag before any rebase. Warns if any of the commits being rewritten are already on the remote (counted as commits reachable from a `<remote>/*` ref, same rule as the `pre-rebase` hook).
 
 **`bisect_helper.sh`** — Guided git bisect for bug hunting
 
