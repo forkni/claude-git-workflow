@@ -36,7 +36,7 @@ INPUT=$(cat)
 
 # Fail open helper
 _allow_and_exit() {
-  if jq -e '.tool_input' <<< "${INPUT}" >/dev/null 2>&1 && ! jq -e '.toolCall' <<< "${INPUT}" >/dev/null 2>&1; then
+  if jq -e '.tool_input' <<<"${INPUT}" >/dev/null 2>&1 && ! jq -e '.toolCall' <<<"${INPUT}" >/dev/null 2>&1; then
     exit 0
   fi
   printf '{"decision": "allow"}\n'
@@ -55,13 +55,13 @@ fi
 # without it no command can be classified, and blocking every call would stop
 # the agent's whole shell, not just git.
 _CGW_GUARDRAIL_CORE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_guardrail_core.sh"
-# shellcheck source=_guardrail_core.sh
+# shellcheck source-path=SCRIPTDIR source=_guardrail_core.sh
 if ! source "${_CGW_GUARDRAIL_CORE}" 2>/dev/null; then
   printf '[CGW guardrail] WARNING: %s not found — guardrail is degraded; commands are not being inspected\n' "${_CGW_GUARDRAIL_CORE}" >&2
   _allow_and_exit
 fi
 
-COMMAND=$(jq -r '(.toolCall.args.CommandLine // .toolCall.args.command // .tool_input.command // empty)' <<< "${INPUT}" 2>/dev/null)
+COMMAND=$(jq -r '(.toolCall.args.CommandLine // .toolCall.args.command // .tool_input.command // empty)' <<<"${INPUT}" 2>/dev/null)
 [[ -z "${COMMAND}" ]] && _allow_and_exit
 
 # ── Block helper ──────────────────────────────────────────────────────────────
@@ -74,7 +74,7 @@ ${redirect}
 The user has prevented you from doing this."
 
   # Claude Code compatibility mode
-  if jq -e '.tool_input' <<< "${INPUT}" >/dev/null 2>&1 && ! jq -e '.toolCall' <<< "${INPUT}" >/dev/null 2>&1; then
+  if jq -e '.tool_input' <<<"${INPUT}" >/dev/null 2>&1 && ! jq -e '.toolCall' <<<"${INPUT}" >/dev/null 2>&1; then
     printf 'BLOCKED: Command matched dangerous pattern "%s".\n%s\nThe user has prevented you from doing this.\n' \
       "${pattern}" "${redirect}" >&2
     exit 2

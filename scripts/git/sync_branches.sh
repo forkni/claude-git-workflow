@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# sync_branches.sh - Sync local branches with remote via fetch + rebase
-# Purpose: Keep branches up-to-date with origin
+# sync_branches.sh - Sync local branches with remote via fetch + pull
+# Purpose: Keep branches up-to-date with origin. Protected branches
+#          (CGW_PROTECTED_BRANCHES, default: target) are fast-forwarded only; others are
+#          rebased with --rebase=merges so local merge commits survive.
 # Usage: ./scripts/git/sync_branches.sh [OPTIONS]
 #
 # Globals:
@@ -89,11 +91,12 @@ _sync_report_skip_worktree_divergence() {
 
   while IFS= read -r f; do
     [[ -z "${f}" ]] && continue
-    git update-index --no-skip-worktree -- "${f}"
+    git update-index --no-skip-worktree -- "${f}" || continue
     if ! git diff --quiet HEAD -- "${f}" 2>/dev/null; then
       diverged+=("${f}")
     fi
-    git update-index --skip-worktree -- "${f}"
+    git update-index --skip-worktree -- "${f}" ||
+      err_tee "  [FAIL] Could not re-set skip-worktree on ${f}: git update-index --skip-worktree -- ${f}"
   done <<<"${sw_files}"
 
   if [[ ${#diverged[@]} -gt 0 ]]; then
@@ -116,12 +119,21 @@ _sync_protect_skip_worktree() {
 
   while IFS= read -r f; do
     [[ -z "${f}" ]] && continue
-    git update-index --no-skip-worktree -- "${f}"
+    git update-index --no-skip-worktree -- "${f}" || continue
     if ! git diff --quiet HEAD -- "${f}" 2>/dev/null; then
       echo "  [!] Protecting diverged skip-worktree file for pull: ${f}" | tee -a "$logfile"
-      cp -- "${f}" "${f}.cgw-bak"
-      git checkout HEAD -- "${f}"
-      _SYNC_PROTECTED_FILES+=("${f}")
+      # Never reset the file unless its local bytes are safely backed up first.
+      if ! cp -- "${f}" "${f}.cgw-bak"; then
+        err_tee "  [FAIL] Cannot back up ${f} -- leaving it untouched (the pull may refuse)"
+        git update-index --skip-worktree -- "${f}"
+        continue
+      fi
+      if git checkout HEAD -- "${f}"; then
+        _SYNC_PROTECTED_FILES+=("${f}")
+      else
+        err_tee "  [FAIL] Could not reset ${f} to HEAD -- local copy kept at ${f}.cgw-bak"
+        git update-index --skip-worktree -- "${f}"
+      fi
     else
       git update-index --skip-worktree -- "${f}"
     fi
@@ -151,8 +163,11 @@ _sync_restore_skip_worktree() {
       echo "  Upstream did not change this file -- nothing to reconcile" | tee -a "$logfile"
     fi
     if [[ -f "${f}.cgw-bak" ]]; then
-      cp -- "${f}.cgw-bak" "${f}"
-      rm -f -- "${f}.cgw-bak"
+      if cp -- "${f}.cgw-bak" "${f}"; then
+        rm -f -- "${f}.cgw-bak"
+      else
+        err_tee "  [FAIL] Could not restore ${f} -- your local copy is kept at ${f}.cgw-bak"
+      fi
     fi
     git update-index --skip-worktree -- "${f}"
   done
@@ -164,7 +179,7 @@ _sync_restore_skip_worktree() {
 # HELPER FUNCTIONS
 # ============================================================================
 
-# sync_one_branch - Fetch and rebase a single branch against origin.
+# sync_one_branch - Pull a single branch from origin (ff-only if protected, else rebase-merges).
 # Arguments:
 #   $1 - branch name
 # Returns: 0 on success, 1 on failure
@@ -186,6 +201,12 @@ sync_one_branch() {
     return 0
   fi
 
+  # Protected branches (e.g. main) carry local --no-ff merge commits that a plain rebase
+  # would flatten, so they only ever fast-forward. Everything else rebases, preserving
+  # local merges (--rebase=merges).
+  local protected=0
+  cgw_branch_is_protected "${branch}" --policy push && protected=1
+
   local behind ahead
   behind=$(cgw_rev_count "HEAD" "${CGW_REMOTE}/${branch}" || echo "0")
   ahead=$(cgw_rev_count "${CGW_REMOTE}/${branch}" "HEAD" || echo "0")
@@ -203,8 +224,12 @@ sync_one_branch() {
     echo "  Local: ${ahead} ahead, ${behind} behind ${CGW_REMOTE}/${branch}" | tee -a "$logfile"
     if [[ "${behind}" -eq 0 ]]; then
       echo "  [OK] Already up-to-date with ${CGW_REMOTE}/${branch}" | tee -a "$logfile"
+    elif [[ ${protected} -eq 1 && "${ahead}" -gt 0 ]]; then
+      echo "  Would REFUSE: ${branch} is protected and has diverged (fast-forward only)" | tee -a "$logfile"
+    elif [[ ${protected} -eq 1 ]]; then
+      echo "  Would pull --ff-only to sync ${behind} commit(s)" | tee -a "$logfile"
     else
-      echo "  Would pull --rebase to sync ${behind} commit(s)" | tee -a "$logfile"
+      echo "  Would pull --rebase=merges to sync ${behind} commit(s)" | tee -a "$logfile"
     fi
     return 0
   fi
@@ -228,24 +253,37 @@ sync_one_branch() {
     return 0
   fi
 
-  if [[ "${ahead}" -gt 0 ]]; then
-    echo "  [!] Diverged: ${ahead} local commits will be rebased on top of ${behind} remote commits" | tee -a "$logfile"
+  local pull_mode="--rebase=merges"
+  if [[ ${protected} -eq 1 ]]; then
+    pull_mode="--ff-only"
+    if [[ "${ahead}" -gt 0 ]]; then
+      err_tee "  [FAIL] ${branch} is protected and has diverged: ${ahead} local commit(s) vs ${behind} on ${CGW_REMOTE}/${branch}"
+      echo "  A protected branch is only fast-forwarded (a rebase would flatten local merge commits)." | tee -a "$logfile"
+      echo "  Reconcile explicitly, then re-run:" | tee -a "$logfile"
+      echo "    1. Merge the remote in:           git pull --no-rebase ${CGW_REMOTE} ${branch}" | tee -a "$logfile"
+      echo "    2. Or discard the local commits:  tag a backup, then git reset --hard ${CGW_REMOTE}/${branch}" | tee -a "$logfile"
+      return 1
+    fi
+  elif [[ "${ahead}" -gt 0 ]]; then
+    echo "  [!] Diverged: ${ahead} local commits will be rebased on top of ${behind} remote commits (local merges preserved)" | tee -a "$logfile"
   fi
 
   _sync_current_old_head=$(git rev-parse HEAD)
   _sync_protect_skip_worktree
 
-  local rebase_args=(pull --rebase "${CGW_REMOTE}" "${branch}")
-  if run_git_with_logging "GIT REBASE ${branch}" "$logfile" "${rebase_args[@]}"; then
+  local pull_args=(pull "${pull_mode}" "${CGW_REMOTE}" "${branch}")
+  if run_git_with_logging "GIT PULL ${branch}" "$logfile" "${pull_args[@]}"; then
     echo "  [OK] ${branch} synced successfully" | tee -a "$logfile"
     _sync_restore_skip_worktree "${_sync_current_old_head}"
     return 0
   else
-    err_tee "  [FAIL] Rebase failed for ${branch}"
-    echo "  Aborting rebase..." | tee -a "$logfile"
-    git rebase --abort 2>/dev/null || true
+    err_tee "  [FAIL] Pull (${pull_mode}) failed for ${branch}"
+    if [[ "${pull_mode}" != "--ff-only" ]]; then
+      echo "  Aborting rebase..." | tee -a "$logfile"
+      git rebase --abort 2>/dev/null || true
+    fi
     _sync_restore_skip_worktree "${_sync_current_old_head}"
-    echo "  Manual action needed: git pull --rebase ${CGW_REMOTE} ${branch}" | tee -a "$logfile"
+    echo "  Manual action needed: git pull ${pull_mode} ${CGW_REMOTE} ${branch}" | tee -a "$logfile"
     return 1
   fi
 }
@@ -265,7 +303,7 @@ main() {
       --help | -h)
         echo "Usage: ./scripts/git/sync_branches.sh [OPTIONS]"
         echo ""
-        echo "Sync local branches with remote (CGW_REMOTE) via fetch + rebase."
+        echo "Sync local branches with remote (CGW_REMOTE) via fetch + pull."
         echo ""
         echo "Options:"
         echo "  --all               Sync both source and target branches (default: current only)"
@@ -277,10 +315,12 @@ main() {
         echo ""
         echo "Behavior:"
         echo "  - Runs git fetch ${CGW_REMOTE} first to update remote refs"
-        echo "  - Uses git pull --rebase (preserves clean linear history)"
+        echo "  - Protected branches (CGW_PROTECTED_BRANCHES, default: ${CGW_TARGET_BRANCH}): git pull --ff-only;"
+        echo "    if diverged, refuses and prints reconcile options (never flattens local merges)"
+        echo "  - Other branches: git pull --rebase=merges (linear history, local merges preserved)"
         echo "  - With --all: switches between branches, returns to starting branch"
         echo "  - With --branch: syncs only the named branch, returns to starting branch"
-        echo "  - Warns if local diverges from remote before rebasing"
+        echo "  - Warns if local diverges from remote before pulling"
         echo ""
         echo "Configuration:"
         echo "  CGW_SOURCE_BRANCH   Source branch (default: development)"

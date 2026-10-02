@@ -165,12 +165,12 @@ CGW_EXTRA_PREFIXES||str|fill|conf
 CGW_FREEFORM_MESSAGE_BRANCHES||str|fill|conf
 CGW_FREEFORM_MESSAGE_CHECK||str|fill|conf
 CGW_LINT_CMD|ruff|str|keep|conf
-CGW_LINT_CHECK_ARGS|check {files}|str|keep|conf
-CGW_LINT_FIX_ARGS|check --fix {files}|str|keep|conf
+CGW_LINT_CHECK_ARGS|check --force-exclude {files}|str|keep|conf
+CGW_LINT_FIX_ARGS|check --fix --force-exclude {files}|str|keep|conf
 CGW_LINT_EXCLUDES|--extend-exclude logs --extend-exclude .venv|str|keep|conf
 CGW_FORMAT_CMD|ruff|str|keep|conf
-CGW_FORMAT_CHECK_ARGS|format --check {files}|str|keep|conf
-CGW_FORMAT_FIX_ARGS|format {files}|str|keep|conf
+CGW_FORMAT_CHECK_ARGS|format --check --force-exclude {files}|str|keep|conf
+CGW_FORMAT_FIX_ARGS|format --force-exclude {files}|str|keep|conf
 CGW_FORMAT_EXCLUDES|--exclude logs --exclude .venv|str|keep|conf
 CGW_MARKDOWNLINT_NPX_FALLBACK|1|bool|keep|conf
 CGW_MARKDOWNLINT_CMD||computed|keep|conf
@@ -203,6 +203,8 @@ CGW_ALLOW_REBASE_PUBLISHED|0|bool|fill|conf
 CGW_AUTO_REMOVE_INDEX_LOCK|1|bool|fill|conf
 CGW_INDEX_LOCK_MAX_AGE_SECONDS|30|int|fill|conf
 CGW_INDEX_LOCK_WAIT_SECONDS|10|int|fill|conf
+CGW_LOCK_RETRY_ATTEMPTS|3|int|fill|conf
+CGW_LOCK_RETRY_DELAY|1|int|fill|conf
 CGW_NON_INTERACTIVE|0|bool|fill|env
 CGW_NO_VENV|0|bool|fill|env
 CGW_STAGED_ONLY|0|bool|fill|env'
@@ -497,6 +499,11 @@ CGW_PROTECTED_BRANCHES="${CGW_PROTECTED_BRANCHES:-${CGW_TARGET_BRANCH}}"
 # Locks newer than MAX_AGE are given WAIT_SECONDS to clear before removal.
 #
 # Set CGW_AUTO_REMOVE_INDEX_LOCK=0 to disable auto-removal (warn-only mode).
+#
+# --- Index lock race retry ---
+# CGW_LOCK_RETRY_ATTEMPTS: number of retry attempts for mutating git commands
+# when encountering an in-flight index.lock race or transient collision (default 3).
+# CGW_LOCK_RETRY_DELAY: base delay in seconds between retries with backoff (default 1).
 
 # Callers source this file under `set -e`: always finish on a zero status,
 # whatever the last conditional above evaluated to.

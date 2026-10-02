@@ -30,7 +30,7 @@ cgw_guardrail_classify() {
   # positives.  For example, commit_enhanced.sh "docs: explain git commit workflow"
   # should not match the 'git commit' block.  Heuristic: removes "..." and '...'
   # (does not handle nested/escaped quotes, but covers all practical CGW cases).
-  unquoted=$(sed 's/"[^"]*"//g; s/'"'"'[^'"'"']*'"'"'//g' <<< "${command}")
+  unquoted=$(sed 's/"[^"]*"//g; s/'"'"'[^'"'"']*'"'"'//g' <<<"${command}")
 
   # Split into individual shell invocations before pattern matching, so a flag or
   # exemption belonging to one command (e.g. `--cached` after a `;`) cannot satisfy
@@ -43,7 +43,7 @@ cgw_guardrail_classify() {
 
   while IFS= read -r _invocation; do
     _cgw_guardrail_check_invocation "${_invocation}" || return 1
-  done <<< "${segmented}"
+  done <<<"${segmented}"
   return 0
 }
 
@@ -105,9 +105,9 @@ _cgw_guardrail_check_invocation() {
 
   # git clean -f — permanently deletes untracked files (covers -f, -fd, -df, -fdx, ...).
   # A dry-run flag (-n / --dry-run) only previews the deletion, so it is exempt.
-  if [[ ${padded} =~ git[[:space:]]+clean[[:space:]] ]] \
-     && [[ ${padded} =~ ${_force} ]] \
-     && ! [[ ${padded} =~ ${_dryrun} ]]; then
+  if [[ ${padded} =~ git[[:space:]]+clean[[:space:]] ]] &&
+    [[ ${padded} =~ ${_force} ]] &&
+    ! [[ ${padded} =~ ${_dryrun} ]]; then
     _cgw_guardrail_verdict 'git clean -f' \
       'Confirm with the user before running git clean. This permanently deletes untracked files from the working tree.'
     return 1
@@ -119,17 +119,17 @@ _cgw_guardrail_check_invocation() {
   # artifacts staged by `git cherry-pick -n`). --cached is index-only (keeps the file
   # on disk — the documented untrack workflow), so a --cached in the SAME invocation
   # is always allowed.
-  if [[ ${padded} =~ git[[:space:]]+rm[[:space:]] ]] \
-     && ! [[ ${padded} =~ ${_cached} ]] \
-     && [[ ${padded} =~ ${_force} ]]; then
+  if [[ ${padded} =~ git[[:space:]]+rm[[:space:]] ]] &&
+    ! [[ ${padded} =~ ${_cached} ]] &&
+    [[ ${padded} =~ ${_force} ]]; then
     _cgw_guardrail_verdict 'git rm -f' \
       'git rm -f deletes files from the working tree — for git-ignored or untracked files this is UNRECOVERABLE. To untrack a file while keeping it on disk, use git rm --cached <path>. To force-delete a tracked file, confirm with the user first.'
     return 1
   fi
 
   # Force-delete branch — may lose commits on an unmerged branch (-D, not -d)
-  if [[ ${padded} =~ git[[:space:]]+branch[[:space:]] ]] \
-     && [[ ${padded} =~ [[:space:]]-[A-Za-z]*D[A-Za-z]*[[:space:]] ]]; then
+  if [[ ${padded} =~ git[[:space:]]+branch[[:space:]] ]] &&
+    [[ ${padded} =~ [[:space:]]-[A-Za-z]*D[A-Za-z]*[[:space:]] ]]; then
     _cgw_guardrail_verdict 'git branch -D' \
       'Use ./scripts/git/branch_cleanup.sh --execute to prune merged branches, or confirm with the user before force-deleting an unmerged branch.'
     return 1
@@ -179,8 +179,8 @@ _cgw_guardrail_check_invocation() {
     return 1
   fi
 
-  if [[ ${padded} =~ git[[:space:]]+update-ref[[:space:]] ]] \
-     && [[ ${padded} =~ [[:space:]]-[A-Za-z]*d[A-Za-z]*[[:space:]] ]]; then
+  if [[ ${padded} =~ git[[:space:]]+update-ref[[:space:]] ]] &&
+    [[ ${padded} =~ [[:space:]]-[A-Za-z]*d[A-Za-z]*[[:space:]] ]]; then
     _cgw_guardrail_verdict 'git update-ref -d' \
       'Destructive ref operation — confirm with the user.'
     return 1
@@ -189,10 +189,10 @@ _cgw_guardrail_check_invocation() {
   # .git directory destruction
   # Catches: rm -rf .git  rm -r -f .git  rm -rf .git/  rm -rf /path/to/.git
   # Allows:  rm -rf .gitignore  rm -rf .github  (character after .git is alphanumeric)
-  if [[ ${padded} =~ [[:space:]]rm[[:space:]] ]] \
-     && [[ ${padded} =~ [[:space:]]-[A-Za-z]*r[A-Za-z]*[[:space:]] ]] \
-     && [[ ${padded} =~ ${_force} ]] \
-     && [[ ${padded} =~ [.]git(/|[[:space:]]) ]]; then
+  if [[ ${padded} =~ [[:space:]]rm[[:space:]] ]] &&
+    [[ ${padded} =~ [[:space:]]-[A-Za-z]*r[A-Za-z]*[[:space:]] ]] &&
+    [[ ${padded} =~ ${_force} ]] &&
+    [[ ${padded} =~ [.]git(/|[[:space:]]) ]]; then
     _cgw_guardrail_verdict 'rm -rf .git' \
       'This would destroy the git repository — confirm with the user first.'
     return 1

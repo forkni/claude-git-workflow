@@ -1647,4 +1647,98 @@ TABLE
   [[ "${output}" == *"tracked changes were in local-only files and were excluded"* ]]
 }
 
+# ── Transient index.lock collision resilience ─────────────────────────────────
 
+@test "commit_enhanced.sh survives transient index.lock collision and succeeds" {
+  echo "content" > "${TEST_REPO_DIR}/retry_test.txt"
+  git -C "${TEST_REPO_DIR}" add retry_test.txt
+
+  # Inject a transient lock that disappears after 0.5s
+  (
+    sleep 0.2
+    touch "${TEST_REPO_DIR}/.git/index.lock" 2>/dev/null || true
+    sleep 0.5
+    rm -f "${TEST_REPO_DIR}/.git/index.lock" 2>/dev/null || true
+  ) &
+  local bg_pid=$!
+
+  run _run_commit "\"feat: commit under transient lock\""
+  wait "${bg_pid}" 2>/dev/null || true
+
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+}
+
+
+
+
+# ── --only reset failure / unborn HEAD (D1) ───────────────────────────────────
+
+# Shadow `git` so that exactly `git reset HEAD` fails (simulating a locked index);
+# every other invocation goes to the real git.
+_install_failing_reset_git() {
+  local real_git
+  real_git=$(command -v git)
+  cat >"${MOCK_BIN_DIR}/git" <<GIT_MOCK
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "reset" && "\${2:-}" == "HEAD" && \$# -eq 2 ]]; then
+  echo "fatal: Unable to create '.git/index.lock': File exists." >&2
+  exit 128
+fi
+exec "${real_git}" "\$@"
+GIT_MOCK
+  chmod +x "${MOCK_BIN_DIR}/git"
+}
+
+@test "--only aborts when the index reset fails and commits nothing (D1)" {
+  echo "file_a v1" >"${TEST_REPO_DIR}/file_a.txt"
+  echo "file_b v1" >"${TEST_REPO_DIR}/file_b.txt"
+  git -C "${TEST_REPO_DIR}" add file_a.txt file_b.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add files"
+  echo "file_a v2" >"${TEST_REPO_DIR}/file_a.txt"
+  echo "file_b v2" >"${TEST_REPO_DIR}/file_b.txt"
+  git -C "${TEST_REPO_DIR}" add file_a.txt   # pre-staged extra that must not ride along
+  local head_before
+  head_before=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+
+  _install_failing_reset_git
+  run _run_commit "--skip-lint --only file_b.txt \"feat: only b\""
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"failed to reset index"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "${head_before}" ]
+}
+
+@test "--only on an unborn HEAD does not carry pre-staged files along (D1)" {
+  rm -rf "${TEST_REPO_DIR}/.git"
+  git -C "${TEST_REPO_DIR}" init --quiet -b development
+  git -C "${TEST_REPO_DIR}" config user.email "test@example.com"
+  git -C "${TEST_REPO_DIR}" config user.name "Test User"
+  echo "a" >"${TEST_REPO_DIR}/pre_staged.txt"
+  echo "b" >"${TEST_REPO_DIR}/wanted.txt"
+  git -C "${TEST_REPO_DIR}" add pre_staged.txt
+
+  run _run_commit "--skip-lint --only wanted.txt \"feat: first commit\""
+  [ "${status}" -eq 0 ]
+
+  local committed
+  committed=$(git -C "${TEST_REPO_DIR}" show --name-only --pretty=format: HEAD | grep -v '^$')
+  [[ "${committed}" == *"wanted.txt"* ]]
+  [[ "${committed}" != *"pre_staged.txt"* ]]
+  # The pre-staged file is untouched on disk, just no longer staged.
+  [ -f "${TEST_REPO_DIR}/pre_staged.txt" ]
+}
+
+# ── "Configured types" line (Obs 1) ───────────────────────────────────────────
+
+@test "invalid commit message lists configured types comma-separated, with no pipe characters (Obs 1)" {
+  echo "x" >"${TEST_REPO_DIR}/obs1.txt"
+  git -C "${TEST_REPO_DIR}" add obs1.txt
+
+  run _run_commit "--skip-lint \"not a conventional message\""
+  [ "${status}" -ne 0 ]
+  local line
+  line=$(printf '%s\n' "${output}" | grep "Configured types:")
+  [ -n "${line}" ]
+  [[ "${line}" == *"feat, fix"* ]]
+  [[ "${line}" != *"|"* ]]
+}

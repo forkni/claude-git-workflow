@@ -438,15 +438,20 @@ main() {
     if [[ ${#_will_unstage[@]} -gt 0 ]]; then
       echo "[--only] Currently staged but not matched by --only (will be unstaged): ${_will_unstage[*]}"
     fi
-    # Reset only when HEAD exists. An unborn HEAD (fresh repo, no commits) has
-    # nothing to reset, so skip. A real reset failure (e.g. stale index.lock)
-    # must abort — swallowing it would let pre-staged extras ride along, breaking
-    # the --only contract of "reset, then stage exactly these paths".
+    # Empty the index so only the --only paths end up staged. With a HEAD that is
+    # `git reset HEAD`; on an unborn HEAD (fresh repo, no commits) there is no HEAD to
+    # reset to, but pre-staged extras must still not ride along, so drop every index
+    # entry instead (worktree files are untouched). A real failure (e.g. stale
+    # index.lock) must abort -- swallowing it would break the --only contract of
+    # "reset, then stage exactly these paths".
     if git rev-parse --verify -q HEAD >/dev/null; then
       if ! git reset HEAD >/dev/null 2>&1; then
         err "--only: failed to reset index (stale index.lock?); aborting to avoid committing unintended files"
         exit 1
       fi
+    elif ! git rm --cached -r -q --ignore-unmatch -- . >/dev/null 2>&1; then
+      err "--only: failed to clear the index on an unborn HEAD (stale index.lock?); aborting to avoid committing unintended files"
+      exit 1
     fi
     local only_path
     for only_path in "${only_paths[@]}"; do
@@ -910,7 +915,7 @@ main() {
     _commit_cmd+=(--allow-empty)
   fi
 
-  if "${_commit_cmd[@]}"; then
+  if cgw_run_with_lock_retry "${_commit_cmd[@]}"; then
     echo ""
     echo "===================================="
     echo "[OK] COMMIT SUCCESSFUL"

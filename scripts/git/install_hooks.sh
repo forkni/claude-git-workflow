@@ -128,12 +128,21 @@ main() {
     if [[ "${hooks_dir_abs}" == "${githooks_abs}" ]]; then
       chmod +x "${githooks_src}/pre-commit" >>"$logfile" 2>&1
       echo "  [OK] core.hooksPath=${hooks_dir} — pre-commit already in place" | tee -a "$logfile"
-    elif cp "${githooks_src}/pre-commit" "${hooks_dir}/pre-commit" >>"$logfile" 2>&1; then
-      chmod +x "${hooks_dir}/pre-commit" >>"$logfile" 2>&1
-      echo "  [OK] pre-commit installed at ${hooks_dir}/pre-commit" | tee -a "$logfile"
     else
-      err_tee "  [FAIL] Failed to install pre-commit hook"
-      hooks_ok=1
+      if [[ -f "${hooks_dir}/pre-commit" ]] && ! cmp -s "${githooks_src}/pre-commit" "${hooks_dir}/pre-commit"; then
+        if _bak="$(cgw_backup_file "${hooks_dir}/pre-commit")"; then
+          echo "  [INFO] Backed up ${hooks_dir}/pre-commit -> ${_bak}" | tee -a "$logfile"
+        else
+          echo "  [!] Could not back up ${hooks_dir}/pre-commit" | tee -a "$logfile"
+        fi
+      fi
+      if cp "${githooks_src}/pre-commit" "${hooks_dir}/pre-commit" >>"$logfile" 2>&1; then
+        chmod +x "${hooks_dir}/pre-commit" >>"$logfile" 2>&1
+        echo "  [OK] pre-commit installed at ${hooks_dir}/pre-commit" | tee -a "$logfile"
+      else
+        err_tee "  [FAIL] Failed to install pre-commit hook"
+        hooks_ok=1
+      fi
     fi
   else
     err "pre-commit template not found at ${githooks_src}/pre-commit"
@@ -147,11 +156,20 @@ main() {
     if [[ "${hooks_dir_abs}" == "${githooks_abs}" ]]; then
       chmod +x "${githooks_src}/pre-push" >>"$logfile" 2>&1
       echo "  [OK] core.hooksPath=${hooks_dir} — pre-push already in place" | tee -a "$logfile"
-    elif cp "${githooks_src}/pre-push" "${hooks_dir}/pre-push" >>"$logfile" 2>&1; then
-      chmod +x "${hooks_dir}/pre-push" >>"$logfile" 2>&1
-      echo "  [OK] pre-push installed at ${hooks_dir}/pre-push" | tee -a "$logfile"
     else
-      echo "  [!] Failed to install pre-push hook (non-fatal)" | tee -a "$logfile"
+      if [[ -f "${hooks_dir}/pre-push" ]] && ! cmp -s "${githooks_src}/pre-push" "${hooks_dir}/pre-push"; then
+        if _bak="$(cgw_backup_file "${hooks_dir}/pre-push")"; then
+          echo "  [INFO] Backed up ${hooks_dir}/pre-push -> ${_bak}" | tee -a "$logfile"
+        else
+          echo "  [!] Could not back up ${hooks_dir}/pre-push" | tee -a "$logfile"
+        fi
+      fi
+      if cp "${githooks_src}/pre-push" "${hooks_dir}/pre-push" >>"$logfile" 2>&1; then
+        chmod +x "${hooks_dir}/pre-push" >>"$logfile" 2>&1
+        echo "  [OK] pre-push installed at ${hooks_dir}/pre-push" | tee -a "$logfile"
+      else
+        echo "  [!] Failed to install pre-push hook (non-fatal)" | tee -a "$logfile"
+      fi
     fi
   fi
 
@@ -160,11 +178,20 @@ main() {
     if [[ "${hooks_dir_abs}" == "${githooks_abs}" ]]; then
       chmod +x "${githooks_src}/pre-rebase" >>"$logfile" 2>&1
       echo "  [OK] core.hooksPath=${hooks_dir} — pre-rebase already in place" | tee -a "$logfile"
-    elif cp "${githooks_src}/pre-rebase" "${hooks_dir}/pre-rebase" >>"$logfile" 2>&1; then
-      chmod +x "${hooks_dir}/pre-rebase" >>"$logfile" 2>&1
-      echo "  [OK] pre-rebase installed at ${hooks_dir}/pre-rebase" | tee -a "$logfile"
     else
-      echo "  [!] Failed to install pre-rebase hook (non-fatal)" | tee -a "$logfile"
+      if [[ -f "${hooks_dir}/pre-rebase" ]] && ! cmp -s "${githooks_src}/pre-rebase" "${hooks_dir}/pre-rebase"; then
+        if _bak="$(cgw_backup_file "${hooks_dir}/pre-rebase")"; then
+          echo "  [INFO] Backed up ${hooks_dir}/pre-rebase -> ${_bak}" | tee -a "$logfile"
+        else
+          echo "  [!] Could not back up ${hooks_dir}/pre-rebase" | tee -a "$logfile"
+        fi
+      fi
+      if cp "${githooks_src}/pre-rebase" "${hooks_dir}/pre-rebase" >>"$logfile" 2>&1; then
+        chmod +x "${hooks_dir}/pre-rebase" >>"$logfile" 2>&1
+        echo "  [OK] pre-rebase installed at ${hooks_dir}/pre-rebase" | tee -a "$logfile"
+      else
+        echo "  [!] Failed to install pre-rebase hook (non-fatal)" | tee -a "$logfile"
+      fi
     fi
   fi
 

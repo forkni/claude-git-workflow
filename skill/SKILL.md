@@ -256,7 +256,7 @@ script with `--help` to confirm rather than inventing it.
 | `check_lint.sh` | `--no-venv`, `--modified-only`, `--skip-lint`, `--skip-md-lint`, `--skip-typecheck`, `--md-only` |
 | `fix_lint.sh` | `--non-interactive`, `--no-venv`, `--modified-only`, `--skip-md-lint`, `--md-only` — **no `--skip-lint`** |
 | `push_validated.sh` | `--non-interactive`, `--dry-run`, `--skip-lint`, `--skip-md-lint`, `--skip-typecheck`, `--no-venv`, `--force`, `--branch <name>` |
-| `cherry_pick_commits.sh` | `--non-interactive`, `--commit <hash>`, `--only <pathspec>` (repeatable; partial pick), `--dry-run`, `--source <branch>`, `--target <branch>` |
+| `cherry_pick_commits.sh` | `--non-interactive`, `--commit <hash>`, `--only <pathspec>` (repeatable; partial pick), `--no-x`, `--dry-run`, `--source <branch>`, `--target <branch>` |
 
 Asymmetries that trip people up:
 
@@ -384,6 +384,10 @@ Always passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE
 ./scripts/git/sync_branches.sh --prune      # also remove stale remote-tracking refs
 ```
 
+Sync pulls **protected** branches (`CGW_PROTECTED_BRANCHES`) with `--ff-only` and everything else
+with `--rebase=merges`. A protected branch that has diverged from the remote is **refused** (exit 1)
+with the reconcile options printed -- never rebased, so local merge commits on `main` survive.
+
 `sync_branches.sh` also protects any git **skip-worktree** local file (see `CGW_LOCAL_FILES`)
 across a sync. That bit hides local disk edits from `git status`/`diff-index`, but does **not**
 stop `git pull --rebase` from refusing when the incoming commit also touches the file ("local
@@ -403,6 +407,12 @@ silently discarding local edits. No-op when no skip-worktree file has diverged (
 ./scripts/git/rollback_merge.sh --non-interactive --target pre-merge-20260101_120000-12345
 ```
 
+Guards: `--revert` only ever reverts `HEAD` (when it is a merge) or an explicit `--target` merge
+-- never `HEAD~1` or a backup tag. Hard mode auto-picks the latest `pre-merge` tag only when it is
+`HEAD^1`; otherwise `--non-interactive` refuses and wants an explicit `--target`. **After a
+revert, revert the revert** (`git revert <revert-sha>`, printed by the script) before merging the
+same branch again, or the original work silently stays out -- see `references/error-recovery.md`.
+
 **Cherry-picking a commit:**
 
 ```bash
@@ -412,6 +422,9 @@ silently discarding local edits. No-op when no skip-worktree file has diverged (
 ./scripts/git/cherry_pick_commits.sh --source feature/hotfix --target release/1.2 --commit abc1234
 ./scripts/git/cherry_pick_commits.sh --commit abc1234 --only src/a.py --only docs/  # partial pick
 ```
+
+Picks record their origin with `(cherry picked from commit <sha>)` (`git cherry-pick -x`); pass
+`--no-x` to omit it.
 
 **When a cherry-pick hits a conflict:** `cherry_pick_commits.sh` exiting 1 with conflict
 markers in the tree is a **hand-over, not a crash** — the pick is paused mid-flight
@@ -475,6 +488,9 @@ Once only the wanted paths remain staged, commit through the wrapper:
 ./scripts/git/merge_docs.sh --non-interactive
 ./scripts/git/merge_docs.sh --source feature/hotfix --target release/1.2 --non-interactive
 ```
+
+This copies `docs/` into a normal one-parent commit; git records no merge ancestry, so a later full
+merge of the branch re-applies those docs changes.
 
 **Undoing something:**
 

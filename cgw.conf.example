@@ -95,12 +95,12 @@ CGW_FREEFORM_MESSAGE_CHECK=""
 #
 # ── Python / ruff (default) ──────────────────────────────
 CGW_LINT_CMD="ruff"
-CGW_LINT_CHECK_ARGS="check {files}"
-CGW_LINT_FIX_ARGS="check --fix {files}"
+CGW_LINT_CHECK_ARGS="check --force-exclude {files}"
+CGW_LINT_FIX_ARGS="check --fix --force-exclude {files}"
 CGW_LINT_EXCLUDES="--extend-exclude logs --extend-exclude .venv"
 CGW_FORMAT_CMD="ruff"
-CGW_FORMAT_CHECK_ARGS="format --check {files}"
-CGW_FORMAT_FIX_ARGS="format {files}"
+CGW_FORMAT_CHECK_ARGS="format --check --force-exclude {files}"
+CGW_FORMAT_FIX_ARGS="format --force-exclude {files}"
 CGW_FORMAT_EXCLUDES="--exclude logs --exclude .venv"
 #
 # ── JavaScript / ESLint + Prettier ──────────────────────
@@ -422,3 +422,11 @@ CGW_CI_REQUIRED_WORKFLOWS=""
 # When a fresh lock is present, poll up to this many seconds for it to clear
 # before escalating. Set to 0 to skip waiting.
 # CGW_INDEX_LOCK_WAIT_SECONDS=10
+#
+# Number of retry attempts when a git command encounters an in-flight
+# index.lock race or transient collision (e.g. background watcher or AV scan).
+# CGW_LOCK_RETRY_ATTEMPTS=3
+#
+# Base delay in seconds between lock retry attempts (uses backoff).
+# CGW_LOCK_RETRY_DELAY=1
+

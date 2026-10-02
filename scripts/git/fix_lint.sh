@@ -78,7 +78,6 @@ main() {
 
   local lint_act="" lint_reason=""
   local format_act="" format_reason=""
-  local tc_act="" tc_reason=""
   local md_act="" md_reason=""
   local _step _act _rsn
   while IFS=: read -r _step _act _rsn; do
@@ -91,10 +90,7 @@ main() {
         format_act="$_act"
         format_reason="$_rsn"
         ;;
-      typecheck)
-        tc_act="$_act"
-        tc_reason="$_rsn"
-        ;;
+      typecheck) ;; # shared plan format; fix_lint has no typecheck step
       markdown)
         md_act="$_act"
         md_reason="$_rsn"
@@ -183,7 +179,7 @@ main() {
     echo "Working Directory: ${PROJECT_ROOT}"
     echo "Lint tool: ${CGW_LINT_CMD}"
     echo "Markdown tool: ${CGW_MARKDOWNLINT_CMD}"
-    echo "Mode: $([ $non_interactive -eq 1 ] && echo 'Non-interactive' || echo 'Interactive')"
+    echo "Mode: $([[ ${non_interactive} -eq 1 ]] && echo 'Non-interactive' || echo 'Interactive')"
   } >"$logfile"
 
   local fix_failed=0

@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+## v0.9.0 (2026-10-01)
+
+> Changes since `v0.8.0`
+
+### Behaviour changes
+
+- `cherry_pick_commits.sh` records the source commit (`cherry-pick -x`, also on `--only` partial picks); opt out with `--no-x`.
+- `rollback_merge.sh` separates the reset point (hard mode) from the merge under revert (`--revert`); `--revert` never reverts `HEAD~1` or a tag, hard mode only auto-picks a `pre-merge` tag that is `HEAD^1`, and a revert prints the revert-the-revert step.
+- `sync_branches.sh` pulls protected branches `--ff-only` (diverged = refuse + reconcile options) and others `--rebase=merges`.
+- `push_validated.sh` adds `--set-upstream` only when the branch has no upstream.
+
+### Bug Fixes
+
+- default ruff args include `--force-exclude` (A4)
+- check restore/rollback/checkout results instead of reporting false success (sync, merge, cherry-pick)
+- `bisect_helper.sh --run` no longer word-splits quoted arguments
+- `commit_enhanced.sh --only` clears pre-staged files on an unborn HEAD
+- error output goes to stderr in hooks, `_common.sh` and `branch_cleanup.sh`
+- `configure.sh` honours env-only `CGW_NON_INTERACTIVE` (a differing hook is kept, not aborted) and warns when a preserved hook differs from the template, pointing at `--overwrite-hooks` and `.githooks/<hook>.local`
+- `configure.sh` / `install_hooks.sh` never overwrite an existing `.bak` (timestamped `.bak.<ts>-<pid>` instead, via `cgw_backup_file`)
+- `hooks/pre-push` runs the local test gate only for branch updates (not tag pushes or deletions) and honours `SKIP_TESTS=1`
+- `cgw_run_with_lock_retry` streams stderr live; redundant mid-script lock checks removed
+- an `index.lock` refusal is no longer misread as a git failure: `run_git_with_logging` / `cgw_run_with_lock_retry` return `CGW_RC_INDEX_LOCKED` (75) when git never ran, and merge, cherry-pick (incl. `--only`) and rebase (`--onto`, squash, `--continue`, `--skip`) stop on it instead of reporting conflicts / "already applied" / "MERGE SUCCESSFUL", running `reset --hard`, or orphaning the rebase auto-stash
+- `ensure_no_stale_index_lock` waits out a *fresh* lock even while a merge/rebase/cherry-pick/bisect is in progress (a transient IDE lock no longer breaks `--continue`/merge commits); the in-progress refusal applies only to a stale lock
+- `bisect_helper.sh --run` launches the command with the running bash (`${BASH}`), not whatever `bash` is first on `PATH`
+
+### Maintenance
+
+- shellcheck and shfmt clean across `scripts/` and `hooks/`; CI shfmt/shellcheck cover `hooks/`
+
 ## v0.8.0 (2026-09-29)
 
 > Changes since `v0.7.0`

@@ -245,12 +245,12 @@ _build_lint_config() {
         excludes="${excludes} --extend-exclude ${venv_dir}"
       fi
       echo "CGW_LINT_CMD=\"ruff\""
-      echo "CGW_LINT_CHECK_ARGS=\"check {files}\""
-      echo "CGW_LINT_FIX_ARGS=\"check --fix {files}\""
+      echo "CGW_LINT_CHECK_ARGS=\"check --force-exclude {files}\""
+      echo "CGW_LINT_FIX_ARGS=\"check --fix --force-exclude {files}\""
       echo "CGW_LINT_EXCLUDES=\"${excludes}\""
       echo "CGW_FORMAT_CMD=\"ruff\""
-      echo "CGW_FORMAT_CHECK_ARGS=\"format --check {files}\""
-      echo "CGW_FORMAT_FIX_ARGS=\"format {files}\""
+      echo "CGW_FORMAT_CHECK_ARGS=\"format --check --force-exclude {files}\""
+      echo "CGW_FORMAT_FIX_ARGS=\"format --force-exclude {files}\""
       local fmt_excludes="--exclude logs"
       if [[ -n "${venv_dir}" ]]; then fmt_excludes="${fmt_excludes} --exclude ${venv_dir}"; fi
       echo "CGW_FORMAT_EXCLUDES=\"${fmt_excludes}\""
@@ -390,7 +390,74 @@ _resolve_template_dir() {
   return 1
 }
 
+_install_single_hook() {
+  local hook_name="$1"
+  local template_file="$2"
+  local overwrite="${3:-0}"
+  local target_file="${PROJECT_ROOT}/.githooks/${hook_name}"
+  local active_git_hook="${PROJECT_ROOT}/.git/hooks/${hook_name}"
+
+  [[ -f "${template_file}" ]] || return 0
+
+  mkdir -p "${PROJECT_ROOT}/.githooks"
+
+  # Case 1: .githooks/<hook> does not exist yet
+  if [[ ! -f "${target_file}" ]]; then
+    # If a pre-existing hook is in .git/hooks, back it up so it is never lost
+    if [[ -f "${active_git_hook}" ]] && ! cmp -s "${template_file}" "${active_git_hook}"; then
+      if _bak="$(cgw_backup_file "${active_git_hook}")"; then
+        echo "  [INFO] Backed up pre-existing .git/hooks/${hook_name} -> ${_bak#"${PROJECT_ROOT}"/}"
+      else
+        echo "  [!] Could not back up .git/hooks/${hook_name}" >&2
+      fi
+    fi
+    cp "${template_file}" "${target_file}"
+    chmod +x "${target_file}"
+    echo "  [OK] Installed .githooks/${hook_name}"
+    return 0
+  fi
+
+  # Case 2: .githooks/<hook> exists and matches template
+  if cmp -s "${template_file}" "${target_file}"; then
+    chmod +x "${target_file}"
+    echo "  [OK] .githooks/${hook_name} already up to date"
+    return 0
+  fi
+
+  # Case 3: .githooks/<hook> exists and differs from template
+  local do_overwrite="${overwrite}"
+  if [[ "${do_overwrite}" -eq 0 ]] && [[ "${non_interactive:-0}" -eq 0 ]]; then
+    # deny: CGW_NON_INTERACTIVE=1 from the environment (CI, agent shell) must keep the
+    # local hook, not abort the whole configure run via cgw_confirm's default policy.
+    if cgw_confirm "Existing .githooks/${hook_name} differs from template. Overwrite?" --default no --non-interactive deny; then
+      do_overwrite=1
+    fi
+  fi
+
+  if [[ "${do_overwrite}" -eq 1 ]]; then
+    if _bak="$(cgw_backup_file "${target_file}")"; then
+      echo "  [INFO] Backed up .githooks/${hook_name} -> ${_bak#"${PROJECT_ROOT}"/}"
+    else
+      err "Could not back up .githooks/${hook_name}; leaving it unchanged"
+      chmod +x "${target_file}"
+      return 1
+    fi
+    cp "${template_file}" "${target_file}"
+    chmod +x "${target_file}"
+    echo "  [OK] Overwrote .githooks/${hook_name} (--overwrite-hooks)"
+  else
+    chmod +x "${target_file}"
+    echo "  [OK] Preserved locally established .githooks/${hook_name}"
+    # A differing hook is either a deliberate customisation or an outdated stock copy;
+    # we cannot tell which, so say so -- a silent keep leaves old fixes uninstalled.
+    echo "  [!]  It differs from the current CGW template. If it is an outdated stock copy,"
+    echo "       refresh it with --overwrite-hooks (a .bak is kept). Keep project-specific"
+    echo "       additions in .githooks/${hook_name}.local so the stock hook can stay current."
+  fi
+}
+
 _install_hook() {
+  local overwrite_hooks="${1:-0}"
   local hooks_template_dir
   if ! hooks_template_dir="$(_resolve_template_dir hooks)"; then
     hooks_template_dir="${PROJECT_ROOT}/.cgw-hooks-template"
@@ -411,26 +478,14 @@ _install_hook() {
   fi
 
   # Hooks read CGW_LOCAL_FILES from .cgw.conf at run time — no pattern substitution needed.
-  echo "Installing pre-commit hook..."
-  mkdir -p "${PROJECT_ROOT}/.githooks"
-  cp "${hook_template}" "${PROJECT_ROOT}/.githooks/pre-commit"
-  chmod +x "${PROJECT_ROOT}/.githooks/pre-commit"
-
-  local pre_push_template="${hooks_template_dir}/pre-push"
-  if [[ -f "${pre_push_template}" ]]; then
-    cp "${pre_push_template}" "${PROJECT_ROOT}/.githooks/pre-push"
-    chmod +x "${PROJECT_ROOT}/.githooks/pre-push"
-  fi
-
-  local pre_rebase_template="${hooks_template_dir}/pre-rebase"
-  if [[ -f "${pre_rebase_template}" ]]; then
-    cp "${pre_rebase_template}" "${PROJECT_ROOT}/.githooks/pre-rebase"
-    chmod +x "${PROJECT_ROOT}/.githooks/pre-rebase"
-  fi
+  echo "Installing git hooks..."
+  _install_single_hook "pre-commit" "${hooks_template_dir}/pre-commit" "${overwrite_hooks}"
+  _install_single_hook "pre-push" "${hooks_template_dir}/pre-push" "${overwrite_hooks}"
+  _install_single_hook "pre-rebase" "${hooks_template_dir}/pre-rebase" "${overwrite_hooks}"
 
   # Run install_hooks.sh to copy to .git/hooks/
   if bash "${SCRIPT_DIR}/install_hooks.sh" >/dev/null 2>&1; then
-    echo "  [OK] Git hooks installed (pre-commit + pre-push + pre-rebase)"
+    echo "  [OK] Git hooks active (pre-commit + pre-push + pre-rebase)"
   else
     echo "  [!] Hooks written to .githooks/ but failed to copy to .git/hooks/" >&2
     echo "      Fix: run manually: ./scripts/git/install_hooks.sh" >&2
@@ -802,7 +857,7 @@ _register_guardrail() {
   local py_cmd
   for py_cmd in python3 python; do
     if command -v "${py_cmd}" &>/dev/null; then
-      if "${py_cmd}" - "${json}" "${pfx}" "${sfx}" "${has_slash}" "${k1}" "${k2}" "${matcher}" "${marker}" 2>/dev/null <<'PYEOF'; then
+      if "${py_cmd}" - "${json}" "${pfx}" "${sfx}" "${has_slash}" "${k1}" "${k2}" "${matcher}" "${marker}" 2>/dev/null <<'PYEOF'
 import json, sys
 path, pfx, sfx, has_slash, k1, k2, matcher, marker = sys.argv[1:9]
 cmd = f"{pfx}/{sfx}" if has_slash == "true" else pfx
@@ -819,6 +874,7 @@ ptu.append({'matcher': matcher, 'hooks': [{'type': 'command', 'command': cmd}]})
 with open(path, 'w', encoding='utf-8') as f:
     json.dump(data, f, indent=2)
 PYEOF
+      then
         echo "  [OK] ${label} registered in ${json} (via python)"
         return 0
       fi
@@ -1156,6 +1212,7 @@ _cleanup_legacy_artifacts() {
 main() {
   local non_interactive=0
   local reconfigure=0
+  local overwrite_hooks=0
   local skip_hooks=0
   local skip_skill=0
   local skip_cc_guardrail=0
@@ -1179,6 +1236,7 @@ main() {
         echo "  --template-dir <dir> Path to CGW source toolkit providing asset templates"
         echo "  --non-interactive    Accept all auto-detected defaults"
         echo "  --reconfigure        Overwrite existing .cgw.conf"
+        echo "  --overwrite-hooks    Overwrite existing .githooks/* with templates (default: preserve)"
         echo "  --skip-hooks         Don't install git pre-commit hook"
         echo "  --skip-skill         Don't install skills (skips both Claude and Antigravity)"
         echo "  --skip-claude        Skip Claude Code integration (skill + guardrail)"
@@ -1206,6 +1264,7 @@ main() {
         CGW_NON_INTERACTIVE=1
         ;;
       --reconfigure) reconfigure=1 ;;
+      --overwrite-hooks) overwrite_hooks=1 ;;
       --skip-hooks) skip_hooks=1 ;;
       --skip-skill)
         skip_skill=1
@@ -1471,7 +1530,7 @@ main() {
     fi
 
     if [[ "${install_hook}" == "yes" ]]; then
-      _install_hook
+      _install_hook "${overwrite_hooks}"
     fi
   fi
 

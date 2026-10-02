@@ -179,3 +179,54 @@ _commit_local_file_on_dev() {
   [ "${current_branch}" = "development" ]
 }
 
+
+# ── origin trailer (-x) ───────────────────────────────────────────────────────
+
+# Commit two files on development; echoes the commit's full SHA.
+_commit_two_files_on_dev() {
+  echo "one" >"${TEST_REPO_DIR}/pick_one.txt"
+  echo "two" >"${TEST_REPO_DIR}/pick_two.txt"
+  git -C "${TEST_REPO_DIR}" add pick_one.txt pick_two.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: add two files"
+  git -C "${TEST_REPO_DIR}" rev-parse HEAD
+}
+
+@test "full pick records the source commit with a -x trailer" {
+  local sha
+  sha=$(_commit_two_files_on_dev)
+  run run_script cherry_pick_commits.sh --commit "${sha}" --non-interactive
+  [ "${status}" -eq 0 ]
+  git -C "${TEST_REPO_DIR}" log main -1 --format=%B | grep -qF "(cherry picked from commit ${sha})"
+}
+
+@test "--no-x omits the origin trailer" {
+  local sha
+  sha=$(_commit_two_files_on_dev)
+  run run_script cherry_pick_commits.sh --commit "${sha}" --no-x --non-interactive
+  [ "${status}" -eq 0 ]
+  ! git -C "${TEST_REPO_DIR}" log main -1 --format=%B | grep -q "cherry picked from commit"
+}
+
+@test "partial pick (--only) records the origin trailer and the only-note" {
+  local sha
+  sha=$(_commit_two_files_on_dev)
+  run run_script cherry_pick_commits.sh --commit "${sha}" --only pick_one.txt --non-interactive
+  [ "${status}" -eq 0 ]
+  local msg
+  msg=$(git -C "${TEST_REPO_DIR}" log main -1 --format=%B)
+  [[ "${msg}" == *"(cherry picked from commit ${sha})"* ]]
+  [[ "${msg}" == *"only: pick_one.txt"* ]]
+  git -C "${TEST_REPO_DIR}" show main:pick_one.txt >/dev/null
+  ! git -C "${TEST_REPO_DIR}" cat-file -e main:pick_two.txt 2>/dev/null
+}
+
+@test "partial pick with --no-x omits the origin trailer but keeps the only-note" {
+  local sha
+  sha=$(_commit_two_files_on_dev)
+  run run_script cherry_pick_commits.sh --commit "${sha}" --only pick_one.txt --no-x --non-interactive
+  [ "${status}" -eq 0 ]
+  local msg
+  msg=$(git -C "${TEST_REPO_DIR}" log main -1 --format=%B)
+  [[ "${msg}" != *"cherry picked from commit"* ]]
+  [[ "${msg}" == *"only: pick_one.txt"* ]]
+}

@@ -182,7 +182,7 @@ _cmd_undo_commit() {
   cgw_create_backup_tag undo-commit
   local backup_tag="${CGW_BACKUP_TAG}"
 
-  if git reset --soft HEAD~1; then
+  if cgw_run_with_lock_retry git reset --soft HEAD~1; then
     echo ""
     echo "[OK] COMMIT UNDONE"
     echo "  All changes are now staged."
@@ -253,7 +253,7 @@ _cmd_unstage() {
   fi
 
   for f in "${to_unstage[@]}"; do
-    if git reset HEAD "${f}" 2>/dev/null; then
+    if cgw_run_with_lock_retry git reset HEAD "${f}" 2>/dev/null; then
       echo "  [OK] Unstaged: ${f}"
     else
       echo "  [FAIL] Failed: ${f}" >&2
@@ -431,7 +431,7 @@ _cmd_amend_message() {
     exit 0
   fi
 
-  if git commit --amend --no-edit -m "${new_msg}"; then
+  if cgw_run_with_lock_retry git commit --amend --no-edit -m "${new_msg}"; then
     echo ""
     echo "[OK] Message updated: $(git log -1 --oneline)"
   else

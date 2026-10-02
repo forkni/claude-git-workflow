@@ -108,14 +108,27 @@ validate_docs_ci_policy() {
   if [[ ${docs_validation_failed} -eq 1 ]]; then
     echo "" | tee -a "$logfile"
     err_tee "[FAIL] CI POLICY VIOLATION: Unauthorized documentation detected"
+    local undo_failed=0
     if [[ "${check_mode}" == "committed" ]]; then
       echo "Rolling back merge..." | tee -a "$logfile"
-      git reset --hard HEAD~1 >>"$logfile" 2>&1
+      if ! git reset --hard HEAD~1 >>"$logfile" 2>&1; then
+        err_tee "[FAIL] Could not roll back the merge commit -- ${CGW_TARGET_BRANCH} still contains it"
+        echo "   Inspect with: git log --oneline -3; undo with ./scripts/git/rollback_merge.sh" | tee -a "$logfile"
+        undo_failed=1
+      fi
     else
       echo "Aborting merge..." | tee -a "$logfile"
-      git merge --abort >>"$logfile" 2>&1
+      if ! git merge --abort >>"$logfile" 2>&1; then
+        err_tee "[FAIL] Could not abort the in-progress merge"
+        echo "   Run manually: git merge --abort" | tee -a "$logfile"
+        undo_failed=1
+      fi
     fi
-    git checkout "${original_branch}" >>"$logfile" 2>&1
+    if ! git checkout "${original_branch}" >>"$logfile" 2>&1; then
+      err_tee "[FAIL] Could not return to ${original_branch} -- you are still on $(git branch --show-current)"
+      undo_failed=1
+    fi
+    [[ ${undo_failed} -eq 1 ]] && echo "   Repository state needs manual attention (see log: ${logfile})" | tee -a "$logfile"
     exit 1
   fi
   echo "[OK] Documentation validation passed" | tee -a "$logfile"
@@ -143,9 +156,16 @@ cleanup_tests_dir() {
       if git rm -r tests >>"$logfile" 2>&1; then
         echo "[OK] Removed tests/ directory" | tee -a "$logfile"
         if [[ "${commit_mode}" == "amend" ]]; then
-          git commit --amend --no-edit >>"$logfile" 2>&1
+          if ! git commit --amend --no-edit >>"$logfile" 2>&1; then
+            err_tee "[FAIL] Could not amend the merge commit after removing tests/"
+            echo "   The removal is staged: finish with: git commit --amend --no-edit" | tee -a "$logfile"
+            exit 1
+          fi
         else
-          git add -u >>"$logfile" 2>&1
+          if ! git add -u >>"$logfile" 2>&1; then
+            err_tee "[FAIL] Could not stage the removal of tests/"
+            exit 1
+          fi
         fi
       else
         err_tee "[FAIL] ERROR: Failed to remove tests/ directory"
@@ -345,6 +365,12 @@ main() {
 
   else
     local merge_exit_code="${GIT_EXIT_CODE:-1}"
+    if [[ "${merge_exit_code}" -eq "${CGW_RC_INDEX_LOCKED}" ]]; then
+      # git never ran: not a conflict, so no resolve/cleanup/commit -- just stop.
+      log_section_end "GIT MERGE" "$logfile" "${merge_exit_code}"
+      err_tee "[FAIL] Merge not attempted: index.lock refused (see [cgw-lock] message above)"
+      exit 1
+    fi
     echo "" | tee -a "$logfile"
     echo "[!] Merge conflicts detected - analyzing..." | tee -a "$logfile"
     log_section_end "GIT MERGE" "$logfile" "${merge_exit_code}"

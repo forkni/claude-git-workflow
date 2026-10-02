@@ -87,14 +87,22 @@ CGW-driven merge (`merge_with_validation.sh`) so it gets a backup tag. The
 same branch name existing on a different remote (e.g. your fork vs.
 upstream) is also a rebase case, not a merge case.
 
+**Syncing a protected branch is fast-forward only.** `sync_branches.sh` pulls
+`${CGW_PROTECTED_BRANCHES}` with `--ff-only`; every other branch uses
+`--rebase=merges` (local merge commits survive the rebase). If a protected
+branch has diverged, sync refuses and lists the reconcile options -- push the
+local commits first, `git pull --no-rebase` to merge, or reset to the remote
+after a backup tag -- rather than rewriting merge commits on `main`.
+
 **Keep interactive rebase (`rebase_safe.sh` without `--continue`/`--abort`,
 i.e. `--squash-last`) scoped to branches nobody else has fetched.** Once a
 branch is shared, rewriting its history forces every other holder to
 re-sync — the same caveat as SKILL.md's force-push rule.
 
-**First push and cleanup:** `git push --set-upstream ${CGW_REMOTE} <branch>`
-on a new branch's first push sets up tracking so subsequent
-`push_validated.sh` runs need no arguments. After the branch is merged,
+**First push and cleanup:** `push_validated.sh --branch <branch>` records the
+upstream automatically when the branch has none (it never overwrites an
+existing upstream), so later `git pull`/`status` and `push_validated.sh` runs
+need no arguments. Don't run a raw `git push --set-upstream`. After the branch is merged,
 `branch_cleanup.sh` prunes the *local* merged branch and stale
 remote-tracking refs; deleting the branch on the remote itself is
 `git push ${CGW_REMOTE} --delete <branch>` (or the "Delete branch" button in

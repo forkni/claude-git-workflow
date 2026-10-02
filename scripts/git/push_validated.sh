@@ -317,6 +317,18 @@ main() {
 
   local push_flags=()
   push_flags+=("${CGW_REMOTE}" "${target_branch}")
+  # First push of a branch: record the upstream so plain `git pull`/`status` work.
+  # Only when none is configured -- an existing upstream (even one pointing at a
+  # differently named remote branch) is never overwritten.
+  local existing_upstream
+  if existing_upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "${target_branch}@{u}" 2>/dev/null); then
+    if [[ "${existing_upstream}" != "${CGW_REMOTE}/${target_branch}" ]]; then
+      echo "[i] ${target_branch} tracks ${existing_upstream}, not ${CGW_REMOTE}/${target_branch} -- upstream left unchanged" | tee -a "$logfile"
+    fi
+  else
+    push_flags+=("--set-upstream")
+    echo "No upstream configured for ${target_branch} -- setting it to ${CGW_REMOTE}/${target_branch}" | tee -a "$logfile"
+  fi
   if [[ ${force_push} -eq 1 ]]; then
     if [[ ${remote_branch_exists} -eq 0 ]]; then
       # Empty <expect> is git's documented syntax for "the ref must not

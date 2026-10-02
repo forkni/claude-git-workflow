@@ -246,3 +246,66 @@ _push_remote_commit() {
   # The behind count reported should be 1 (the one remote commit on development).
   [[ "${output}" == *"1 behind"* ]]
 }
+
+# ── Pull strategy: protected = ff-only, others = rebase=merges (S1) ───────────
+
+# Make a local --no-ff merge commit on <branch> (a throwaway side branch merged in).
+_local_merge_on() {
+  local branch="$1"
+  local side="side-$$"
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b "${side}" "${branch}"
+  echo "side" >"${TEST_REPO_DIR}/side.txt"
+  git -C "${TEST_REPO_DIR}" add side.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: side work"
+  git -C "${TEST_REPO_DIR}" checkout --quiet "${branch}"
+  git -C "${TEST_REPO_DIR}" merge --quiet --no-ff -m "Merge side" "${side}"
+  git -C "${TEST_REPO_DIR}" branch --quiet -D "${side}"
+}
+
+@test "protected branch behind remote fast-forwards" {
+  _push_remote_commit "main" "remote_main.txt"
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+
+  run _run_sync "--branch main"
+  [ "${status}" -eq 0 ]
+  [ -f "${TEST_REPO_DIR}/remote_main.txt" ]
+  [[ "${output}" == *"synced successfully"* ]]
+}
+
+@test "protected branch diverged is refused and the local merge is left intact (S1)" {
+  _push_remote_commit "main" "remote_main.txt"
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+  _local_merge_on main
+  local head_before
+  head_before=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+
+  run _run_sync "--branch main"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"protected and has diverged"* ]]
+  [[ "${output}" == *"git pull --no-rebase"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "${head_before}" ]
+  # HEAD is still a 2-parent merge commit.
+  [ "$(git -C "${TEST_REPO_DIR}" rev-list --parents -n 1 HEAD | wc -w)" -eq 3 ]
+}
+
+@test "--dry-run on a diverged protected branch says it would refuse" {
+  _push_remote_commit "main" "remote_main.txt"
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+  _local_merge_on main
+
+  run _run_sync "--dry-run --branch main"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Would REFUSE"* ]]
+}
+
+@test "non-protected branch keeps a local merge commit when rebased (S1)" {
+  _push_remote_commit "development" "remote_dev.txt"
+  _local_merge_on development
+
+  run _run_sync "--branch development"
+  [ "${status}" -eq 0 ]
+  [ -f "${TEST_REPO_DIR}/remote_dev.txt" ]
+  [ -f "${TEST_REPO_DIR}/side.txt" ]
+  # The local merge survived (rebase --rebase=merges would have flattened it otherwise).
+  [ -n "$(git -C "${TEST_REPO_DIR}" log --merges --format=%s -1 --grep='Merge side')" ]
+}

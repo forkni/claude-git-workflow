@@ -115,7 +115,7 @@ main() {
       git status --short
       echo ""
 
-      if git stash push "${stash_args[@]}"; then
+      if cgw_run_with_lock_retry git stash push "${stash_args[@]}"; then
         echo ""
         echo "[OK] Stash created: $(git stash list | head -1)"
         echo ""
@@ -141,7 +141,7 @@ main() {
       echo "Applying: $(git stash list | grep "^${target}" || echo "${target}")"
       echo ""
 
-      if git stash pop "${target}"; then
+      if cgw_run_with_lock_retry git stash pop "${target}"; then
         echo ""
         echo "[OK] Stash applied and removed"
       else
@@ -164,7 +164,7 @@ main() {
       echo "Applying: $(git stash list | grep "^${ref}" || echo "${ref}")"
       echo ""
 
-      if git stash apply "${ref}"; then
+      if cgw_run_with_lock_retry git stash apply "${ref}"; then
         echo ""
         echo "[OK] Stash applied (stash retained -- use 'drop' to remove)"
       else
@@ -210,7 +210,7 @@ main() {
 
       echo "Dropping: $(git stash list | grep "^${ref}" || echo "${ref}")"
       if cgw_confirm "Confirm drop?" --non-interactive accept; then
-        git stash drop "${ref}" && echo "[OK] Stash dropped"
+        cgw_run_with_lock_retry git stash drop "${ref}" && echo "[OK] Stash dropped"
       else
         echo "Cancelled"
       fi
@@ -243,7 +243,7 @@ main() {
       echo ""
       echo "[!] WARNING: This permanently removes ALL stashes listed above."
       if cgw_confirm "Type 'CLEAR' to confirm" --literal-token CLEAR --non-interactive accept; then
-        git stash clear && echo "[OK] All stashes cleared"
+        cgw_run_with_lock_retry git stash clear && echo "[OK] All stashes cleared"
       else
         echo "Cancelled"
       fi

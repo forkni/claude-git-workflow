@@ -34,6 +34,8 @@ if "%CGW_DIR:~-1%"=="\" set "CGW_DIR=%CGW_DIR:~0,-1%"
 set "EXIT_CODE=0"
 set "DRY_RUN=0"
 set "NO_PAUSE=0"
+set "OVERWRITE_HOOKS=0"
+set "DRY_COUNT=0"
 set "CONFIG_FILE="
 
 echo.
@@ -46,8 +48,9 @@ echo.
 rem --- Parse arguments ---
 :parse_args
 if "%~1"=="" goto :args_done
-if /i "%~1"=="--dry-run"  (set "DRY_RUN=1" & shift & goto :parse_args)
-if /i "%~1"=="--no-pause" (set "NO_PAUSE=1" & shift & goto :parse_args)
+if /i "%~1"=="--dry-run"         (set "DRY_RUN=1" & shift & goto :parse_args)
+if /i "%~1"=="--no-pause"        (set "NO_PAUSE=1" & shift & goto :parse_args)
+if /i "%~1"=="--overwrite-hooks" (set "OVERWRITE_HOOKS=1" & shift & goto :parse_args)
 if /i "%~1"=="-h"     goto :show_help
 if /i "%~1"=="--help" goto :show_help
 if "!CONFIG_FILE!"=="" (set "CONFIG_FILE=%~1" & shift & goto :parse_args)
@@ -55,20 +58,22 @@ echo   ERROR: Unrecognized argument: %~1
 goto :abort
 
 :show_help
-echo   Usage: cgw-batch-install.cmd [config-file] [--dry-run] [--no-pause]
+echo   Usage: cgw-batch-install.cmd [config-file] [--dry-run] [--no-pause] [--overwrite-hooks]
 echo.
-echo     config-file   Path to the batch list (default: cgw-install-batch.conf
-echo                   next to this script). One project path per line,
-echo                   "#" starts a comment, blank lines are ignored.
-echo     --dry-run     Validate every project and report what would be
-echo                   updated; makes no changes.
-echo     --no-pause    Skip the final "Press any key" pause (for automation).
+echo     config-file        Path to the batch list (default: cgw-install-batch.conf
+echo                        next to this script). One project path per line,
+echo                        "#" starts a comment, blank lines are ignored.
+echo     --dry-run          Validate every project and report what would be
+echo                        updated; makes no changes.
+echo     --no-pause         Skip the final "Press any key" pause (for automation).
+echo     --overwrite-hooks  Overwrite existing .githooks/* with templates
+echo                        (default: preserve locally established hooks).
 echo.
 echo   Each listed project is refreshed via configure.sh --non-interactive:
 echo   scripts, hooks, Claude Code and Antigravity skills, commands, and
-echo   guardrails are updated; .cgw.conf is NEVER overwritten. Projects
-echo   with no existing .cgw.conf are skipped -- run cgw-install.cmd for a
-echo   first-time install.
+echo   guardrails are updated; .cgw.conf and locally established hooks are
+echo   NEVER overwritten by default. Projects with no existing .cgw.conf are
+echo   skipped -- run cgw-install.cmd for a first-time install.
 echo.
 goto :end
 
@@ -227,6 +232,7 @@ goto :eof
 
 if not "!DRY_RUN!"=="1" goto :pp_do_update
 echo(  [DRY] Would update: !P!
+set /a DRY_COUNT+=1
 echo.
 goto :eof
 :pp_do_update
@@ -248,6 +254,11 @@ echo.
 goto :eof
 :pp_stage_ok
 
+rem Backup existing .githooks/ if present before running configure.sh
+if exist "!P!\.githooks\pre-commit" if not exist "!P!\.githooks\pre-commit.bak" copy /y "!P!\.githooks\pre-commit" "!P!\.githooks\pre-commit.bak" >nul
+if exist "!P!\.githooks\pre-push" if not exist "!P!\.githooks\pre-push.bak" copy /y "!P!\.githooks\pre-push" "!P!\.githooks\pre-push.bak" >nul
+if exist "!P!\.githooks\pre-rebase" if not exist "!P!\.githooks\pre-rebase.bak" copy /y "!P!\.githooks\pre-rebase" "!P!\.githooks\pre-rebase.bak" >nul
+
 rem Ensure .claude\ and .agents\ exist so configure.sh defaults to installing
 rem skills, hooks, and commands for both Claude Code and Antigravity Agents.
 if not exist "!P!\.claude\" mkdir "!P!\.claude\"
@@ -263,11 +274,14 @@ echo.
 goto :eof
 :pp_pushd_ok
 
+set "CFG_EXTRA="
+if "!OVERWRITE_HOOKS!"=="1" set "CFG_EXTRA=--overwrite-hooks"
+
 rem Always the absolute BASH_EXE resolved in BF-02, never bare "bash": we are
 rem inside the project now, and a project-local bash.cmd would win the cwd
 rem lookup and swallow the rest of this script (see BF-02).
 "!BASH_EXE!" -c "chmod +x scripts/git/*.sh 2>/dev/null" >nul 2>&1
-"!BASH_EXE!" scripts/git/configure.sh --template-dir "!CGW_DIR!" --non-interactive >"!CFG_LOG!" 2>&1
+"!BASH_EXE!" scripts/git/configure.sh --template-dir "!CGW_DIR!" --non-interactive !CFG_EXTRA! >"!CFG_LOG!" 2>&1
 set "CFG_EXIT=!ERRORLEVEL!"
 popd
 
@@ -286,7 +300,7 @@ echo.
 goto :eof
 
 :summary
-set /a TOTAL=!UPDATED!+!SKIPPED!+!FAILED!
+set /a TOTAL=!UPDATED!+!SKIPPED!+!FAILED!+!DRY_COUNT!
 echo ===================================================
 echo   Batch Update Summary
 echo ===================================================
@@ -298,9 +312,13 @@ echo(  Add one path per line ^(see cgw-install-batch.conf.example^).
 echo.
 goto :summary_done
 :summary_has_entries
-echo(  Updated: !UPDATED!
-echo(  Skipped: !SKIPPED!
-echo(  Failed:  !FAILED!
+if "!DRY_RUN!"=="1" (
+    echo(  Would update: !DRY_COUNT!
+) else (
+    echo(  Updated: !UPDATED!
+)
+echo(  Skipped:      !SKIPPED!
+echo(  Failed:       !FAILED!
 echo.
 
 if not exist "!SKIP_LOG!" goto :summary_no_skip

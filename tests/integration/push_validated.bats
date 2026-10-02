@@ -344,3 +344,67 @@ _run_push() {
   run _run_push "--force --dry-run --skip-lint"
   [ "${status}" -ne 0 ]
 }
+
+# ── behind-check fetch failure is surfaced (D2) ───────────────────────────────
+
+@test "fetch failure warns that the behind-remote check may use stale data (D2)" {
+  # ls-remote (reachability) keeps working, but the tracking-ref fetch fails --
+  # shadow git so only `git fetch <remote> +refs/heads/...` errors out.
+  local real_git
+  real_git=$(command -v git)
+  cat >"${MOCK_BIN_DIR}/git" <<GIT_MOCK
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "fetch" && "\${3:-}" == +refs/heads/* ]]; then
+  echo "fatal: simulated fetch failure" >&2
+  exit 128
+fi
+exec "${real_git}" "\$@"
+GIT_MOCK
+  chmod +x "${MOCK_BIN_DIR}/git"
+
+  run _run_push "--dry-run --skip-lint"
+  [[ "${output}" == *"fetch of origin/development failed"* ]]
+  [[ "${output}" == *"may use stale data"* ]]
+}
+
+# ── upstream tracking on first push ───────────────────────────────────────────
+
+_commit_on_current_branch() {
+  echo "$1" >"${TEST_REPO_DIR}/upstream_probe.txt"
+  git -C "${TEST_REPO_DIR}" add upstream_probe.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: $1"
+}
+
+@test "first push of a new branch sets the upstream" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b feature/new-work
+  _commit_on_current_branch "first"
+  run git -C "${TEST_REPO_DIR}" rev-parse --abbrev-ref "feature/new-work@{u}"
+  [ "${status}" -ne 0 ]
+
+  run _run_push "--skip-lint"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"setting it to origin/feature/new-work"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse --abbrev-ref 'feature/new-work@{u}')" = "origin/feature/new-work" ]
+}
+
+@test "an existing upstream is left unchanged, with a notice when its name differs" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b feature/renamed
+  _commit_on_current_branch "renamed"
+  git -C "${TEST_REPO_DIR}" push --quiet origin feature/renamed:feature/other
+  git -C "${TEST_REPO_DIR}" branch --set-upstream-to=origin/feature/other feature/renamed >/dev/null
+  _commit_on_current_branch "renamed again"
+
+  run _run_push "--skip-lint"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"tracks origin/feature/other"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse --abbrev-ref 'feature/renamed@{u}')" = "origin/feature/other" ]
+}
+
+@test "an upstream that already matches stays silent and unchanged" {
+  _commit_on_current_branch "plain"
+  run _run_push "--skip-lint"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"No upstream configured"* ]]
+  [[ "${output}" != *"upstream left unchanged"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse --abbrev-ref 'development@{u}')" = "origin/development" ]
+}

@@ -43,13 +43,16 @@ jobs:
       - name: Run ShellCheck
         run: shellcheck -x --severity=error --source-path=scripts/git scripts/git/*.sh
 
+      - name: Run ShellCheck (hooks)
+        run: shellcheck -x --severity=error --source-path=hooks hooks/pre-commit hooks/pre-push hooks/*.sh
+
       - name: Install shfmt
         run: |
           curl -sSL "https://github.com/mvdan/sh/releases/download/v3.10.0/shfmt_v3.10.0_linux_amd64" -o /usr/local/bin/shfmt
           chmod +x /usr/local/bin/shfmt
 
       - name: Check shell formatting (shfmt)
-        run: shfmt -d -i 2 -ci scripts/
+        run: shfmt -d -i 2 -ci scripts/ hooks/
         continue-on-error: true
 
   test:

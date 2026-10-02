@@ -172,9 +172,25 @@ The single list of `CGW_*` settings and their facts: `name|default|kind|empty|sc
 
 ## backup tag
 
-An annotated git tag recording the state of a branch immediately before a mutating CGW operation. Format: `pre-<op>-<YYYYMMDD_HHMMSS>-<pid>`. Created by `cgw_create_backup_tag <op>` before any merge, cherry-pick, rebase, bisect, or undo-commit. Enables `git reset --hard <tag>` rollback.
+An annotated git tag recording the state of a branch immediately before a mutating CGW operation. Format: `pre-<op>-<YYYYMMDD_HHMMSS>-<pid>`. Created by `cgw_create_backup_tag <op>` before any merge, cherry-pick, rebase, bisect, or undo-commit. Enables `git reset --hard <tag>` rollback. Rollback and recover only *consume* backup tags; they never create one for the branch they rewrite.
 
 **Implementation seam**: `cgw_create_backup_tag` / `cgw_list_backup_tags` in `scripts/git/_common.sh`.
+
+---
+
+## reset point
+
+The commit a hard rollback moves the branch to. Distinct from the **merge under revert**: the merge commit that a revert-mode rollback undoes by adding a new commit. A [[backup tag]] is only ever a candidate *reset point* -- never a merge to revert -- and is offered automatically only when it is the first parent of `HEAD`. Reverting `HEAD~1` instead of the intended merge is the failure this split exists to prevent.
+
+**Implementation seam**: `_rb_classify_tag` / `_rb_parent_count` in `scripts/git/rollback_merge.sh`.
+
+---
+
+## reconcile
+
+What an operator does when a protected branch has diverged from its remote: sync refuses to rewrite it, so local and remote commits are brought together deliberately (push the local commits first, merge the remote in, or reset to the remote after taking a [[backup tag]]).
+
+**Callers**: `sync_branches.sh`.
 
 ---
 

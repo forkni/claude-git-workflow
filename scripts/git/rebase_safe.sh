@@ -56,10 +56,12 @@ _show_help() {
   echo "Usage: ./scripts/git/rebase_safe.sh [OPTIONS]"
   echo ""
   echo "Safe rebase wrapper. Creates a backup tag before any destructive operation."
-  echo "Refuses to rebase commits that have already been pushed (history-safe by default)."
+  echo "Warns when commits have already been pushed and asks to confirm; in"
+  echo "non-interactive mode that warning cancels the rebase."
   echo ""
   echo "Options:"
   echo "  --onto <branch>      Rebase current branch onto this branch"
+  echo "                       (a plain target branch -- not git's 3-argument --onto)"
   echo "                       (default: ${CGW_TARGET_BRANCH})"
   echo "  --squash-last <N>    Interactively squash the last N commits"
   echo "  --autosquash         Apply fixup!/squash! commit prefixes automatically"
@@ -255,6 +257,30 @@ _handle_dirty_tree() {
 }
 
 # ---------------------------------------------------------------------------
+# _abort_on_lock_refusal — shared exit for "git never ran: index.lock refused".
+# Not a conflict and no rebase is in progress, so say so, and give the auto-stash
+# back if we made one (git stash pop needs the lock too; if it is still refused the
+# user is told how to restore it).
+# Globals:   logfile, _rebase_stash_created (read/write)
+# Arguments: $1 label — what was being attempted
+# Returns:   never (exits 1)
+# ---------------------------------------------------------------------------
+_abort_on_lock_refusal() {
+  err_tee "[FAIL] ${1} not attempted: index.lock refused (see [cgw-lock] message above)"
+  if [[ ${_rebase_stash_created} -eq 1 ]]; then
+    if git stash pop >>"$logfile" 2>&1; then
+      _rebase_stash_created=0
+      echo "  [OK] Stashed changes restored" | tee -a "$logfile"
+    else
+      _rebase_stash_created=0
+      err_tee "  [!] Your uncommitted changes are still stashed -- once the lock clears: git stash pop"
+    fi
+  fi
+  echo "Full log: $logfile"
+  exit 1
+}
+
+# ---------------------------------------------------------------------------
 # Shared: restore stash after successful rebase
 # ---------------------------------------------------------------------------
 _restore_stash_if_needed() {
@@ -356,12 +382,13 @@ _cmd_rebase_onto() {
 
   log_section_start "GIT REBASE ONTO" "$logfile"
 
-  local rebase_exit=0
-  if ! git rebase "${onto_ref}" 2>&1 | tee -a "$logfile"; then
-    rebase_exit=1
-  fi
+  local rebase_exit=0 rebase_rc=0
+  cgw_run_with_lock_retry git rebase "${onto_ref}" 2>&1 | tee -a "$logfile"
+  rebase_rc=${PIPESTATUS[0]}
+  [[ ${rebase_rc} -ne 0 ]] && rebase_exit=1
 
   log_section_end "GIT REBASE ONTO" "$logfile" "${rebase_exit}"
+  [[ ${rebase_rc} -eq ${CGW_RC_INDEX_LOCKED} ]] && _abort_on_lock_refusal "Rebase"
 
   if [[ ${rebase_exit} -ne 0 ]]; then
     echo "" | tee -a "$logfile"
@@ -492,12 +519,14 @@ _cmd_squash_last() {
   local rebase_args=(-i "HEAD~${squash_n}")
   [[ "${autosquash}" -eq 1 ]] && rebase_args=(-i --autosquash "HEAD~${squash_n}")
 
+  local rebase_rc=0
   # shellcheck disable=SC2068  # Intentional: rebase_args expands correctly
-  if ! git rebase "${rebase_args[@]}" 2>&1 | tee -a "$logfile"; then
-    rebase_exit=1
-  fi
+  cgw_run_with_lock_retry git rebase "${rebase_args[@]}" 2>&1 | tee -a "$logfile"
+  rebase_rc=${PIPESTATUS[0]}
+  [[ ${rebase_rc} -ne 0 ]] && rebase_exit=1
 
   log_section_end "GIT REBASE INTERACTIVE" "$logfile" "${rebase_exit}"
+  [[ ${rebase_rc} -eq ${CGW_RC_INDEX_LOCKED} ]] && _abort_on_lock_refusal "Interactive rebase"
 
   if [[ ${rebase_exit} -ne 0 ]]; then
     echo "" | tee -a "$logfile"
@@ -588,7 +617,14 @@ _cmd_continue() {
   fi
 
   echo "  Continuing rebase..." | tee -a "$logfile"
-  if GIT_EDITOR=true git rebase --continue 2>&1 | tee -a "$logfile"; then
+  local cont_rc=0
+  GIT_EDITOR=true cgw_run_with_lock_retry git rebase --continue 2>&1 | tee -a "$logfile"
+  cont_rc=${PIPESTATUS[0]}
+  if [[ ${cont_rc} -eq ${CGW_RC_INDEX_LOCKED} ]]; then
+    err_tee "[FAIL] rebase --continue not attempted: index.lock refused (see [cgw-lock] message above)"
+    echo "  Rebase is still paused -- re-run --continue once the lock clears."
+    exit 1
+  elif [[ ${cont_rc} -eq 0 ]]; then
     echo ""
     echo "[OK] Rebase continued"
     # Check if rebase is now complete
@@ -629,7 +665,14 @@ _cmd_skip() {
   git log ORIG_HEAD -1 --oneline 2>/dev/null | while IFS= read -r line; do printf '    %s\n' "${line}"; done || true
   echo ""
 
-  if git rebase --skip 2>&1 | tee -a "$logfile"; then
+  local skip_rc=0
+  cgw_run_with_lock_retry git rebase --skip 2>&1 | tee -a "$logfile"
+  skip_rc=${PIPESTATUS[0]}
+  if [[ ${skip_rc} -eq ${CGW_RC_INDEX_LOCKED} ]]; then
+    err_tee "[FAIL] rebase --skip not attempted: index.lock refused (see [cgw-lock] message above)"
+    echo "  Rebase is still paused -- re-run --skip once the lock clears."
+    exit 1
+  elif [[ ${skip_rc} -eq 0 ]]; then
     echo ""
     echo "[OK] Commit skipped"
     if ! cgw_rebase_in_progress; then
