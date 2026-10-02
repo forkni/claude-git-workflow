@@ -164,17 +164,18 @@
     },
     {
       "id": "conflict-001-du-autoresolve",
-      "prompt": "You ran merge_with_validation.sh and the script reported DU conflicts on several files from the source branch, but the script is still running. Do you need to manually intervene and resolve these DU conflicts, or does the script handle them automatically? Explain.",
+      "prompt": "You ran merge_with_validation.sh and it stopped with exit 1 reporting 'Modify/delete conflicts require manual resolution' (DU) on a file from the source branch. Does the script handle this automatically? What do you do next, and is there a way to opt in to auto-resolution?",
       "category": "conflict-handling",
       "split": "val",
-      "source": "SKILL.md body mentions 'modify/delete/both-deleted auto-resolution' — DU = delete-by-us/update-by-them (modify/delete type)",
+      "source": "SKILL.md body: DU halts by default; CGW_AUTO_RESOLVE_MODIFY_DELETE=1 opts text files into auto-resolve (ADR 0005)",
       "checks": [
         {
           "type": "expected_behavior",
           "id": "du_behavior",
           "items": [
-            "Correctly states that DU conflicts (delete/update type — one side deleted the file, the other modified it) are automatically resolved by merge_with_validation.sh without manual intervention",
-            "Does NOT say the user needs to manually open files and resolve DU conflict markers"
+            "Correctly states that DU conflicts (one side deleted the file, the other modified it) are NOT auto-resolved by default — the script halts so the other side's changes are not dropped silently",
+            "Describes the choice per file: `git rm <file>` to accept the deletion, or `git add <file>` to keep the modified version, then completing the merge via commit_enhanced.sh",
+            "Mentions CGW_AUTO_RESOLVE_MODIFY_DELETE=1 as the opt-in for text files (binary files always halt)"
           ]
         }
       ]

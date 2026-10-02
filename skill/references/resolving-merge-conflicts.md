@@ -1,7 +1,8 @@
 # Resolving Merge & Rebase Conflicts
 
-CGW's scripts auto-resolve the *safe* conflict classes (`DU`, `DD`) and **stop**
-on the ones that need a human decision (`UU`, `AA`, `AU`, `UD`, `AD`, `DA` — see
+CGW's scripts auto-resolve the one *safe* conflict class (`DD`, both deleted) and **stop**
+on the ones that need a human decision (`UU`, `DU`, `AA`, `AU`, `UD`, `AD`, `DA` — `DU`
+auto-resolves only with the opt-in `CGW_AUTO_RESOLVE_MODIFY_DELETE=1`, text files only; see
 [branch-and-merge-rules.md](branch-and-merge-rules.md#conflict-resolution)). When
 the workflow stops, the index is mid-merge or mid-rebase and it is your job to
 resolve the conflicting hunks *correctly* before completing. Routing to a wrapper

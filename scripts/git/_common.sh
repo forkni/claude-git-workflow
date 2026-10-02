@@ -915,13 +915,18 @@ cgw_guard_incoming_local_files() {
 #   category arrays. Returns 0 if any conflicts present, 1 if none.
 #
 # cgw_resolve_safe_conflicts <op> <original_branch>
-#   Owns the policy: auto-resolves DU + DD (propagates failure), re-classifies,
-#   emits per-category halt messages with op-specific recovery footer.
-#   Sets CGW_CONFLICT_STATE (none|resolved|unresolved). Returns 0 if no manual
-#   action needed, 1 if caller should exit 1.
+#   Owns the policy: auto-resolves DD (propagates failure); DU only when
+#   CGW_AUTO_RESOLVE_MODIFY_DELETE=1 and the path is text (see ADR 0005).
+#   Re-classifies, emits per-category halt messages with op-specific recovery
+#   footer. Sets CGW_CONFLICT_STATE (none|resolved|unresolved). Returns 0 if no
+#   manual action needed, 1 if caller should exit 1.
+#
+# cgw_conflict_path_is_binary <path>
+#   Returns 0 if <path> is binary: gitattributes mark it binary / -diff, or the
+#   first 8000 bytes of its stage-3 (theirs) blob contain a NUL.
 
 # Conflict-category arrays — reset on every cgw_classify_conflicts call.
-declare -g CGW_CONFLICT_DU_FILES=() # modify/delete   (auto-resolvable: git rm)
+declare -g CGW_CONFLICT_DU_FILES=() # modify/delete   (halt by default; opt-in auto-resolve for text: git rm)
 declare -g CGW_CONFLICT_DD_FILES=() # both deleted    (auto-resolvable: git rm)
 declare -g CGW_CONFLICT_UU_FILES=() # both modified   (halt: content conflict)
 declare -g CGW_CONFLICT_AU_FILES=() # add/unmerged    (halt: add-side)
@@ -1009,6 +1014,17 @@ cgw_classify_conflicts() {
   [[ "${CGW_CONFLICT_TOTAL}" -gt 0 ]]
 }
 
+cgw_conflict_path_is_binary() {
+  local path="$1" attrs total text
+  attrs=$(git check-attr binary diff -- "${path}" 2>/dev/null)
+  if [[ "${attrs}" == *"binary: set"* ]] || [[ "${attrs}" == *"diff: unset"* ]]; then
+    return 0
+  fi
+  total=$(git cat-file blob ":3:${path}" 2>/dev/null | head -c 8000 | wc -c)
+  text=$(git cat-file blob ":3:${path}" 2>/dev/null | head -c 8000 | LC_ALL=C tr -d '\000' | wc -c)
+  [[ "${total//[[:space:]]/}" != "${text//[[:space:]]/}" ]]
+}
+
 # shellcheck disable=SC2034  # CGW_CONFLICT_STATE is read by callers outside _common.sh
 cgw_resolve_safe_conflicts() {
   local op="$1" original_branch="$2"
@@ -1020,23 +1036,34 @@ cgw_resolve_safe_conflicts() {
     return 0
   fi
 
-  # Auto-resolve DU (modify/delete): accept the deletion.
-  local f resolution_failed=0
-  for f in "${CGW_CONFLICT_DU_FILES[@]}"; do
-    echo "  Found modify/delete conflict: ${f}"
-    if git rm "${f}" >/dev/null 2>&1; then
-      echo "  [OK] Removed: ${f}"
-    else
-      echo "  [FAIL] Failed to remove ${f}" >&2
-      resolution_failed=1
-    fi
-  done
+  # DU (modify/delete): our side deleted the file, theirs modified it. Accepting the
+  # deletion silently discards the other side's work, so it halts by default (ADR 0005).
+  # Opt-in CGW_AUTO_RESOLVE_MODIFY_DELETE=1 accepts the deletion for text files only;
+  # binary paths always halt.
+  local f resolution_failed=0 auto_resolved=0
+  if [[ "${CGW_AUTO_RESOLVE_MODIFY_DELETE:-0}" == "1" ]]; then
+    for f in "${CGW_CONFLICT_DU_FILES[@]}"; do
+      echo "  Found modify/delete conflict: ${f}"
+      if cgw_conflict_path_is_binary "${f}"; then
+        echo "  [SKIP] Binary file -- needs a manual decision: ${f}"
+        continue
+      fi
+      if git rm "${f}" >/dev/null 2>&1; then
+        echo "  [OK] Removed: ${f}"
+        auto_resolved=$((auto_resolved + 1))
+      else
+        echo "  [FAIL] Failed to remove ${f}" >&2
+        resolution_failed=1
+      fi
+    done
+  fi
 
-  # Auto-resolve DD (both deleted): same as DU — propagate failure.
+  # Auto-resolve DD (both deleted): nothing to lose — propagate failure.
   for f in "${CGW_CONFLICT_DD_FILES[@]}"; do
     echo "  Found both-deleted conflict: ${f}"
     if git rm "${f}" >/dev/null 2>&1; then
       echo "  [OK] Removed (both deleted): ${f}"
+      auto_resolved=$((auto_resolved + 1))
     else
       echo "  [FAIL] Failed to remove ${f}" >&2
       resolution_failed=1
@@ -1049,21 +1076,18 @@ cgw_resolve_safe_conflicts() {
     return 1
   fi
 
-  # Capture auto-resolve count before re-classify resets the arrays.
-  local auto_resolved=$((${#CGW_CONFLICT_DU_FILES[@]} + ${#CGW_CONFLICT_DD_FILES[@]}))
-
   # Re-classify so halt checks see the post-rm state (fixes stale-snapshot bug).
   cgw_classify_conflicts
   if [[ "${CGW_CONFLICT_TOTAL}" -eq 0 ]]; then
     if [[ "${auto_resolved}" -gt 0 ]]; then
-      echo "[OK] Auto-resolved modify/delete and both-deleted conflicts" | tee -a "${_log}"
+      echo "[OK] Auto-resolved both-deleted conflicts (and modify/delete, opted in)" | tee -a "${_log}"
     fi
     CGW_CONFLICT_STATE="resolved"
     return 0
   fi
 
   if [[ "${auto_resolved}" -gt 0 ]]; then
-    echo "[OK] Auto-resolved modify/delete and both-deleted conflicts" | tee -a "${_log}"
+    echo "[OK] Auto-resolved both-deleted conflicts (and modify/delete, opted in)" | tee -a "${_log}"
   fi
 
   # Op-specific recovery footer.
@@ -1089,6 +1113,23 @@ cgw_resolve_safe_conflicts() {
   esac
 
   local any_halt=0
+
+  # DU — modify/delete: we deleted, they modified (their version is in the work tree)
+  if [[ "${#CGW_CONFLICT_DU_FILES[@]}" -gt 0 ]]; then
+    echo "" | tee -a "${_log}"
+    err_tee "[FAIL] Modify/delete conflicts require manual resolution (deleted by us, modified by them):"
+    printf '  %s\n' "${CGW_CONFLICT_DU_FILES[@]}" | tee -a "${_log}"
+    echo ""
+    echo "Please resolve manually (for each file):"
+    echo "  Accept deletion:    git rm <file>"
+    echo "  Keep their version: git add <file>"
+    echo "(CGW_AUTO_RESOLVE_MODIFY_DELETE=1 accepts the deletion automatically for text files.)"
+    echo ""
+    printf '%s\n' "${continue_hint}"
+    echo ""
+    printf '%s\n' "${abort_hint}"
+    any_halt=1
+  fi
 
   # UU — both modified (content conflict)
   if [[ "${#CGW_CONFLICT_UU_FILES[@]}" -gt 0 ]]; then

@@ -338,7 +338,7 @@ is phrased)
 ./scripts/git/merge_with_validation.sh --source feature/hotfix --target release/1.2 --non-interactive
 ```
 
-Handles: pre-merge validation, backup tag, modify/delete/both-deleted conflict auto-resolution, content conflict detection (stops for manual review).
+Handles: pre-merge validation, backup tag, both-deleted conflict auto-resolution, modify/delete (DU) and content conflict detection (stop for manual review; `CGW_AUTO_RESOLVE_MODIFY_DELETE=1` opts text-file DU into auto-resolve).
 
 **After manual conflict resolution:** when the script pauses for a content conflict (`UU`/`AA`/`AU`), resolve the markers, run `git add <file>`, then conclude the merge with `commit_enhanced.sh` — Rule 1 applies to merge-conclusion commits too. Do NOT re-run `merge_with_validation.sh`; there is no `--continue` flag. This conclude-with-the-wrapper rule is **merge-specific**: with `MERGE_HEAD` set, `commit_enhanced.sh` needs no message argument — it uses git's own prepared merge message (`# Conflicts:` comments stripped) and is exempt from the conventional-format check and the subject-length hard cap, the same way `hooks/pre-push` already exempts merge commits by parent count. Pass a message explicitly only if you want to override git's prepared one. A paused **cherry-pick** is the opposite case — it already carries the original commit's message — and concludes with `git cherry-pick --continue` instead (see *When a cherry-pick hits a conflict*, below).
 

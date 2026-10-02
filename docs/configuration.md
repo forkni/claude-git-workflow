@@ -96,6 +96,7 @@ cp cgw.conf.example .cgw.conf
 | `CGW_DOCS_PATTERN` | `` | Regex for allowed docs filenames (`""` to skip) |
 | `CGW_DEV_ONLY_FILES` | `` | Files to warn about in cherry-pick (space-separated) |
 | `CGW_ALLOW_LOCAL_FILES_IN_MERGE` | `0` | Set to `1` to allow a merge/cherry-pick to carry `CGW_LOCAL_FILES` into shared history (the guard otherwise aborts non-interactively) |
+| `CGW_AUTO_RESOLVE_MODIFY_DELETE` | `0` | Set to `1` to auto-accept the deletion in modify/delete (DU) conflicts for text files. Default halts so the other side's changes aren't dropped silently; binary files always halt. See [ADR 0005](adr/0005-modify-delete-conflicts-halt.md) |
 | `CGW_CLEANUP_TESTS` | `0` | Remove `tests/` from target if gitignored |
 | `CGW_MERGE_MODE` | `direct` | Promotion mode: `direct` (merge locally) or `pr` (create GitHub PR) |
 | `CGW_PROTECTED_BRANCHES` | *(`CGW_TARGET_BRANCH`)* | Branches requiring `--force` for force-push (space-separated); defaults to the target branch |

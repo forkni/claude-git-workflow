@@ -325,6 +325,14 @@ CGW_DEV_ONLY_FILES=""
 # non-interactive mode (interactive prompts). Set to 1 to allow it.
 CGW_ALLOW_LOCAL_FILES_IN_MERGE=0
 
+# Modify/delete conflicts (we deleted a file, they modified it).
+# Default 0: merge / cherry-pick halt and ask you to choose (git rm vs git add),
+# because accepting the deletion discards the other side's changes.
+# Set to 1 to accept the deletion automatically for TEXT files. Binary files
+# (gitattributes binary/-diff, or a NUL byte in their content) always halt.
+# Both-deleted (DD) conflicts are always auto-resolved.
+CGW_AUTO_RESOLVE_MODIFY_DELETE=0
+
 # ============================================================================
 # TESTS DIRECTORY CLEANUP (merge_with_validation.sh)
 # ============================================================================

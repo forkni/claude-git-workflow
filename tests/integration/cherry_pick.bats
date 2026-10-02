@@ -99,32 +99,60 @@ teardown() {
   [[ "${output}" == *"Content conflicts require manual resolution"* ]]
 }
 
-# ── Conflict resolution: DU (auto-resolve, user must --continue) ─────────────
+# ── Conflict resolution: DU (halt by default; opt-in text auto-resolve) ──────
 
-@test "DU conflict: cherry-pick auto-resolves and exits 1 with --continue hint" {
-  # main deleted shared.txt; cherry-picked commit modifies it (DU: deleted by us)
-  git -C "${TEST_REPO_DIR}" checkout main
+# Build a DU conflict: main deletes shared.txt, the picked commit modifies it.
+# Echoes the commit to pick. $1 = printf format for the modified content.
+_seed_du_pick() {
+  local dev_content="${1:-shared content\ndev added\n}"
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
   printf 'shared content\n' > "${TEST_REPO_DIR}/shared.txt"
   git -C "${TEST_REPO_DIR}" add shared.txt
   git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add shared.txt"
 
-  git -C "${TEST_REPO_DIR}" checkout development
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
   git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff -m "chore: sync shared.txt"
-  printf 'shared content\ndev added\n' > "${TEST_REPO_DIR}/shared.txt"
+  printf "${dev_content}" > "${TEST_REPO_DIR}/shared.txt"
   git -C "${TEST_REPO_DIR}" add shared.txt
   git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev modifies shared.txt"
   local pick_commit
   pick_commit=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
 
-  git -C "${TEST_REPO_DIR}" checkout main
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
   git -C "${TEST_REPO_DIR}" rm shared.txt --quiet
   git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: main deletes shared.txt"
 
-  git -C "${TEST_REPO_DIR}" checkout development
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  echo "${pick_commit}"
+}
+
+@test "DU conflict: cherry-pick halts by default and names the file and both choices" {
+  local pick_commit
+  pick_commit=$(_seed_du_pick)
   run run_script cherry_pick_commits.sh --commit "${pick_commit}" --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Modify/delete conflicts require manual resolution"* ]]
+  [[ "${output}" == *"shared.txt"* ]]
+  [[ "${output}" == *"git rm <file>"* ]]
+  [[ "${output}" == *"--continue"* ]]
+  [[ "${output}" != *"Auto-resolved"* ]]
+}
+
+@test "DU conflict: cherry-pick with CGW_AUTO_RESOLVE_MODIFY_DELETE=1 auto-resolves a text file" {
+  local pick_commit
+  pick_commit=$(_seed_du_pick)
+  CGW_AUTO_RESOLVE_MODIFY_DELETE=1 run run_script cherry_pick_commits.sh --commit "${pick_commit}" --non-interactive
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"--continue"* ]]
   [[ "${output}" == *"Auto-resolved"* ]] || [[ "${output}" == *"auto-resolved"* ]]
+}
+
+@test "DU conflict: cherry-pick with the opt-in still halts on a binary (NUL) file" {
+  local pick_commit
+  pick_commit=$(_seed_du_pick 'bin\0ary\n')
+  CGW_AUTO_RESOLVE_MODIFY_DELETE=1 run run_script cherry_pick_commits.sh --commit "${pick_commit}" --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Modify/delete conflicts require manual resolution"* ]]
 }
 
 # ── local-only file guard (C1) ────────────────────────────────────────────────

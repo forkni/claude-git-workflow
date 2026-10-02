@@ -191,7 +191,7 @@ Checks: current branch is source/target (warning if not), no uncommitted changes
 | `--source <branch>` | Override source branch for this invocation (ephemeral, doesn't mutate config) |
 | `--target <branch>` | Override target branch for this invocation |
 
-Workflow: validate → backup tag (`pre-merge-<timestamp>-<pid>`, created via `cgw_create_backup_tag merge` in `_common.sh`) → merge → auto-resolve DU/DD conflicts → stop on UU/AU/AA/UD/AD/DA → docs CI check → tests cleanup → commit.
+Workflow: validate → backup tag (`pre-merge-<timestamp>-<pid>`, created via `cgw_create_backup_tag merge` in `_common.sh`) → merge → auto-resolve DD conflicts (DU too with `CGW_AUTO_RESOLVE_MODIFY_DELETE=1`, text files only) → stop on DU/UU/AU/AA/UD/AD/DA → docs CI check → tests cleanup → commit.
 
 **`rollback_merge.sh`** — Emergency rollback
 

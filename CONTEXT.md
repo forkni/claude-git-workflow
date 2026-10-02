@@ -12,7 +12,7 @@ The deterministic mapping from a `git status --short` two-letter porcelain pair 
 
 | Pair | Category | Disposition |
 |------|----------|-------------|
-| `DU` | modify/delete | Auto-resolve: `git rm` (we deleted, theirs modified) |
+| `DU` | modify/delete | Halt: accept deletion (`git rm`) or keep theirs (`git add`); opt-in `CGW_AUTO_RESOLVE_MODIFY_DELETE=1` auto-`git rm`s text files only (ADR 0005) |
 | `DD` | both deleted | Auto-resolve: `git rm` |
 | `UU` | both modified | Halt: content conflict, manual edit required |
 | `AU` | add/unmerged | Halt: add-side conflict |

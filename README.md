@@ -15,7 +15,7 @@ Drop-in git automation and safety toolkit for any software repository. Provides 
 
 - **Multi-Tier Safety Gates**: Pre-commit code and Markdown lint validation with interactive auto-fixing, staged-blob congruence checks (failing closed when staged blobs diverge from the validated working tree), and commit subject-length limits (Pro Git 50/72 rule).
 - **Blocking Typecheck Verification**: Optional typechecking (`pyrefly`, `pyright`, `mypy`, `tsc`) that is advisory at commit time and strictly blocking prior to push.
-- **Safe Merges & Rollbacks**: Automatic pre-merge backup tags, automated resolution of Delete/Update (`DU`/`DD`) conflicts, `git rerere` conflict replay, and instantaneous rollback to backup tags (`--revert` history-preserving mode).
+- **Safe Merges & Rollbacks**: Automatic pre-merge backup tags, automated resolution of both-deleted (`DD`) conflicts (modify/delete `DU` halts unless opted in), `git rerere` conflict replay, and instantaneous rollback to backup tags (`--revert` history-preserving mode).
 - **Post-Push CI Verification Gate**: Watches triggered GitHub Actions or Charlie CI runs until a green verdict is achieved, automatically fixing and retrying test failures up to a configurable round budget.
 - **Dual AI Agent Harness Integrations**: Full support for both **Claude Code** and **Google Antigravity Agents**, featuring state-aware repo scanning via `/auto-git-workflow-cmd` and PreToolUse guardrails that intercept and block dangerous raw `git` commands before execution.
 - **Repository Health & Recovery**: Linked worktree management (`worktree_manage.sh`), dangling commit discovery (`recover.sh`), automated changelog generation from conventional commits (`changelog_generate.sh`), offline Markdown TOC generation (`md_toc.sh`), and safe branch synchronization across diverged `skip-worktree` files.
@@ -129,7 +129,7 @@ CGW provides 29 user-facing scripts and 2 internal core modules in `scripts/git/
 |--------|---------|
 | `configure.sh` | One-time setup — scans project, generates `.cgw.conf`, installs hooks, and configures agent skills/guardrails |
 | `commit_enhanced.sh` | Working-tree lint/format validation, staged-blob congruence check, local-only file protection, Pro Git 50/72 commit check (`--only`, `--all`, `--staged-only`, `--sign`) |
-| `merge_with_validation.sh` | Safe source→target merge: creates backup tag, auto-resolves DU/DD conflicts, stops on UU, supports `diff3`/`zdiff3` conflict style and `rerere` (`--source`, `--target`, `--dry-run`) |
+| `merge_with_validation.sh` | Safe source→target merge: creates backup tag, auto-resolves DD conflicts, stops on DU/UU, supports `diff3`/`zdiff3` conflict style and `rerere` (`--source`, `--target`, `--dry-run`) |
 | `rollback_merge.sh` | Emergency rollback to pre-merge backup tag (`--revert` for safe history-preserving rollback) |
 | `cherry_pick_commits.sh` | Cherry-pick with source branch validation, dev-only file warnings, and backup tag (`--only <pathspec>` for partial picks) |
 | `merge_docs.sh` | Documentation-only merge from source branch to target branch |

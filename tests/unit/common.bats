@@ -582,6 +582,70 @@ DA f.py"
   [ "${#CGW_CONFLICT_DA_FILES[@]}" -eq 1 ]
 }
 
+# ── cgw_conflict_path_is_binary() / cgw_resolve_safe_conflicts() ─────────────
+
+# Mid-merge repo with a DU conflict on <file>; $2 = printf format of their content.
+_make_du_repo() {
+  local file="$1" content="$2"
+  git init --quiet -b main "${BATS_TEST_TMPDIR}/du"
+  cd "${BATS_TEST_TMPDIR}/du" || return 1
+  git config user.email t@t && git config user.name t
+  printf 'base\n' > "${file}"
+  git add . && git commit --quiet -m base
+  git checkout --quiet -b theirs
+  printf "${content}" > "${file}"
+  git commit --quiet -am theirs
+  git checkout --quiet main
+  git rm --quiet "${file}" && git commit --quiet -m ours
+  git merge theirs >/dev/null 2>&1 || true
+}
+
+@test "cgw_conflict_path_is_binary: text blob is not binary" {
+  _make_du_repo f.txt 'hello\nworld\n'
+  run cgw_conflict_path_is_binary f.txt
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_conflict_path_is_binary: NUL byte in their blob is binary" {
+  _make_du_repo f.dat 'ab\0cd\n'
+  run cgw_conflict_path_is_binary f.dat
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_conflict_path_is_binary: gitattributes binary marks a path binary" {
+  git init --quiet -b main "${BATS_TEST_TMPDIR}/du"
+  cd "${BATS_TEST_TMPDIR}/du" || return 1
+  printf '*.dat binary\n' > .gitattributes
+  run cgw_conflict_path_is_binary plain.dat
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_resolve_safe_conflicts: DU halts without the opt-in and leaves the index conflicted" {
+  _make_du_repo f.txt 'hello\n'
+  unset CGW_AUTO_RESOLVE_MODIFY_DELETE
+  run cgw_resolve_safe_conflicts merge main
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Modify/delete conflicts require manual resolution"* ]]
+  [ -n "$(git diff --name-only --diff-filter=U)" ]
+}
+
+@test "cgw_resolve_safe_conflicts: DD is auto-resolved even without the opt-in" {
+  git init --quiet -b main "${BATS_TEST_TMPDIR}/dd"
+  cd "${BATS_TEST_TMPDIR}/dd" || return 1
+  git config user.email t@t && git config user.name t
+  printf 'x\n' > f.txt
+  git add . && git commit --quiet -m base
+  # Fabricate a DD index entry: only the stage-1 (base) entry remains.
+  local blob
+  blob=$(git rev-parse HEAD:f.txt)
+  git rm --quiet --cached f.txt
+  printf '100644 %s 1\tf.txt\n' "${blob}" | git update-index --index-info
+  unset CGW_AUTO_RESOLVE_MODIFY_DELETE
+  run cgw_resolve_safe_conflicts merge main
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"both-deleted"* ]]
+}
+
 @test "cgw_classify_conflicts: mixed DU+UU assigns to correct arrays" {
   cgw_classify_conflicts "DU a.py
 UU b.py
