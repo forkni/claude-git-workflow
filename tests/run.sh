@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # tests/run.sh — run the CGW bats suite in parallel
 # Usage:
-#   tests/run.sh                          # full suite; skips slow files locally (common.bats)
+#   tests/run.sh                          # fast batch: the full suite minus the slow files (local default)
+#   tests/run.sh --slow                   # slow batch only (the files in CGW_SLOW_FILES)
+#   tests/run.sh --all                    # fast + slow (what CI runs); same as CGW_RUN_SLOW=1
+#   CGW_TEST_TIMINGS=1 tests/run.sh ...   # print the slowest files afterwards (to retune CGW_SLOW_FILES)
 #   tests/run.sh tests/unit/              # unit tests only  (~25s)
 #   tests/run.sh tests/unit/config.bats   # single file
 #   CGW_TEST_JOBS=N tests/run.sh          # override parallelism (default: half logical cores)
@@ -17,7 +20,24 @@ jobs="${CGW_TEST_JOBS:-$(( _cores / 2 ))}"
 # parallelization to avoid a bats --jobs index.lock race, so its ~126 tests
 # run serially and become the parallel wall-clock floor). Skipped on a default
 # full-suite run unless CI is set or CGW_RUN_SLOW=1; always run on CI.
-CGW_SLOW_FILES=("tests/unit/common.bats")
+# Measured wall time per file under parallel load (CGW_TEST_TIMINGS=1): the six heaviest, roughly
+# half the suite's total runtime. Retune from a fresh timing run when files grow.
+CGW_SLOW_FILES=(
+  "tests/unit/common.bats"
+  "tests/integration/commit_enhanced.bats"
+  "tests/integration/configure.bats"
+  "tests/integration/merge_validation.bats"
+  "tests/integration/cc_guardrail.bats"
+  "tests/integration/cherry_pick.bats"
+)
+
+# Batch selection: --slow = only the slow files, --all = everything, default = fast batch.
+_mode=fast
+if [[ "${1:-}" == "--slow" || "${1:-}" == "--all" || "${1:-}" == "--fast" ]]; then
+  _mode="${1#--}"
+  shift
+fi
+[[ "${CGW_RUN_SLOW:-0}" == "1" || -n "${CI:-}" ]] && [[ "${_mode}" == "fast" ]] && _mode=all
 
 # Default target: full suite. Callers can pass specific paths to narrow the run.
 # Note: "${@:-fallback}" produces a single string when $@ is empty and fallback
@@ -41,29 +61,24 @@ mapfile -t _files < <(find "${_targets[@]}" -name "*.bats" | sort)
 # observed to change concurrent-file timing enough to trip an unrelated race
 # in merge_docs.bats on CI.
 _filtered=0
-if [[ "${_default_run}" -eq 1 ]]; then
-  _run_slow="${CGW_RUN_SLOW:-0}"
-  [[ -n "${CI:-}" ]] && _run_slow=1
-  if [[ "${_run_slow}" != "1" ]]; then
-    _kept=() _skipped_files=()
-    for f in "${_files[@]}"; do
-      _is_slow=0
-      for slow in "${CGW_SLOW_FILES[@]}"; do
-        [[ "${f}" == *"${slow}" ]] && { _is_slow=1; break; }
-      done
-      if [[ "${_is_slow}" -eq 1 ]]; then
-        _skipped_files+=("${f}")
-      else
-        _kept+=("${f}")
-      fi
+if [[ "${_default_run}" -eq 1 && "${_mode}" != "all" ]]; then
+  _kept=() _skipped_files=()
+  for f in "${_files[@]}"; do
+    _is_slow=0
+    for slow in "${CGW_SLOW_FILES[@]}"; do
+      [[ "${f}" == *"${slow}" ]] && { _is_slow=1; break; }
     done
-    _files=("${_kept[@]}")
-    if [[ ${#_skipped_files[@]} -gt 0 ]]; then
-      _filtered=1
-      printf '[run.sh] Skipping %d slow file(s) locally: %s\n' \
-        "${#_skipped_files[@]}" "${_skipped_files[*]}" >&2
-      printf '[run.sh]   Run with CGW_RUN_SLOW=1 to include them (always run on CI).\n' >&2
+    if [[ "${_mode}" == "slow" ]]; then
+      ((_is_slow == 1)) && _kept+=("${f}") || _skipped_files+=("${f}")
+    else
+      ((_is_slow == 1)) && _skipped_files+=("${f}") || _kept+=("${f}")
     fi
+  done
+  _files=("${_kept[@]}")
+  if [[ ${#_skipped_files[@]} -gt 0 ]]; then
+    _filtered=1
+    printf '[run.sh] %s batch: skipping %d file(s); use --all (or CGW_RUN_SLOW=1) for everything, --slow for the other batch.
+'       "${_mode}" "${#_skipped_files[@]}" >&2
   fi
 fi
 
@@ -88,8 +103,10 @@ trap 'rm -rf "${_tmpdir}"' EXIT
 _run_bats_file() {
   local f="$1" out="$2"
   local slug; slug="$(basename "${f}" .bats)"
+  local t0="${SECONDS}"
   bats --tap "${f}" > "${out}/${slug}.tap" 2>&1
   printf '%s' "$?" > "${out}/${slug}.exit"
+  printf '%s' "$(( SECONDS - t0 ))" > "${out}/${slug}.secs"
 }
 export -f _run_bats_file
 
@@ -120,6 +137,18 @@ for slug in "${_fail_slugs[@]}"; do
   printf '\n=== FAILURES: %s ===\n' "${slug}"
   cat "${_tmpdir}/${slug}.tap"
 done
+
+# Slowest files, so CGW_SLOW_FILES can be tuned from data (wall time under parallel load)
+if [[ "${CGW_TEST_TIMINGS:-0}" == "1" ]]; then
+  printf '
+[run.sh] slowest files (seconds):
+' >&2
+  for f in "${_files[@]}"; do
+    slug="$(basename "${f}" .bats)"
+    printf '%5s  %s
+' "$(cat "${_tmpdir}/${slug}.secs" 2>/dev/null || echo 0)" "${f}"
+  done | sort -rn | head -12 >&2
+fi
 
 # Final summary line (mirrors bats native format)
 _total=$(( _passed + _failed + _skipped ))
