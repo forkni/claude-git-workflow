@@ -462,9 +462,9 @@ main() {
       echo "" | tee -a "$logfile"
       echo "[!] Cherry-pick conflicts detected - analyzing..." | tee -a "$logfile"
 
-      # From here the pick is deliberately left paused on ${tgt_branch} for the user: disarm the
-      # EXIT trap, which would otherwise abort it and return to the original branch.
-      trap - EXIT INT TERM
+      # A manual-resolution halt deliberately leaves the pick paused on ${tgt_branch}: disarm only the
+      # EXIT trap (which would abort it). INT/TERM keep the cleanup, so Ctrl-C still restores the branch.
+      trap - EXIT
       if ! cgw_resolve_safe_conflicts cherry-pick "${original_branch}"; then
         exit 1
       fi

@@ -287,11 +287,24 @@ main() {
 
   # Recovery point: the merge happens on the remote, so tag the base branch's current remote tip.
   # The merge commit's first parent will be exactly this commit (rollback_merge.sh's HEAD^1 guard).
+  # No verified tag, no merge: a remote merge can't be undone by a local reset.
+  log_section_start "PRE-MERGE RECOVERY POINT" "$logfile"
+  local base_tip tag_tip
+  base_tip=""
   if git fetch --quiet "${CGW_REMOTE}" "${base_branch}" >>"$logfile" 2>&1; then
-    cgw_create_backup_tag merge "refs/remotes/${CGW_REMOTE}/${base_branch}"
-  else
-    err_tee "[!] Could not fetch ${CGW_REMOTE}/${base_branch} -- no pre-merge backup tag created (continuing)"
+    base_tip=$(git rev-parse --verify --quiet "refs/remotes/${CGW_REMOTE}/${base_branch}^{commit}") || base_tip=""
   fi
+  CGW_BACKUP_TAG=""
+  [[ -n "${base_tip}" ]] && cgw_create_backup_tag merge "${base_tip}" >/dev/null
+  tag_tip=""
+  [[ -n "${CGW_BACKUP_TAG}" ]] && tag_tip=$(git rev-parse --verify --quiet "refs/tags/${CGW_BACKUP_TAG}^{commit}") || tag_tip=""
+  if [[ -z "${base_tip}" || "${tag_tip}" != "${base_tip}" ]]; then
+    log_section_end "PRE-MERGE RECOVERY POINT" "$logfile" "1"
+    err_tee "[ERROR] Could not fetch ${CGW_REMOTE}/${base_branch} and tag its tip -- refusing to merge without a recovery point"
+    exit 1
+  fi
+  echo "[OK] Recovery point: ${CGW_BACKUP_TAG} -> ${base_tip:0:7}" | tee -a "$logfile"
+  log_section_end "PRE-MERGE RECOVERY POINT" "$logfile" "0"
 
   # [3/4] Merge
   log_section_start "GH PR MERGE" "$logfile"

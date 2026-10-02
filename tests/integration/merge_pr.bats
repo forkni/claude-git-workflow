@@ -290,3 +290,13 @@ _run_merge_pr() {
   ! grep -q -- "pr edit 43" "${GH_LOG}"
   ! grep -q -- "api --method DELETE" "${GH_LOG}"
 }
+
+@test "an unfetchable base branch refuses the merge: no recovery point, no gh pr merge" {
+  install_mock_gh
+  git -C "${TEST_REPO_DIR}" config "url.${TEST_TMPDIR}/no-such-remote.insteadOf" "https://github.com/forkni/claude-git-workflow.git"
+  git -C "${TEST_REPO_DIR}" config --unset-all "url.${TEST_REMOTE_DIR}.insteadOf"
+  run _run_merge_pr 42
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"refusing to merge without a recovery point"* ]]
+  ! grep -q -- "pr merge" "${GH_LOG}"
+}
