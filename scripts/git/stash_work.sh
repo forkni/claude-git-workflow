@@ -141,9 +141,17 @@ main() {
       echo "Applying: $(git stash list | grep "^${target}" || echo "${target}")"
       echo ""
 
-      if cgw_run_with_lock_retry git stash pop "${target}"; then
+      local pop_rc=0
+      cgw_run_with_lock_retry git stash pop "${target}" || pop_rc=$?
+      if [[ ${pop_rc} -eq 0 ]]; then
         echo ""
         echo "[OK] Stash applied and removed"
+      elif [[ ${pop_rc} -eq ${CGW_RC_INDEX_LOCKED} ]]; then
+        # The lock stopped git before it touched anything: the stash was not applied and is
+        # the only copy of the work, so do NOT suggest dropping it.
+        err "Stash pop blocked by the index lock -- stash ${target} was not applied and is still saved"
+        echo "  Retry once the other git process finishes: ./scripts/git/stash_work.sh pop ${target}"
+        exit 1
       else
         echo "[ERROR] Stash pop failed -- conflicts may need manual resolution" >&2
         echo "  Resolve conflicts, then: git stash drop ${target}"

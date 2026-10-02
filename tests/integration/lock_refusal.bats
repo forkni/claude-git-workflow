@@ -109,3 +109,76 @@ _run_cgw() {
   [[ "${output}" == *"[cgw-lock]"* ]]
   [[ "${output}" != *"hit conflicts"* ]]
 }
+
+# ── persistent index.lock collisions and CGW_LOCK_RETRY_ATTEMPTS bounds ───────
+# A mutating git command that keeps colliding on index.lock never changed anything, so once the
+# retries are exhausted it must surface as CGW_RC_INDEX_LOCKED (75), exactly like a refused lock --
+# never git's raw 128, which every caller reads as "git ran and hit conflicts".
+
+# _install_colliding_git <subcommand>: a git shim that always fails <subcommand> with the
+# index.lock collision message and passes every other subcommand through to the real git.
+_install_colliding_git() {
+  local sub="$1" real
+  real="$(command -v git)"
+  cat >"${MOCK_BIN_DIR}/git" <<SHIM
+#!/usr/bin/env bash
+if [[ "\$1" == "${sub}" ]] || [[ "\$1" == "-c" && "\$3" == "${sub}" ]]; then
+  echo "fatal: Unable to create '${TEST_REPO_DIR}/.git/index.lock': File exists." >&2
+  exit 128
+fi
+exec "${real}" "\$@"
+SHIM
+  chmod +x "${MOCK_BIN_DIR}/git"
+}
+
+# _run_helper <bash snippet>: run it with _common.sh sourced inside the test repo.
+_run_helper() {
+  bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git' PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_NON_INTERACTIVE=1 CGW_LOCK_RETRY_DELAY=0
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh' >/dev/null 2>&1
+    $1
+  " 2>&1
+}
+
+@test "cgw_run_with_lock_retry still runs the command once when CGW_LOCK_RETRY_ATTEMPTS=0" {
+  run _run_helper "CGW_LOCK_RETRY_ATTEMPTS=0 cgw_run_with_lock_retry touch '${TEST_TMPDIR}/ran.marker'"
+  [ "${status}" -eq 0 ]
+  [ -e "${TEST_TMPDIR}/ran.marker" ]
+}
+
+@test "cgw_run_with_lock_retry returns the lock-refused code once collisions exhaust the retries" {
+  _install_colliding_git merge
+  run _run_helper "CGW_LOCK_RETRY_ATTEMPTS=2 cgw_run_with_lock_retry git merge foo"
+  [ "${status}" -eq 75 ]
+}
+
+@test "run_git_with_logging returns the lock-refused code once collisions exhaust the retries" {
+  _install_colliding_git merge
+  run _run_helper "CGW_LOCK_RETRY_ATTEMPTS=2 run_git_with_logging t '${TEST_TMPDIR}/l.log' merge foo"
+  [ "${status}" -eq 75 ]
+}
+
+@test "a non-lock git failure keeps its own exit code" {
+  run _run_helper "cgw_run_with_lock_retry bash -c 'echo boom >&2; exit 3'"
+  [ "${status}" -eq 3 ]
+}
+
+@test "merge: collisions that exhaust the retries are not reported as a merge or as conflicts" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  local before
+  before=$(git -C "${TEST_REPO_DIR}" rev-parse main)
+  _install_colliding_git merge
+
+  run env CGW_LOCK_RETRY_ATTEMPTS=2 CGW_LOCK_RETRY_DELAY=0 bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git' PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_SOURCE_BRANCH='development' CGW_LINT_CMD='' CGW_FORMAT_CMD='' CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/merge_with_validation.sh' --non-interactive
+  "
+  [ "${status}" -ne 0 ]
+  [[ "${output}" != *"MERGE SUCCESSFUL"* ]]
+  [[ "${output}" != *"conflicts detected"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse main)" = "${before}" ]
+}

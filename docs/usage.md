@@ -173,12 +173,16 @@ backs up and resets the file to `HEAD` so `pull --rebase` can proceed, then rest
 bytes, re-applies the bit, and prints the upstream diff so new shared content can be reconciled
 by hand. No-op when nothing has diverged.
 
+Branches listed in `CGW_PROTECTED_BRANCHES` (default: the target branch) sync with
+`git pull --ff-only`; if one has diverged from its remote the script refuses rather than
+rebasing it (see `docs/adr/0004`). All other branches use rebase.
+
 ### Rollback a merge
 
 ```bash
 ./scripts/git/rollback_merge.sh                           # interactive (hard reset)
 ./scripts/git/rollback_merge.sh --revert                  # safe revert (preserves history, no force-push)
-./scripts/git/rollback_merge.sh --non-interactive         # auto-select latest backup
+./scripts/git/rollback_merge.sh --non-interactive         # auto-pick latest pre-merge tag, only if it equals HEAD^1; else refuses
 ./scripts/git/rollback_merge.sh --target pre-merge-20260101_120000-12345
 ```
 

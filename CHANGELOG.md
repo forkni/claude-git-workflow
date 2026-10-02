@@ -6,8 +6,11 @@
 
 - **Modify/delete (`DU`) conflicts now halt** in `merge_with_validation.sh`, `cherry_pick_commits.sh` and every other caller of `cgw_resolve_safe_conflicts`, instead of silently `git rm`-ing the file and dropping the other side's changes. The message lists the files and the two choices (`git rm <file>` / `git add <file>`). Set `CGW_AUTO_RESOLVE_MODIFY_DELETE=1` to restore auto-removal for text files; binary files (gitattributes `binary`/`-diff`, or a NUL byte) always halt. Both-deleted (`DD`) is still auto-resolved. See `docs/adr/0005-modify-delete-conflicts-halt.md`.
 
+- **Outdated stock hooks are refreshed on update.** `configure.sh` (and so `cgw-install.cmd` / `cgw-batch-install.cmd`) now replaces an installed `.githooks/pre-commit|pre-push|pre-rebase` that is an unmodified older CGW version, instead of keeping every differing hook as a "locally established" one — which left consumer projects frozen on old hooks and missing later fixes. A hook that matches no CGW version is still kept. No `.bak` is written for a refresh (the old version is in CGW git; the message names the commit). See `docs/adr/0006-refresh-stale-stock-hooks.md`.
+
 ### New Features
 
+- `cgw-batch-install.cmd` now prints `configure.sh` warnings (e.g. a customised hook it kept) under the project, marks it `Updated (with warnings)`, and adds a `Warnings:` count and list to the summary; exit code is unchanged. Previously the log holding them was deleted on success. The batch no longer pre-copies `.githooks/*.bak` itself.
 - `merge_pr.sh <N>`: merges a GitHub PR with a merge commit (`gh pr merge --merge`, explicit `--repo`), refuses a non-OPEN PR, and prints the merge SHA with the `rollback_merge.sh --revert` hint. `--retarget <M>` (repeatable) moves stacked PRs onto the merged PR's base after the merge, `--delete-branch` removes the head branch last, `--dry-run` previews. `--squash`/`--rebase` need `--allow-non-merge` in non-interactive mode and warn that the PR can't be reverted as one unit.
 - `rebase_safe.sh --onto <newbase> --upstream <ref>`: git's three-argument `rebase --onto <newbase> <upstream>`, replaying only `<upstream>..HEAD`.
 - `worktree_manage.sh add <path> [<branch> [<base>]]` / `--base <ref>`: create the new branch from a base ref instead of HEAD.
@@ -17,6 +20,9 @@
 
 ### Bug Fixes
 
+- An `index.lock` collision that outlasted `CGW_LOCK_RETRY_ATTEMPTS` returned git's raw `128` from `run_git_with_logging` / `cgw_run_with_lock_retry`, which `merge_with_validation.sh` and the other callers read as "git ran and hit conflicts" — so a merge that never happened could end in `[OK] MERGE SUCCESSFUL`. Both helpers now return `CGW_RC_INDEX_LOCKED` (75) once retries are exhausted. `CGW_LOCK_RETRY_ATTEMPTS=0` (or a non-numeric value) is treated as 1 instead of silently skipping the command.
+- `stash_work.sh pop` reported an index-lock refusal as "conflicts may need manual resolution" and advised `git stash drop`, although nothing had been applied — following it would delete the only copy of the work. A lock refusal now says the stash was not applied and is still saved.
+- Docs: `sync_branches.sh` on protected branches is `--ff-only` and `rollback_merge.sh --non-interactive` only auto-picks a `pre-merge` tag equal to `HEAD^1`; README and `docs/usage.md` described the old rebase / "latest backup" behaviour.
 - `rebase_safe.sh` counted *unpushed* commits as "already pushed" (`origin/<br>..HEAD`), so the published-history warning fired for local-only work and stayed silent for pushed commits. It now counts commits reachable from `${CGW_REMOTE}/*`, matching `hooks/pre-rebase`; `--squash-last` uses the same count.
 - `worktree_manage.sh add` exited 1 after a successful add.
 

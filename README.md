@@ -134,7 +134,7 @@ CGW provides 29 user-facing scripts and 2 internal core modules in `scripts/git/
 | `cherry_pick_commits.sh` | Cherry-pick with source branch validation, dev-only file warnings, and backup tag (`--only <pathspec>` for partial picks) |
 | `merge_docs.sh` | Documentation-only merge from source branch to target branch |
 | `push_validated.sh` | Push with remote reachability check, blocking typecheck validation, force-push lease guards, and CI verification gate trigger |
-| `sync_branches.sh` | Sync local branches via fetch + rebase; auto-protects diverged `skip-worktree` local files across pulls |
+| `sync_branches.sh` | Sync local branches via fetch + rebase (protected branches use `--ff-only` and refuse when diverged); auto-protects diverged `skip-worktree` local files across pulls |
 | `validate_branches.sh` | Check repository and branch state before critical operations (uncommitted changes, ahead/behind counts, tracking refs) |
 | `branch_diff.sh` | Show diff against the target branch (`--files`, `--stat`, `--no-ws`, `--base`) |
 | `check_lint.sh` | Read-only lint, format, typecheck, and Markdown validation (`--modified-only`, `--skip-md-lint`, `--skip-typecheck`) |

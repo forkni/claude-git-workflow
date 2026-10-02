@@ -391,6 +391,24 @@ _resolve_template_dir() {
   return 1
 }
 
+# _hook_stock_version <template_file> <target_file> <hook_name>
+#   Decides whether an installed hook is an outdated STOCK copy (as opposed to a
+#   customisation): its content, CR-stripped so a CRLF checkout still matches,
+#   must be a blob that hooks/<hook_name> has held in the template repo's history.
+#   Prints the short sha of the first commit that introduced it and returns 0;
+#   returns 1 when it is not a known stock version -- or when that cannot be
+#   told (template dir is not a git checkout), which falls back to "preserve".
+_hook_stock_version() {
+  local template_file="$1" target_file="$2" hook_name="$3"
+  local tpl_root blob sha
+  tpl_root="$(git -C "$(dirname "${template_file}")" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  blob="$(tr -d '\r' <"${target_file}" | git hash-object --no-filters --stdin 2>/dev/null)" || return 1
+  [[ -n "${blob}" ]] || return 1
+  sha="$(git -C "${tpl_root}" log --all --format=%h --find-object="${blob}" -- "hooks/${hook_name}" 2>/dev/null | tail -1)"
+  [[ -n "${sha}" ]] || return 1
+  printf '%s\n' "${sha}"
+}
+
 _install_single_hook() {
   local hook_name="$1"
   local template_file="$2"
@@ -425,7 +443,17 @@ _install_single_hook() {
     return 0
   fi
 
-  # Case 3: .githooks/<hook> exists and differs from template
+  # Case 3a: differs from template but is an outdated STOCK copy (ADR 0006) -- refresh it.
+  # No .bak: the old version is recoverable from CGW git, and the message names the commit.
+  local stock_sha
+  if stock_sha="$(_hook_stock_version "${template_file}" "${target_file}" "${hook_name}")"; then
+    cp "${template_file}" "${target_file}"
+    chmod +x "${target_file}"
+    echo "  [OK] Refreshed outdated stock .githooks/${hook_name} (was CGW ${stock_sha})"
+    return 0
+  fi
+
+  # Case 3b: differs from template and is a customisation (or cannot be told apart)
   local do_overwrite="${overwrite}"
   if [[ "${do_overwrite}" -eq 0 ]] && [[ "${non_interactive:-0}" -eq 0 ]]; then
     # deny: CGW_NON_INTERACTIVE=1 from the environment (CI, agent shell) must keep the

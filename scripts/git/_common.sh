@@ -276,7 +276,8 @@ fi
 # Arguments: $1 section_name — section label shown in log headers
 #            $2 log_path     — file path to append output to
 #            $@ git args     — passed directly to git
-# Returns:   exit code of git, or CGW_RC_INDEX_LOCKED when the index lock was refused (git did not run)
+# Returns:   exit code of git, or CGW_RC_INDEX_LOCKED when the index lock was refused or kept colliding
+#            until retries ran out (git did not change anything)
 run_git_with_logging() {
   local section_name="$1"
   local log_path="$2"
@@ -287,6 +288,7 @@ run_git_with_logging() {
   echo "Command: git $*" | tee -a "$log_path"
 
   local max_attempts="${CGW_LOCK_RETRY_ATTEMPTS:-3}"
+  [[ "${max_attempts}" =~ ^[0-9]+$ ]] && ((max_attempts >= 1)) || max_attempts=1
   local retry_delay="${CGW_LOCK_RETRY_DELAY:-1}"
   local attempt=1
 
@@ -313,6 +315,10 @@ run_git_with_logging() {
         ((attempt++))
         continue
       fi
+      # Retries exhausted: the lock never let git change anything, so report it as a refusal
+      # (not git's raw 128, which callers read as "git ran and hit conflicts").
+      err_tee "[cgw-lock] Index lock still held after ${max_attempts} attempt(s); 'git ${1:-command}' did not run."
+      GIT_EXIT_CODE="${CGW_RC_INDEX_LOCKED}"
     fi
     break
   done
@@ -658,11 +664,14 @@ ensure_no_stale_index_lock() {
 #   4. If the command fails specifically with an index.lock collision
 #      ("index.lock.*File exists" or "Unable to create.*index.lock"),
 #      waits with backoff and retries up to CGW_LOCK_RETRY_ATTEMPTS (default: 3).
-#   5. If retries are exhausted or the error is unrelated, returns the
-#      command's exit code (stderr was already shown as it happened).
+#   5. If retries are exhausted on an index.lock collision, returns
+#      CGW_RC_INDEX_LOCKED; an unrelated error returns the command's own exit
+#      code (stderr was already shown as it happened). CGW_LOCK_RETRY_ATTEMPTS
+#      below 1 is treated as 1, so the command always runs at least once.
 #   6. If the lock check refuses (git never ran), returns CGW_RC_INDEX_LOCKED.
 cgw_run_with_lock_retry() {
   local max_attempts="${CGW_LOCK_RETRY_ATTEMPTS:-3}"
+  [[ "${max_attempts}" =~ ^[0-9]+$ ]] && ((max_attempts >= 1)) || max_attempts=1
   local retry_delay="${CGW_LOCK_RETRY_DELAY:-1}"
   local attempt=1
   local exit_code=0
@@ -703,6 +712,9 @@ cgw_run_with_lock_retry() {
           ((attempt++))
           continue
         fi
+        # Retries exhausted: nothing ran, so report a refusal rather than git's raw 128.
+        err_tee "[cgw-lock] Index lock still held after ${max_attempts} attempt(s); '${op_name}' did not run."
+        exit_code="${CGW_RC_INDEX_LOCKED}"
       fi
 
       # Unrelated error or retries exhausted (stderr was already streamed above)

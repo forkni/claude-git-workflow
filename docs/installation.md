@@ -114,10 +114,17 @@ hooks, skill, command, and the guardrail are refreshed while `.cgw.conf` is pres
 Projects with no existing `.cgw.conf` are skipped with a warning — use `cgw-install.cmd` for a
 first-time install.
 
+Hooks are refreshed only when they are an outdated, unmodified CGW hook (recognised against the
+CGW checkout's git history). A hook you customised is kept, and the batch run prints the warning
+under that project, marks it `Updated (with warnings)` and counts it in the `Warnings:` summary
+line. Move project-specific logic into `.githooks/<hook>.local` so the stock hook can stay current,
+or run `configure.sh --hooks-only --overwrite-hooks --template-dir <cgw>` in that project to
+replace the customised hook (a `.bak` is kept).
+
 Because `.cgw.conf` is never touched, **new opt-in settings added to `cgw.conf.example` after a
 project's initial install do not reach that project's `.cgw.conf` via batch-update** — e.g.
 `CGW_FREEFORM_MESSAGE_BRANCHES`/`CGW_FREEFORM_MESSAGE_CHECK`. The updated *code* that reads them
-ships immediately (scripts + hooks are always overwritten), but the setting itself stays off
+ships immediately (scripts are always overwritten, and so are outdated stock hooks), but the setting itself stays off
 until you add it to that project's `.cgw.conf` by hand, or run
 `configure.sh --reconfigure` there (which regenerates `.cgw.conf` from scratch and prompts for
 every value, backing up the old file to `.cgw.conf.bak` first).

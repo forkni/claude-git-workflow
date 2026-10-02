@@ -154,7 +154,7 @@ silently inheriting `up/x`'s exemption.
 
 **Rollout note**: opt-in, no default (see `cgw.conf.example`). The code path (updated scripts +
 hooks) reaches every consumer project via `cgw-install.cmd` / `cgw-batch-install.cmd`
-automatically, but `cgw-batch-install.cmd` never writes `.cgw.conf` — an already-installed
+automatically (a customised hook excepted — see **stock hook**), but `cgw-batch-install.cmd` never writes `.cgw.conf` — an already-installed
 project only gets these two variables if added to its `.cgw.conf` by hand, or via
 `configure.sh --reconfigure`. See "Batch-updating multiple projects" in `docs/installation.md`.
 
@@ -247,6 +247,14 @@ The shared module for querying remote reachability, remote branch existence, and
 All three helpers are silent: no stdout/stderr beyond `cgw_rev_count`'s count. Callers own all user-facing error messages.
 
 **Callers**: `push_validated.sh` (remote reachability + ahead/behind), `sync_branches.sh` (ahead/behind), `create_pr.sh` (remote branch existence + commit distance), `validate_branches.sh` (ahead/behind), `repo_health.sh` (bidirectional ahead/behind per branch), `rebase_safe.sh` (ahead/behind), `undo_last.sh` (ahead/behind).
+
+---
+
+## stock hook
+
+An installed `.githooks/pre-commit`, `pre-push` or `pre-rebase` whose content (line endings ignored) is byte-identical to some version `hooks/<name>` has held in the [[template source]]'s git history. A stock hook that is not the *current* version is **outdated**: an update replaces it in place and logs which CGW commit it came from, with no `.bak` since the old version is recoverable from that history. Anything else is a **customised hook**: an update keeps it, warns that it differs from the template, and replaces it only under `--overwrite-hooks` (with a `.bak`). Project-specific additions belong in `.githooks/<hook>.local`, which the stock hook runs, so the hook itself can stay stock. When the template source is not a git checkout nothing can be proven stock, so every differing hook is treated as customised.
+
+**Implementation seam**: `_hook_stock_version` and `_install_single_hook` in `scripts/git/configure.sh`; `cgw-batch-install.cmd` echoes the kept-hook warning per project and counts it in its summary. See `docs/adr/0006-refresh-stale-stock-hooks.md`.
 
 ---
 

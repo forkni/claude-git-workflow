@@ -400,3 +400,131 @@ EOF
   [ "$status" -ne 0 ]
   [ -f "${TEST_REPO_DIR}/gate_marker.txt" ]
 }
+
+# ── stale-stock refresh (ADR 0006) ────────────────────────────────────────────
+# Template dir is a throwaway git repo whose hooks/pre-push has two committed
+# versions (OLD then NEW). A consumer hook byte-identical to OLD is an outdated
+# stock copy and must be refreshed; anything else is a customisation.
+
+_make_template_repo() {
+  TPL_DIR="${TEST_TMPDIR}/tpl"
+  mkdir -p "${TPL_DIR}/hooks"
+  git -C "${TPL_DIR}" init --quiet
+  git -C "${TPL_DIR}" config user.email "test@example.com"
+  git -C "${TPL_DIR}" config user.name "Test User"
+  local h
+  for h in pre-commit pre-rebase; do
+    printf '#!/usr/bin/env bash\n# stock %s\n' "${h}" > "${TPL_DIR}/hooks/${h}"
+  done
+  printf '#!/usr/bin/env bash\n# stock pre-push OLD\nexit 0\n' > "${TPL_DIR}/hooks/pre-push"
+  git -C "${TPL_DIR}" add hooks
+  git -C "${TPL_DIR}" commit --quiet -m "feat: first hooks"
+  OLD_PRE_PUSH="${TEST_TMPDIR}/pre-push.old"
+  cp "${TPL_DIR}/hooks/pre-push" "${OLD_PRE_PUSH}"
+  printf '#!/usr/bin/env bash\n# stock pre-push NEW\nexit 0\n' > "${TPL_DIR}/hooks/pre-push"
+  git -C "${TPL_DIR}" commit --quiet -am "fix: newer pre-push"
+}
+
+_make_consumer() {
+  PROJ_DIR="${TEST_TMPDIR}/proj"
+  mkdir -p "${PROJ_DIR}/.githooks"
+  git -C "${PROJ_DIR}" init --quiet
+  git -C "${PROJ_DIR}" config user.email "test@example.com"
+  git -C "${PROJ_DIR}" config user.name "Test User"
+  echo "# proj" > "${PROJ_DIR}/README.md"
+  git -C "${PROJ_DIR}" add README.md
+  git -C "${PROJ_DIR}" commit --quiet -m "chore: initial commit"
+  printf 'CGW_LOCAL_FILES=""\nCGW_LINT_CMD=""\nCGW_MARKDOWNLINT_CMD=""\nCGW_TYPECHECK_CMD=""\n' \
+    > "${PROJ_DIR}/.cgw.conf"
+}
+
+_run_configure() {
+  pushd "${PROJ_DIR}" >/dev/null
+  run bash "${CGW_PROJECT_ROOT}/scripts/git/configure.sh" --template-dir "${TPL_DIR}" --non-interactive "$@"
+  popd >/dev/null
+}
+
+@test "configure.sh refreshes a pre-push that matches an older stock version, without a .bak" {
+  _make_template_repo
+  _make_consumer
+  cp "${OLD_PRE_PUSH}" "${PROJ_DIR}/.githooks/pre-push"
+
+  _run_configure
+
+  [ "$status" -eq 0 ]
+  grep -qF "stock pre-push NEW" "${PROJ_DIR}/.githooks/pre-push"
+  [[ "$output" == *"Refreshed outdated stock .githooks/pre-push"* ]]
+  [ ! -e "${PROJ_DIR}/.githooks/pre-push.bak" ]
+}
+
+@test "configure.sh refreshes an older stock pre-push that has CRLF line endings" {
+  _make_template_repo
+  _make_consumer
+  sed 's/$/\r/' "${OLD_PRE_PUSH}" > "${PROJ_DIR}/.githooks/pre-push"
+
+  _run_configure
+
+  [ "$status" -eq 0 ]
+  grep -qF "stock pre-push NEW" "${PROJ_DIR}/.githooks/pre-push"
+  [[ "$output" == *"Refreshed outdated stock"* ]]
+}
+
+@test "configure.sh still preserves a customised pre-push and warns" {
+  _make_template_repo
+  _make_consumer
+  printf '#!/usr/bin/env bash\n# my custom gate\nexit 0\n' > "${PROJ_DIR}/.githooks/pre-push"
+
+  _run_configure
+
+  [ "$status" -eq 0 ]
+  grep -qF "my custom gate" "${PROJ_DIR}/.githooks/pre-push"
+  [[ "$output" == *"Preserved locally established .githooks/pre-push"* ]]
+  [[ "$output" == *"[!]"* ]]
+}
+
+@test "configure.sh preserves an older-looking pre-push when the template dir is not a git repo" {
+  _make_template_repo
+  _make_consumer
+  rm -rf "${TPL_DIR}/.git"
+  cp "${OLD_PRE_PUSH}" "${PROJ_DIR}/.githooks/pre-push"
+
+  _run_configure
+
+  [ "$status" -eq 0 ]
+  grep -qF "stock pre-push OLD" "${PROJ_DIR}/.githooks/pre-push"
+  [[ "$output" == *"[!]"* ]]
+}
+
+@test "configure.sh --overwrite-hooks replaces a customised pre-push and keeps a .bak" {
+  _make_template_repo
+  _make_consumer
+  printf '#!/usr/bin/env bash\n# my custom gate\nexit 0\n' > "${PROJ_DIR}/.githooks/pre-push"
+
+  _run_configure --overwrite-hooks
+
+  [ "$status" -eq 0 ]
+  grep -qF "stock pre-push NEW" "${PROJ_DIR}/.githooks/pre-push"
+  grep -qF "my custom gate" "${PROJ_DIR}/.githooks/pre-push.bak"
+}
+
+@test "cgw-batch-install.cmd reports a kept customised hook as a warning, exit 0" {
+  _is_windows || skip "cmd.exe installer test only runs on Windows"
+  command -v cmd >/dev/null 2>&1 || skip "cmd.exe not available"
+
+  _make_consumer
+  printf '#!/usr/bin/env bash\n# my custom gate\nexit 0\n' > "${PROJ_DIR}/.githooks/pre-push"
+
+  BATCH_CONF="${TEST_TMPDIR}/batch.conf"
+  printf '%s\r\n' "$(cygpath -w "${PROJ_DIR}")" > "${BATCH_CONF}"
+
+  run env -u NoDefaultCurrentDirectoryInExePath \
+    cmd //c "$(cygpath -w "${CGW_PROJECT_ROOT}/cgw-batch-install.cmd")" \
+    "$(cygpath -w "${BATCH_CONF}")" --no-pause
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"with warnings"* ]]
+  [[ "$output" == *"differs from the current CGW template"* ]]
+  [[ "$output" == *"Warnings:     1"* ]]
+  [ ! -e "${PROJ_DIR}/.githooks/pre-commit.bak" ]
+  grep -qF "my custom gate" "${PROJ_DIR}/.githooks/pre-push"
+}
