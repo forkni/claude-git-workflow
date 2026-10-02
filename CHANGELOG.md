@@ -19,7 +19,9 @@
 - `configure.sh` honours env-only `CGW_NON_INTERACTIVE` (a differing hook is kept, not aborted) and warns when a preserved hook differs from the template, pointing at `--overwrite-hooks` and `.githooks/<hook>.local`
 - `configure.sh` / `install_hooks.sh` never overwrite an existing `.bak` (timestamped `.bak.<ts>-<pid>` instead, via `cgw_backup_file`)
 - `hooks/pre-push` runs the local test gate only for branch updates (not tag pushes or deletions) and honours `SKIP_TESTS=1`
-- `cgw_run_with_lock_retry` streams stderr live; the active-operation check now precedes the fresh-lock wait; redundant mid-script lock checks removed
+- `cgw_run_with_lock_retry` streams stderr live; redundant mid-script lock checks removed
+- an `index.lock` refusal is no longer misread as a git failure: `run_git_with_logging` / `cgw_run_with_lock_retry` return `CGW_RC_INDEX_LOCKED` (75) when git never ran, and merge, cherry-pick (incl. `--only`) and rebase (`--onto`, squash, `--continue`, `--skip`) stop on it instead of reporting conflicts / "already applied" / "MERGE SUCCESSFUL", running `reset --hard`, or orphaning the rebase auto-stash
+- `ensure_no_stale_index_lock` waits out a *fresh* lock even while a merge/rebase/cherry-pick/bisect is in progress (a transient IDE lock no longer breaks `--continue`/merge commits); the in-progress refusal applies only to a stale lock
 - `bisect_helper.sh --run` launches the command with the running bash (`${BASH}`), not whatever `bash` is first on `PATH`
 
 ### Maintenance

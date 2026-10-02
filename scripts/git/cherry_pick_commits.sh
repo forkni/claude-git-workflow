@@ -371,6 +371,12 @@ main() {
     # the rest under the original message plus a partial-pick note.
     if ! run_git_with_logging "GIT CHERRY-PICK NO-COMMIT" "$logfile" cherry-pick --no-commit "${commit_hash}"; then
       log_section_end "GIT CHERRY-PICK" "$logfile" "1"
+      if [[ "${GIT_EXIT_CODE}" -eq "${CGW_RC_INDEX_LOCKED}" ]]; then
+        # git never ran: nothing to abort or reset.
+        err_tee "[FAIL] Cherry-pick not attempted: index.lock refused (see [cgw-lock] message above)"
+        _cp_return_to_original "${original_branch}"
+        exit 1
+      fi
       echo "" | tee -a "$logfile"
       err_tee "[FAIL] Partial cherry-pick hit conflicts -- aborting, nothing applied"
       err_tee "  A partial pick has no conflict hand-over: run a full pick (its conflict"
@@ -436,6 +442,12 @@ main() {
     [[ ${record_origin} -eq 1 ]] && _pick_flags=(-x)
     if ! run_git_with_logging "GIT CHERRY-PICK COMMIT" "$logfile" cherry-pick ${_pick_flags[@]+"${_pick_flags[@]}"} "${commit_hash}"; then
       log_section_end "GIT CHERRY-PICK" "$logfile" "1"
+      if [[ "${GIT_EXIT_CODE}" -eq "${CGW_RC_INDEX_LOCKED}" ]]; then
+        # git never ran: not "already applied" and not a conflict -- no abort/reset.
+        err_tee "[FAIL] Cherry-pick not attempted: index.lock refused (see [cgw-lock] message above)"
+        _cp_return_to_original "${original_branch}"
+        exit 1
+      fi
 
       # Detect redundant/empty cherry-pick (commit was already applied on this branch)
       local unmerged_count

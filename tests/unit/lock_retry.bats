@@ -171,20 +171,57 @@ EOF
 
 # ── ensure_no_stale_index_lock: active operation is refused immediately ───────
 
-@test "ensure_no_stale_index_lock: paused merge + fresh lock refuses at once with the real reason" {
+@test "ensure_no_stale_index_lock: paused merge + fresh lock that clears is waited out, not refused" {
   local git_dir
   git_dir="$(git -C "${TEST_REPO_DIR}" rev-parse --absolute-git-dir)"
   : >"${git_dir}/index.lock"
   git -C "${TEST_REPO_DIR}" rev-parse HEAD >"${git_dir}/MERGE_HEAD"
+  ( sleep 1 && rm -f "${git_dir}/index.lock" ) &
+  local bg_pid=$!
 
-  local start end
-  start=$(date +%s)
   CGW_INDEX_LOCK_WAIT_SECONDS=8 run ensure_no_stale_index_lock
-  end=$(date +%s)
+  wait "${bg_pid}" 2>/dev/null || true
+
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"waiting up to"* ]]
+  [[ "${output}" != *"REFUSED"* ]]
+}
+
+@test "ensure_no_stale_index_lock: paused merge + stale lock is still refused with the real reason" {
+  local git_dir
+  git_dir="$(git -C "${TEST_REPO_DIR}" rev-parse --absolute-git-dir)"
+  : >"${git_dir}/index.lock"
+  touch -d "120 seconds ago" "${git_dir}/index.lock"
+  git -C "${TEST_REPO_DIR}" rev-parse HEAD >"${git_dir}/MERGE_HEAD"
+
+  CGW_INDEX_LOCK_WAIT_SECONDS=8 run ensure_no_stale_index_lock
 
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"git operation in progress (MERGE_HEAD)"* ]]
-  [[ "${output}" != *"waiting up to"* ]]
-  [[ "${output}" != *"Another git process may be active"* ]]
-  [ $((end - start)) -lt 4 ]
+  [ -f "${git_dir}/index.lock" ]
+}
+
+# ── lock refusal is distinguishable from a git failure ────────────────────────
+
+@test "cgw_run_with_lock_retry: a refused lock returns CGW_RC_INDEX_LOCKED and never runs the command" {
+  local git_dir marker="${TEST_TMPDIR}/ran"
+  git_dir="$(git -C "${TEST_REPO_DIR}" rev-parse --absolute-git-dir)"
+  : >"${git_dir}/index.lock"
+  touch -d "120 seconds ago" "${git_dir}/index.lock"
+
+  CGW_AUTO_REMOVE_INDEX_LOCK=0 run cgw_run_with_lock_retry touch "${marker}"
+  [ "${status}" -eq "${CGW_RC_INDEX_LOCKED}" ]
+  [ ! -e "${marker}" ]
+}
+
+@test "run_git_with_logging: a refused lock sets GIT_EXIT_CODE to CGW_RC_INDEX_LOCKED" {
+  local git_dir
+  git_dir="$(git -C "${TEST_REPO_DIR}" rev-parse --absolute-git-dir)"
+  : >"${git_dir}/index.lock"
+  touch -d "120 seconds ago" "${git_dir}/index.lock"
+
+  local rc=0
+  CGW_AUTO_REMOVE_INDEX_LOCK=0 run_git_with_logging "LOCKED" "${TEST_TMPDIR}/l.log" status >/dev/null 2>&1 || rc=$?
+  [ "${rc}" -eq "${CGW_RC_INDEX_LOCKED}" ]
+  [ "${GIT_EXIT_CODE}" -eq "${CGW_RC_INDEX_LOCKED}" ]
 }

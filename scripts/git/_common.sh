@@ -263,13 +263,20 @@ log_summary_table() {
   } | tee -a "$log_path"
 }
 
+# CGW_RC_INDEX_LOCKED — exit code run_git_with_logging / cgw_run_with_lock_retry return when
+# ensure_no_stale_index_lock refused the lock and git never ran (EX_TEMPFAIL). Callers whose
+# failure branch assumes "git ran and hit conflicts" must test for it first.
+if [[ -z "${CGW_RC_INDEX_LOCKED:-}" ]]; then
+  CGW_RC_INDEX_LOCKED=75
+fi
+
 # run_git_with_logging — run a git subcommand, capture output, and log it under a named section.
 # Globals:   GIT_OUTPUT (write — captured stdout+stderr of git)
 #            GIT_EXIT_CODE (write — exit code of git)
 # Arguments: $1 section_name — section label shown in log headers
 #            $2 log_path     — file path to append output to
 #            $@ git args     — passed directly to git
-# Returns:   exit code of git
+# Returns:   exit code of git, or CGW_RC_INDEX_LOCKED when the index lock was refused (git did not run)
 run_git_with_logging() {
   local section_name="$1"
   local log_path="$2"
@@ -285,7 +292,7 @@ run_git_with_logging() {
 
   while ((attempt <= max_attempts)); do
     ensure_no_stale_index_lock || {
-      GIT_EXIT_CODE=1
+      GIT_EXIT_CODE="${CGW_RC_INDEX_LOCKED}"
       GIT_OUTPUT="[cgw-lock] Refused due to active operation or stale lock"
       break
     }
@@ -581,26 +588,6 @@ ensure_no_stale_index_lock() {
   local wait_sec="${CGW_INDEX_LOCK_WAIT_SECONDS:-10}"
   local auto_remove="${CGW_AUTO_REMOVE_INDEX_LOCK:-1}"
 
-  # Refuse if a git operation is actively in progress — removing the lock
-  # while rebase/merge/cherry-pick is paused (e.g. editor open) would corrupt it.
-  # Checked BEFORE the fresh-lock wait so the refusal names the real cause
-  # immediately instead of after a pointless poll and a misleading message.
-  local -a active_op_sentinels=(
-    "${git_dir}/rebase-merge"
-    "${git_dir}/rebase-apply"
-    "${git_dir}/MERGE_HEAD"
-    "${git_dir}/CHERRY_PICK_HEAD"
-    "${git_dir}/REVERT_HEAD"
-    "${git_dir}/BISECT_LOG"
-  )
-  local sentinel
-  for sentinel in "${active_op_sentinels[@]}"; do
-    if [[ -e "${sentinel}" ]]; then
-      err_tee "[cgw-lock] REFUSED: git operation in progress (${sentinel##*/}). Resolve or abort it first."
-      return 1
-    fi
-  done
-
   if ((age < max_age)); then
     # Lock is fresh — may belong to a concurrent git process. Poll briefly.
     err_tee "[cgw-lock] index.lock is ${age}s old (threshold ${max_age}s); waiting up to ${wait_sec}s..."
@@ -620,6 +607,27 @@ ensure_no_stale_index_lock() {
       return 1
     fi
   fi
+
+  # Refuse to remove the lock while a rebase/merge/cherry-pick/revert/bisect is in
+  # progress -- removing it while the operation is paused (e.g. editor open) would corrupt
+  # it. Only reached once the lock is stale: a FRESH lock during such an operation is
+  # usually a transient IDE/status-bar git process, so it gets the normal wait above
+  # (concluding a merge commit, rebase --continue and bisect commits all run in this state).
+  local -a active_op_sentinels=(
+    "${git_dir}/rebase-merge"
+    "${git_dir}/rebase-apply"
+    "${git_dir}/MERGE_HEAD"
+    "${git_dir}/CHERRY_PICK_HEAD"
+    "${git_dir}/REVERT_HEAD"
+    "${git_dir}/BISECT_LOG"
+  )
+  local sentinel
+  for sentinel in "${active_op_sentinels[@]}"; do
+    if [[ -e "${sentinel}" ]]; then
+      err_tee "[cgw-lock] REFUSED: git operation in progress (${sentinel##*/}). Resolve or abort it first."
+      return 1
+    fi
+  done
 
   # Lock is stale. Remove it (or refuse if auto-remove is disabled).
   if [[ "${auto_remove}" != "1" ]]; then
@@ -652,6 +660,7 @@ ensure_no_stale_index_lock() {
 #      waits with backoff and retries up to CGW_LOCK_RETRY_ATTEMPTS (default: 3).
 #   5. If retries are exhausted or the error is unrelated, returns the
 #      command's exit code (stderr was already shown as it happened).
+#   6. If the lock check refuses (git never ran), returns CGW_RC_INDEX_LOCKED.
 cgw_run_with_lock_retry() {
   local max_attempts="${CGW_LOCK_RETRY_ATTEMPTS:-3}"
   local retry_delay="${CGW_LOCK_RETRY_DELAY:-1}"
@@ -667,9 +676,8 @@ cgw_run_with_lock_retry() {
 
   while ((attempt <= max_attempts)); do
     ensure_no_stale_index_lock || {
-      local lock_err=$?
       rm -f "${stderr_file}" 2>/dev/null || true
-      return "${lock_err}"
+      return "${CGW_RC_INDEX_LOCKED}"
     }
 
     # stdout goes straight through fd 3; stderr is tee'd so the user sees hook and

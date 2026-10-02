@@ -365,6 +365,12 @@ main() {
 
   else
     local merge_exit_code="${GIT_EXIT_CODE:-1}"
+    if [[ "${merge_exit_code}" -eq "${CGW_RC_INDEX_LOCKED}" ]]; then
+      # git never ran: not a conflict, so no resolve/cleanup/commit -- just stop.
+      log_section_end "GIT MERGE" "$logfile" "${merge_exit_code}"
+      err_tee "[FAIL] Merge not attempted: index.lock refused (see [cgw-lock] message above)"
+      exit 1
+    fi
     echo "" | tee -a "$logfile"
     echo "[!] Merge conflicts detected - analyzing..." | tee -a "$logfile"
     log_section_end "GIT MERGE" "$logfile" "${merge_exit_code}"
