@@ -10,6 +10,7 @@
 # Arguments:
 #   --non-interactive   Accept all auto-detected defaults without prompting
 #   --reconfigure       Overwrite existing .cgw.conf
+#   --hooks-only        Refresh only the git hooks (use with --overwrite-hooks); touches nothing else
 #   --skip-hooks        Don't install git pre-commit hook
 #   --skip-skill        Don't install Claude Code skill
 #   -h, --help          Show help
@@ -1214,6 +1215,7 @@ main() {
   local reconfigure=0
   local overwrite_hooks=0
   local skip_hooks=0
+  local hooks_only=0
   local skip_skill=0
   local skip_cc_guardrail=0
   local skip_agy_skill=0
@@ -1237,6 +1239,8 @@ main() {
         echo "  --non-interactive    Accept all auto-detected defaults"
         echo "  --reconfigure        Overwrite existing .cgw.conf"
         echo "  --overwrite-hooks    Overwrite existing .githooks/* with templates (default: preserve)"
+        echo "  --hooks-only         Refresh only the git hooks, then exit (no .cgw.conf, skill, command or"
+        echo "                       guardrail changes); combine with --overwrite-hooks to replace stale hooks"
         echo "  --skip-hooks         Don't install git pre-commit hook"
         echo "  --skip-skill         Don't install skills (skips both Claude and Antigravity)"
         echo "  --skip-claude        Skip Claude Code integration (skill + guardrail)"
@@ -1265,6 +1269,7 @@ main() {
         ;;
       --reconfigure) reconfigure=1 ;;
       --overwrite-hooks) overwrite_hooks=1 ;;
+      --hooks-only) hooks_only=1 ;;
       --skip-hooks) skip_hooks=1 ;;
       --skip-skill)
         skip_skill=1
@@ -1296,6 +1301,24 @@ main() {
     echo "[ERROR] Cannot change to project root: ${PROJECT_ROOT}" >&2
     exit 1
   }
+
+  # --hooks-only: refresh .githooks/* + .git/hooks/* and stop. Nothing else is touched --
+  # not .cgw.conf, .gitignore, the skill, the command or the guardrails.
+  if [[ ${hooks_only} -eq 1 ]]; then
+    if [[ ${skip_hooks} -eq 1 ]]; then
+      echo "[ERROR] --hooks-only and --skip-hooks contradict each other" >&2
+      exit 1
+    fi
+    echo ""
+    echo "=== claude-git-workflow: Hooks Only ==="
+    echo ""
+    echo "Project root: ${PROJECT_ROOT}"
+    echo ""
+    _install_hook "${overwrite_hooks}" || exit 1
+    echo ""
+    echo "[OK] Hooks refreshed. .cgw.conf, skill, command and guardrails were not touched."
+    exit 0
+  fi
 
   _cleanup_legacy_artifacts
 

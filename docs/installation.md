@@ -61,6 +61,7 @@ cd your-project && ./scripts/git/configure.sh
 | `--template-dir <dir>` | Path to CGW source toolkit providing asset templates (decouples template sourcing from project root) |
 | `--non-interactive` | Accept all auto-detected defaults without prompting |
 | `--reconfigure` | Overwrite an existing `.cgw.conf` (re-run detection + confirmation); the previous file is saved to `.cgw.conf.bak` first |
+| `--hooks-only` | Refresh only the git hooks and exit: no `.cgw.conf`, `.gitignore`, skill, command or guardrail changes. Add `--overwrite-hooks` to replace hooks that differ from the template (a `.bak` is kept) |
 | `--skip-hooks` | Skip git pre-commit/pre-push/pre-rebase hook installation |
 | `--skip-skill` | Skip all skill installations (both Claude Code and Antigravity) |
 | `--skip-claude` | Skip Claude Code skill, command, and guardrail |
@@ -77,6 +78,9 @@ cd your-project && ./scripts/git/configure.sh
 ```bash
 # Update config and hooks after changing lint tool
 ./scripts/git/configure.sh --reconfigure --skip-skill
+
+# Refresh stale hooks only (config, skill and guardrails untouched)
+./scripts/git/configure.sh --hooks-only --overwrite-hooks --template-dir /path/to/claude-git-workflow
 
 # Install skill globally (available in all projects)
 ./scripts/git/configure.sh --skip-hooks --global

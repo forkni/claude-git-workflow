@@ -24,6 +24,7 @@ Scans project, generates `.cgw.conf`, installs pre-commit + pre-push hooks, opti
 |------|---------|
 | `--non-interactive` | Accept all auto-detected defaults |
 | `--reconfigure` | Overwrite existing `.cgw.conf` |
+| `--hooks-only` | Refresh only the git hooks, then exit (no `.cgw.conf`/skill/guardrail changes); pair with `--overwrite-hooks` and `--template-dir` |
 | `--skip-hooks` | Don't install git hooks |
 | `--skip-skill` | Don't install Claude Code skill |
 | `--skip-cc-guardrail` | Don't install the Claude Code PreToolUse hook |
