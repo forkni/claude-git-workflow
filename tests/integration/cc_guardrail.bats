@@ -139,6 +139,19 @@ _run_configure() {
   [ "${status}" -eq 2 ]
 }
 
+@test "blocks git global options with separate, attached or escaped arguments" {
+  _require_jq
+  run _run_guardrail "git -C/repo worktree remove ../wt"
+  [ "${status}" -eq 2 ]
+  # \\ is the JSON escape for one backslash (the helper embeds the command in raw JSON)
+  run _run_guardrail 'git -C /repo\\ with\\ spaces worktree remove ../wt'
+  [ "${status}" -eq 2 ]
+  run _run_guardrail "git --exec-path /usr/bin worktree remove ../wt"
+  [ "${status}" -eq 2 ]
+  run _run_guardrail "git --config-env=a=B worktree remove ../wt"
+  [ "${status}" -eq 2 ]
+}
+
 @test "allows git grep for the worktree remove phrase" {
   _require_jq
   run _run_guardrail "git grep worktree remove"

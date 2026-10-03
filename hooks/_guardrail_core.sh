@@ -138,12 +138,13 @@ _cgw_guardrail_check_invocation() {
   # Raw worktree removal — on Windows, git's recursive delete follows the NTFS
   # junctions that older `worktree_manage.sh link` runs created, and empties the
   # MAIN worktree's gitignored scripts/git and .githooks (unrecoverable from git).
-  # Only git's global options may sit between `git` and `worktree`, so
-  # `git -C <path> worktree remove` is caught but `git grep worktree remove` is not.
-  # Quoted arguments are already stripped by now (`-C "/repo"` becomes `-C `), so a
-  # bare short flag is accepted too.
-  local _gopt='(-[Cc][[:space:]]+[^[:space:]]+|-[A-Za-z]|--(git-dir|work-tree|namespace)[[:space:]]+[^[:space:]]+|--[A-Za-z-]+(=[^[:space:]]*)?)[[:space:]]+'
-  if [[ ${padded} =~ git[[:space:]]+(${_gopt})*worktree[[:space:]]+remove[[:space:]] ]]; then
+  # Fail closed on git's global options (-C <path>, -C<path>, -c k=v, --exec-path
+  # <dir>, escaped spaces, ...): if the first token after `git` is an option,
+  # anything may sit between it and `worktree remove`. If it is a plain word
+  # (a subcommand), only a direct `worktree remove` matches, so
+  # `git grep worktree remove` is not blocked. Quoted arguments are already
+  # stripped by now (`-C "/repo"` becomes `-C `).
+  if [[ ${padded} =~ git[[:space:]]+(-[^[:space:]]*[[:space:]]+(.*[[:space:]])?)?worktree[[:space:]]+remove[[:space:]] ]]; then
     _cgw_guardrail_verdict 'git worktree remove' \
       'Use ./scripts/git/worktree_manage.sh remove --execute <path> instead — it unlinks CGW tooling first. A raw remove can follow a legacy junction and delete the main checkout'"'"'s scripts/git and .githooks.'
     return 1
