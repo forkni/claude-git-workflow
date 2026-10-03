@@ -67,13 +67,15 @@ echo     --dry-run          Validate every project and report what would be
 echo                        updated; makes no changes.
 echo     --no-pause         Skip the final "Press any key" pause (for automation).
 echo     --overwrite-hooks  Overwrite existing .githooks/* with templates
-echo                        (default: preserve locally established hooks).
+echo                        (default: refresh outdated stock hooks, keep customised ones).
 echo.
 echo   Each listed project is refreshed via configure.sh --non-interactive:
 echo   scripts, hooks, Claude Code and Antigravity skills, commands, and
-echo   guardrails are updated; .cgw.conf and locally established hooks are
-echo   NEVER overwritten by default. Projects with no existing .cgw.conf are
-echo   skipped -- run cgw-install.cmd for a first-time install.
+echo   guardrails are updated; .cgw.conf and customised hooks are NEVER
+echo   overwritten by default. Outdated unmodified stock hooks ARE refreshed;
+echo   a kept customised hook is reported as a warning. Projects with no
+echo   existing .cgw.conf are skipped -- run cgw-install.cmd for a first-time
+echo   install.
 echo.
 goto :end
 
@@ -164,10 +166,13 @@ rem --- Process each project ---
 set "UPDATED=0"
 set "SKIPPED=0"
 set "FAILED=0"
+set "WARNED=0"
 set "SKIP_LOG=%TEMP%\cgw-batch-skipped-%RANDOM%.txt"
 set "FAIL_LOG=%TEMP%\cgw-batch-failed-%RANDOM%.txt"
+set "WARN_LOG=%TEMP%\cgw-batch-warned-%RANDOM%.txt"
 if exist "!SKIP_LOG!" del /q "!SKIP_LOG!" 2>nul
 if exist "!FAIL_LOG!" del /q "!FAIL_LOG!" 2>nul
+if exist "!WARN_LOG!" del /q "!WARN_LOG!" 2>nul
 
 echo --- Processing Projects ---
 echo.
@@ -254,10 +259,10 @@ echo.
 goto :eof
 :pp_stage_ok
 
-rem Backup existing .githooks/ if present before running configure.sh
-if exist "!P!\.githooks\pre-commit" if not exist "!P!\.githooks\pre-commit.bak" copy /y "!P!\.githooks\pre-commit" "!P!\.githooks\pre-commit.bak" >nul
-if exist "!P!\.githooks\pre-push" if not exist "!P!\.githooks\pre-push.bak" copy /y "!P!\.githooks\pre-push" "!P!\.githooks\pre-push.bak" >nul
-if exist "!P!\.githooks\pre-rebase" if not exist "!P!\.githooks\pre-rebase.bak" copy /y "!P!\.githooks\pre-rebase" "!P!\.githooks\pre-rebase.bak" >nul
+rem No .githooks backup here: configure.sh refreshes outdated STOCK hooks in place
+rem (recoverable from CGW git) and backs up a customised hook only when it is
+rem overwritten (--overwrite-hooks). A pre-copy here only ever kept the FIRST
+rem version ever seen, so the .bak files went stale and misled.
 
 rem Ensure .claude\ and .agents\ exist so configure.sh defaults to installing
 rem skills, hooks, and commands for both Claude Code and Antigravity Agents.
@@ -286,9 +291,22 @@ set "CFG_EXIT=!ERRORLEVEL!"
 popd
 
 if not "!CFG_EXIT!"=="0" goto :pp_cfg_fail
+rem configure.sh prints "[!] ..." for anything needing attention (e.g. a customised
+rem hook it kept). "[!]" is its only one-character tag, so match it by regex -- a
+rem literal "!" would be eaten by delayed expansion.
+findstr /r /c:"^ *\[.\] " /c:"\[WARN\]" "!CFG_LOG!" >nul 2>&1
+if not errorlevel 1 goto :pp_cfg_warned
 echo(  [OK] Updated: !P!
 set /a UPDATED+=1
 del /q "!CFG_LOG!" 2>nul
+echo.
+goto :eof
+:pp_cfg_warned
+echo(  [OK] Updated ^(with warnings^): !P!
+set /a UPDATED+=1
+set /a WARNED+=1
+findstr /r /c:"^ *\[.\] " /c:"\[WARN\]" "!CFG_LOG!"
+>>"!WARN_LOG!" echo(!P!  ^(log: !CFG_LOG!^)
 echo.
 goto :eof
 :pp_cfg_fail
@@ -319,6 +337,7 @@ if "!DRY_RUN!"=="1" (
 )
 echo(  Skipped:      !SKIPPED!
 echo(  Failed:       !FAILED!
+echo(  Warnings:     !WARNED!
 echo.
 
 if not exist "!SKIP_LOG!" goto :summary_no_skip
@@ -327,6 +346,13 @@ type "!SKIP_LOG!"
 echo.
 del /q "!SKIP_LOG!" 2>nul
 :summary_no_skip
+
+if not exist "!WARN_LOG!" goto :summary_no_warn
+echo   Updated with warnings ^(configure.sh log kept^):
+type "!WARN_LOG!"
+echo.
+del /q "!WARN_LOG!" 2>nul
+:summary_no_warn
 
 if not exist "!FAIL_LOG!" goto :summary_no_fail
 echo   Failed projects:

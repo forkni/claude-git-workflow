@@ -276,7 +276,8 @@ fi
 # Arguments: $1 section_name — section label shown in log headers
 #            $2 log_path     — file path to append output to
 #            $@ git args     — passed directly to git
-# Returns:   exit code of git, or CGW_RC_INDEX_LOCKED when the index lock was refused (git did not run)
+# Returns:   exit code of git, or CGW_RC_INDEX_LOCKED when the index lock was refused or kept colliding
+#            until retries ran out (git did not change anything)
 run_git_with_logging() {
   local section_name="$1"
   local log_path="$2"
@@ -287,6 +288,7 @@ run_git_with_logging() {
   echo "Command: git $*" | tee -a "$log_path"
 
   local max_attempts="${CGW_LOCK_RETRY_ATTEMPTS:-3}"
+  [[ "${max_attempts}" =~ ^[0-9]+$ ]] && ((max_attempts >= 1)) || max_attempts=1
   local retry_delay="${CGW_LOCK_RETRY_DELAY:-1}"
   local attempt=1
 
@@ -313,6 +315,10 @@ run_git_with_logging() {
         ((attempt++))
         continue
       fi
+      # Retries exhausted: the lock never let git change anything, so report it as a refusal
+      # (not git's raw 128, which callers read as "git ran and hit conflicts").
+      err_tee "[cgw-lock] Index lock still held after ${max_attempts} attempt(s); 'git ${1:-command}' did not run."
+      GIT_EXIT_CODE="${CGW_RC_INDEX_LOCKED}"
     fi
     break
   done
@@ -658,11 +664,14 @@ ensure_no_stale_index_lock() {
 #   4. If the command fails specifically with an index.lock collision
 #      ("index.lock.*File exists" or "Unable to create.*index.lock"),
 #      waits with backoff and retries up to CGW_LOCK_RETRY_ATTEMPTS (default: 3).
-#   5. If retries are exhausted or the error is unrelated, returns the
-#      command's exit code (stderr was already shown as it happened).
+#   5. If retries are exhausted on an index.lock collision, returns
+#      CGW_RC_INDEX_LOCKED; an unrelated error returns the command's own exit
+#      code (stderr was already shown as it happened). CGW_LOCK_RETRY_ATTEMPTS
+#      below 1 is treated as 1, so the command always runs at least once.
 #   6. If the lock check refuses (git never ran), returns CGW_RC_INDEX_LOCKED.
 cgw_run_with_lock_retry() {
   local max_attempts="${CGW_LOCK_RETRY_ATTEMPTS:-3}"
+  [[ "${max_attempts}" =~ ^[0-9]+$ ]] && ((max_attempts >= 1)) || max_attempts=1
   local retry_delay="${CGW_LOCK_RETRY_DELAY:-1}"
   local attempt=1
   local exit_code=0
@@ -703,6 +712,9 @@ cgw_run_with_lock_retry() {
           ((attempt++))
           continue
         fi
+        # Retries exhausted: nothing ran, so report a refusal rather than git's raw 128.
+        err_tee "[cgw-lock] Index lock still held after ${max_attempts} attempt(s); '${op_name}' did not run."
+        exit_code="${CGW_RC_INDEX_LOCKED}"
       fi
 
       # Unrelated error or retries exhausted (stderr was already streamed above)
@@ -749,7 +761,8 @@ cgw_rebase_in_progress() {
 # To add an op: edit this array AND add a cgw_create_backup_tag call to the script.
 declare -gra CGW_BACKUP_OPS=(merge cherry-pick docs-merge bisect rebase undo-commit recover rollback) 2>/dev/null || true
 
-# Create a lightweight tag pre-<op>-<timestamp>-<pid> at HEAD.
+# Create a lightweight tag pre-<op>-<timestamp>-<pid> at HEAD, or at <ref> when given as $2
+# (e.g. a remote tip, for an operation that mutates a branch other than the checked-out one).
 # Sets global CGW_BACKUP_TAG. Warns but always proceeds on git tag failure.
 # Returns 1 only if <op> is not in CGW_BACKUP_OPS (programming error in caller).
 cgw_create_backup_tag() {
@@ -768,7 +781,7 @@ cgw_create_backup_tag() {
   [[ -z "${timestamp:-}" ]] && get_timestamp
   CGW_BACKUP_TAG="pre-${op}-${timestamp}-$$"
   local _log="${logfile:-/dev/null}"
-  if git tag "${CGW_BACKUP_TAG}" >>"${_log}" 2>&1; then
+  if git tag "${CGW_BACKUP_TAG}" ${2:+"$2"} >>"${_log}" 2>&1; then
     echo "[OK] Created backup tag: ${CGW_BACKUP_TAG}" | tee -a "${_log}"
   else
     echo "[!] Could not create backup tag: ${CGW_BACKUP_TAG} (continuing)" | tee -a "${_log}"
@@ -915,13 +928,18 @@ cgw_guard_incoming_local_files() {
 #   category arrays. Returns 0 if any conflicts present, 1 if none.
 #
 # cgw_resolve_safe_conflicts <op> <original_branch>
-#   Owns the policy: auto-resolves DU + DD (propagates failure), re-classifies,
-#   emits per-category halt messages with op-specific recovery footer.
-#   Sets CGW_CONFLICT_STATE (none|resolved|unresolved). Returns 0 if no manual
-#   action needed, 1 if caller should exit 1.
+#   Owns the policy: auto-resolves DD (propagates failure); DU only when
+#   CGW_AUTO_RESOLVE_MODIFY_DELETE=1 and the path is text (see ADR 0005).
+#   Re-classifies, emits per-category halt messages with op-specific recovery
+#   footer. Sets CGW_CONFLICT_STATE (none|resolved|unresolved). Returns 0 if no
+#   manual action needed, 1 if caller should exit 1.
+#
+# cgw_conflict_path_is_binary <path>
+#   Returns 0 if <path> is binary: gitattributes mark it binary / -diff, or the
+#   first 8000 bytes of its stage-3 (theirs) blob contain a NUL.
 
 # Conflict-category arrays — reset on every cgw_classify_conflicts call.
-declare -g CGW_CONFLICT_DU_FILES=() # modify/delete   (auto-resolvable: git rm)
+declare -g CGW_CONFLICT_DU_FILES=() # modify/delete   (halt by default; opt-in auto-resolve for text: git rm)
 declare -g CGW_CONFLICT_DD_FILES=() # both deleted    (auto-resolvable: git rm)
 declare -g CGW_CONFLICT_UU_FILES=() # both modified   (halt: content conflict)
 declare -g CGW_CONFLICT_AU_FILES=() # add/unmerged    (halt: add-side)
@@ -1009,6 +1027,17 @@ cgw_classify_conflicts() {
   [[ "${CGW_CONFLICT_TOTAL}" -gt 0 ]]
 }
 
+cgw_conflict_path_is_binary() {
+  local path="$1" attrs total text
+  attrs=$(git check-attr binary diff -- "${path}" 2>/dev/null)
+  if [[ "${attrs}" == *"binary: set"* ]] || [[ "${attrs}" == *"diff: unset"* ]]; then
+    return 0
+  fi
+  total=$(git cat-file blob ":3:${path}" 2>/dev/null | head -c 8000 | wc -c)
+  text=$(git cat-file blob ":3:${path}" 2>/dev/null | head -c 8000 | LC_ALL=C tr -d '\000' | wc -c)
+  [[ "${total//[[:space:]]/}" != "${text//[[:space:]]/}" ]]
+}
+
 # shellcheck disable=SC2034  # CGW_CONFLICT_STATE is read by callers outside _common.sh
 cgw_resolve_safe_conflicts() {
   local op="$1" original_branch="$2"
@@ -1020,23 +1049,34 @@ cgw_resolve_safe_conflicts() {
     return 0
   fi
 
-  # Auto-resolve DU (modify/delete): accept the deletion.
-  local f resolution_failed=0
-  for f in "${CGW_CONFLICT_DU_FILES[@]}"; do
-    echo "  Found modify/delete conflict: ${f}"
-    if git rm "${f}" >/dev/null 2>&1; then
-      echo "  [OK] Removed: ${f}"
-    else
-      echo "  [FAIL] Failed to remove ${f}" >&2
-      resolution_failed=1
-    fi
-  done
+  # DU (modify/delete): our side deleted the file, theirs modified it. Accepting the
+  # deletion silently discards the other side's work, so it halts by default (ADR 0005).
+  # Opt-in CGW_AUTO_RESOLVE_MODIFY_DELETE=1 accepts the deletion for text files only;
+  # binary paths always halt.
+  local f resolution_failed=0 auto_resolved=0
+  if [[ "${CGW_AUTO_RESOLVE_MODIFY_DELETE:-0}" == "1" ]]; then
+    for f in "${CGW_CONFLICT_DU_FILES[@]}"; do
+      echo "  Found modify/delete conflict: ${f}"
+      if cgw_conflict_path_is_binary "${f}"; then
+        echo "  [SKIP] Binary file -- needs a manual decision: ${f}"
+        continue
+      fi
+      if git rm "${f}" >/dev/null 2>&1; then
+        echo "  [OK] Removed: ${f}"
+        auto_resolved=$((auto_resolved + 1))
+      else
+        echo "  [FAIL] Failed to remove ${f}" >&2
+        resolution_failed=1
+      fi
+    done
+  fi
 
-  # Auto-resolve DD (both deleted): same as DU — propagate failure.
+  # Auto-resolve DD (both deleted): nothing to lose — propagate failure.
   for f in "${CGW_CONFLICT_DD_FILES[@]}"; do
     echo "  Found both-deleted conflict: ${f}"
     if git rm "${f}" >/dev/null 2>&1; then
       echo "  [OK] Removed (both deleted): ${f}"
+      auto_resolved=$((auto_resolved + 1))
     else
       echo "  [FAIL] Failed to remove ${f}" >&2
       resolution_failed=1
@@ -1049,21 +1089,18 @@ cgw_resolve_safe_conflicts() {
     return 1
   fi
 
-  # Capture auto-resolve count before re-classify resets the arrays.
-  local auto_resolved=$((${#CGW_CONFLICT_DU_FILES[@]} + ${#CGW_CONFLICT_DD_FILES[@]}))
-
   # Re-classify so halt checks see the post-rm state (fixes stale-snapshot bug).
   cgw_classify_conflicts
   if [[ "${CGW_CONFLICT_TOTAL}" -eq 0 ]]; then
     if [[ "${auto_resolved}" -gt 0 ]]; then
-      echo "[OK] Auto-resolved modify/delete and both-deleted conflicts" | tee -a "${_log}"
+      echo "[OK] Auto-resolved both-deleted conflicts (and modify/delete, opted in)" | tee -a "${_log}"
     fi
     CGW_CONFLICT_STATE="resolved"
     return 0
   fi
 
   if [[ "${auto_resolved}" -gt 0 ]]; then
-    echo "[OK] Auto-resolved modify/delete and both-deleted conflicts" | tee -a "${_log}"
+    echo "[OK] Auto-resolved both-deleted conflicts (and modify/delete, opted in)" | tee -a "${_log}"
   fi
 
   # Op-specific recovery footer.
@@ -1089,6 +1126,23 @@ cgw_resolve_safe_conflicts() {
   esac
 
   local any_halt=0
+
+  # DU — modify/delete: we deleted, they modified (their version is in the work tree)
+  if [[ "${#CGW_CONFLICT_DU_FILES[@]}" -gt 0 ]]; then
+    echo "" | tee -a "${_log}"
+    err_tee "[FAIL] Modify/delete conflicts require manual resolution (deleted by us, modified by them):"
+    printf '  %s\n' "${CGW_CONFLICT_DU_FILES[@]}" | tee -a "${_log}"
+    echo ""
+    echo "Please resolve manually (for each file):"
+    echo "  Accept deletion:    git rm <file>"
+    echo "  Keep their version: git add <file>"
+    echo "(CGW_AUTO_RESOLVE_MODIFY_DELETE=1 accepts the deletion automatically for text files.)"
+    echo ""
+    printf '%s\n' "${continue_hint}"
+    echo ""
+    printf '%s\n' "${abort_hint}"
+    any_halt=1
+  fi
 
   # UU — both modified (content conflict)
   if [[ "${#CGW_CONFLICT_UU_FILES[@]}" -gt 0 ]]; then

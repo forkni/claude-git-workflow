@@ -38,6 +38,55 @@ teardown() {
   [[ "${output}" == *"semver"* ]] || [[ "${output}" == *"format"* ]]
 }
 
+# ── --allow-non-semver ────────────────────────────────────────────────────────
+
+@test "--allow-non-semver creates an annotated tag with the name as given" {
+  run run_script create_release.sh archive/pre-rewrite --allow-non-semver --non-interactive
+  [ "${status}" -eq 0 ]
+  [ "$(git -C "${TEST_REPO_DIR}" cat-file -t archive/pre-rewrite)" = "tag" ]
+  # no v prefix was added
+  ! git -C "${TEST_REPO_DIR}" tag -l "varchive/pre-rewrite" | grep -q .
+}
+
+@test "--allow-non-semver does not add a v prefix to a bare version" {
+  run run_script create_release.sh 1.0 --allow-non-semver --non-interactive
+  [ "${status}" -eq 0 ]
+  git -C "${TEST_REPO_DIR}" tag -l "1.0" | grep -qx "1.0"
+}
+
+@test "--allow-non-semver notes that release.yml will not fire" {
+  run run_script create_release.sh archive/2026-q1 --allow-non-semver --non-interactive
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"release.yml"* ]]
+  [[ "${output}" == *"will not fire"* ]]
+}
+
+@test "--allow-non-semver still rejects an invalid ref name" {
+  run run_script create_release.sh "bad name" --allow-non-semver --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"not a valid tag name"* ]]
+  [ -z "$(git -C "${TEST_REPO_DIR}" tag -l)" ]
+}
+
+@test "--allow-non-semver keeps the branch, dirty-tree and existing-tag guards" {
+  git -C "${TEST_REPO_DIR}" tag archive/dup
+  run run_script create_release.sh archive/dup --allow-non-semver --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"already exists"* ]]
+}
+
+@test "--allow-non-semver with a v* tag does not print the no-release note" {
+  run run_script create_release.sh v3.0.0 --allow-non-semver --non-interactive
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"will not fire"* ]]
+}
+
+@test "--help documents --allow-non-semver" {
+  run run_script create_release.sh --help
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"--allow-non-semver"* ]]
+}
+
 # ── branch guard ──────────────────────────────────────────────────────────────
 
 @test "running from non-target branch exits 1" {
@@ -96,4 +145,10 @@ teardown() {
   run run_script create_release.sh v1.0.0 --non-interactive
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"ntracked"* ]]
+}
+
+@test "--allow-non-semver rejects a tag name starting with a dash" {
+  run run_script create_release.sh -- -oops --allow-non-semver --non-interactive
+  [ "${status}" -ne 0 ]
+  ! git -C "${TEST_REPO_DIR}" tag -l | grep -q -- '-oops'
 }

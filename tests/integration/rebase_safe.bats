@@ -172,3 +172,131 @@ teardown() {
   [ "$(git -C "${TEST_REPO_DIR}" symbolic-ref --short HEAD)" = "development" ]
   [ "$(git -C "${TEST_REPO_DIR}" rev-parse development)" = "${before}" ]
 }
+
+# ── Pushed-commit detection ──────────────────────────────────────────────────
+# The "already pushed" warning must count the commits being rewritten that are
+# reachable from the remote -- not the commits the remote lacks (the inverse).
+
+_add_remote() {
+  local remote="${TEST_TMPDIR}/remote.git"
+  create_bare_remote "${remote}"
+  git -C "${TEST_REPO_DIR}" remote add origin "${remote}"
+}
+
+_commit_on() {
+  # _commit_on <branch> <file> -- one commit adding <file> on <branch>
+  git -C "${TEST_REPO_DIR}" checkout --quiet "$1"
+  echo "$2" > "${TEST_REPO_DIR}/$2"
+  git -C "${TEST_REPO_DIR}" add "$2"
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: add $2"
+}
+
+@test "--onto: a branch never pushed does not trigger the pushed-commits warning" {
+  _add_remote
+  _commit_on main main-extra.txt
+  git -C "${TEST_REPO_DIR}" push --quiet origin main
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+
+  run run_script rebase_safe.sh --onto main --non-interactive
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"already been pushed"* ]]
+  [[ "${output}" == *"REBASE COMPLETE"* ]]
+}
+
+@test "--onto: commits already on the remote trigger the warning and abort non-interactively" {
+  _add_remote
+  _commit_on main main-extra.txt
+  git -C "${TEST_REPO_DIR}" push --quiet origin main
+  # development is fully pushed (in sync with origin/development): the old
+  # "remote..HEAD" count was 0 here, so the warning never fired.
+  git -C "${TEST_REPO_DIR}" push --quiet origin development
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  local head_before
+  head_before=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+
+  run run_script rebase_safe.sh --onto main --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"1 commit(s) on this branch have already been pushed"* ]]
+  [[ "${output}" == *"requires confirmation"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "${head_before}" ]
+}
+
+@test "--onto: pushed count excludes local-only commits" {
+  _add_remote
+  _commit_on main main-extra.txt
+  git -C "${TEST_REPO_DIR}" push --quiet origin main
+  _commit_on development pushed-2.txt
+  git -C "${TEST_REPO_DIR}" push --quiet origin development
+  _commit_on development local-only.txt
+
+  run run_script rebase_safe.sh --onto main --non-interactive
+  # 3 commits would be rewritten, 2 of them (fixture + pushed-2) are on origin
+  [[ "${output}" == *"2 commit(s) on this branch have already been pushed"* ]]
+}
+
+@test "--squash-last: pushed count covers only the squashed range" {
+  _add_remote
+  _commit_on development pushed-2.txt
+  git -C "${TEST_REPO_DIR}" push --quiet origin development
+  _commit_on development local-only.txt
+
+  run run_script rebase_safe.sh --squash-last 3 --non-interactive
+  # last 3 = fixture commit + pushed-2 (both on origin) + local-only
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"2 commit(s) on this branch have already been pushed"* ]]
+  [[ "${output}" == *"requires confirmation"* ]]
+}
+
+# ── 3-argument --onto (--upstream) ───────────────────────────────────────────
+
+_make_server_client() {
+  # main -- server (S1) -- client (C1, C2); then main moves on (M1)
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b server
+  _commit_on server server.txt
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b client
+  _commit_on client client1.txt
+  _commit_on client client2.txt
+  _commit_on main main-moved.txt
+  git -C "${TEST_REPO_DIR}" checkout --quiet client
+}
+
+@test "--onto <new> --upstream <old> replays only <old>..HEAD (git rebase --onto 3-arg form)" {
+  _make_server_client
+
+  run run_script rebase_safe.sh --onto main --upstream server --non-interactive
+  [ "${status}" -eq 0 ]
+
+  # client now sits on main, carrying exactly its own two commits
+  [ "$(git -C "${TEST_REPO_DIR}" rev-list --count main..client)" -eq 2 ]
+  git -C "${TEST_REPO_DIR}" ls-files | grep -q '^client1.txt$'
+  git -C "${TEST_REPO_DIR}" ls-files | grep -q '^client2.txt$'
+  git -C "${TEST_REPO_DIR}" ls-files | grep -q '^main-moved.txt$'
+  # server's own commit was NOT carried over
+  ! git -C "${TEST_REPO_DIR}" ls-files | grep -q '^server.txt$'
+}
+
+@test "--onto --upstream --dry-run prints the 3-argument command and changes nothing" {
+  _make_server_client
+  local head_before
+  head_before=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+
+  run run_script rebase_safe.sh --onto main --upstream server --dry-run --non-interactive
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"git rebase --onto main server"* ]]
+  [[ "${output}" == *"Commits to rebase: 2"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "${head_before}" ]
+}
+
+@test "--upstream without --onto exits 1" {
+  run run_script rebase_safe.sh --squash-last 2 --upstream main --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"--upstream only applies"* ]]
+}
+
+@test "--upstream with an unknown ref exits 1" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  run run_script rebase_safe.sh --onto main --upstream no-such-ref --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Invalid --upstream ref"* ]]
+}

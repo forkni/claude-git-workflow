@@ -194,6 +194,7 @@ CGW_MERGE_IGNORE_WHITESPACE|0|bool|fill|conf
 CGW_DOCS_PATTERN||str|fill|conf
 CGW_DEV_ONLY_FILES||str|fill|conf
 CGW_ALLOW_LOCAL_FILES_IN_MERGE|0|bool|keep|conf
+CGW_AUTO_RESOLVE_MODIFY_DELETE|0|bool|keep|conf
 CGW_CLEANUP_TESTS|0|bool|fill|conf
 CGW_PROTECTED_BRANCHES||computed|fill|conf
 CGW_MERGE_MODE|direct|enum:direct/pr|fill|conf

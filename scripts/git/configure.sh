@@ -10,6 +10,7 @@
 # Arguments:
 #   --non-interactive   Accept all auto-detected defaults without prompting
 #   --reconfigure       Overwrite existing .cgw.conf
+#   --hooks-only        Refresh only the git hooks (use with --overwrite-hooks); touches nothing else
 #   --skip-hooks        Don't install git pre-commit hook
 #   --skip-skill        Don't install Claude Code skill
 #   -h, --help          Show help
@@ -390,6 +391,24 @@ _resolve_template_dir() {
   return 1
 }
 
+# _hook_stock_version <template_file> <target_file> <hook_name>
+#   Decides whether an installed hook is an outdated STOCK copy (as opposed to a
+#   customisation): its content, CR-stripped so a CRLF checkout still matches,
+#   must be a blob that hooks/<hook_name> has held in the template repo's history.
+#   Prints the short sha of the first commit that introduced it and returns 0;
+#   returns 1 when it is not a known stock version -- or when that cannot be
+#   told (template dir is not a git checkout), which falls back to "preserve".
+_hook_stock_version() {
+  local template_file="$1" target_file="$2" hook_name="$3"
+  local tpl_root blob sha
+  tpl_root="$(git -C "$(dirname "${template_file}")" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  blob="$(tr -d '\r' <"${target_file}" | git hash-object --no-filters --stdin 2>/dev/null)" || return 1
+  [[ -n "${blob}" ]] || return 1
+  sha="$(git -C "${tpl_root}" log --all --format=%h --find-object="${blob}" -- "hooks/${hook_name}" 2>/dev/null | tail -1)"
+  [[ -n "${sha}" ]] || return 1
+  printf '%s\n' "${sha}"
+}
+
 _install_single_hook() {
   local hook_name="$1"
   local template_file="$2"
@@ -424,7 +443,23 @@ _install_single_hook() {
     return 0
   fi
 
-  # Case 3: .githooks/<hook> exists and differs from template
+  # Case 3a: differs from template but is an outdated STOCK copy (ADR 0006) -- refresh it.
+  # No .bak: the old version is recoverable from CGW git, and the message names the commit.
+  local stock_sha
+  if stock_sha="$(_hook_stock_version "${template_file}" "${target_file}" "${hook_name}")"; then
+    # The active .git/hooks copy of the same stale stock hook is refreshed too, so install_hooks.sh
+    # (run next) sees it matching the template and makes no .bak; a differing one is still backed up.
+    if [[ -f "${active_git_hook}" ]] && cmp -s "${target_file}" "${active_git_hook}"; then
+      cp "${template_file}" "${active_git_hook}"
+      chmod +x "${active_git_hook}"
+    fi
+    cp "${template_file}" "${target_file}"
+    chmod +x "${target_file}"
+    echo "  [OK] Refreshed outdated stock .githooks/${hook_name} (was CGW ${stock_sha})"
+    return 0
+  fi
+
+  # Case 3b: differs from template and is a customisation (or cannot be told apart)
   local do_overwrite="${overwrite}"
   if [[ "${do_overwrite}" -eq 0 ]] && [[ "${non_interactive:-0}" -eq 0 ]]; then
     # deny: CGW_NON_INTERACTIVE=1 from the environment (CI, agent shell) must keep the
@@ -1214,6 +1249,7 @@ main() {
   local reconfigure=0
   local overwrite_hooks=0
   local skip_hooks=0
+  local hooks_only=0
   local skip_skill=0
   local skip_cc_guardrail=0
   local skip_agy_skill=0
@@ -1236,7 +1272,10 @@ main() {
         echo "  --template-dir <dir> Path to CGW source toolkit providing asset templates"
         echo "  --non-interactive    Accept all auto-detected defaults"
         echo "  --reconfigure        Overwrite existing .cgw.conf"
-        echo "  --overwrite-hooks    Overwrite existing .githooks/* with templates (default: preserve)"
+        echo "  --overwrite-hooks    Also replace customised .githooks/* with templates, keeping a .bak (outdated"
+        echo "                       unmodified CGW hooks are refreshed without it; default: keep customised)"
+        echo "  --hooks-only         Refresh only the git hooks, then exit (no .cgw.conf, skill, command or"
+        echo "                       guardrail changes); combine with --overwrite-hooks to replace stale hooks"
         echo "  --skip-hooks         Don't install git pre-commit hook"
         echo "  --skip-skill         Don't install skills (skips both Claude and Antigravity)"
         echo "  --skip-claude        Skip Claude Code integration (skill + guardrail)"
@@ -1265,6 +1304,7 @@ main() {
         ;;
       --reconfigure) reconfigure=1 ;;
       --overwrite-hooks) overwrite_hooks=1 ;;
+      --hooks-only) hooks_only=1 ;;
       --skip-hooks) skip_hooks=1 ;;
       --skip-skill)
         skip_skill=1
@@ -1296,6 +1336,24 @@ main() {
     echo "[ERROR] Cannot change to project root: ${PROJECT_ROOT}" >&2
     exit 1
   }
+
+  # --hooks-only: refresh .githooks/* + .git/hooks/* and stop. Nothing else is touched --
+  # not .cgw.conf, .gitignore, the skill, the command or the guardrails.
+  if [[ ${hooks_only} -eq 1 ]]; then
+    if [[ ${skip_hooks} -eq 1 ]]; then
+      echo "[ERROR] --hooks-only and --skip-hooks contradict each other" >&2
+      exit 1
+    fi
+    echo ""
+    echo "=== claude-git-workflow: Hooks Only ==="
+    echo ""
+    echo "Project root: ${PROJECT_ROOT}"
+    echo ""
+    _install_hook "${overwrite_hooks}" || exit 1
+    echo ""
+    echo "[OK] Hooks refreshed. .cgw.conf, skill, command and guardrails were not touched."
+    exit 0
+  fi
 
   _cleanup_legacy_artifacts
 
@@ -1485,6 +1543,10 @@ main() {
       echo "# Allow merge/cherry-pick to carry CGW_LOCAL_FILES into shared history"
       echo "# (guard aborts non-interactively when 0)"
       echo "# CGW_ALLOW_LOCAL_FILES_IN_MERGE=\"0\""
+      echo ""
+      echo "# Auto-resolve modify/delete (DU) merge/cherry-pick conflicts by accepting the"
+      echo "# deletion (text files only; binary files always halt). Default \"0\" halts."
+      echo "# CGW_AUTO_RESOLVE_MODIFY_DELETE=\"0\""
       echo ""
       echo "# Remove tests/ from target branch if gitignored (0=disabled, 1=enabled)"
       echo "# Options: \"0\" (leave tests/ alone -- default) | \"1\" (merge_with_validation.sh"

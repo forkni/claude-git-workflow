@@ -127,6 +127,20 @@ The overrides are ephemeral — they do not mutate `CGW_SOURCE_BRANCH` / `CGW_TA
 Requires: `gh` CLI installed and authenticated (`gh auth login`).
 Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use PRs by default.
 
+### Merge PR
+
+```bash
+./scripts/git/merge_pr.sh 42                    # merge commit (keeps the feature revertable as a unit)
+./scripts/git/merge_pr.sh 42 --dry-run          # validate and preview only
+./scripts/git/merge_pr.sh 42 --retarget 43      # then retarget stacked PR #43 onto 42's base
+./scripts/git/merge_pr.sh 42 --squash --allow-non-merge   # flattens the PR; explicit ack required
+```
+
+`--retarget` is for stacked PRs in repos that don't auto-delete merged branches: it is validated
+before the merge (PR 43's base must be PR 42's head) and run right after it. The head branch is
+never deleted unless you pass `--delete-branch`. Undo a merge with
+`./scripts/git/rollback_merge.sh --revert --target <merge-sha>` (the SHA is printed on success).
+
 ### Push
 
 ```bash
@@ -159,12 +173,16 @@ backs up and resets the file to `HEAD` so `pull --rebase` can proceed, then rest
 bytes, re-applies the bit, and prints the upstream diff so new shared content can be reconciled
 by hand. No-op when nothing has diverged.
 
+Branches listed in `CGW_PROTECTED_BRANCHES` (default: the target branch) sync with
+`git pull --ff-only`; if one has diverged from its remote the script refuses rather than
+rebasing it (see `docs/adr/0004`). All other branches use rebase.
+
 ### Rollback a merge
 
 ```bash
 ./scripts/git/rollback_merge.sh                           # interactive (hard reset)
 ./scripts/git/rollback_merge.sh --revert                  # safe revert (preserves history, no force-push)
-./scripts/git/rollback_merge.sh --non-interactive         # auto-select latest backup
+./scripts/git/rollback_merge.sh --non-interactive         # auto-pick latest pre-merge tag, only if it equals HEAD^1; else refuses
 ./scripts/git/rollback_merge.sh --target pre-merge-20260101_120000-12345
 ```
 
@@ -193,6 +211,7 @@ by hand. No-op when nothing has diverged.
 ./scripts/git/create_release.sh v1.2.3 --push     # tag + push (triggers release.yml)
 ./scripts/git/create_release.sh v1.2.3 --sign --push  # GPG/SSH-signed tag + push
 ./scripts/git/create_release.sh v1.2.3 --dry-run  # preview
+./scripts/git/create_release.sh archive/pre-rewrite --allow-non-semver  # non-semver archive tag (release.yml fires only on v*)
 ```
 
 Enable signing globally in `.cgw.conf`: `CGW_SIGN_TAGS=1`. Requires a GPG or SSH signing key configured in git (`gpg.signingKey` / `gpg.format=ssh`). Verify a tag with: `git tag -v v1.2.3`.
@@ -305,6 +324,7 @@ Linked worktrees let you check out multiple branches simultaneously in separate 
 ./scripts/git/worktree_manage.sh list                            # show all worktrees
 ./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent     # add linked worktree (creates branch)
 ./scripts/git/worktree_manage.sh add ../review existing-branch   # check out existing branch
+./scripts/git/worktree_manage.sh add ../part2 feat/part-2 feat/part-1  # new branch starting at <base>
 ./scripts/git/worktree_manage.sh link                            # link CGW tooling into the current worktree
 ./scripts/git/worktree_manage.sh remove --execute ../hotfix      # remove worktree link
 ./scripts/git/worktree_manage.sh prune                           # dry-run: show stale admin files

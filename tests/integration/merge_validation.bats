@@ -214,10 +214,12 @@ _run_merge() {
   [ -d "${TEST_REPO_DIR}/tests" ] || true  # may not be merged yet, but tests/ not forcibly removed
 }
 
-# ── Conflict resolution: DU (auto-resolve) ────────────────────────────────────
+# ── Conflict resolution: DU (halt by default; opt-in text auto-resolve) ──────
 
-@test "DU conflict: merge auto-resolves deleted-by-us file and exits 0" {
-  # shared.txt on both branches; main deletes it (us), development modifies it (theirs)
+# Build a DU conflict on shared.txt: main deletes it (us), development modifies it (theirs).
+# $1 = printf format for the modified content on development (default: text).
+_seed_du_conflict() {
+  local dev_content="${1:-shared content\nmodified by dev\n}"
   git -C "${TEST_REPO_DIR}" checkout main
   printf 'shared content\n' > "${TEST_REPO_DIR}/shared.txt"
   git -C "${TEST_REPO_DIR}" add shared.txt
@@ -225,7 +227,7 @@ _run_merge() {
 
   git -C "${TEST_REPO_DIR}" checkout development
   git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff -m "chore: sync shared.txt"
-  printf 'shared content\nmodified by dev\n' > "${TEST_REPO_DIR}/shared.txt"
+  printf "${dev_content}" > "${TEST_REPO_DIR}/shared.txt"
   git -C "${TEST_REPO_DIR}" add shared.txt
   git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev modifies shared.txt"
 
@@ -234,9 +236,36 @@ _run_merge() {
   git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: main deletes shared.txt"
 
   git -C "${TEST_REPO_DIR}" checkout development
+}
+
+@test "DU conflict: merge halts by default and names the file and both choices" {
+  _seed_du_conflict
   run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Modify/delete conflicts require manual resolution"* ]]
+  [[ "${output}" == *"shared.txt"* ]]
+  [[ "${output}" == *"git rm <file>"* ]]
+  [[ "${output}" == *"git add <file>"* ]]
+  [[ "${output}" != *"Auto-resolved"* ]]
+  # The other side's modification is still in the work tree, not discarded.
+  grep -q "modified by dev" "${TEST_REPO_DIR}/shared.txt"
+}
+
+@test "DU conflict: CGW_AUTO_RESOLVE_MODIFY_DELETE=1 auto-resolves a text file and exits 0" {
+  _seed_du_conflict
+  CGW_AUTO_RESOLVE_MODIFY_DELETE=1 run _run_merge "--non-interactive"
   [ "${status}" -eq 0 ]
-  [[ "${output}" == *"Auto-resolved"* ]] || [[ "${output}" == *"auto-resolved"* ]]
+  [[ "${output}" == *"Auto-resolved"* ]]
+  [ ! -e "${TEST_REPO_DIR}/shared.txt" ]
+}
+
+@test "DU conflict: CGW_AUTO_RESOLVE_MODIFY_DELETE=1 still halts on a binary (NUL) file" {
+  _seed_du_conflict 'bin\0ary\n'
+  CGW_AUTO_RESOLVE_MODIFY_DELETE=1 run _run_merge "--non-interactive"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Binary file"* ]]
+  [[ "${output}" == *"Modify/delete conflicts require manual resolution"* ]]
+  [ -e "${TEST_REPO_DIR}/shared.txt" ]
 }
 
 # ── Conflict resolution: UU (manual halt) ────────────────────────────────────
@@ -403,7 +432,7 @@ _run_merge() {
 
 # ── Conflict resolution: mixed DU+UU ─────────────────────────────────────────
 
-@test "mixed DU+UU: DU auto-resolved then halts on UU" {
+@test "mixed DU+UU: halts on both, listing the DU and the content conflict" {
   git -C "${TEST_REPO_DIR}" checkout main
   printf 'shared\n' > "${TEST_REPO_DIR}/shared.txt"
   printf 'line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
@@ -413,8 +442,9 @@ _run_merge() {
   git -C "${TEST_REPO_DIR}" checkout development
   git -C "${TEST_REPO_DIR}" merge main --quiet --no-ff -m "chore: sync"
   printf 'dev-line1\nline2\n' > "${TEST_REPO_DIR}/conflict.txt"
-  git -C "${TEST_REPO_DIR}" add conflict.txt
-  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev modifies conflict.txt"
+  printf 'shared\ndev edit\n' > "${TEST_REPO_DIR}/shared.txt"
+  git -C "${TEST_REPO_DIR}" add conflict.txt shared.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: dev modifies conflict.txt and shared.txt"
 
   git -C "${TEST_REPO_DIR}" checkout main
   git -C "${TEST_REPO_DIR}" rm shared.txt --quiet
@@ -425,7 +455,7 @@ _run_merge() {
   git -C "${TEST_REPO_DIR}" checkout development
   run _run_merge "--non-interactive"
   [ "${status}" -eq 1 ]
-  # DU auto-resolved first, then halted on UU
+  [[ "${output}" == *"Modify/delete conflicts require manual resolution"* ]]
   [[ "${output}" == *"Content conflicts require manual resolution"* ]]
 }
 

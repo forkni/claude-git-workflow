@@ -24,6 +24,7 @@ Scans project, generates `.cgw.conf`, installs pre-commit + pre-push hooks, opti
 |------|---------|
 | `--non-interactive` | Accept all auto-detected defaults |
 | `--reconfigure` | Overwrite existing `.cgw.conf` |
+| `--hooks-only` | Refresh only the git hooks, then exit (no `.cgw.conf`/skill/guardrail changes); pair with `--overwrite-hooks` and `--template-dir` |
 | `--skip-hooks` | Don't install git hooks |
 | `--skip-skill` | Don't install Claude Code skill |
 | `--skip-cc-guardrail` | Don't install the Claude Code PreToolUse hook |
@@ -191,7 +192,7 @@ Checks: current branch is source/target (warning if not), no uncommitted changes
 | `--source <branch>` | Override source branch for this invocation (ephemeral, doesn't mutate config) |
 | `--target <branch>` | Override target branch for this invocation |
 
-Workflow: validate → backup tag (`pre-merge-<timestamp>-<pid>`, created via `cgw_create_backup_tag merge` in `_common.sh`) → merge → auto-resolve DU/DD conflicts → stop on UU/AU/AA/UD/AD/DA → docs CI check → tests cleanup → commit.
+Workflow: validate → backup tag (`pre-merge-<timestamp>-<pid>`, created via `cgw_create_backup_tag merge` in `_common.sh`) → merge → auto-resolve DD conflicts (DU too with `CGW_AUTO_RESOLVE_MODIFY_DELETE=1`, text files only) → stop on DU/UU/AU/AA/UD/AD/DA → docs CI check → tests cleanup → commit.
 
 **`rollback_merge.sh`** — Emergency rollback
 
@@ -277,6 +278,7 @@ Passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own
 
 ```bash
 ./scripts/git/rebase_safe.sh --onto <branch>        # rebase onto branch
+./scripts/git/rebase_safe.sh --onto <new> --upstream <old>   # 3-arg: replay only <old>..HEAD onto <new>
 ./scripts/git/rebase_safe.sh --squash-last <N>       # interactive squash of last N commits
 ./scripts/git/rebase_safe.sh --abort                 # abort in-progress rebase
 ./scripts/git/rebase_safe.sh --continue              # continue after resolving conflicts
@@ -286,6 +288,7 @@ Passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own
 | Flag | Purpose | When to Use |
 |------|---------|-------------|
 | `--onto <branch>` | Rebase current branch onto this ref | Sync feature branch with main |
+| `--upstream <ref>` | With `--onto`: `git rebase --onto <new> <ref>` — replay only `<ref>..HEAD` | Move a topic branch off an intermediate branch (Pro Git p.101-103) |
 | `--squash-last <N>` | Squash last N commits (opens editor) | Clean up commit history before PR |
 | `--autosquash` | Apply `fixup!`/`squash!` prefixes automatically | With `--squash-last` for automated squash |
 | `--autostash` | Auto-stash dirty working tree before rebase | Rebase with uncommitted changes |
@@ -295,7 +298,7 @@ Passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own
 | `--non-interactive` | Skip confirmation prompts (requires `--autosquash` with `--squash-last`) | Automation |
 | `--dry-run` | Show plan without rebasing | Preview |
 
-Creates `pre-rebase-<timestamp>-<pid>` backup tag before any rebase. Warns if commits already pushed.
+Creates `pre-rebase-<timestamp>-<pid>` backup tag before any rebase. Warns if any of the commits being rewritten are already on the remote (counted as commits reachable from a `<remote>/*` ref, same rule as the `pre-rebase` hook).
 
 **`bisect_helper.sh`** — Guided git bisect for bug hunting
 
@@ -368,6 +371,7 @@ Always protected, regardless of `CGW_TARGET_BRANCH`: `main`, `master`, the repo'
 ./scripts/git/create_release.sh v1.2.3 --push       # create tag + push (triggers release.yml)
 ./scripts/git/create_release.sh v1.2.3 --sign --push  # GPG/SSH-signed annotated tag + push
 ./scripts/git/create_release.sh v1.2.3 --dry-run    # preview
+./scripts/git/create_release.sh archive/pre-rewrite --allow-non-semver  # archive tag: any valid ref name, no v prefix, release.yml won't fire
 ```
 
 | Flag | Purpose |
@@ -403,6 +407,7 @@ Always protected, regardless of `CGW_TARGET_BRANCH`: `main`, `master`, the repo'
 ./scripts/git/worktree_manage.sh list                            # list all worktrees
 ./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent     # add with new branch
 ./scripts/git/worktree_manage.sh add ../review review-feature    # add with existing branch
+./scripts/git/worktree_manage.sh add ../part2 feat/part-2 feat/part-1  # new branch starting at another branch
 ./scripts/git/worktree_manage.sh link                            # link CGW tooling into this worktree
 ./scripts/git/worktree_manage.sh remove --execute ../hotfix      # remove (--execute required)
 ./scripts/git/worktree_manage.sh prune                           # dry-run: show stale admin files
@@ -412,7 +417,7 @@ Always protected, regardless of `CGW_TARGET_BRANCH`: `main`, `master`, the repo'
 | Subcommand | Purpose |
 |------------|---------|
 | `list` | All worktrees via `git worktree list --porcelain` |
-| `add <path> [<branch>]` | Add linked worktree; creates branch with `-b` if new; auto-links CGW tooling |
+| `add <path> [<branch> [<base>]]` | Add linked worktree; creates branch with `-b` if new (from `<base>`, default HEAD; `--base <ref>` is the flag form; a base for an existing branch is refused); auto-links CGW tooling |
 | `link [<path>]` | Link `scripts/git` and `.githooks` from the main worktree (default: current dir) |
 | `remove [--execute] <path>` | Unlink CGW tooling, then remove worktree (dry-run default) |
 | `prune [--execute]` | Remove stale admin files for missing paths (dry-run default) |
@@ -574,6 +579,30 @@ Read-only; safe with a dirty working tree. Default branch resolves via `${CGW_RE
 
 Wraps `gh pr checkout`. Requires `gh` CLI authenticated (`gh auth login`). Refuses to switch branches with uncommitted tracked changes unless `--force` is given — stash first with `./scripts/git/stash_work.sh push`.
 
+**`merge_pr.sh`** — Merge a GitHub PR with a merge commit; optionally retarget stacked PRs
+
+```bash
+./scripts/git/merge_pr.sh 42
+./scripts/git/merge_pr.sh 42 --retarget 43 --retarget 44
+./scripts/git/merge_pr.sh 42 --dry-run
+./scripts/git/merge_pr.sh 42 --wait-checks    # wait for pending PR checks instead of refusing
+./scripts/git/merge_pr.sh 42 --squash --allow-non-merge
+```
+
+| Flag | Purpose |
+|------|---------|
+| `<PR-number>` | PR number to merge (positional, or `--pr <N>`) |
+| `--squash` / `--rebase` | Flatten instead of a merge commit; refused non-interactively without `--allow-non-merge` (the PR can no longer be reverted as one unit) |
+| `--allow-non-merge` | Acknowledge the flattening |
+| `--retarget <M>` | After the merge, `gh pr edit <M> --base <this PR's base>`; M's base must equal this PR's head (checked before merging). Repeatable |
+| `--delete-branch` | Delete the head branch after merge and retarget (never by default) |
+| `--wait-checks` | PR checks are required to be green (`gh pr checks`); wait for pending ones (`--watch --fail-fast`) instead of refusing |
+| `--skip-checks` | Merge without the green-checks gate (logged as a warning; not recommended) |
+| `--dry-run` | Validate and print the `gh` commands without merging |
+| `--non-interactive` | Accept all defaults, no prompts |
+
+Wraps `gh pr merge --merge`. Requires `gh` CLI authenticated. Passes an explicit `--repo` resolved from `CGW_REMOTE`'s URL (like `create_pr.sh`) and aborts if it can't. Refuses a PR that isn't OPEN. On success prints the merge SHA and the undo command `rollback_merge.sh --revert --target <sha>`.
+
 **`md_toc.sh`** — Generate/insert a Markdown Table of Contents
 
 ```bash
@@ -617,7 +646,7 @@ Computes GitHub-compatible heading slugs locally (offline port of `gh-md-toc` �
 | `CGW_LOCAL_FILES=<paths>` | Space-separated files never committed (default: `CLAUDE.md MEMORY.md .claude/ logs/`) |
 | `CGW_LOCAL_FILES_EXEMPT=<paths>` | Space-separated paths exempt from the block (e.g. `.claude/settings.json` inside the blocked `.claude/`) |
 | `CGW_PROTECTED_BRANCHES=<list>` | Space-separated branches requiring `--force` confirmation for force-push |
-| `CGW_MERGE_MODE=<mode>` | `"direct"` (default, use `merge_with_validation.sh`) or `"pr"` (use `create_pr.sh`) |
+| `CGW_MERGE_MODE=<mode>` | `"direct"` (default, use `merge_with_validation.sh`) or `"pr"` (use `create_pr.sh`, then `merge_pr.sh`) |
 | `CGW_DOCS_PATTERN=<regex>` | Extended regex for allowed doc filenames in `merge_with_validation.sh` |
 | `CGW_CLEANUP_TESTS=1` | Remove `tests/` from target branch if gitignored on target (default: `0`) |
 | `CGW_DEV_ONLY_FILES=<paths>` | Space-separated dev-only paths; cherry-pick warns if these are included |

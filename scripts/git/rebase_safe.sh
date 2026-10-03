@@ -14,6 +14,8 @@
 #   CGW_TARGET_BRANCH   - Default upstream ref for --onto if not specified
 # Arguments:
 #   --onto <branch>      Rebase current branch onto this branch (default: CGW_TARGET_BRANCH)
+#   --upstream <ref>     With --onto: replay only <ref>..HEAD onto the --onto branch
+#                        (git's 3-argument form: git rebase --onto <newbase> <upstream>)
 #   --squash-last <N>    Interactive squash of last N commits (opens editor or autosquash)
 #   --autosquash         Apply fixup!/squash! commit prefixes automatically
 #   --autostash          Auto-stash dirty working tree before rebase (restore after)
@@ -61,8 +63,9 @@ _show_help() {
   echo ""
   echo "Options:"
   echo "  --onto <branch>      Rebase current branch onto this branch"
-  echo "                       (a plain target branch -- not git's 3-argument --onto)"
   echo "                       (default: ${CGW_TARGET_BRANCH})"
+  echo "  --upstream <ref>     With --onto: replay only <ref>..HEAD onto the --onto branch"
+  echo "                       (git rebase --onto <newbase> <upstream>, Pro Git p.101-103)"
   echo "  --squash-last <N>    Interactively squash the last N commits"
   echo "  --autosquash         Apply fixup!/squash! commit prefixes automatically"
   echo "                       (used with --squash-last)"
@@ -77,6 +80,10 @@ _show_help() {
   echo "Examples:"
   echo "  # Rebase feature branch onto main"
   echo "  ./scripts/git/rebase_safe.sh --onto main"
+  echo ""
+  echo "  # Move client's own commits (everything after 'server') onto main"
+  echo "  # (run on the 'client' branch)"
+  echo "  ./scripts/git/rebase_safe.sh --onto main --upstream server"
   echo ""
   echo "  # Squash last 3 commits into one (opens editor)"
   echo "  ./scripts/git/rebase_safe.sh --squash-last 3"
@@ -107,6 +114,7 @@ main() {
   fi
 
   local onto_ref=""
+  local upstream_ref=""
   local squash_last=0
   local autosquash=0
   local autostash=0
@@ -126,6 +134,14 @@ main() {
         ;;
       --onto)
         onto_ref="${2:-}"
+        shift
+        ;;
+      --upstream)
+        upstream_ref="${2:-}"
+        if [[ -z "${upstream_ref}" ]]; then
+          err "--upstream requires a ref"
+          exit 1
+        fi
         shift
         ;;
       --squash-last)
@@ -194,6 +210,11 @@ main() {
     exit 1
   fi
 
+  if [[ -n "${upstream_ref}" ]] && [[ ${has_onto} -eq 0 ]]; then
+    err "--upstream only applies together with --onto <branch>"
+    exit 1
+  fi
+
   # -- Check for already-active rebase ---------------------------------------
   if cgw_rebase_in_progress; then
     echo "[!] A rebase is already in progress." >&2
@@ -210,10 +231,30 @@ main() {
   fi
 
   if [[ ${has_onto} -eq 1 ]]; then
-    _cmd_rebase_onto "${onto_ref}" "${autostash}" "${non_interactive}" "${dry_run}"
+    _cmd_rebase_onto "${onto_ref}" "${autostash}" "${non_interactive}" "${dry_run}" "${upstream_ref}"
   else
     _cmd_squash_last "${squash_last}" "${autosquash}" "${autostash}" "${non_interactive}" "${dry_run}"
   fi
+}
+
+# ---------------------------------------------------------------------------
+# _count_published — how many of the commits in <base>..HEAD are already
+# reachable from a ${CGW_REMOTE} remote-tracking ref (i.e. would rewrite
+# published history). Same definition as hooks/pre-rebase.
+# Arguments: $1 base — exclusive lower bound of the range to inspect
+# Outputs:   the count on stdout (0 when the range cannot be evaluated)
+# ---------------------------------------------------------------------------
+_count_published() {
+  local base="$1" total unpushed
+  total=$(git rev-list --count "${base}..HEAD" 2>/dev/null) || {
+    echo 0
+    return 0
+  }
+  unpushed=$(git rev-list --count "${base}..HEAD" --not --remotes="${CGW_REMOTE}" 2>/dev/null) || {
+    echo 0
+    return 0
+  }
+  echo $((total - unpushed))
 }
 
 # ---------------------------------------------------------------------------
@@ -303,10 +344,12 @@ _restore_stash_if_needed() {
 #            $2 autostash       — 1 to auto-stash dirty tree before rebase
 #            $3 non_interactive — 1 to suppress confirmation prompts
 #            $4 dry_run         — 1 to preview without rebasing
+#            $5 upstream_ref    — optional; replay only <upstream_ref>..HEAD
+#                                 (git rebase --onto <onto_ref> <upstream_ref>)
 # Returns:   exits 0 on success, 1 on failure
 # ---------------------------------------------------------------------------
 _cmd_rebase_onto() {
-  local onto_ref="$1" autostash="$2" non_interactive="$3" dry_run="$4"
+  local onto_ref="$1" autostash="$2" non_interactive="$3" dry_run="$4" upstream_ref="${5:-}"
 
   echo "=== Rebase onto ${onto_ref} ===" | tee -a "$logfile"
   echo "" | tee -a "$logfile"
@@ -325,25 +368,37 @@ _cmd_rebase_onto() {
     exit 1
   fi
 
+  if [[ -n "${upstream_ref}" ]] && ! git rev-parse --verify --quiet "${upstream_ref}^{commit}" >/dev/null 2>&1; then
+    err "Invalid --upstream ref: ${upstream_ref}"
+    exit 1
+  fi
+
   # Check if onto_ref is a local or remote branch and fetch latest
   if git rev-parse "${CGW_REMOTE}/${onto_ref}" >/dev/null 2>&1; then
     echo "  Fetching latest ${onto_ref} from ${CGW_REMOTE}..." | tee -a "$logfile"
     git fetch "${CGW_REMOTE}" "${onto_ref}" 2>&1 | tee -a "$logfile" || true
   fi
 
-  # Count pushed commits (commits on current branch not on origin/current_branch)
-  local pushed_count=0
-  if git rev-parse "${CGW_REMOTE}/${current_branch}" >/dev/null 2>&1; then
-    pushed_count=$(cgw_rev_count "${CGW_REMOTE}/${current_branch}" "HEAD" || echo "0")
-  fi
+  # The range being rewritten: <upstream>..HEAD for the 3-argument form,
+  # otherwise everything not already on <onto>.
+  local range_base="${onto_ref}"
+  [[ -n "${upstream_ref}" ]] && range_base="${upstream_ref}"
+
+  # Commits in the rewritten range that are already published on the remote
+  local pushed_count
+  pushed_count=$(_count_published "${range_base}")
 
   # Count commits that would be rebased
   local rebase_commit_count
-  rebase_commit_count=$(cgw_rev_count "${onto_ref}" "HEAD" || echo "?")
+  rebase_commit_count=$(cgw_rev_count "${range_base}" "HEAD" || echo "?")
+
+  local -a rebase_args=("${onto_ref}")
+  [[ -n "${upstream_ref}" ]] && rebase_args=(--onto "${onto_ref}" "${upstream_ref}")
 
   # Show plan
   echo "  Current branch: ${current_branch}" | tee -a "$logfile"
   echo "  Onto:           ${onto_ref} ($(git log -1 --format='%h %s' "${onto_ref}" 2>/dev/null || echo 'unknown'))" | tee -a "$logfile"
+  [[ -n "${upstream_ref}" ]] && echo "  Upstream:       ${upstream_ref} (only ${upstream_ref}..HEAD is replayed)" | tee -a "$logfile"
   echo "  Commits to rebase: ${rebase_commit_count}" | tee -a "$logfile"
   echo "" | tee -a "$logfile"
 
@@ -355,7 +410,7 @@ _cmd_rebase_onto() {
   if [[ "${dry_run}" -eq 1 ]]; then
     echo "--- Dry run: no changes made ---"
     echo "Would run:"
-    echo "  git rebase ${onto_ref}"
+    echo "  git rebase ${rebase_args[*]}"
     if [[ "${pushed_count}" -gt 0 ]]; then
       echo "  (then: git push --force-with-lease -- ${pushed_count} commits already pushed)"
     fi
@@ -383,7 +438,7 @@ _cmd_rebase_onto() {
   log_section_start "GIT REBASE ONTO" "$logfile"
 
   local rebase_exit=0 rebase_rc=0
-  cgw_run_with_lock_retry git rebase "${onto_ref}" 2>&1 | tee -a "$logfile"
+  cgw_run_with_lock_retry git rebase "${rebase_args[@]}" 2>&1 | tee -a "$logfile"
   rebase_rc=${PIPESTATUS[0]}
   [[ ${rebase_rc} -ne 0 ]] && rebase_exit=1
 
@@ -463,16 +518,9 @@ _cmd_squash_last() {
     exit 1
   fi
 
-  # Count pushed commits in the squash range
-  local pushed_count=0
-  if git rev-parse "${CGW_REMOTE}/${current_branch}" >/dev/null 2>&1; then
-    # Count how many of the last N commits exist on origin
-    pushed_count=$(cgw_rev_count "${CGW_REMOTE}/${current_branch}" "HEAD" || echo "0")
-    # Clamp to squash range
-    if [[ "${pushed_count}" -gt "${squash_n}" ]]; then
-      pushed_count="${squash_n}"
-    fi
-  fi
+  # How many of the last N commits are already published on the remote
+  local pushed_count
+  pushed_count=$(_count_published "HEAD~${squash_n}")
 
   # Show commits to be squashed
   echo "  Commits to squash:" | tee -a "$logfile"

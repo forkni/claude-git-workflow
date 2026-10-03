@@ -338,7 +338,7 @@ is phrased)
 ./scripts/git/merge_with_validation.sh --source feature/hotfix --target release/1.2 --non-interactive
 ```
 
-Handles: pre-merge validation, backup tag, modify/delete/both-deleted conflict auto-resolution, content conflict detection (stops for manual review).
+Handles: pre-merge validation, backup tag, both-deleted conflict auto-resolution, modify/delete (DU) and content conflict detection (stop for manual review; `CGW_AUTO_RESOLVE_MODIFY_DELETE=1` opts text-file DU into auto-resolve).
 
 **After manual conflict resolution:** when the script pauses for a content conflict (`UU`/`AA`/`AU`), resolve the markers, run `git add <file>`, then conclude the merge with `commit_enhanced.sh` — Rule 1 applies to merge-conclusion commits too. Do NOT re-run `merge_with_validation.sh`; there is no `--continue` flag. This conclude-with-the-wrapper rule is **merge-specific**: with `MERGE_HEAD` set, `commit_enhanced.sh` needs no message argument — it uses git's own prepared merge message (`# Conflicts:` comments stripped) and is exempt from the conventional-format check and the subject-length hard cap, the same way `hooks/pre-push` already exempts merge commits by parent count. Pass a message explicitly only if you want to override git's prepared one. A paused **cherry-pick** is the opposite case — it already carries the original commit's message — and concludes with `git cherry-pick --continue` instead (see *When a cherry-pick hits a conflict*, below).
 
@@ -373,6 +373,17 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login`. Charlie CI auto-reviews on PR open. Rule 6 applies here too — watch the PR's checks (`gh pr checks <n> --watch`), not just Charlie's review, per ci-verification.md.
 
 Always passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own URL — bare `gh pr create` resolves its own target repo and, when `CGW_REMOTE` is a fork, defaults to the fork's parent/upstream repo instead. If `CGW_REMOTE`'s URL can't be resolved to a `github.com` owner/repo, the script aborts rather than falling back to gh's own resolution. If this script ever fails or is unavailable, do not drop to raw `gh pr create` without `--repo`: it silently targets the wrong repo on a fork remote.
+
+**Merging a PR** (only when the user asks; `CGW_MERGE_MODE="pr"`):
+
+```bash
+./scripts/git/merge_pr.sh 42                          # merge commit (default)
+./scripts/git/merge_pr.sh 42 --dry-run                # validate + preview, no merge
+./scripts/git/merge_pr.sh 42 --retarget 43            # then retarget stacked PR #43 onto 42's base
+./scripts/git/merge_pr.sh 42 --squash --allow-non-merge   # flattens the PR; needs the explicit ack
+```
+
+Merges with `--merge` so the feature stays one revertable unit (`rollback_merge.sh --revert --target <merge-sha>`, printed on success). `--squash`/`--rebase` are refused non-interactively without `--allow-non-merge`. Refuses a PR that isn't OPEN. For stacked PRs, `--retarget <M>` (repeatable) is validated before anything is merged (M's base must be this PR's head), then run after the merge and before any `--delete-branch`; the head branch is never deleted by default. Passes the same explicit `--repo` as `create_pr.sh`. Do not merge a PR without the user's go.
 
 **Syncing with remote:**
 
@@ -530,6 +541,10 @@ merge of the branch re-applies those docs changes.
 # Rebase with auto-stash (stash dirty tree before, restore after):
 ./scripts/git/rebase_safe.sh --onto main --autostash
 
+# Move only this branch's own commits (everything after 'server') onto main
+# (git rebase --onto main server):
+./scripts/git/rebase_safe.sh --onto main --upstream server
+
 # Squash last N commits (opens editor):
 ./scripts/git/rebase_safe.sh --squash-last 3
 
@@ -597,6 +612,7 @@ be needed.
 ./scripts/git/create_release.sh v1.2.3 --push             # tag + push (triggers GitHub Release)
 ./scripts/git/create_release.sh v1.2.3 --push --sign      # GPG/SSH-signed annotated tag
 ./scripts/git/create_release.sh v1.2.3 --dry-run
+./scripts/git/create_release.sh archive/pre-rewrite --allow-non-semver   # non-semver archive tag (no GitHub Release)
 ```
 
 `--push` triggers `release.yml` (tag push matching `v*`) — Rule 6 applies: watch that run

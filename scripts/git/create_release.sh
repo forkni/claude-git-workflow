@@ -12,6 +12,7 @@
 # Arguments:
 #   <version>           Version string: v1.2.3 or 1.2.3 (v prefix auto-added)
 #   --message <msg>     Tag annotation message (default: "Release <version>")
+#   --allow-non-semver  Accept any valid tag name (archive/snapshot tags); no v prefix added
 #   --non-interactive   Skip prompts
 #   --dry-run           Show what would happen without tagging
 #   --push              Push the tag to origin after creation
@@ -40,6 +41,7 @@ main() {
   local tag_message=""
   local dry_run=0
   local push_tag=0
+  local allow_non_semver=0
   # Signing: -1 = unset (use CGW_SIGN_TAGS), 0 = off, 1 = on
   local sign_flag=-1
 
@@ -59,6 +61,9 @@ main() {
         echo "  --push              Push tag to origin after creation"
         echo "  --sign              Create a GPG/SSH-signed tag (git tag -s)"
         echo "  --no-sign           Create an annotated tag only, even if CGW_SIGN_TAGS=1"
+        echo "  --allow-non-semver  Accept any valid tag name (e.g. archive/old-api) instead of"
+        echo "                      semver; the v prefix is not added and release.yml (v* only)"
+        echo "                      will not fire"
         echo "  --non-interactive   Skip confirmation prompt"
         echo "  --dry-run           Preview without creating tag"
         echo "  -h, --help          Show this help"
@@ -73,6 +78,7 @@ main() {
         echo "  ./scripts/git/create_release.sh v1.0.0"
         echo "  ./scripts/git/create_release.sh v1.0.0 --message 'First stable release'"
         echo "  ./scripts/git/create_release.sh v1.0.0 --push"
+        echo "  ./scripts/git/create_release.sh archive/pre-rewrite --allow-non-semver"
         exit 0
         ;;
       --message)
@@ -82,6 +88,7 @@ main() {
       --push) push_tag=1 ;;
       --sign) sign_flag=1 ;;
       --no-sign) sign_flag=0 ;;
+      --allow-non-semver) allow_non_semver=1 ;;
       --non-interactive) CGW_NON_INTERACTIVE=1 ;;
       --dry-run) dry_run=1 ;;
       -*)
@@ -107,14 +114,26 @@ main() {
     exit 1
   fi
 
-  # Normalize: add v prefix if missing
-  if [[ "${version}" != v* ]]; then
-    version="v${version}"
-  fi
+  if [[ ${allow_non_semver} -eq 1 ]]; then
+    # Archive/snapshot tags: any valid ref name, used exactly as given.
+    if [[ "${version}" == -* ]]; then
+      echo "[ERROR] '${version}' starts with '-' and would be parsed as an option" >&2
+      exit 1
+    fi
+    if ! git check-ref-format "refs/tags/${version}"; then
+      echo "[ERROR] '${version}' is not a valid tag name" >&2
+      exit 1
+    fi
+  else
+    # Normalize: add v prefix if missing
+    if [[ "${version}" != v* ]]; then
+      version="v${version}"
+    fi
 
-  # Validate semver
-  if ! validate_semver "${version}"; then
-    exit 1
+    # Validate semver
+    if ! validate_semver "${version}"; then
+      exit 1
+    fi
   fi
 
   # Check current branch
@@ -175,6 +194,9 @@ main() {
   local sign_label="annotated (unsigned)"
   [[ "${_do_sign}" -eq 1 ]] && sign_label="signed annotated (-s)"
   echo "  Signing:  ${sign_label}"
+  if [[ "${version}" != v* ]]; then
+    echo "  Note:     not a v* tag -- release.yml (GitHub Release) will not fire"
+  fi
   echo ""
 
   if [[ ${dry_run} -eq 1 ]]; then
@@ -208,7 +230,11 @@ main() {
     if git push "${CGW_REMOTE}" "${version}"; then
       echo "[OK] Tag pushed: ${version}"
       echo ""
-      echo "GitHub Release workflow triggered."
+      if [[ "${version}" == v* ]]; then
+        echo "GitHub Release workflow triggered."
+      else
+        echo "Not a v* tag -- no GitHub Release workflow triggered."
+      fi
       echo "Check: https://github.com/$(git remote get-url "${CGW_REMOTE}" | sed 's|.*github.com[:/]||;s|\.git$||')/actions"
     else
       echo "[ERROR] Failed to push tag. Push manually:" >&2
@@ -217,7 +243,11 @@ main() {
     fi
   else
     echo ""
-    echo "Next step -- push to trigger GitHub Release:"
+    if [[ "${version}" == v* ]]; then
+      echo "Next step -- push to trigger GitHub Release:"
+    else
+      echo "Next step -- push the tag:"
+    fi
     echo "  git push ${CGW_REMOTE} ${version}"
   fi
 }

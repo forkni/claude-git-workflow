@@ -297,6 +297,25 @@ now write errors to stderr.
 - **Documented, not changed:** `merge_docs.sh` makes a one-parent commit and records no merge
   ancestry; the shell scripts' deliberate style-guide deviations are listed in `CLAUDE.md`.
 
+### Follow-up from the books audit (2026-10, branch `fix/git-books-audit`)
+
+- **Fixed:** `rebase_safe.sh` pushed-commit count was inverted and `--onto` had no three-argument form
+  (`--upstream`); `worktree_manage.sh add` could not branch from a base ref and exited 1 on success;
+  `DU` conflicts were silently `git rm`-ed (now halt, opt-in `CGW_AUTO_RESOLVE_MODIFY_DELETE=1`, ADR 0005);
+  no PR-merge helper (`merge_pr.sh`); `create_release.sh` rejected non-semver archive tags
+  (`--allow-non-semver`). The `rebase_safe.sh` help note above ("`--onto` is a plain target branch") is
+  superseded by `--upstream`.
+- **Not a bug:** the revert-the-revert step is already printed by `rollback_merge.sh --revert`.
+  Hooks that differ from the templates are expected: they are copied verbatim, never templated, and an
+  existing `.githooks/<hook>` that is an unmodified older CGW version is refreshed automatically; one that
+  matches no CGW version (customised) is kept, with a warning, unless `--overwrite-hooks` is passed. Replace
+  those with `configure.sh --hooks-only --overwrite-hooks --template-dir <cgw>` (a `.bak` is kept).
+- **Deferred — `cherry_pick_commits.sh` handles one commit per call.** There is no `A..B` range or
+  multi-`--commit` form, the `--target` branch must already exist (it does not create it), and each call
+  creates its own `pre-cherry-pick-*` backup tag. The tag-per-call behaviour is by design (every
+  mutation gets a backup; prune with `branch_cleanup.sh`). Workaround for a linear stack:
+  `for sha in $(git rev-list --reverse A..B); do ./scripts/git/cherry_pick_commits.sh --commit "$sha" --target <br> --non-interactive || break; done`.
+
 ### Deferred (low priority, from the book comparison)
 
 Not implemented; recorded so they are not rediscovered:

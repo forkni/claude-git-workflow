@@ -29,6 +29,12 @@ _run_configure() {
 
 # ── --non-interactive config generation ───────────────────────────────────────
 
+@test "generated .cgw.conf documents the CGW_AUTO_RESOLVE_MODIFY_DELETE opt-in" {
+  run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  grep -q '^# CGW_AUTO_RESOLVE_MODIFY_DELETE="0"' "${TEST_REPO_DIR}/.cgw.conf"
+}
+
 @test "--non-interactive generates .cgw.conf" {
   run _run_configure "--non-interactive"
   [ "${status}" -eq 0 ]
@@ -150,6 +156,79 @@ _run_configure() {
 @test "--skip-hooks does not install hooks" {
   _run_configure "--non-interactive --skip-hooks"
   [ ! -f "${TEST_REPO_DIR}/.githooks/pre-commit" ]
+}
+
+# ── --hooks-only ──────────────────────────────────────────────────────────────
+
+@test "--hooks-only installs hooks without creating .cgw.conf, skill or markdownlint config" {
+  run _run_configure "--hooks-only"
+  [ "${status}" -eq 0 ]
+  [ -f "${TEST_REPO_DIR}/.githooks/pre-commit" ]
+  [ -f "${TEST_REPO_DIR}/.githooks/pre-push" ]
+  [ ! -f "${TEST_REPO_DIR}/.cgw.conf" ]
+  [ ! -f "${TEST_REPO_DIR}/.markdownlint.json" ]
+  [ ! -e "${TEST_REPO_DIR}/.claude/skills/auto-git-workflow/SKILL.md" ]
+}
+
+@test "--hooks-only leaves an existing .cgw.conf byte-for-byte unchanged" {
+  printf '# custom
+CGW_SOURCE_BRANCH="development"
+CGW_LINT_CMD="echo hand-edited"
+' > "${TEST_REPO_DIR}/.cgw.conf"
+  cp "${TEST_REPO_DIR}/.cgw.conf" "${BATS_TEST_TMPDIR}/conf.before"
+  run _run_configure "--hooks-only --overwrite-hooks"
+  [ "${status}" -eq 0 ]
+  cmp -s "${BATS_TEST_TMPDIR}/conf.before" "${TEST_REPO_DIR}/.cgw.conf"
+  [ ! -e "${TEST_REPO_DIR}/.cgw.conf.bak" ]
+}
+
+@test "--hooks-only --overwrite-hooks refreshes a stale hook and keeps a .bak" {
+  mkdir -p "${TEST_REPO_DIR}/.githooks"
+  printf '#!/usr/bin/env bash
+# stale stock copy
+exit 0
+' > "${TEST_REPO_DIR}/.githooks/pre-commit"
+  run _run_configure "--hooks-only --overwrite-hooks"
+  [ "${status}" -eq 0 ]
+  cmp -s "${CGW_PROJECT_ROOT}/hooks/pre-commit" "${TEST_REPO_DIR}/.githooks/pre-commit"
+  ls "${TEST_REPO_DIR}/.githooks/"pre-commit.bak* >/dev/null 2>&1 || ls "${TEST_REPO_DIR}"/.githooks/*.bak* >/dev/null 2>&1
+}
+
+@test "--hooks-only without --overwrite-hooks preserves a differing hook" {
+  mkdir -p "${TEST_REPO_DIR}/.githooks"
+  printf '#!/usr/bin/env bash
+# local customisation
+exit 0
+' > "${TEST_REPO_DIR}/.githooks/pre-commit"
+  run _run_configure "--hooks-only --non-interactive"
+  [ "${status}" -eq 0 ]
+  grep -q "local customisation" "${TEST_REPO_DIR}/.githooks/pre-commit"
+}
+
+@test "--hooks-only honours --template-dir" {
+  local tdir="${BATS_TEST_TMPDIR}/tpl"
+  mkdir -p "${tdir}/hooks"
+  for h in pre-commit pre-push pre-rebase; do
+    printf '#!/usr/bin/env bash
+# custom template %s
+exit 0
+' "${h}" > "${tdir}/hooks/${h}"
+  done
+  run _run_configure "--hooks-only --template-dir '${tdir}'"
+  [ "${status}" -eq 0 ]
+  grep -q "custom template pre-commit" "${TEST_REPO_DIR}/.githooks/pre-commit"
+}
+
+@test "--hooks-only with --skip-hooks exits 1" {
+  run _run_configure "--hooks-only --skip-hooks"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"contradict"* ]]
+}
+
+@test "--help documents --hooks-only" {
+  run _run_configure "--help"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"--hooks-only"* ]]
 }
 
 # ── Markdown lint baseline config (_install_markdownlint_config) ─────────────

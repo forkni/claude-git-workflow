@@ -75,7 +75,7 @@ EOF
   [ "${final_count}" -eq 2 ]
 }
 
-@test "cgw_run_with_lock_retry: exhausts retries and returns exit code when lock persists" {
+@test "cgw_run_with_lock_retry: exhausts retries and returns CGW_RC_INDEX_LOCKED when lock persists" {
   local mock_cmd="${TEST_TMPDIR}/persistent_lock.sh"
   cat << EOF > "${mock_cmd}"
 #!/usr/bin/env bash
@@ -85,7 +85,7 @@ EOF
   chmod +x "${mock_cmd}"
 
   CGW_LOCK_RETRY_ATTEMPTS=3 CGW_LOCK_RETRY_DELAY=0 run cgw_run_with_lock_retry "${mock_cmd}"
-  [ "${status}" -eq 128 ]
+  [ "${status}" -eq 75 ]
   [[ "${output}" == *"(attempt 1/3)"* ]]
   [[ "${output}" == *"(attempt 2/3)"* ]]
   [[ "${output}" == *"fatal: Unable to create"* ]]

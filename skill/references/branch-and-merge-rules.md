@@ -133,20 +133,30 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use GitHub PRs instead of direct loc
 2. Push to remote: `./scripts/git/push_validated.sh`
 3. Create PR: `./scripts/git/create_pr.sh`
 4. Review PR on GitHub (Charlie CI auto-reviews on open)
-5. Merge via GitHub UI after CI passes
+5. Merge after CI passes: GitHub UI, or `./scripts/git/merge_pr.sh <N>` (merge commit; refuses unless PR checks are green; `--retarget <M>` moves stacked PRs onto the new base)
 6. Sync local branches: `./scripts/git/sync_branches.sh --all`
 
 ---
 
 ## Conflict Resolution
 
-### Modify/Delete Conflicts (EXPECTED — Auto-Resolved)
+### Modify/Delete Conflicts (Manual Required by default)
 
 **Status code:** `DU` (deleted by us, modified by them)
 
-**When:** Merging source → target when files exist on source but not on target (e.g., dev-only files).
+**When:** Merging source → target when a file was deleted on the target but modified on the source.
 
-**Action:** `merge_with_validation.sh` auto-resolves by removing the source-only files. These are expected — do not treat as errors.
+**Action:** STOP workflow. Accepting the deletion silently drops the other side's changes, so the
+scripts ask for a decision (CGW repo: `docs/adr/0005-modify-delete-conflicts-halt.md`):
+
+```bash
+git rm <file>      # accept the deletion (e.g. a dev-only file that should not reach the target)
+git add <file>     # keep their modified version
+```
+
+For repos where DU is routine (e.g. dev-only files), set `CGW_AUTO_RESOLVE_MODIFY_DELETE=1`:
+text-file DU conflicts are then auto-removed as before. Binary files (gitattributes `binary`/`-diff`,
+or a NUL byte in the content) always halt.
 
 ### Both-Deleted Conflicts (EXPECTED — Auto-Resolved)
 
@@ -198,7 +208,7 @@ Never auto-resolve content conflicts — they require human review.
 
 **Status codes:** `UD` (updated by us, deleted by them), `AD` (added by us, deleted by them), `DA` (deleted by us, added by them)
 
-**When:** One side modified or added a file while the other side deleted it. Unlike `DU`/`DD`, the intent is ambiguous and requires a human decision.
+**When:** One side modified or added a file while the other side deleted it. Unlike `DD`, the intent is ambiguous and requires a human decision.
 
 **Action:** STOP workflow, require manual resolution:
 
@@ -231,13 +241,12 @@ git merge --abort  # if abandoning
 2. Checkout target branch
 3. Create backup tag `pre-merge-<timestamp>-<pid>` via `cgw_create_backup_tag merge` (PID suffix prevents collision on fast CI)
 4. Perform `git merge ${CGW_SOURCE_BRANCH} --no-ff`
-5. Auto-resolve `DU` (modify/delete) conflicts
+5. Auto-resolve `DD` (both deleted) conflicts; `DU` (modify/delete) only when `CGW_AUTO_RESOLVE_MODIFY_DELETE=1` and the file is text
 6. Stop on `AU`/`AA` conflicts — requires manual resolution
-7. Auto-resolve `DD` (both deleted) conflicts
-8. Stop on `UU` (content), `UD`/`AD`/`DA` (delete/add-delete) conflicts — requires manual resolution
-9. Validate `docs/` files against CI policy (if `CGW_DOCS_PATTERN` is set)
-10. Clean up `tests/` if `CGW_CLEANUP_TESTS=1` and tests/ is gitignored on target
-11. Complete merge commit
+7. Stop on `DU` (modify/delete), `UU` (content), `UD`/`AD`/`DA` (delete/add-delete) conflicts — requires manual resolution
+8. Validate `docs/` files against CI policy (if `CGW_DOCS_PATTERN` is set)
+9. Clean up `tests/` if `CGW_CLEANUP_TESTS=1` and tests/ is gitignored on target
+10. Complete merge commit
 
 After merge: review with `git log --oneline -5`, then push via `push_validated.sh`.
 

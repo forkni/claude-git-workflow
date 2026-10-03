@@ -194,3 +194,63 @@ _install_hook_direct() {
   [ -f "${TEST_REPO_DIR}/scripts/git/_common.sh" ]
   [ -f "${TEST_REPO_DIR}/.githooks/pre-commit" ]
 }
+
+# ── add <path> <branch> <base> ───────────────────────────────────────────────
+
+@test "add: a new branch starts from an explicit base ref, not HEAD" {
+  # HEAD (main) and development differ; base must win.
+  local base_sha
+  base_sha=$(git -C "${TEST_REPO_DIR}" rev-parse development)
+  [ "${base_sha}" != "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" ]
+
+  run run_script worktree_manage.sh add "${TEST_TMPDIR}/wt-base" topic-from-dev development --non-interactive
+  [ "${status}" -eq 0 ]
+  [ "$(git -C "${TEST_TMPDIR}/wt-base" rev-parse HEAD)" = "${base_sha}" ]
+  [ "$(git -C "${TEST_TMPDIR}/wt-base" symbolic-ref --short HEAD)" = "topic-from-dev" ]
+}
+
+@test "add: --base is the flag form of the base positional" {
+  local base_sha
+  base_sha=$(git -C "${TEST_REPO_DIR}" rev-parse development)
+
+  run run_script worktree_manage.sh add "${TEST_TMPDIR}/wt-flag" topic-flag --base development --non-interactive
+  [ "${status}" -eq 0 ]
+  [ "$(git -C "${TEST_TMPDIR}/wt-flag" rev-parse HEAD)" = "${base_sha}" ]
+}
+
+@test "add: without a base the new branch still starts from HEAD" {
+  local head_sha
+  head_sha=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+
+  run run_script worktree_manage.sh add "${TEST_TMPDIR}/wt-head" topic-head --non-interactive
+  [ "${status}" -eq 0 ]
+  [ "$(git -C "${TEST_TMPDIR}/wt-head" rev-parse HEAD)" = "${head_sha}" ]
+}
+
+@test "add: a base for an existing branch is refused" {
+  run run_script worktree_manage.sh add "${TEST_TMPDIR}/wt-exists" development main --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"already exists"* ]]
+  [ ! -d "${TEST_TMPDIR}/wt-exists" ]
+}
+
+@test "add: an unknown base ref is refused" {
+  run run_script worktree_manage.sh add "${TEST_TMPDIR}/wt-bad" topic-bad no-such-ref --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Invalid base ref"* ]]
+  [ ! -d "${TEST_TMPDIR}/wt-bad" ]
+  ! git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/topic-bad
+}
+
+@test "add: a base without a branch is refused" {
+  run run_script worktree_manage.sh add "${TEST_TMPDIR}/wt-nobranch" --base development --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"needs a branch"* ]]
+}
+
+@test "add: --dry-run shows the -b <branch> <path> <base> command and creates nothing" {
+  run run_script worktree_manage.sh add "${TEST_TMPDIR}/wt-dry" topic-dry development --dry-run
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"-b topic-dry ${TEST_TMPDIR}/wt-dry development"* ]]
+  [ ! -d "${TEST_TMPDIR}/wt-dry" ]
+}
