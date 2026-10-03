@@ -346,17 +346,21 @@ printing a `CGW not found` error instead of running. Fix it with:
 "$(git worktree list --porcelain | head -1 | cut -d' ' -f2-)/scripts/git/worktree_manage.sh" link
 ```
 
-This creates a directory link (`ln -s` on POSIX, an NTFS junction via `mklink /J` on Windows —
-no admin rights required) from the linked worktree's `scripts/git` and `.githooks` back to the
-main worktree's copies, so both worktrees always share one set of tooling. It's idempotent
-(safe to re-run) and refuses to touch either path if something other than its own link, already
-resolving to the main worktree, is there. `worktree_manage.sh add` runs `link` automatically for
-newly created worktrees; `remove` unlinks both before removing a worktree, and refuses to
-proceed at all if an existing *link* can't be verified as removed — a stray junction under
-`scripts/git` could otherwise put the *main* worktree's tooling in the path of `git worktree
-remove`'s recursive delete. A real (non-link) directory there isn't such a risk — it has no
-reparse point to redirect that delete anywhere — so it's left for `git worktree remove`'s own
-cleanup instead of blocking removal.
+This writes a real `scripts/git/` directory in the linked worktree containing one small shim per
+public script. Each shim finds the main worktree at run time and execs its copy, so both
+worktrees share one set of tooling while the current directory (and so the project root, config
+and logs) stays the worktree's. The libraries and `.githooks` are not copied — hooks and
+`install_hooks.sh` fall back to the main worktree. It's idempotent (re-running refreshes the
+shims) and refuses to overwrite a real directory that isn't its own shim directory.
+`worktree_manage.sh add` runs `link` automatically for newly created worktrees.
+
+Earlier CGW versions linked `scripts/git` and `.githooks` with a symlink / NTFS junction instead.
+`link` replaces those on sight. Such a link is dangerous on Windows: a raw `git worktree remove`
+follows it and deletes the **main** worktree's gitignored tooling. Shims have no such link, but
+still remove worktrees with `worktree_manage.sh remove --execute` — it also clears any legacy
+link first, and the agent guardrail blocks raw `git worktree remove`. To recover an emptied
+main checkout, re-run `install.cmd` / `cgw-batch-install.cmd` from the CGW source repo (they
+leave `.cgw.conf` alone).
 
 ### Diff your branch against the default branch
 

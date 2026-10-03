@@ -373,10 +373,16 @@ entry is always the main worktree:
 "$(git worktree list --porcelain | head -1 | cut -d' ' -f2-)/scripts/git/worktree_manage.sh" link
 ```
 
-This creates a directory link (`ln -s` on POSIX, an NTFS junction on Windows) so
-`scripts/git` and `.githooks` resolve locally without duplicating files. It's safe to re-run
-(idempotent) and refuses to overwrite a real, non-linked directory, or a link that doesn't
-resolve to the main worktree, if one already exists at either path. Worktrees created via
+This writes a `scripts/git/` directory of shims that forward to the main worktree's scripts, so
+`./scripts/git/<script>.sh` resolves locally without duplicating files. It's safe to re-run
+(idempotent), replaces a legacy link from an older CGW version, and refuses to overwrite a real
+directory it didn't create, or a link that doesn't resolve to the main worktree.
+
+**If the main checkout's `scripts/git` / `.githooks` were emptied** (typically by a raw
+`git worktree remove` following a legacy Windows junction): nothing tracked is lost, but the
+gitignored tooling is gone. Re-run `install.cmd` (or `cgw-batch-install.cmd`) from the CGW
+source repo; `.cgw.conf` is not touched. Then use `worktree_manage.sh remove --execute` for
+worktrees from now on. Worktrees created via
 `worktree_manage.sh add` are linked automatically; this is only needed for worktrees created
 directly with `git worktree add`, or ones set up before this feature existed.
 

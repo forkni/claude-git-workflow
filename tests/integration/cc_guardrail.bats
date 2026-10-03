@@ -92,6 +92,47 @@ _run_configure() {
   [[ "${output}" == *"branch_cleanup.sh"* ]]
 }
 
+@test "blocks raw git worktree remove and points to worktree_manage.sh" {
+  _require_jq
+  run _run_guardrail "git worktree remove ../wt"
+  [ "${status}" -eq 2 ]
+  [[ "${output}" == *"worktree_manage.sh remove"* ]]
+}
+
+@test "blocks git worktree remove --force" {
+  _require_jq
+  run _run_guardrail "git worktree remove --force ../wt"
+  [ "${status}" -eq 2 ]
+}
+
+@test "blocks git -C <path> worktree remove" {
+  _require_jq
+  run _run_guardrail "git -C /repo worktree remove ../wt"
+  [ "${status}" -eq 2 ]
+}
+
+@test "allows git worktree list, add and prune" {
+  _require_jq
+  run _run_guardrail "git worktree list"
+  [ "${status}" -eq 0 ]
+  run _run_guardrail "git worktree add ../wt topic"
+  [ "${status}" -eq 0 ]
+  run _run_guardrail "git worktree prune"
+  [ "${status}" -eq 0 ]
+}
+
+@test "allows the CGW worktree_manage.sh remove wrapper" {
+  _require_jq
+  run _run_guardrail "./scripts/git/worktree_manage.sh remove --execute ../wt"
+  [ "${status}" -eq 0 ]
+}
+
+@test "allows worktree remove text inside a quoted commit message" {
+  _require_jq
+  run _run_guardrail "./scripts/git/commit_enhanced.sh 'docs: never git worktree remove directly'"
+  [ "${status}" -eq 0 ]
+}
+
 @test "blocks rm -rf .git" {
   _require_jq
   run _run_guardrail "rm -rf .git"

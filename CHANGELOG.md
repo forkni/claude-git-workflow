@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.10.0 (2026-10-03)
+
+> Changes since `v0.9.0`
 
 ### Behaviour changes
 
@@ -8,8 +10,11 @@
 
 - **Outdated stock hooks are refreshed on update.** `configure.sh` (and so `cgw-install.cmd` / `cgw-batch-install.cmd`) now replaces an installed `.githooks/pre-commit|pre-push|pre-rebase` that is an unmodified older CGW version, instead of keeping every differing hook as a "locally established" one — which left consumer projects frozen on old hooks and missing later fixes. A hook that matches no CGW version is still kept. No `.bak` is written for a refresh (the old version is in CGW git; the message names the commit). See `docs/adr/0006-refresh-stale-stock-hooks.md`.
 
+- **`worktree_manage.sh link` no longer creates symlinks/junctions.** It writes a real `scripts/git/` directory of shims (marker `.cgw-worktree-shims`) that exec the main worktree's scripts, and no longer links `.githooks` (hooks and `install_hooks.sh` already fall back to the main worktree). Re-running `link` replaces a legacy link. Cause of the change: on Windows, a raw `git worktree remove` follows an NTFS junction and empties the **main** checkout's gitignored `scripts/git` and `.githooks`; only `worktree_manage.sh remove` unlinked first. With no link, any removal method is harmless. The agent guardrail now also blocks raw `git worktree remove` (including `git -C <path> worktree remove`) and points to `worktree_manage.sh remove --execute`.
+
 ### New Features
 
+- `tests/run.sh --help` / `--version`; unknown `--` options are now rejected (exit 2) instead of being passed to `find`/`bats` as paths.
 - `cgw-batch-install.cmd` now prints `configure.sh` warnings (e.g. a customised hook it kept) under the project, marks it `Updated (with warnings)`, and adds a `Warnings:` count and list to the summary; exit code is unchanged. Previously the log holding them was deleted on success. The batch no longer pre-copies `.githooks/*.bak` itself.
 - `merge_pr.sh <N>`: merges a GitHub PR with a merge commit (`gh pr merge --merge`, explicit `--repo`), refuses a non-OPEN PR, and prints the merge SHA with the `rollback_merge.sh --revert` hint. `--retarget <M>` (repeatable) moves stacked PRs onto the merged PR's base after the merge, `--delete-branch` removes the head branch last, `--dry-run` previews. `--squash`/`--rebase` need `--allow-non-merge` in non-interactive mode and warn that the PR can't be reverted as one unit. Before merging it tags the base branch's remote tip as `pre-merge-*` (the merge commit's first parent, so `rollback_merge.sh`'s `HEAD^1` guard accepts it); `--delete-branch` deletes in the PR's head repository (not the base repo, for cross-repository PRs) and the script exits non-zero if that deletion fails. If the PR is still not `MERGED` after `gh pr merge` (merge queue / auto-merge), it reports that and skips `--retarget`/`--delete-branch`. It now refuses to merge unless the base fetch and the `pre-merge` tag (verified to point at the fetched tip) both succeed, and unless the PR's checks are green (`gh pr checks`): pending checks refuse unless `--wait-checks` (`--watch --fail-fast`), failing checks always refuse, and `--skip-checks` bypasses the gate with a warning.
 - `rebase_safe.sh --onto <newbase> --upstream <ref>`: git's three-argument `rebase --onto <newbase> <upstream>`, replaying only `<upstream>..HEAD`.

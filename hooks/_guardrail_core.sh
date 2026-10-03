@@ -135,6 +135,16 @@ _cgw_guardrail_check_invocation() {
     return 1
   fi
 
+  # Raw worktree removal — on Windows, git's recursive delete follows the NTFS
+  # junctions that older `worktree_manage.sh link` runs created, and empties the
+  # MAIN worktree's gitignored scripts/git and .githooks (unrecoverable from git).
+  # The optional middle also covers `git -C <path> worktree remove`.
+  if [[ ${padded} =~ git[[:space:]]+([^[:space:]].*[[:space:]])?worktree[[:space:]]+remove[[:space:]] ]]; then
+    _cgw_guardrail_verdict 'git worktree remove' \
+      'Use ./scripts/git/worktree_manage.sh remove --execute <path> instead — it unlinks CGW tooling first. A raw remove can follow a legacy junction and delete the main checkout'"'"'s scripts/git and .githooks.'
+    return 1
+  fi
+
   # Discard all working-tree changes (. = current directory = everything)
   if [[ ${padded} =~ git[[:space:]]+checkout[[:space:]] ]] && [[ ${padded} =~ ${_dot} ]]; then
     _cgw_guardrail_verdict 'git checkout .' \

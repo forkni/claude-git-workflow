@@ -9,8 +9,38 @@
 #   tests/run.sh tests/unit/config.bats   # single file
 #   CGW_TEST_JOBS=N tests/run.sh          # override parallelism (default: half logical cores)
 #   CGW_RUN_SLOW=1 tests/run.sh           # include slow files locally (always run on CI)
+#   tests/run.sh --help                   # print this usage
+#   tests/run.sh --version                # print the bats version and CGW revision this run would use
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+_usage() {
+  sed -n '2,/^set -uo/p' "${BASH_SOURCE[0]}" | sed '$d; s/^# \{0,1\}//'
+}
+
+case "${1:-}" in
+  -h | --help)
+    _usage
+    exit 0
+    ;;
+  -V | --version)
+    echo "CGW tests/run.sh @ $(git describe --tags --always --dirty 2>/dev/null || echo unknown)"
+    bats --version
+    exit 0
+    ;;
+esac
+
+# Flags are only recognised in the first position (below); any other leading
+# dash-argument would otherwise be handed to find/bats as a "path".
+for _arg in "$@"; do
+  case "${_arg}" in
+    --slow | --all | --fast) ;;
+    -*)
+      echo "[run.sh] Unknown option: ${_arg} (see --help)" >&2
+      exit 2
+      ;;
+  esac
+done
 
 _cores="$(nproc 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-4}")"
 jobs="${CGW_TEST_JOBS:-$(( _cores / 2 ))}"
