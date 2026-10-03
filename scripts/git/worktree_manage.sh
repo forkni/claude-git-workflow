@@ -111,9 +111,10 @@ _cgw_write_shims() {
   # Build the whole set (marker included) beside the destination, then swap it
   # in: a failed write leaves the old shims instead of a half-built unmarked
   # directory, and shims for scripts removed from main are dropped.
-  tmp="${dest}.cgw-tmp.$$"
-  rm -rf "${tmp}"
-  mkdir -p "${tmp}" || return 1
+  # mktemp creates it exclusively, so nothing pre-existing (a stale dir or a
+  # junction) is ever recursively deleted.
+  mkdir -p "$(dirname "${dest}")" || return 1
+  tmp="$(mktemp -d "${dest}.cgw-tmp.XXXXXX")" || return 1
   for src in "${main_root}/scripts/git/"*.sh; do
     [[ -f "${src}" ]] || continue
     name="$(basename "${src}")"

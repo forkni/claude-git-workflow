@@ -127,6 +127,18 @@ _run_configure() {
   [ "${status}" -eq 0 ]
 }
 
+@test "blocks git -C with a quoted path before worktree remove" {
+  _require_jq
+  run _run_guardrail 'git -C \"/repo with spaces\" worktree remove ../wt'
+  [ "${status}" -eq 2 ]
+}
+
+@test "blocks git short global option before worktree remove" {
+  _require_jq
+  run _run_guardrail "git -p worktree remove ../wt"
+  [ "${status}" -eq 2 ]
+}
+
 @test "allows git grep for the worktree remove phrase" {
   _require_jq
   run _run_guardrail "git grep worktree remove"

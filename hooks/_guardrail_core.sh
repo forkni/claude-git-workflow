@@ -140,7 +140,9 @@ _cgw_guardrail_check_invocation() {
   # MAIN worktree's gitignored scripts/git and .githooks (unrecoverable from git).
   # Only git's global options may sit between `git` and `worktree`, so
   # `git -C <path> worktree remove` is caught but `git grep worktree remove` is not.
-  local _gopt='(-[Cc][[:space:]]+[^[:space:]]+|--(git-dir|work-tree|namespace)[[:space:]]+[^[:space:]]+|--[A-Za-z-]+(=[^[:space:]]*)?)[[:space:]]+'
+  # Quoted arguments are already stripped by now (`-C "/repo"` becomes `-C `), so a
+  # bare short flag is accepted too.
+  local _gopt='(-[Cc][[:space:]]+[^[:space:]]+|-[A-Za-z]|--(git-dir|work-tree|namespace)[[:space:]]+[^[:space:]]+|--[A-Za-z-]+(=[^[:space:]]*)?)[[:space:]]+'
   if [[ ${padded} =~ git[[:space:]]+(${_gopt})*worktree[[:space:]]+remove[[:space:]] ]]; then
     _cgw_guardrail_verdict 'git worktree remove' \
       'Use ./scripts/git/worktree_manage.sh remove --execute <path> instead — it unlinks CGW tooling first. A raw remove can follow a legacy junction and delete the main checkout'"'"'s scripts/git and .githooks.'
