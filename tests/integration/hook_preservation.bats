@@ -457,6 +457,21 @@ _run_configure() {
   [ ! -e "${PROJ_DIR}/.githooks/pre-push.bak" ]
 }
 
+@test "configure.sh stock refresh also updates the active .git/hooks copy without a .bak" {
+  _make_template_repo
+  _make_consumer
+  cp "${OLD_PRE_PUSH}" "${PROJ_DIR}/.githooks/pre-push"
+  mkdir -p "${PROJ_DIR}/.git/hooks"
+  cp "${OLD_PRE_PUSH}" "${PROJ_DIR}/.git/hooks/pre-push"
+
+  _run_configure
+
+  [ "$status" -eq 0 ]
+  grep -qF "stock pre-push NEW" "${PROJ_DIR}/.git/hooks/pre-push"
+  [ ! -e "${PROJ_DIR}/.git/hooks/pre-push.bak" ]
+  [ ! -e "${PROJ_DIR}/.githooks/pre-push.bak" ]
+}
+
 @test "configure.sh refreshes an older stock pre-push that has CRLF line endings" {
   _make_template_repo
   _make_consumer

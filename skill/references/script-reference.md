@@ -585,6 +585,7 @@ Wraps `gh pr checkout`. Requires `gh` CLI authenticated (`gh auth login`). Refus
 ./scripts/git/merge_pr.sh 42
 ./scripts/git/merge_pr.sh 42 --retarget 43 --retarget 44
 ./scripts/git/merge_pr.sh 42 --dry-run
+./scripts/git/merge_pr.sh 42 --wait-checks    # wait for pending PR checks instead of refusing
 ./scripts/git/merge_pr.sh 42 --squash --allow-non-merge
 ```
 
@@ -595,6 +596,8 @@ Wraps `gh pr checkout`. Requires `gh` CLI authenticated (`gh auth login`). Refus
 | `--allow-non-merge` | Acknowledge the flattening |
 | `--retarget <M>` | After the merge, `gh pr edit <M> --base <this PR's base>`; M's base must equal this PR's head (checked before merging). Repeatable |
 | `--delete-branch` | Delete the head branch after merge and retarget (never by default) |
+| `--wait-checks` | PR checks are required to be green (`gh pr checks`); wait for pending ones (`--watch --fail-fast`) instead of refusing |
+| `--skip-checks` | Merge without the green-checks gate (logged as a warning; not recommended) |
 | `--dry-run` | Validate and print the `gh` commands without merging |
 | `--non-interactive` | Accept all defaults, no prompts |
 

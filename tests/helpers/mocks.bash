@@ -123,6 +123,8 @@ EOF
 #                               An empty-string override is not distinguishable from unset.
 #   - `gh pr merge N`   → exits $MOCK_GH_MERGE_EXIT (default 0); afterwards `pr view N state` reads
 #                         $MOCK_GH_POSTMERGE_STATE (default MERGED, e.g. set QUEUED/OPEN for a merge queue)
+#   - `gh pr checks N`  → exits $MOCK_GH_CHECKS_EXIT (default 0; 8 = pending, 1 = failing);
+#                         with --watch exits $MOCK_GH_CHECKS_WATCH_EXIT (default 0)
 #   - `gh api ...`      → exits $MOCK_GH_API_EXIT (default 0)
 #   - `gh pr view --json headRepository,headRepositoryOwner` → MOCK_GH_PR_HEADREPOSITORY_HEADREPOSITORYOWNER
 #                         (owner/name of the PR's head repo; default forkni/claude-git-workflow)
@@ -167,6 +169,12 @@ if [[ "\$1" == "pr" && "\$2" == "view" ]]; then
 fi
 if [[ "\$1" == "api" ]]; then
   exit \${MOCK_GH_API_EXIT:-0}
+fi
+if [[ "\$1" == "pr" && "\$2" == "checks" ]]; then
+  case " \$* " in
+    *" --watch "*) exit \${MOCK_GH_CHECKS_WATCH_EXIT:-0} ;;
+  esac
+  exit \${MOCK_GH_CHECKS_EXIT:-0}
 fi
 if [[ "\$1" == "pr" && "\$2" == "merge" ]]; then
   : >"${MOCK_BIN_DIR}/merged.\$3"

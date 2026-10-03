@@ -21,6 +21,8 @@
 #   --retarget <M>     After merging, retarget stacked PR #M (whose base is this PR's head
 #                      branch) onto this PR's base branch. Repeatable.
 #   --delete-branch    Delete this PR's head branch after merge and retarget (never by default)
+#   --wait-checks      If PR checks are still pending, wait for them (gh pr checks --watch)
+#   --skip-checks      Merge without requiring green PR checks (logged as a warning)
 #   --dry-run          Validate and print the gh commands without merging
 #   --non-interactive  Accept all defaults, no prompts
 #   -h, --help         Show help
@@ -40,7 +42,7 @@ ensure_no_stale_index_lock || exit 1
 # _pr_view <number> <json-field> <jq-expr>
 # Echoes one field of a PR via gh's built-in --jq (no external jq needed).
 _pr_view() {
-  gh pr view "$1" --repo "${pr_repo}" --json "$2" --jq "$3" 2>/dev/null
+  gh pr view "${1}" --repo "${pr_repo}" --json "${2}" --jq "${3}" 2>/dev/null
 }
 
 main() {
@@ -49,6 +51,8 @@ main() {
   local allow_non_merge=0
   local retarget=()
   local delete_branch=0
+  local wait_checks=0
+  local skip_checks=0
   local dry_run=0
   local non_interactive=0
 
@@ -56,8 +60,8 @@ main() {
   [[ ! -t 0 ]] && CGW_NON_INTERACTIVE=1
   [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
 
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
+  while [[ ${#} -gt 0 ]]; do
+    case "${1}" in
       --help | -h)
         echo "Usage: ./scripts/git/merge_pr.sh <PR-number> [OPTIONS]"
         echo ""
@@ -72,6 +76,8 @@ main() {
         echo "                     branch (its base must be this PR's head). Repeatable."
         echo "  --delete-branch    Delete the head branch after merge and retarget"
         echo "                     (never deleted by default)"
+        echo "  --wait-checks      Wait for pending PR checks instead of refusing"
+        echo "  --skip-checks      Merge without requiring green PR checks (not recommended)"
         echo "  --dry-run          Validate and print the gh commands without merging"
         echo "  --non-interactive  Accept all defaults, no prompts"
         echo "  -h, --help         Show this help"
@@ -82,6 +88,8 @@ main() {
         echo "  ./scripts/git/merge_pr.sh 42 --dry-run"
         echo ""
         echo "Notes:"
+        echo "  The PR's checks must be green (gh pr checks) before anything is merged; pending checks"
+        echo "  refuse unless --wait-checks, failing checks always refuse unless --skip-checks."
         echo "  A merge commit keeps the feature revertable as one unit. After a merge, undo with:"
         echo "    ./scripts/git/rollback_merge.sh --revert --target <merge-sha>"
         echo "  Passes gh an explicit --repo resolved from \${CGW_REMOTE}'s URL, so a fork remote"
@@ -108,28 +116,30 @@ main() {
         ;;
       --allow-non-merge) allow_non_merge=1 ;;
       --retarget)
-        if [[ -z "${2:-}" ]] || ! [[ "$2" =~ ^[0-9]+$ ]]; then
+        if [[ -z "${2:-}" ]] || ! [[ "${2}" =~ ^[0-9]+$ ]]; then
           err "--retarget requires a PR number"
           exit 1
         fi
-        retarget+=("$2")
+        retarget+=("${2}")
         shift
         ;;
       --delete-branch) delete_branch=1 ;;
+      --wait-checks) wait_checks=1 ;;
+      --skip-checks) skip_checks=1 ;;
       --dry-run) dry_run=1 ;;
       --non-interactive)
         non_interactive=1
         CGW_NON_INTERACTIVE=1
         ;;
       -*)
-        err "Unknown flag: $1"
+        err "Unknown flag: ${1}"
         exit 1
         ;;
       *)
         if [[ -z "${pr_number}" ]]; then
-          pr_number="$1"
+          pr_number="${1}"
         else
-          err "Unexpected argument: $1"
+          err "Unexpected argument: ${1}"
           exit 1
         fi
         ;;
@@ -170,55 +180,55 @@ main() {
     echo "========================================="
     echo "Start Time: $(date)"
     echo "PR: #${pr_number}"
-  } >"$logfile"
+  } >"${logfile}"
 
   cd "${PROJECT_ROOT}" || {
     err "Cannot find project root"
     exit 1
   }
 
-  echo "=== PR Merge ===" | tee -a "$logfile"
-  echo "" | tee -a "$logfile"
+  echo "=== PR Merge ===" | tee -a "${logfile}"
+  echo "" | tee -a "${logfile}"
 
   # [1/4] Prerequisites
-  log_section_start "PREREQUISITES" "$logfile"
+  log_section_start "PREREQUISITES" "${logfile}"
   if ! cgw_require_gh; then
-    log_section_end "PREREQUISITES" "$logfile" "1"
+    log_section_end "PREREQUISITES" "${logfile}" "1"
     exit 1
   fi
-  echo "[OK] gh CLI installed and authenticated" | tee -a "$logfile"
+  echo "[OK] gh CLI installed and authenticated" | tee -a "${logfile}"
 
   # Explicit --repo from CGW_REMOTE's URL: without it gh may resolve a fork's parent repo.
   pr_repo=""
   if pr_repo=$(cgw_remote_owner_repo "${CGW_REMOTE}"); then
-    echo "Repo: ${pr_repo}" | tee -a "$logfile"
+    echo "Repo: ${pr_repo}" | tee -a "${logfile}"
   else
     err_tee "[ERROR] Could not determine ${CGW_REMOTE}'s owner/repo from its configured URL."
     err_tee "[ERROR] Refusing to run 'gh pr merge' without an explicit --repo (a fork would default to its parent)."
     err_tee "[ERROR] Fix: run 'git remote -v' and confirm ${CGW_REMOTE} is a github.com SSH/HTTPS URL."
-    log_section_end "PREREQUISITES" "$logfile" "1"
+    log_section_end "PREREQUISITES" "${logfile}" "1"
     exit 1
   fi
-  log_section_end "PREREQUISITES" "$logfile" "0"
-  echo "" | tee -a "$logfile"
+  log_section_end "PREREQUISITES" "${logfile}" "0"
+  echo "" | tee -a "${logfile}"
 
   # [2/4] Validate the PR (and any stacked PRs) before touching anything
-  log_section_start "VALIDATE PR" "$logfile"
+  log_section_start "VALIDATE PR" "${logfile}"
   local state base_branch head_branch
   state=$(_pr_view "${pr_number}" state .state) || state=""
   base_branch=$(_pr_view "${pr_number}" baseRefName .baseRefName) || base_branch=""
   head_branch=$(_pr_view "${pr_number}" headRefName .headRefName) || head_branch=""
   if [[ -z "${state}" || -z "${base_branch}" || -z "${head_branch}" ]]; then
     err_tee "[ERROR] Could not read PR #${pr_number} from ${pr_repo} (does it exist?)"
-    log_section_end "VALIDATE PR" "$logfile" "1"
+    log_section_end "VALIDATE PR" "${logfile}" "1"
     exit 1
   fi
   if [[ "${state}" != "OPEN" ]]; then
     err_tee "[ERROR] PR #${pr_number} is ${state}, not OPEN -- nothing to merge"
-    log_section_end "VALIDATE PR" "$logfile" "1"
+    log_section_end "VALIDATE PR" "${logfile}" "1"
     exit 1
   fi
-  echo "[OK] PR #${pr_number}: ${head_branch} -> ${base_branch} (OPEN)" | tee -a "$logfile"
+  echo "[OK] PR #${pr_number}: ${head_branch} -> ${base_branch} (OPEN)" | tee -a "${logfile}"
 
   for m in "${retarget[@]}"; do
     local m_state m_base
@@ -226,20 +236,20 @@ main() {
     m_base=$(_pr_view "${m}" baseRefName .baseRefName) || m_base=""
     if [[ "${m_state}" != "OPEN" ]]; then
       err_tee "[ERROR] Stacked PR #${m} is '${m_state:-unreadable}', not OPEN -- cannot retarget"
-      log_section_end "VALIDATE PR" "$logfile" "1"
+      log_section_end "VALIDATE PR" "${logfile}" "1"
       exit 1
     fi
     if [[ "${m_base}" != "${head_branch}" ]]; then
       err_tee "[ERROR] Stacked PR #${m} has base '${m_base}', expected '${head_branch}' (PR #${pr_number}'s head) -- not stacked on this PR"
-      log_section_end "VALIDATE PR" "$logfile" "1"
+      log_section_end "VALIDATE PR" "${logfile}" "1"
       exit 1
     fi
-    echo "[OK] Stacked PR #${m}: base ${m_base} -> will retarget to ${base_branch}" | tee -a "$logfile"
+    echo "[OK] Stacked PR #${m}: base ${m_base} -> will retarget to ${base_branch}" | tee -a "${logfile}"
   done
 
   if [[ ${delete_branch} -eq 1 && ! "${head_branch}" =~ ^[A-Za-z0-9._/-]+$ ]]; then
     err_tee "[ERROR] Refusing to delete head branch with unusual name: ${head_branch}"
-    log_section_end "VALIDATE PR" "$logfile" "1"
+    log_section_end "VALIDATE PR" "${logfile}" "1"
     exit 1
   fi
   # The head branch lives in the PR's head repository (a fork for cross-repository PRs), which
@@ -249,30 +259,65 @@ main() {
     head_repo=$(_pr_view "${pr_number}" headRepository,headRepositoryOwner '(.headRepositoryOwner.login) + "/" + (.headRepository.name)') || head_repo=""
     if [[ ! "${head_repo}" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
       err_tee "[ERROR] Cannot determine PR #${pr_number}'s head repository (deleted fork?) -- refusing --delete-branch"
-      log_section_end "VALIDATE PR" "$logfile" "1"
+      log_section_end "VALIDATE PR" "${logfile}" "1"
       exit 1
     fi
   fi
-  log_section_end "VALIDATE PR" "$logfile" "0"
-  echo "" | tee -a "$logfile"
+  log_section_end "VALIDATE PR" "${logfile}" "0"
+  echo "" | tee -a "${logfile}"
+
+  # [2b/4] Required PR checks: the promotion contract merges only after CI is green.
+  # gh pr checks exits 0 = all passed, 8 = pending, 1 = failing; "no checks reported" is treated
+  # as nothing to gate on (a repo without CI).
+  log_section_start "PR CHECKS" "${logfile}"
+  if [[ ${skip_checks} -eq 1 ]]; then
+    echo "[WARN] --skip-checks: merging PR #${pr_number} without verifying its checks" | tee -a "${logfile}"
+    log_section_end "PR CHECKS" "${logfile}" "0"
+  else
+    local checks_out checks_rc
+    checks_out=$(gh pr checks "${pr_number}" --repo "${pr_repo}" 2>&1)
+    checks_rc=$?
+    echo "${checks_out}" >>"${logfile}"
+    if [[ ${checks_rc} -ne 0 && ${checks_rc} -ne 8 && "${checks_out}" == *"no checks reported"* ]]; then
+      echo "[!] PR #${pr_number} has no checks reported -- nothing to gate on" | tee -a "${logfile}"
+      checks_rc=0
+    fi
+    if [[ ${checks_rc} -eq 8 && ${wait_checks} -eq 1 ]]; then
+      echo "PR #${pr_number} checks pending -- waiting (gh pr checks --watch)" | tee -a "${logfile}"
+      gh pr checks "${pr_number}" --repo "${pr_repo}" --watch --fail-fast 2>&1 | tee -a "${logfile}"
+      checks_rc=${PIPESTATUS[0]}
+    fi
+    if [[ ${checks_rc} -ne 0 ]]; then
+      if [[ ${checks_rc} -eq 8 ]]; then
+        err_tee "[ERROR] PR #${pr_number} checks are still pending -- rerun with --wait-checks, or wait for CI"
+      else
+        err_tee "[ERROR] PR #${pr_number} checks are not green (gh pr checks exit ${checks_rc}) -- fix CI before merging"
+      fi
+      log_section_end "PR CHECKS" "${logfile}" "1"
+      exit 1
+    fi
+    echo "[OK] PR #${pr_number} checks passed" | tee -a "${logfile}"
+    log_section_end "PR CHECKS" "${logfile}" "0"
+  fi
+  echo "" | tee -a "${logfile}"
 
   local merge_args=("${pr_number}" --repo "${pr_repo}" "--${method}")
 
   if [[ ${dry_run} -eq 1 ]]; then
-    echo "=== DRY RUN -- nothing merged ===" | tee -a "$logfile"
-    echo "" | tee -a "$logfile"
-    echo "Would run: gh pr merge ${merge_args[*]}" | tee -a "$logfile"
+    echo "=== DRY RUN -- nothing merged ===" | tee -a "${logfile}"
+    echo "" | tee -a "${logfile}"
+    echo "Would run: gh pr merge ${merge_args[*]}" | tee -a "${logfile}"
     for m in "${retarget[@]}"; do
-      echo "Would run: gh pr edit ${m} --repo ${pr_repo} --base ${base_branch}" | tee -a "$logfile"
+      echo "Would run: gh pr edit ${m} --repo ${pr_repo} --base ${base_branch}" | tee -a "${logfile}"
     done
     [[ ${delete_branch} -eq 1 ]] &&
-      echo "Would delete branch: ${head_branch} in ${head_repo}" | tee -a "$logfile"
+      echo "Would delete branch: ${head_branch} in ${head_repo}" | tee -a "${logfile}"
     exit 0
   fi
 
   if [[ "${method}" != "merge" ]]; then
-    echo "[WARN] --${method} flattens PR #${pr_number} into commits that can't be reverted as one unit." | tee -a "$logfile"
-    echo "       A merge commit would stay revertable with rollback_merge.sh --revert." | tee -a "$logfile"
+    echo "[WARN] --${method} flattens PR #${pr_number} into commits that can't be reverted as one unit." | tee -a "${logfile}"
+    echo "       A merge commit would stay revertable with rollback_merge.sh --revert." | tee -a "${logfile}"
   fi
 
   # Interactive confirmation: merging is outward-facing and not undone by a local reset.
@@ -288,10 +333,10 @@ main() {
   # Recovery point: the merge happens on the remote, so tag the base branch's current remote tip.
   # The merge commit's first parent will be exactly this commit (rollback_merge.sh's HEAD^1 guard).
   # No verified tag, no merge: a remote merge can't be undone by a local reset.
-  log_section_start "PRE-MERGE RECOVERY POINT" "$logfile"
+  log_section_start "PRE-MERGE RECOVERY POINT" "${logfile}"
   local base_tip tag_tip
   base_tip=""
-  if git fetch --quiet "${CGW_REMOTE}" "${base_branch}" >>"$logfile" 2>&1; then
+  if git fetch --quiet "${CGW_REMOTE}" "${base_branch}" >>"${logfile}" 2>&1; then
     base_tip=$(git rev-parse --verify --quiet "refs/remotes/${CGW_REMOTE}/${base_branch}^{commit}") || base_tip=""
   fi
   CGW_BACKUP_TAG=""
@@ -299,19 +344,19 @@ main() {
   tag_tip=""
   [[ -n "${CGW_BACKUP_TAG}" ]] && tag_tip=$(git rev-parse --verify --quiet "refs/tags/${CGW_BACKUP_TAG}^{commit}") || tag_tip=""
   if [[ -z "${base_tip}" || "${tag_tip}" != "${base_tip}" ]]; then
-    log_section_end "PRE-MERGE RECOVERY POINT" "$logfile" "1"
+    log_section_end "PRE-MERGE RECOVERY POINT" "${logfile}" "1"
     err_tee "[ERROR] Could not fetch ${CGW_REMOTE}/${base_branch} and tag its tip -- refusing to merge without a recovery point"
     exit 1
   fi
-  echo "[OK] Recovery point: ${CGW_BACKUP_TAG} -> ${base_tip:0:7}" | tee -a "$logfile"
-  log_section_end "PRE-MERGE RECOVERY POINT" "$logfile" "0"
+  echo "[OK] Recovery point: ${CGW_BACKUP_TAG} -> ${base_tip:0:7}" | tee -a "${logfile}"
+  log_section_end "PRE-MERGE RECOVERY POINT" "${logfile}" "0"
 
   # [3/4] Merge
-  log_section_start "GH PR MERGE" "$logfile"
-  if gh pr merge "${merge_args[@]}" 2>&1 | tee -a "$logfile"; then
-    log_section_end "GH PR MERGE" "$logfile" "0"
+  log_section_start "GH PR MERGE" "${logfile}"
+  if gh pr merge "${merge_args[@]}" 2>&1 | tee -a "${logfile}"; then
+    log_section_end "GH PR MERGE" "${logfile}" "0"
   else
-    log_section_end "GH PR MERGE" "$logfile" "1"
+    log_section_end "GH PR MERGE" "${logfile}" "1"
     err "gh pr merge failed -- check log: ${logfile}"
     exit 1
   fi
@@ -321,59 +366,59 @@ main() {
   local post_state
   post_state=$(_pr_view "${pr_number}" state .state) || post_state=""
   if [[ "${post_state}" != "MERGED" ]]; then
-    echo "[!] PR #${pr_number} is ${post_state:-in an unknown state}, not merged yet (merge queue or auto-merge pending)" | tee -a "$logfile"
-    echo "    Skipping --retarget and --delete-branch; rerun them once the PR shows MERGED." | tee -a "$logfile"
-    echo "Full log: $logfile"
+    echo "[!] PR #${pr_number} is ${post_state:-in an unknown state}, not merged yet (merge queue or auto-merge pending)" | tee -a "${logfile}"
+    echo "    Skipping --retarget and --delete-branch; rerun them once the PR shows MERGED." | tee -a "${logfile}"
+    echo "Full log: ${logfile}"
     exit 0
   fi
-  echo "[OK] Merged PR #${pr_number} into ${base_branch} (--${method})" | tee -a "$logfile"
-  echo "" | tee -a "$logfile"
+  echo "[OK] Merged PR #${pr_number} into ${base_branch} (--${method})" | tee -a "${logfile}"
+  echo "" | tee -a "${logfile}"
 
   # [4/4] Retarget stacked PRs, then optionally delete the head branch.
   # Order matters: deleting the head first would auto-close PRs still based on it.
   local failed=0
   if [[ ${#retarget[@]} -gt 0 ]]; then
-    log_section_start "RETARGET STACKED PRS" "$logfile"
+    log_section_start "RETARGET STACKED PRS" "${logfile}"
     for m in "${retarget[@]}"; do
-      if gh pr edit "${m}" --repo "${pr_repo}" --base "${base_branch}" 2>&1 | tee -a "$logfile"; then
-        echo "[OK] Retargeted PR #${m} onto ${base_branch}" | tee -a "$logfile"
+      if gh pr edit "${m}" --repo "${pr_repo}" --base "${base_branch}" 2>&1 | tee -a "${logfile}"; then
+        echo "[OK] Retargeted PR #${m} onto ${base_branch}" | tee -a "${logfile}"
       else
         err_tee "[ERROR] Failed to retarget PR #${m} -- PR #${pr_number} is already merged; retarget manually:"
         err_tee "        gh pr edit ${m} --repo ${pr_repo} --base ${base_branch}"
         failed=1
       fi
     done
-    log_section_end "RETARGET STACKED PRS" "$logfile" "${failed}"
+    log_section_end "RETARGET STACKED PRS" "${logfile}" "${failed}"
   fi
 
   if [[ ${delete_branch} -eq 1 ]]; then
     if [[ ${failed} -eq 1 ]]; then
       err_tee "[WARN] Skipping --delete-branch: a stacked PR could still be based on ${head_branch}"
     else
-      log_section_start "DELETE HEAD BRANCH" "$logfile"
+      log_section_start "DELETE HEAD BRANCH" "${logfile}"
       # head_repo, not pr_repo: for a cross-repository PR the branch lives in the head repository.
-      if gh api --method DELETE "repos/${head_repo}/git/refs/heads/${head_branch}" 2>&1 | tee -a "$logfile"; then
-        echo "[OK] Deleted remote branch ${head_branch} (${head_repo})" | tee -a "$logfile"
-        log_section_end "DELETE HEAD BRANCH" "$logfile" "0"
+      if gh api --method DELETE "repos/${head_repo}/git/refs/heads/${head_branch}" 2>&1 | tee -a "${logfile}"; then
+        echo "[OK] Deleted remote branch ${head_branch} (${head_repo})" | tee -a "${logfile}"
+        log_section_end "DELETE HEAD BRANCH" "${logfile}" "0"
       else
         err_tee "[ERROR] Could not delete remote branch ${head_branch} in ${head_repo} (already gone, or no permission)"
         failed=1
-        log_section_end "DELETE HEAD BRANCH" "$logfile" "1"
+        log_section_end "DELETE HEAD BRANCH" "${logfile}" "1"
       fi
     fi
   fi
 
   local merge_sha
   merge_sha=$(_pr_view "${pr_number}" mergeCommit .mergeCommit.oid) || merge_sha=""
-  echo "" | tee -a "$logfile"
+  echo "" | tee -a "${logfile}"
   if [[ -n "${merge_sha}" && "${merge_sha}" != "null" ]]; then
-    echo "Merge commit: ${merge_sha}" | tee -a "$logfile"
+    echo "Merge commit: ${merge_sha}" | tee -a "${logfile}"
     if [[ "${method}" == "merge" ]]; then
-      echo "Undo (history-preserving): ./scripts/git/rollback_merge.sh --revert --target ${merge_sha}" | tee -a "$logfile"
+      echo "Undo (history-preserving): ./scripts/git/rollback_merge.sh --revert --target ${merge_sha}" | tee -a "${logfile}"
     fi
   fi
-  echo "Full log: $logfile"
+  echo "Full log: ${logfile}"
   [[ ${failed} -eq 0 ]]
 }
 
-main "$@"
+main "${@}"

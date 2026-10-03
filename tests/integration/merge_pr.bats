@@ -300,3 +300,57 @@ _run_merge_pr() {
   [[ "${output}" == *"refusing to merge without a recovery point"* ]]
   ! grep -q -- "pr merge" "${GH_LOG}"
 }
+
+# ── PR checks gate ────────────────────────────────────────────────────────────
+
+@test "failing PR checks refuse the merge: no recovery point, no gh pr merge" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=1
+  run _run_merge_pr 42
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"checks are not green"* ]]
+  ! grep -q -- "pr merge" "${GH_LOG}"
+}
+
+@test "pending PR checks refuse the merge without --wait-checks" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=8
+  run _run_merge_pr 42
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"still pending"* ]]
+  ! grep -q -- "pr merge" "${GH_LOG}"
+}
+
+@test "--wait-checks watches pending checks and merges when they go green" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=8
+  run _run_merge_pr 42 --wait-checks
+  [ "${status}" -eq 0 ]
+  grep -q -- "pr checks 42 .*--watch" "${GH_LOG}"
+  grep -q -- "pr merge 42" "${GH_LOG}"
+}
+
+@test "--wait-checks refuses when the watched checks fail" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=8
+  export MOCK_GH_CHECKS_WATCH_EXIT=1
+  run _run_merge_pr 42 --wait-checks
+  [ "${status}" -eq 1 ]
+  ! grep -q -- "pr merge" "${GH_LOG}"
+}
+
+@test "--skip-checks merges despite failing checks and warns" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=1
+  run _run_merge_pr 42 --skip-checks
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"--skip-checks"* ]]
+  grep -q -- "pr merge 42" "${GH_LOG}"
+}
+
+@test "--dry-run still refuses failing checks" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=1
+  run _run_merge_pr 42 --dry-run
+  [ "${status}" -eq 1 ]
+}

@@ -89,7 +89,8 @@ fi
 
 # bats --jobs requires flock/shlock, which Git Bash on Windows does not provide.
 # Fall back to per-file parallelism via xargs -P when flock is unavailable.
-if command -v flock >/dev/null 2>&1 || command -v shlock >/dev/null 2>&1; then
+# CGW_TEST_TIMINGS=1 also takes the xargs path: it times each file, which native --jobs can't report.
+if [[ "${CGW_TEST_TIMINGS:-0}" != "1" ]] && { command -v flock >/dev/null 2>&1 || command -v shlock >/dev/null 2>&1; }; then
   if [[ "${_filtered}" -eq 1 ]]; then
     exec bats --jobs "${jobs}" "${_files[@]}"
   fi

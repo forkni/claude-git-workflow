@@ -447,6 +447,12 @@ _install_single_hook() {
   # No .bak: the old version is recoverable from CGW git, and the message names the commit.
   local stock_sha
   if stock_sha="$(_hook_stock_version "${template_file}" "${target_file}" "${hook_name}")"; then
+    # The active .git/hooks copy of the same stale stock hook is refreshed too, so install_hooks.sh
+    # (run next) sees it matching the template and makes no .bak; a differing one is still backed up.
+    if [[ -f "${active_git_hook}" ]] && cmp -s "${target_file}" "${active_git_hook}"; then
+      cp "${template_file}" "${active_git_hook}"
+      chmod +x "${active_git_hook}"
+    fi
     cp "${template_file}" "${target_file}"
     chmod +x "${target_file}"
     echo "  [OK] Refreshed outdated stock .githooks/${hook_name} (was CGW ${stock_sha})"
