@@ -127,6 +127,18 @@ _run_configure() {
   [ "${status}" -eq 0 ]
 }
 
+@test "allows git grep for the worktree remove phrase" {
+  _require_jq
+  run _run_guardrail "git grep worktree remove"
+  [ "${status}" -eq 0 ]
+}
+
+@test "blocks git with global options before worktree remove" {
+  _require_jq
+  run _run_guardrail "git -c core.x=1 --no-pager worktree remove ../wt"
+  [ "${status}" -eq 2 ]
+}
+
 @test "allows worktree remove text inside a quoted commit message" {
   _require_jq
   run _run_guardrail "./scripts/git/commit_enhanced.sh 'docs: never git worktree remove directly'"

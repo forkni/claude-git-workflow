@@ -91,6 +91,23 @@ _install_hook_direct() {
   [[ "${output}" == *"[OK]   scripts/git shims in place"* ]]
 }
 
+@test "link drops shims for scripts that no longer exist in main" {
+  run_script_at "${TEST_WORKTREE_DIR}" worktree_manage.sh link
+  echo "stale" >"${TEST_WORKTREE_DIR}/scripts/git/gone_script.sh"
+
+  run run_script_at "${TEST_WORKTREE_DIR}" worktree_manage.sh link
+  [ "${status}" -eq 0 ]
+  [ ! -e "${TEST_WORKTREE_DIR}/scripts/git/gone_script.sh" ]
+  [ -f "${TEST_WORKTREE_DIR}/scripts/git/.cgw-worktree-shims" ]
+  [ -x "${TEST_WORKTREE_DIR}/scripts/git/commit_enhanced.sh" ]
+}
+
+@test "link leaves no temp directory and no unmarked dir behind" {
+  run_script_at "${TEST_WORKTREE_DIR}" worktree_manage.sh link
+  run bash -c "ls -d '${TEST_WORKTREE_DIR}'/scripts/git.cgw-tmp.* 2>/dev/null"
+  [ -z "${output}" ]
+}
+
 @test "link migrates a legacy junction/symlink to shims without touching main" {
   mkdir -p "${TEST_WORKTREE_DIR}/scripts"
   case "$(uname -s 2>/dev/null)" in
