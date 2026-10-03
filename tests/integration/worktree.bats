@@ -57,26 +57,79 @@ _install_hook_direct() {
 
 # ── link ─────────────────────────────────────────────────────────────────────
 
-@test "link copies scripts/git and .githooks into a linked worktree" {
+@test "link writes shims for scripts/git (a real directory, not a link)" {
   [ ! -e "${TEST_WORKTREE_DIR}/scripts/git" ]
   [ ! -e "${TEST_WORKTREE_DIR}/.githooks" ]
 
   run run_script_at "${TEST_WORKTREE_DIR}" worktree_manage.sh link
   [ "${status}" -eq 0 ]
-  [[ "${output}" == *"[OK]   linked scripts/git"* ]]
-  [[ "${output}" == *"[OK]   linked .githooks"* ]]
-  [ -e "${TEST_WORKTREE_DIR}/scripts/git/_common.sh" ]
-  [ -e "${TEST_WORKTREE_DIR}/.githooks/pre-commit" ]
+  [[ "${output}" == *"[OK]   scripts/git shims in place"* ]]
+  [ -x "${TEST_WORKTREE_DIR}/scripts/git/commit_enhanced.sh" ]
+  [ -f "${TEST_WORKTREE_DIR}/scripts/git/.cgw-worktree-shims" ]
+  # Libraries stay in main only; hooks/install_hooks fall back to main for them.
+  [ ! -e "${TEST_WORKTREE_DIR}/scripts/git/_common.sh" ]
+  [ ! -e "${TEST_WORKTREE_DIR}/.githooks" ]
+  [ ! -L "${TEST_WORKTREE_DIR}/scripts/git" ]
+  ! fsutil reparsepoint query "$(cygpath -w "${TEST_WORKTREE_DIR}/scripts/git" 2>/dev/null || echo "${TEST_WORKTREE_DIR}/scripts/git")" >/dev/null 2>&1
 }
 
-@test "link is idempotent — re-running reports already linked, doesn't fail" {
+@test "link shims forward to main's script and keep the worktree as PROJECT_ROOT" {
+  run_script_at "${TEST_WORKTREE_DIR}" worktree_manage.sh link
+
+  run bash -c "cd '${TEST_WORKTREE_DIR}' && ./scripts/git/worktree_manage.sh list"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Git Worktrees"* ]]
+  # Logs land in the worktree, not the main checkout.
+  ls "${TEST_WORKTREE_DIR}/logs/"worktree_manage_*.log
+}
+
+@test "link is idempotent — re-running succeeds and refreshes the shims" {
   run_script_at "${TEST_WORKTREE_DIR}" worktree_manage.sh link
 
   run run_script_at "${TEST_WORKTREE_DIR}" worktree_manage.sh link
   [ "${status}" -eq 0 ]
-  [[ "${output}" == *"[OK]   scripts/git already linked"* ]]
-  [[ "${output}" == *"[OK]   .githooks already linked"* ]]
+  [[ "${output}" == *"[OK]   scripts/git shims in place"* ]]
 }
+
+@test "link drops shims for scripts that no longer exist in main" {
+  run_script_at "${TEST_WORKTREE_DIR}" worktree_manage.sh link
+  echo "stale" >"${TEST_WORKTREE_DIR}/scripts/git/gone_script.sh"
+
+  run run_script_at "${TEST_WORKTREE_DIR}" worktree_manage.sh link
+  [ "${status}" -eq 0 ]
+  [ ! -e "${TEST_WORKTREE_DIR}/scripts/git/gone_script.sh" ]
+  [ -f "${TEST_WORKTREE_DIR}/scripts/git/.cgw-worktree-shims" ]
+  [ -x "${TEST_WORKTREE_DIR}/scripts/git/commit_enhanced.sh" ]
+}
+
+@test "link leaves no temp directory and no unmarked dir behind" {
+  run_script_at "${TEST_WORKTREE_DIR}" worktree_manage.sh link
+  run bash -c "ls -d '${TEST_WORKTREE_DIR}'/scripts/git.cgw-tmp.* 2>/dev/null"
+  [ -z "${output}" ]
+}
+
+@test "link migrates a legacy junction/symlink to shims without touching main" {
+  mkdir -p "${TEST_WORKTREE_DIR}/scripts"
+  case "$(uname -s 2>/dev/null)" in
+    MINGW* | MSYS* | CYGWIN*)
+      cmd //c mklink //J "$(cygpath -w "${TEST_WORKTREE_DIR}/scripts/git")" "$(cygpath -w "${TEST_REPO_DIR}/scripts/git")" >/dev/null
+      cmd //c mklink //J "$(cygpath -w "${TEST_WORKTREE_DIR}/.githooks")" "$(cygpath -w "${TEST_REPO_DIR}/.githooks")" >/dev/null
+      ;;
+    *)
+      ln -s "${TEST_REPO_DIR}/scripts/git" "${TEST_WORKTREE_DIR}/scripts/git"
+      ln -s "${TEST_REPO_DIR}/.githooks" "${TEST_WORKTREE_DIR}/.githooks"
+      ;;
+  esac
+
+  run run_script_at "${TEST_WORKTREE_DIR}" worktree_manage.sh link
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"migrated scripts/git"* ]]
+  [ -f "${TEST_WORKTREE_DIR}/scripts/git/.cgw-worktree-shims" ]
+  [ ! -e "${TEST_WORKTREE_DIR}/.githooks" ]
+  [ -f "${TEST_REPO_DIR}/scripts/git/_common.sh" ]
+  [ -f "${TEST_REPO_DIR}/.githooks/pre-commit" ]
+}
+
 
 @test "link refuses to overwrite a real (non-linked) directory" {
   mkdir -p "${TEST_WORKTREE_DIR}/scripts/git"
@@ -94,7 +147,7 @@ _install_hook_direct() {
   # main worktree's scripts/git -- must not be accepted as "already linked".
   # Plain `ln -s` on a directory silently falls back to a real directory on
   # Windows/MSYS without admin rights, so create the stale link the same way
-  # production code does (_cgw_link_dir: NTFS junction on MINGW/MSYS/CYGWIN,
+  # older CGW versions did (an NTFS junction on MINGW/MSYS/CYGWIN,
   # symlink elsewhere) rather than hardcoding `ln -s`.
   mkdir -p "${TEST_WORKTREE_DIR}/scripts" "${BATS_TEST_TMPDIR}/elsewhere"
   case "$(uname -s 2>/dev/null)" in
@@ -167,7 +220,7 @@ _install_hook_direct() {
 
 @test "remove: unlinks scripts/git and .githooks before removing; main worktree survives" {
   run_script_at "${TEST_WORKTREE_DIR}" worktree_manage.sh link
-  [ -e "${TEST_WORKTREE_DIR}/scripts/git/_common.sh" ]
+  [ -e "${TEST_WORKTREE_DIR}/scripts/git/commit_enhanced.sh" ]
 
   run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove --execute --non-interactive "${TEST_WORKTREE_DIR}"
   [ "${status}" -eq 0 ]
@@ -191,6 +244,39 @@ _install_hook_direct() {
   [ ! -d "${TEST_WORKTREE_DIR}" ]
 
   # The MAIN worktree's own tooling must be completely untouched.
+  [ -f "${TEST_REPO_DIR}/scripts/git/_common.sh" ]
+  [ -f "${TEST_REPO_DIR}/.githooks/pre-commit" ]
+}
+
+# ── raw removal (bypassing CGW) must not reach the main worktree's tooling ───
+# Regression: on Windows `link` made NTFS junctions, and a plain
+# `git worktree remove` / `rm -rf` recursed THROUGH them, emptying the main
+# checkout's gitignored scripts/git and .githooks (unrecoverable from git).
+
+_skip_unless_windows() {
+  case "$(uname -s 2>/dev/null)" in
+    MINGW* | MSYS* | CYGWIN*) ;;
+    *) skip "junction recursion is Windows-specific" ;;
+  esac
+}
+
+@test "raw git worktree remove leaves the main worktree's tooling intact" {
+  _skip_unless_windows
+  run_script_at "${TEST_WORKTREE_DIR}" worktree_manage.sh link
+
+  git -C "${TEST_REPO_DIR}" worktree remove --force "${TEST_WORKTREE_DIR}"
+
+  [ -f "${TEST_REPO_DIR}/scripts/git/_common.sh" ]
+  [ -f "${TEST_REPO_DIR}/.githooks/pre-commit" ]
+}
+
+@test "recursive delete of a linked worktree leaves the main worktree's tooling intact" {
+  _skip_unless_windows
+  run_script_at "${TEST_WORKTREE_DIR}" worktree_manage.sh link
+
+  rm -rf "${TEST_WORKTREE_DIR}"
+  git -C "${TEST_REPO_DIR}" worktree prune
+
   [ -f "${TEST_REPO_DIR}/scripts/git/_common.sh" ]
   [ -f "${TEST_REPO_DIR}/.githooks/pre-commit" ]
 }

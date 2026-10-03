@@ -9,12 +9,51 @@
 #   tests/run.sh tests/unit/config.bats   # single file
 #   CGW_TEST_JOBS=N tests/run.sh          # override parallelism (default: half logical cores)
 #   CGW_RUN_SLOW=1 tests/run.sh           # include slow files locally (always run on CI)
+#   tests/run.sh --help                   # print this usage
+#   tests/run.sh --version                # print the bats version and CGW revision this run would use
 set -uo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_self="${_dir}/$(basename "${BASH_SOURCE[0]}")"
+cd "${_dir}/.." || exit 1
+
+_usage() {
+  sed -n '2,/^set -uo/p' "${_self}" | sed '$d; s/^# \{0,1\}//'
+}
+
+case "${1:-}" in
+  -h | --help)
+    _usage
+    exit 0
+    ;;
+  -V | --version)
+    echo "CGW tests/run.sh @ $(git describe --tags --always --dirty 2>/dev/null || echo unknown)"
+    bats --version
+    exit 0
+    ;;
+esac
+
+# Mode flags are only consumed in the first position (below); any other
+# dash-argument would otherwise be handed to find/bats as a "path".
+_pos=0
+for _arg in "$@"; do
+  _pos=$((_pos + 1))
+  case "${_arg}" in
+    --slow | --all | --fast)
+      if ((_pos > 1)); then
+        echo "[run.sh] ${_arg} must be the first argument (see --help)" >&2
+        exit 2
+      fi
+      ;;
+    -*)
+      echo "[run.sh] Unknown option: ${_arg} (see --help)" >&2
+      exit 2
+      ;;
+  esac
+done
 
 _cores="$(nproc 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-4}")"
-jobs="${CGW_TEST_JOBS:-$(( _cores / 2 ))}"
-(( jobs < 1 )) && jobs=1
+jobs="${CGW_TEST_JOBS:-$((_cores / 2))}"
+((jobs < 1)) && jobs=1
 
 # Files that dominate local wall-clock (e.g. common.bats disables within-file
 # parallelization to avoid a bats --jobs index.lock race, so its ~126 tests
@@ -66,7 +105,10 @@ if [[ "${_default_run}" -eq 1 && "${_mode}" != "all" ]]; then
   for f in "${_files[@]}"; do
     _is_slow=0
     for slow in "${CGW_SLOW_FILES[@]}"; do
-      [[ "${f}" == *"${slow}" ]] && { _is_slow=1; break; }
+      [[ "${f}" == *"${slow}" ]] && {
+        _is_slow=1
+        break
+      }
     done
     if [[ "${_mode}" == "slow" ]]; then
       ((_is_slow == 1)) && _kept+=("${f}") || _skipped_files+=("${f}")
@@ -78,7 +120,7 @@ if [[ "${_default_run}" -eq 1 && "${_mode}" != "all" ]]; then
   if [[ ${#_skipped_files[@]} -gt 0 ]]; then
     _filtered=1
     printf '[run.sh] %s batch: skipping %d file(s); use --all (or CGW_RUN_SLOW=1) for everything, --slow for the other batch.
-'       "${_mode}" "${#_skipped_files[@]}" >&2
+' "${_mode}" "${#_skipped_files[@]}" >&2
   fi
 fi
 
@@ -103,16 +145,17 @@ trap 'rm -rf "${_tmpdir}"' EXIT
 
 _run_bats_file() {
   local f="$1" out="$2"
-  local slug; slug="$(basename "${f}" .bats)"
+  local slug
+  slug="$(basename "${f}" .bats)"
   local t0="${SECONDS}"
-  bats --tap "${f}" > "${out}/${slug}.tap" 2>&1
-  printf '%s' "$?" > "${out}/${slug}.exit"
-  printf '%s' "$(( SECONDS - t0 ))" > "${out}/${slug}.secs"
+  bats --tap "${f}" >"${out}/${slug}.tap" 2>&1
+  printf '%s' "$?" >"${out}/${slug}.exit"
+  printf '%s' "$((SECONDS - t0))" >"${out}/${slug}.secs"
 }
 export -f _run_bats_file
 
-printf '%s\n' "${_files[@]}" \
-  | xargs -P "${jobs}" -I{} bash -c '_run_bats_file "$@"' _ {} "${_tmpdir}"
+printf '%s\n' "${_files[@]}" |
+  xargs -P "${jobs}" -I{} bash -c '_run_bats_file "$@"' _ {} "${_tmpdir}"
 
 # ── Aggregate TAP results ──────────────────────────────────────────────────────
 _passed=0 _failed=0 _skipped=0 _overall=0
@@ -122,15 +165,18 @@ for f in "${_files[@]}"; do
   slug="$(basename "${f}" .bats)"
   tap="${_tmpdir}/${slug}.tap"
   exit_code="$(cat "${_tmpdir}/${slug}.exit" 2>/dev/null || echo 1)"
-  [[ "${exit_code}" != "0" ]] && { _overall=1; _fail_slugs+=("${slug}"); }
+  [[ "${exit_code}" != "0" ]] && {
+    _overall=1
+    _fail_slugs+=("${slug}")
+  }
 
   while IFS= read -r line; do
     if [[ "${line}" =~ ^ok\ [0-9]+ ]]; then
-      [[ "${line}" == *"# skip"* ]] && (( _skipped++ )) || (( _passed++ )) || true
+      [[ "${line}" == *"# skip"* ]] && ((_skipped++)) || ((_passed++)) || true
     elif [[ "${line}" =~ ^not\ ok\ [0-9]+ ]]; then
-      [[ "${line}" == *"# skip"* ]] && (( _skipped++ )) || (( _failed++ )) || true
+      [[ "${line}" == *"# skip"* ]] && ((_skipped++)) || ((_failed++)) || true
     fi
-  done < "${tap}"
+  done <"${tap}"
 done
 
 # Print full output for each failed file
@@ -152,7 +198,7 @@ if [[ "${CGW_TEST_TIMINGS:-0}" == "1" ]]; then
 fi
 
 # Final summary line (mirrors bats native format)
-_total=$(( _passed + _failed + _skipped ))
+_total=$((_passed + _failed + _skipped))
 if [[ "${_overall}" -eq 0 ]]; then
   printf '\n%d tests, %d skipped\n' "${_total}" "${_skipped}"
 else

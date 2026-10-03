@@ -92,6 +92,84 @@ _run_configure() {
   [[ "${output}" == *"branch_cleanup.sh"* ]]
 }
 
+@test "blocks raw git worktree remove and points to worktree_manage.sh" {
+  _require_jq
+  run _run_guardrail "git worktree remove ../wt"
+  [ "${status}" -eq 2 ]
+  [[ "${output}" == *"worktree_manage.sh remove"* ]]
+}
+
+@test "blocks git worktree remove --force" {
+  _require_jq
+  run _run_guardrail "git worktree remove --force ../wt"
+  [ "${status}" -eq 2 ]
+}
+
+@test "blocks git -C <path> worktree remove" {
+  _require_jq
+  run _run_guardrail "git -C /repo worktree remove ../wt"
+  [ "${status}" -eq 2 ]
+}
+
+@test "allows git worktree list, add and prune" {
+  _require_jq
+  run _run_guardrail "git worktree list"
+  [ "${status}" -eq 0 ]
+  run _run_guardrail "git worktree add ../wt topic"
+  [ "${status}" -eq 0 ]
+  run _run_guardrail "git worktree prune"
+  [ "${status}" -eq 0 ]
+}
+
+@test "allows the CGW worktree_manage.sh remove wrapper" {
+  _require_jq
+  run _run_guardrail "./scripts/git/worktree_manage.sh remove --execute ../wt"
+  [ "${status}" -eq 0 ]
+}
+
+@test "blocks git -C with a quoted path before worktree remove" {
+  _require_jq
+  run _run_guardrail 'git -C \"/repo with spaces\" worktree remove ../wt'
+  [ "${status}" -eq 2 ]
+}
+
+@test "blocks git short global option before worktree remove" {
+  _require_jq
+  run _run_guardrail "git -p worktree remove ../wt"
+  [ "${status}" -eq 2 ]
+}
+
+@test "blocks git global options with separate, attached or escaped arguments" {
+  _require_jq
+  run _run_guardrail "git -C/repo worktree remove ../wt"
+  [ "${status}" -eq 2 ]
+  # \\ is the JSON escape for one backslash (the helper embeds the command in raw JSON)
+  run _run_guardrail 'git -C /repo\\ with\\ spaces worktree remove ../wt'
+  [ "${status}" -eq 2 ]
+  run _run_guardrail "git --exec-path /usr/bin worktree remove ../wt"
+  [ "${status}" -eq 2 ]
+  run _run_guardrail "git --config-env=a=B worktree remove ../wt"
+  [ "${status}" -eq 2 ]
+}
+
+@test "allows git grep for the worktree remove phrase" {
+  _require_jq
+  run _run_guardrail "git grep worktree remove"
+  [ "${status}" -eq 0 ]
+}
+
+@test "blocks git with global options before worktree remove" {
+  _require_jq
+  run _run_guardrail "git -c core.x=1 --no-pager worktree remove ../wt"
+  [ "${status}" -eq 2 ]
+}
+
+@test "allows worktree remove text inside a quoted commit message" {
+  _require_jq
+  run _run_guardrail "./scripts/git/commit_enhanced.sh 'docs: never git worktree remove directly'"
+  [ "${status}" -eq 0 ]
+}
+
 @test "blocks rm -rf .git" {
   _require_jq
   run _run_guardrail "rm -rf .git"

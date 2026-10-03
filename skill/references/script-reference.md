@@ -418,15 +418,21 @@ Always protected, regardless of `CGW_TARGET_BRANCH`: `main`, `master`, the repo'
 |------------|---------|
 | `list` | All worktrees via `git worktree list --porcelain` |
 | `add <path> [<branch> [<base>]]` | Add linked worktree; creates branch with `-b` if new (from `<base>`, default HEAD; `--base <ref>` is the flag form; a base for an existing branch is refused); auto-links CGW tooling |
-| `link [<path>]` | Link `scripts/git` and `.githooks` from the main worktree (default: current dir) |
-| `remove [--execute] <path>` | Unlink CGW tooling, then remove worktree (dry-run default) |
+| `link [<path>]` | Write `scripts/git` shims that forward to the main worktree's scripts (default: current dir); migrates legacy links |
+| `remove [--execute] <path>` | Unlink any legacy CGW tooling link, then remove worktree (dry-run default) |
 | `prune [--execute]` | Remove stale admin files for missing paths (dry-run default) |
 
 `scripts/git/` and `.githooks/` are commonly gitignored, so `git worktree add` doesn't check
-them out into new worktrees; `link` creates a directory link (`ln -s` / an NTFS junction on
-Windows) back to the main worktree's copies instead of duplicating them. Idempotent, and
-refuses to overwrite a real, non-linked directory. `add` runs it automatically; `remove`
-unlinks before removing and refuses to proceed if it can't verify the unlink succeeded. See
+them out into new worktrees. `link` writes a **real** `scripts/git/` directory of small shims
+(one per public script, marked by `.cgw-worktree-shims`) that exec the main worktree's copy,
+resolved at run time; the libraries (`_common.sh`, `_config.sh`) and `.githooks` are not copied
+because hooks and `install_hooks.sh` already fall back to the main worktree. Because nothing
+links back into the main checkout, deleting the worktree any way at all cannot touch the main
+tooling. Idempotent (re-running refreshes the shims), refuses to overwrite a real directory
+lacking the marker, and replaces a legacy symlink/junction left by older CGW versions. `add` runs
+it automatically. Always remove worktrees with `remove`, never raw `git worktree remove` (the
+guardrail blocks it). If main's `scripts/git` was ever emptied, re-run `install.cmd` /
+`cgw-batch-install.cmd` from the CGW source repo; neither touches `.cgw.conf`. See
 [error-recovery.md](error-recovery.md#cgw-not-found-linked-worktree) for the hook-side
 `CGW not found` error this closes.
 
