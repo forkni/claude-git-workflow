@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.11.0 (2026-10-04)
+
+> Changes since `v0.10.0`
+
+### New Features
+
+- **Pushed-only gate scope for lint and typecheck:** `push_validated.sh` now supports `--pushed-only` (and `CGW_PUSH_LINT_SCOPE=pushed`) to validate the committed snapshot of the branch being pushed instead of the working tree, allowing pushes to succeed even when unrelated uncommitted work is in progress. `--worktree` forces working-tree scope for a single run.
+
+### Bug Fixes
+
+- **Preserve configured lint and format excludes in file-scoped checks:** `cgw_run_lint_check`, `cgw_run_format_check`, and `cgw_run_lint_fix` now retain `CGW_LINT_EXCLUDES` and `CGW_FORMAT_EXCLUDES` when invoked with an explicit file list (such as in snapshot mode or staged-only commits), preventing excluded paths from blocking validation.
+- **Include merge diffs in unpushed file discovery:** `cgw_pushed_files_for_lint` now includes `-m` when scanning unpushed commits (`--not --remotes`), ensuring files modified or resolved in unpushed merge commits are discovered and validated.
+- **Fail closed on pushed-file discovery failure:** `check_lint.sh` now verifies the exit status of `cgw_pushed_files_for_lint` and aborts if file discovery fails, rather than silently continuing with an empty scope.
+- **Harden snapshot cleanup on Windows:** `check_lint.sh` changes directory out of the temporary snapshot folder before deletion to prevent `rm -rf` access-denied failures on Windows.
+- **Protect branch ref resolution against tag shadowing:** `push_validated.sh` now resolves target refs with `refs/heads/` to prevent same-named tags from shadowing branches.
+
 ## v0.10.0 (2026-10-03)
 
 > Changes since `v0.9.0`
