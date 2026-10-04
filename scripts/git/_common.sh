@@ -1363,10 +1363,11 @@ cgw_pushed_files_for_lint() {
   local -a exts=()
   read -r -a exts <<<"${globs}"
   [[ -z "${rev}" ]] && return 1
-  local files="" have=0
+  local files="" have=0 diffed=0
   if [[ -n "${base}" ]] && git -C "${PROJECT_ROOT:-.}" merge-base "${base}" "${rev}" >/dev/null 2>&1; then
     files="$(git -C "${PROJECT_ROOT:-.}" diff --name-only --diff-filter=ACMR "${base}...${rev}" -- "${exts[@]}")" || return 1
     have=1
+    diffed=1
   fi
   if [[ ${have} -eq 0 ]]; then
     files="$(git -C "${PROJECT_ROOT:-.}" log --format= --name-only --diff-filter=ACMR "${rev}" --not --remotes -- "${exts[@]}")" || return 1
@@ -1374,7 +1375,11 @@ cgw_pushed_files_for_lint() {
   local f
   while IFS= read -r f; do
     [[ -z "${f}" ]] && continue
-    git -C "${PROJECT_ROOT:-.}" cat-file -e "${rev}:${f}" 2>/dev/null && printf '%s\n' "${f}"
+    # A three-dot diff with ACMR already excludes paths absent from <rev>; only
+    # the log form (add then delete within the range) needs the existence check.
+    if [[ ${diffed} -eq 1 ]] || git -C "${PROJECT_ROOT:-.}" cat-file -e "${rev}:${f}" 2>/dev/null; then
+      printf '%s\n' "${f}"
+    fi
   done < <(printf '%s\n' "${files}" | sort -u)
   return 0
 }

@@ -31,6 +31,8 @@ source "${SCRIPT_DIR}/_common.sh"
 # shellcheck disable=SC2329 # invoked via trap
 _cgw_snapshot_cleanup() {
   local d="${CGW_SNAPSHOT_DIR:-}"
+  # Windows cannot delete a directory that is the process cwd.
+  cd "${PROJECT_ROOT:-/}" 2>/dev/null || cd / || true
   [[ -n "${d}" && "${d##*/}" == cgw-snap.* && -d "${d}" ]] && rm -rf "${d}"
   return 0
 }

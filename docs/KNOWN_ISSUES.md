@@ -246,6 +246,8 @@ tree. By design:
 - **Relative pyright `venvPath`/`venv`** settings in `pyproject.toml` resolve against the snapshot
   directory, not the project; CGW exports `VIRTUAL_ENV` and prepends the project `.venv` to `PATH`,
   which covers the common case.
+- `.gitattributes` is read from the working tree by `git checkout-index`, so an uncommitted
+  `.gitattributes` edit can change eol/filter handling in the snapshot.
 - Typecheck is whole-snapshot, so a type error in an already-pushed file still blocks the push.
 
 ## Found and fixed in the 2026-10 audit

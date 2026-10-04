@@ -290,7 +290,8 @@ main() {
       # Check what is being published (the committed branch), not whatever else
       # is lying around the working tree. Lint narrows to the pushed files;
       # typecheck stays whole-snapshot (it needs whole-program context).
-      lint_args+=("--ref" "${target_branch}")
+      # refs/heads/ so a same-named tag cannot shadow the branch being pushed
+      lint_args+=("--ref" "refs/heads/${target_branch}")
       if [[ ${remote_branch_exists} -eq 1 && ${state_known} -eq 1 ]]; then
         lint_args+=("--base" "${CGW_REMOTE}/${target_branch}")
       else
