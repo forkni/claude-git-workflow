@@ -1370,7 +1370,7 @@ cgw_pushed_files_for_lint() {
     diffed=1
   fi
   if [[ ${have} -eq 0 ]]; then
-    files="$(git -C "${PROJECT_ROOT:-.}" log --format= --name-only --diff-filter=ACMR "${rev}" --not --remotes -- "${exts[@]}")" || return 1
+    files="$(git -C "${PROJECT_ROOT:-.}" log -m --format= --name-only --diff-filter=ACMR "${rev}" --not --remotes -- "${exts[@]}")" || return 1
   fi
   local f
   while IFS= read -r f; do
@@ -1639,8 +1639,8 @@ cgw_run_lint_check() {
   if [[ $# -gt 0 ]]; then
     local stripped_args
     stripped_args=$(cgw_strip_path_arg "${CGW_LINT_CHECK_ARGS:-}")
-    # shellcheck disable=SC2086  # Word splitting intentional: stripped_args contains multiple flags
-    _cgw_run_pipeline_tool "${mode}" "LINT CHECK" "${logfile:-/dev/null}" "${lint_bin}" ${stripped_args} "$@" || status=$?
+    # shellcheck disable=SC2086  # Word splitting intentional: stripped_args/CGW_LINT_EXCLUDES contain multiple flags
+    _cgw_run_pipeline_tool "${mode}" "LINT CHECK" "${logfile:-/dev/null}" "${lint_bin}" ${stripped_args} "$@" ${CGW_LINT_EXCLUDES:-} || status=$?
   else
     local filled_args
     filled_args=$(cgw_fill_path_placeholder "${CGW_LINT_CHECK_ARGS:-}")
@@ -1714,8 +1714,8 @@ cgw_run_format_check() {
   if [[ $# -gt 0 ]]; then
     local stripped_args
     stripped_args=$(cgw_strip_path_arg "${CGW_FORMAT_CHECK_ARGS:-}")
-    # shellcheck disable=SC2086
-    _cgw_run_pipeline_tool "${mode}" "FORMAT CHECK" "${logfile:-/dev/null}" "${format_bin}" ${stripped_args} "$@" || status=$?
+    # shellcheck disable=SC2086  # Word splitting intentional: stripped_args/CGW_FORMAT_EXCLUDES contain multiple flags
+    _cgw_run_pipeline_tool "${mode}" "FORMAT CHECK" "${logfile:-/dev/null}" "${format_bin}" ${stripped_args} "$@" ${CGW_FORMAT_EXCLUDES:-} || status=$?
   else
     local filled_args
     filled_args=$(cgw_fill_path_placeholder "${CGW_FORMAT_CHECK_ARGS:-}")
@@ -1779,8 +1779,8 @@ cgw_run_lint_fix() {
     if [[ $# -gt 0 ]]; then
       local stripped_args
       stripped_args=$(cgw_strip_path_arg "${CGW_LINT_FIX_ARGS:-}")
-      # shellcheck disable=SC2086
-      _cgw_run_pipeline_tool "${mode}" "LINT AUTO-FIX" "${logfile:-/dev/null}" "${lint_bin}" ${stripped_args} "$@" || fix_failed=1
+      # shellcheck disable=SC2086  # Word splitting intentional: stripped_args/CGW_LINT_EXCLUDES contain multiple flags
+      _cgw_run_pipeline_tool "${mode}" "LINT AUTO-FIX" "${logfile:-/dev/null}" "${lint_bin}" ${stripped_args} "$@" ${CGW_LINT_EXCLUDES:-} || fix_failed=1
     else
       local filled_args
       filled_args=$(cgw_fill_path_placeholder "${CGW_LINT_FIX_ARGS:-}")
@@ -1795,8 +1795,8 @@ cgw_run_lint_fix() {
     if [[ $# -gt 0 ]]; then
       local stripped_args
       stripped_args=$(cgw_strip_path_arg "${CGW_FORMAT_FIX_ARGS:-}")
-      # shellcheck disable=SC2086
-      _cgw_run_pipeline_tool "${mode}" "FORMAT FIX" "${logfile:-/dev/null}" "${format_bin}" ${stripped_args} "$@" || fix_failed=1
+      # shellcheck disable=SC2086  # Word splitting intentional: stripped_args/CGW_FORMAT_EXCLUDES contain multiple flags
+      _cgw_run_pipeline_tool "${mode}" "FORMAT FIX" "${logfile:-/dev/null}" "${format_bin}" ${stripped_args} "$@" ${CGW_FORMAT_EXCLUDES:-} || fix_failed=1
     else
       local filled_args
       filled_args=$(cgw_fill_path_placeholder "${CGW_FORMAT_FIX_ARGS:-}")

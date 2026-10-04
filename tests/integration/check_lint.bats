@@ -912,3 +912,55 @@ _run_check_lint_tc() {
   grep -q "unpushed.py" "${MOCK_BIN_DIR}/ruff.log"
   ! grep -qE '(^|[ /])pushed\.py' "${MOCK_BIN_DIR}/ruff.log"
 }
+
+@test "--ref --base: preserves CGW_LINT_EXCLUDES in snapshot mode" {
+  install_mock_lint
+  _commit_file base.py "a = 1"
+  git -C "${TEST_REPO_DIR}" tag base-tag
+  _commit_file changed.py "b = 1"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=''
+    export CGW_LINT_EXCLUDES='--extend-exclude gen'
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --ref HEAD --base base-tag
+  "
+  [ "${status}" -eq 0 ]
+  grep -q "changed.py" "${MOCK_BIN_DIR}/ruff.log"
+  grep -q "\-\-extend-exclude gen" "${MOCK_BIN_DIR}/ruff.log"
+}
+
+@test "--ref --unpushed: fails closed when file resolution fails" {
+  install_mock_lint
+  _commit_file base.py "a = 1"
+  local real_git bin_dir
+  real_git="$(which git)"
+  bin_dir="$(mktemp -d)"
+  cat <<EOF > "${bin_dir}/git"
+#!/usr/bin/env bash
+if [[ "\$*" == *"log "* ]]; then
+  echo "mock git log failure" >&2
+  exit 1
+fi
+exec "${real_git}" "\$@"
+EOF
+  chmod +x "${bin_dir}/git"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export PATH=\"${bin_dir}:\${PATH}\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --ref HEAD --unpushed
+  "
+  rm -rf "${bin_dir}"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Failed to resolve pushed code files"* ]]
+}

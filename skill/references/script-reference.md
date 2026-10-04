@@ -506,7 +506,7 @@ token at a real terminal.
 **`push_validated.sh`** — Validated push to remote
 
 ```bash
-./scripts/git/push_validated.sh [--non-interactive] [--dry-run] [--skip-lint] [--skip-typecheck] [--pushed-only] [--force] [--branch <name>]
+./scripts/git/push_validated.sh [--non-interactive] [--dry-run] [--skip-lint] [--skip-typecheck] [--pushed-only] [--worktree] [--force] [--branch <name>]
 ```
 
 | Flag | Purpose |

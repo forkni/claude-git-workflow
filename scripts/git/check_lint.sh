@@ -172,13 +172,21 @@ main() {
     fi
     if [[ -n "${base}" || ${unpushed} -eq 1 ]]; then
       scoped=1
-      local _lf
+      local _resolved_code _resolved_md _lf
+      if ! _resolved_code="$(cgw_pushed_files_for_lint "${ref_sha}" "${base}")"; then
+        err "Failed to resolve pushed code files for ${ref}"
+        exit 1
+      fi
+      if ! _resolved_md="$(cgw_pushed_files_for_lint "${ref_sha}" "${base}" "*.md")"; then
+        err "Failed to resolve pushed markdown files for ${ref}"
+        exit 1
+      fi
       while IFS= read -r _lf; do
         [[ -n "${_lf}" ]] && lint_files+=("${_lf}")
-      done < <(cgw_pushed_files_for_lint "${ref_sha}" "${base}")
+      done <<<"${_resolved_code}"
       while IFS= read -r _lf; do
         [[ -n "${_lf}" ]] && md_files+=("${_lf}")
-      done < <(cgw_pushed_files_for_lint "${ref_sha}" "${base}" "*.md")
+      done <<<"${_resolved_md}"
     fi
 
     CGW_SNAPSHOT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cgw-snap.XXXXXX")" || {
