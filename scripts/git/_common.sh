@@ -108,6 +108,26 @@ get_python_path() {
     return 0
   fi
 
+  # CGW_VENV_ROOT (internal; set by check_lint.sh --ref): resolve the venv from
+  # that directory instead of the cwd, with an absolute PYTHON_BIN. A snapshot
+  # checkout has no .venv of its own (it is untracked), and linking the real
+  # one in would risk a recursive delete following the link at cleanup.
+  if [[ -n "${CGW_VENV_ROOT:-}" ]]; then
+    if [[ -d "${CGW_VENV_ROOT}/.venv/Scripts" ]]; then
+      # shellcheck disable=SC2034
+      PYTHON_BIN="${CGW_VENV_ROOT}/.venv/Scripts"
+      # shellcheck disable=SC2034
+      PYTHON_EXT=".exe"
+      return 0
+    elif [[ -d "${CGW_VENV_ROOT}/.venv/bin" ]]; then
+      # shellcheck disable=SC2034
+      PYTHON_BIN="${CGW_VENV_ROOT}/.venv/bin"
+      # shellcheck disable=SC2034
+      PYTHON_EXT=""
+      return 0
+    fi
+  fi
+
   if [[ -d ".venv/Scripts" ]]; then
     # Windows (Git Bash, MSYS)
     # shellcheck disable=SC2034
@@ -1304,6 +1324,61 @@ cgw_modified_files_for_lint() {
   git diff --name-only --diff-filter=ACMR HEAD -- "${lint_exts[@]}"
 }
 
+# cgw_snapshot_tree <rev> <dest-dir>
+#   Materialize the COMMITTED tree of <rev> into the existing directory
+#   <dest-dir> (checkout-index through a throwaway index file, so the real
+#   index, HEAD and working tree are never touched). Applies .gitattributes
+#   eol/text conversion like a normal checkout. Deliberately not `git archive`
+#   (drops export-ignore paths a typechecker may need) and not `git worktree
+#   add` (registers a worktree and trips the worktree guardrail/shims).
+#   Submodule entries come out as empty directories. Returns 0 on success.
+cgw_snapshot_tree() {
+  local rev="${1:-}" dest="${2:-}"
+  if [[ -z "${rev}" || -z "${dest}" || ! -d "${dest}" ]]; then
+    echo "cgw_snapshot_tree: usage: cgw_snapshot_tree <rev> <existing-dest-dir>" >&2
+    return 1
+  fi
+  local idx_dir rc=0
+  idx_dir="$(mktemp -d "${TMPDIR:-/tmp}/cgw-snapidx.XXXXXX")" || return 1
+  GIT_INDEX_FILE="${idx_dir}/index" git -C "${PROJECT_ROOT:-.}" read-tree "${rev}" &&
+    GIT_INDEX_FILE="${idx_dir}/index" git -C "${PROJECT_ROOT:-.}" checkout-index -a -f --prefix="${dest%/}/" ||
+    rc=1
+  rm -rf "${idx_dir}"
+  return "${rc}"
+}
+
+# cgw_pushed_files_for_lint <rev> <base|""> [glob-string]
+#   Stdout: newline-separated files a push of <rev> adds/changes, filtered to
+#   [glob-string] (default CGW_LINT_EXTENSIONS, else *.py), deduplicated, and
+#   limited to paths that still exist in <rev>.
+#   <base> non-empty: files changed in <base>...<rev> (three-dot, so a rebased
+#     or force-pushed branch still diffs from the merge-base). If there is no
+#     merge-base the base is ignored and the unpushed-commits form is used.
+#   <base> empty: files touched by commits reachable from <rev> but from no
+#     remote-tracking ref (new branch) -- the "unvetted commits" range that
+#     hooks/pre-push uses.
+cgw_pushed_files_for_lint() {
+  local rev="${1:-}" base="${2:-}"
+  local globs="${3:-${CGW_LINT_EXTENSIONS:-*.py}}"
+  local -a exts=()
+  read -r -a exts <<<"${globs}"
+  [[ -z "${rev}" ]] && return 1
+  local files="" have=0
+  if [[ -n "${base}" ]] && git -C "${PROJECT_ROOT:-.}" merge-base "${base}" "${rev}" >/dev/null 2>&1; then
+    files="$(git -C "${PROJECT_ROOT:-.}" diff --name-only --diff-filter=ACMR "${base}...${rev}" -- "${exts[@]}")" || return 1
+    have=1
+  fi
+  if [[ ${have} -eq 0 ]]; then
+    files="$(git -C "${PROJECT_ROOT:-.}" log --format= --name-only --diff-filter=ACMR "${rev}" --not --remotes -- "${exts[@]}")" || return 1
+  fi
+  local f
+  while IFS= read -r f; do
+    [[ -z "${f}" ]] && continue
+    git -C "${PROJECT_ROOT:-.}" cat-file -e "${rev}:${f}" 2>/dev/null && printf '%s\n' "${f}"
+  done < <(printf '%s\n' "${files}" | sort -u)
+  return 0
+}
+
 # cgw_lint_plan <check|fix> [flags...]
 #   Pure query returning the execution plan for the lint pipeline.
 #   Outputs line-delimited records: step:action:reason
@@ -1326,9 +1401,22 @@ cgw_lint_plan() {
   local skip_typecheck_flag=0
   local md_only=0
   local modified_only=0
+  local has_ref=0 has_base=0 has_unpushed=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --ref | --base)
+        if [[ $# -lt 2 || -z "${2:-}" || "${2}" == -* ]]; then
+          echo "cgw_lint_plan: $1 requires a revision argument" >&2
+          return 1
+        fi
+        [[ "$1" == "--ref" ]] && has_ref=1 || has_base=1
+        shift 2
+        ;;
+      --unpushed)
+        has_unpushed=1
+        shift
+        ;;
       --skip-lint)
         skip_lint_flag=1
         shift
@@ -1369,6 +1457,21 @@ cgw_lint_plan() {
 
   if [[ "${mode}" == "check" ]] && [[ ${modified_only} -eq 1 ]] && [[ ${md_only} -eq 1 ]]; then
     echo "cgw_lint_plan: --modified-only and --md-only are not supported together" >&2
+    return 1
+  fi
+
+  # --ref selects a committed snapshot to check; --base/--unpushed only narrow
+  # which files lint/format/markdown see inside it.
+  if [[ ${has_ref} -eq 0 ]] && [[ ${has_base} -eq 1 || ${has_unpushed} -eq 1 ]]; then
+    echo "cgw_lint_plan: --base/--unpushed require --ref" >&2
+    return 1
+  fi
+  if [[ ${has_base} -eq 1 ]] && [[ ${has_unpushed} -eq 1 ]]; then
+    echo "cgw_lint_plan: --base and --unpushed are mutually exclusive" >&2
+    return 1
+  fi
+  if [[ ${has_ref} -eq 1 ]] && [[ ${modified_only} -eq 1 || ${md_only} -eq 1 ]]; then
+    echo "cgw_lint_plan: --ref cannot be combined with --modified-only or --md-only" >&2
     return 1
   fi
 

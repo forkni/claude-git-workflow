@@ -139,7 +139,7 @@ Override with `--all` to always bulk-stage, or `--only <path>` to explicitly sel
 **`check_lint.sh`** — Pre-commit validation (read-only)
 
 ```bash
-./scripts/git/check_lint.sh [--modified-only] [--no-venv] [--skip-lint] [--skip-md-lint] [--skip-typecheck] [--md-only]
+./scripts/git/check_lint.sh [--modified-only] [--no-venv] [--skip-lint] [--skip-md-lint] [--skip-typecheck] [--md-only] [--ref <rev> [--base <rev> | --unpushed]]
 ```
 
 - Default: checks all files
@@ -151,6 +151,14 @@ Override with `--all` to always bulk-stage, or `--only <path>` to explicitly sel
   **blocking** here and in `push_validated.sh` (advisory only in the pre-commit hook)
 - `--md-only`: check markdown only (skip code lint + format + typecheck); mutually exclusive with
   `--skip-md-lint` and with `--modified-only`
+- `--ref <rev>`: check the **committed snapshot** of `<rev>` instead of the working tree (built with
+  a temporary index; the real index and working tree are untouched). Typecheck covers the whole
+  snapshot; lint/format/markdown cover the whole snapshot unless scoped by `--base`/`--unpushed`.
+  Uncommitted and untracked files cannot affect the result. Mutually exclusive with
+  `--modified-only` and `--md-only`; the project `.venv` is still used
+- `--base <rev>` (needs `--ref`): scope lint/format/markdown to files changed in `<rev>...<ref>`
+- `--unpushed` (needs `--ref`): scope them to files touched by commits no remote-tracking ref has
+  (a new branch); mutually exclusive with `--base`
 - Skipped automatically if `CGW_LINT_CMD` is empty (typecheck skipped automatically if
   `CGW_TYPECHECK_CMD` is empty, independently of `CGW_LINT_CMD`)
 
@@ -498,7 +506,7 @@ token at a real terminal.
 **`push_validated.sh`** — Validated push to remote
 
 ```bash
-./scripts/git/push_validated.sh [--non-interactive] [--dry-run] [--skip-lint] [--skip-typecheck] [--force] [--branch <name>]
+./scripts/git/push_validated.sh [--non-interactive] [--dry-run] [--skip-lint] [--skip-typecheck] [--pushed-only] [--force] [--branch <name>]
 ```
 
 | Flag | Purpose |
@@ -508,6 +516,8 @@ token at a real terminal.
 | `--skip-lint` | Skip all pre-push lint checks (incl. typecheck) |
 | `--skip-md-lint` | Skip markdown lint only in pre-push check |
 | `--skip-typecheck` | Skip typecheck only in pre-push check (also honors `CGW_SKIP_TYPECHECK=1`); a failing typecheck otherwise blocks the push |
+| `--pushed-only` | Pre-push check the **committed** branch (`check_lint.sh --ref <branch> --base <remote>/<branch>`, or `--unpushed` for a new branch) instead of the working tree: whole-snapshot typecheck, lint/format/markdown on the pushed files only. Uncommitted work can't block the push. Also `CGW_PUSH_LINT_SCOPE=pushed` |
+| `--worktree` | Force the default working-tree scope for this run (overrides `CGW_PUSH_LINT_SCOPE=pushed`) |
 | `--no-venv` | Forward to `check_lint.sh`: use system lint tool (no .venv) |
 | `--force` | Allow force-push (explicit `--force-with-lease=<ref>:<sha>`, or an empty lease `<ref>:` when the branch doesn't exist on the remote yet; blocks for protected branches) |
 | `--branch <name>` | Override push target branch |
@@ -688,6 +698,7 @@ Computes GitHub-compatible heading slugs locally (offline port of `gh-md-toc` �
 | `CGW_TYPECHECK_CMD=<tool>` | Typecheck tool (`pyrefly`, `pyright`, `mypy`, `tsc`; default: `""` = disabled) |
 | `CGW_TYPECHECK_CHECK_ARGS=<args>` | Arguments for typecheck command (default: `check`) |
 | `CGW_TYPECHECK_EXCLUDES=<flags>` | Exclusion flags appended to typecheck command |
+| `CGW_PUSH_LINT_SCOPE=worktree\|pushed` | What the push gate checks (default `worktree`); `pushed` = committed snapshot, see `--pushed-only` |
 | `CGW_SKIP_TYPECHECK=1` | Skip typecheck step even when `CGW_TYPECHECK_CMD` is set — the runtime equivalent of `--skip-typecheck` on `check_lint.sh` / `push_validated.sh`; this is the escape hatch for the push-blocking gate below |
 
 Typecheck runs whole-project when `CGW_TYPECHECK_CMD` is set, and is **advisory in the pre-commit

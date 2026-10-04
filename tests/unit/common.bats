@@ -3231,3 +3231,73 @@ extend-exclude = ["gen"]
     cgw_run_format_check --mode plain --result-var fmt_res || true
   [ "${fmt_res}" = "Format:WARN:0" ]
 }
+
+# ── cgw_pushed_files_for_lint() / cgw_snapshot_tree() ─────────────────────────
+# These build their own scratch repo: the shared repo above must not be mutated
+# in ways later tests could observe.
+
+_pushed_scratch_repo() {
+  PROJECT_ROOT="${BATS_TEST_TMPDIR}/scratch"
+  export PROJECT_ROOT
+  git init -q "${PROJECT_ROOT}"
+  git -C "${PROJECT_ROOT}" config user.email t@t
+  git -C "${PROJECT_ROOT}" config user.name t
+  echo base >"${PROJECT_ROOT}/base.py"
+  git -C "${PROJECT_ROOT}" add base.py
+  git -C "${PROJECT_ROOT}" commit -q -m "chore: base"
+  git -C "${PROJECT_ROOT}" tag base-ref
+}
+
+_scratch_commit() {
+  echo "$2" >"${PROJECT_ROOT}/$1"
+  git -C "${PROJECT_ROOT}" add "$1"
+  git -C "${PROJECT_ROOT}" commit -q -m "chore: $1"
+}
+
+@test "cgw_pushed_files_for_lint: with a base lists changed files filtered by extension" {
+  _pushed_scratch_repo
+  _scratch_commit a.py 1
+  _scratch_commit notes.txt 1
+  run cgw_pushed_files_for_lint HEAD base-ref "*.py"
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "a.py" ]
+}
+
+@test "cgw_pushed_files_for_lint: a file added then deleted inside the range is excluded" {
+  _pushed_scratch_repo
+  _scratch_commit gone.py 1
+  _scratch_commit kept.py 1
+  git -C "${PROJECT_ROOT}" rm -q gone.py
+  git -C "${PROJECT_ROOT}" commit -q -m "chore: drop gone"
+  run cgw_pushed_files_for_lint HEAD base-ref "*.py"
+  [ "${output}" = "kept.py" ]
+}
+
+@test "cgw_pushed_files_for_lint: without a base uses commits no remote ref contains" {
+  _pushed_scratch_repo
+  git -C "${PROJECT_ROOT}" update-ref refs/remotes/origin/main HEAD
+  _scratch_commit fresh.py 1
+  run cgw_pushed_files_for_lint HEAD "" "*.py"
+  [ "${output}" = "fresh.py" ]
+}
+
+@test "cgw_snapshot_tree: materialises the committed tree and leaves index and worktree alone" {
+  _pushed_scratch_repo
+  _scratch_commit committed.py "ok"
+  echo "dirty" >"${PROJECT_ROOT}/committed.py"
+  echo "x" >"${PROJECT_ROOT}/untracked.py"
+  local before dest="${BATS_TEST_TMPDIR}/snap"
+  before="$(git -C "${PROJECT_ROOT}" status --porcelain)"
+  mkdir "${dest}"
+  run cgw_snapshot_tree HEAD "${dest}"
+  [ "${status}" -eq 0 ]
+  [ "$(cat "${dest}/committed.py")" = "ok" ]
+  [ ! -e "${dest}/untracked.py" ]
+  [ "$(git -C "${PROJECT_ROOT}" status --porcelain)" = "${before}" ]
+}
+
+@test "cgw_snapshot_tree: rejects a missing destination" {
+  _pushed_scratch_repo
+  run cgw_snapshot_tree HEAD "${BATS_TEST_TMPDIR}/nope"
+  [ "${status}" -eq 1 ]
+}

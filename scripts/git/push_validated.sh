@@ -14,6 +14,9 @@
 #   --skip-lint         Skip pre-push lint check
 #   --skip-md-lint      Skip markdown lint only in pre-push check
 #   --skip-typecheck    Skip typecheck only in pre-push check
+#   --pushed-only       Pre-push lint/typecheck the COMMITTED branch (snapshot), not the
+#                       working tree; lint scoped to pushed files, typecheck whole-snapshot
+#   --worktree          Check the working tree (default; overrides CGW_PUSH_LINT_SCOPE)
 #   --no-venv           Forward to check_lint.sh: use system lint tool (no .venv)
 #   --force             Allow force-push (explicit --force-with-lease=<ref>:<sha>, or an
 #                       empty lease <ref>: if the branch doesn't exist on the remote yet)
@@ -31,11 +34,23 @@ source "${SCRIPT_DIR}/_common.sh"
 init_logging "push_validated"
 ensure_no_stale_index_lock || exit 1
 
+# _hint_pushed_only <scope>
+#   After a failed worktree-scope lint gate, point at --pushed-only when the
+#   working tree has uncommitted changes -- the failure may come from work
+#   that is not part of the push. Silent in pushed scope or on a clean tree.
+_hint_pushed_only() {
+  [[ "${1:-}" == "worktree" ]] || return 0
+  [[ -n "$(git status --porcelain 2>/dev/null)" ]] || return 0
+  echo "  Note: the working tree has uncommitted changes, and this gate checks them too." | tee -a "$logfile"
+  echo "  To check only what is being pushed: --pushed-only (or CGW_PUSH_LINT_SCOPE=pushed)" | tee -a "$logfile"
+}
+
 main() {
   local dry_run=0
   local skip_lint=0
   local skip_md_lint=0
   local skip_typecheck=0
+  local lint_scope=""
   local no_venv=0
   local force_push=0
   local target_branch=""
@@ -53,6 +68,11 @@ main() {
         echo "  --skip-lint         Skip pre-push lint check (all lint, incl. typecheck)"
         echo "  --skip-md-lint      Skip markdown lint only in pre-push check"
         echo "  --skip-typecheck    Skip typecheck only in pre-push check"
+        echo "  --pushed-only       Pre-push check the committed branch, not the working tree:"
+        echo "                      lint/format/markdown on the pushed files only, typecheck on the"
+        echo "                      whole committed snapshot. Uncommitted changes can't block the push"
+        echo "  --worktree          Pre-push check the working tree (default; overrides"
+        echo "                      CGW_PUSH_LINT_SCOPE=pushed for this run)"
         echo "  --no-venv           Forward to check_lint.sh: use system lint tool (no .venv)"
         echo "  --force             Allow force-push (explicit --force-with-lease=<ref>:<sha>, or an"
         echo "                      empty lease <ref>: if the branch doesn't exist on the remote yet)"
@@ -69,6 +89,7 @@ main() {
         echo "  CGW_NON_INTERACTIVE=1         Same as --non-interactive"
         echo "  CGW_REMOTE                    Remote name (default: origin)"
         echo "  CGW_PROTECTED_BRANCHES=<list> Space-separated protected branch names"
+        echo "  CGW_PUSH_LINT_SCOPE=<s>       Pre-push lint scope: worktree (default) or pushed"
         echo "  (Also: CLAUDE_GIT_NON_INTERACTIVE, CLAUDE_GIT_NO_VENV)"
         exit 0
         ;;
@@ -79,6 +100,8 @@ main() {
       --skip-lint) skip_lint=1 ;;
       --skip-md-lint) skip_md_lint=1 ;;
       --skip-typecheck) skip_typecheck=1 ;;
+      --pushed-only) lint_scope="pushed" ;;
+      --worktree) lint_scope="worktree" ;;
       --no-venv) no_venv=1 ;;
       --force) force_push=1 ;;
       --branch)
@@ -97,6 +120,13 @@ main() {
   [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]] && skip_md_lint=1
   [[ "${CGW_SKIP_TYPECHECK:-0}" == "1" ]] && skip_typecheck=1
   [[ "${CGW_NO_VENV:-0}" == "1" ]] && no_venv=1
+
+  # CLI flag wins; otherwise CGW_PUSH_LINT_SCOPE; otherwise the working tree.
+  [[ -z "${lint_scope}" ]] && lint_scope="${CGW_PUSH_LINT_SCOPE:-worktree}"
+  if [[ "${lint_scope}" != "worktree" && "${lint_scope}" != "pushed" ]]; then
+    echo "[ERROR] CGW_PUSH_LINT_SCOPE must be 'worktree' or 'pushed' (got '${lint_scope}')" >&2
+    exit 1
+  fi
 
   if [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]]; then
     export GIT_TERMINAL_PROMPT="${GIT_TERMINAL_PROMPT:-0}"
@@ -256,6 +286,18 @@ main() {
     [[ ${skip_md_lint} -eq 1 ]] && lint_args+=("--skip-md-lint")
     [[ ${skip_typecheck} -eq 1 ]] && lint_args+=("--skip-typecheck")
     [[ ${no_venv} -eq 1 ]] && lint_args+=("--no-venv")
+    if [[ "${lint_scope}" == "pushed" ]]; then
+      # Check what is being published (the committed branch), not whatever else
+      # is lying around the working tree. Lint narrows to the pushed files;
+      # typecheck stays whole-snapshot (it needs whole-program context).
+      lint_args+=("--ref" "${target_branch}")
+      if [[ ${remote_branch_exists} -eq 1 && ${state_known} -eq 1 ]]; then
+        lint_args+=("--base" "${CGW_REMOTE}/${target_branch}")
+      else
+        lint_args+=("--unpushed")
+      fi
+      echo "Checking the committed snapshot of ${target_branch} -- uncommitted changes are not checked" | tee -a "$logfile"
+    fi
     local lint_check_status=0
     bash "${SCRIPT_DIR}/check_lint.sh" "${lint_args[@]}" >>"$logfile" 2>&1 || lint_check_status=$?
     if [[ ${lint_check_status} -eq 0 ]]; then
@@ -269,12 +311,14 @@ main() {
       echo "[!] Typecheck failed" | tee -a "$logfile"
       log_section_end "PRE-PUSH LINT CHECK" "$logfile" "1"
       echo "  Type errors must be fixed by hand -- see log for details" | tee -a "$logfile"
+      _hint_pushed_only "${lint_scope}"
       echo "  Bypass: --skip-typecheck (types only) or --skip-lint (all checks)" | tee -a "$logfile"
       exit 1
     else
       echo "[!] Lint check failed" | tee -a "$logfile"
       log_section_end "PRE-PUSH LINT CHECK" "$logfile" "1"
       echo "  Run ./scripts/git/fix_lint.sh (lint/format/markdown)" | tee -a "$logfile"
+      _hint_pushed_only "${lint_scope}"
       echo "  Bypass: --skip-lint (all checks)" | tee -a "$logfile"
       if ! cgw_confirm "Push anyway despite lint errors?" --non-interactive abort; then
         exit 1

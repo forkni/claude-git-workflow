@@ -673,3 +673,242 @@ VENV_EOF
   [[ "${output}" == *"non-blocking"* ]]
   grep -q "mock ruff format" "${MOCK_BIN_DIR}/ruff.log"
 }
+
+# ── --ref / --base: committed-snapshot mode (pushed-only gate) ────────────────
+# --ref <rev> checks the COMMITTED tree of <rev> in a throwaway directory, so
+# uncommitted work can never fail the check. Typecheck stays whole-snapshot;
+# lint/format/markdown narrow to the files changed in <base>...<rev>.
+
+_commit_file() {
+  printf '%s\n' "$2" > "${TEST_REPO_DIR}/$1"
+  git -C "${TEST_REPO_DIR}" add "$1"
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: add $1"
+}
+
+# _run_check_lint <args...>: typecheck-only config against the content-aware mock
+_run_check_lint_tc() {
+  mkdir -p "${TEST_TMPDIR}/snap-tmp"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export TMPDIR='${TEST_TMPDIR}/snap-tmp'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    export CGW_TYPECHECK_CHECK_ARGS=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' $*
+  "
+}
+
+@test "--ref: uncommitted type error blocks the worktree check but not the snapshot check" {
+  install_mock_typecheck_content_aware
+  _commit_file ok.py "x = 1"
+  echo "y = 1  # TYPE_ERR" > "${TEST_REPO_DIR}/ok.py"
+
+  _run_check_lint_tc
+  [ "${status}" -eq 2 ]
+
+  _run_check_lint_tc --ref HEAD
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"PASSED"* ]]
+}
+
+@test "--ref: uncommitted untracked file with a type error is not seen" {
+  install_mock_typecheck_content_aware
+  _commit_file ok.py "x = 1"
+  echo "y = 1  # TYPE_ERR" > "${TEST_REPO_DIR}/scratch.py"
+
+  _run_check_lint_tc --ref HEAD
+  [ "${status}" -eq 0 ]
+}
+
+@test "--ref: committed type error still fails with exit 2" {
+  install_mock_typecheck_content_aware
+  _commit_file bad.py "y = 1  # TYPE_ERR"
+
+  _run_check_lint_tc --ref HEAD
+  [ "${status}" -eq 2 ]
+  [[ "${output}" == *"Typecheck"* ]]
+  [[ "${output}" == *"FAILED"* ]]
+}
+
+@test "--ref: typecheck runs whole-snapshot (no file args) inside a temp dir, not the repo" {
+  install_mock_typecheck_content_aware
+  _commit_file ok.py "x = 1"
+
+  _run_check_lint_tc --ref HEAD
+  [ "${status}" -eq 0 ]
+  run grep -c "mock cwd=" "${MOCK_BIN_DIR}/typecheck.log"
+  [ "${output}" = "1" ]
+  run grep "cwd=${TEST_REPO_DIR} " "${MOCK_BIN_DIR}/typecheck.log"
+  [ "${status}" -ne 0 ]
+  run grep -E "args=$" "${MOCK_BIN_DIR}/typecheck.log"
+  [ "${status}" -eq 0 ]
+}
+
+@test "--ref: snapshot directory is removed after a passing and a failing run" {
+  install_mock_typecheck_content_aware
+  _commit_file ok.py "x = 1"
+  _run_check_lint_tc --ref HEAD
+  [ "${status}" -eq 0 ]
+  [ -z "$(ls -A "${TEST_TMPDIR}/snap-tmp")" ]
+
+  _commit_file bad.py "y = 1  # TYPE_ERR"
+  _run_check_lint_tc --ref HEAD
+  [ "${status}" -eq 2 ]
+  [ -z "$(ls -A "${TEST_TMPDIR}/snap-tmp")" ]
+}
+
+@test "--ref: leaves the real index and working tree untouched" {
+  install_mock_typecheck_content_aware
+  _commit_file ok.py "x = 1"
+  echo "dirty" >> "${TEST_REPO_DIR}/ok.py"
+  echo "staged" > "${TEST_REPO_DIR}/staged.py"
+  git -C "${TEST_REPO_DIR}" add staged.py
+  # logs/ is the script's own (git-ignored in real installs) output dir
+  local before
+  before="$(git -C "${TEST_REPO_DIR}" status --porcelain -- . ':!logs')"
+
+  _run_check_lint_tc --ref HEAD
+  [ "${status}" -eq 0 ]
+  [ "$(git -C "${TEST_REPO_DIR}" status --porcelain -- . ':!logs')" = "${before}" ]
+}
+
+@test "--ref --base: lint receives only files changed in base...ref" {
+  install_mock_lint
+  _commit_file dirty.py "a = 1"
+  _commit_file old.py "b = 1"
+  _commit_file new.py "c = 1"
+  echo "a = 2" > "${TEST_REPO_DIR}/dirty.py"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --ref HEAD --base HEAD~1
+  "
+  [ "${status}" -eq 0 ]
+  grep -q "new.py" "${MOCK_BIN_DIR}/ruff.log"
+  ! grep -q "old.py" "${MOCK_BIN_DIR}/ruff.log"
+  ! grep -q "dirty.py" "${MOCK_BIN_DIR}/ruff.log"
+}
+
+@test "--ref --base: no pushed files matching the extensions skips lint cleanly" {
+  install_mock_lint
+  _commit_file notes.txt "hello"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --ref HEAD --base HEAD~1
+  "
+  [ "${status}" -eq 0 ]
+  [ ! -f "${MOCK_BIN_DIR}/ruff.log" ]
+}
+
+@test "--ref --base: markdown lint receives only pushed .md files" {
+  install_mock_markdownlint_content_aware
+  _commit_file old.md "# old MDLINT-BAD"
+  _commit_file new.md "# new"
+  echo "# changed MDLINT-BAD" > "${TEST_REPO_DIR}/old.md"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=markdownlint-cli2
+    export CGW_TYPECHECK_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --ref HEAD --base HEAD~1
+  "
+  [ "${status}" -eq 0 ]
+  grep -q "new.md" "${MOCK_BIN_DIR}/mdlint.log"
+  ! grep -q "old.md" "${MOCK_BIN_DIR}/mdlint.log"
+}
+
+@test "--ref: typechecker resolves from the main repo's .venv while cwd is the snapshot" {
+  mkdir -p "${TEST_REPO_DIR}/.venv/Scripts" "${TEST_REPO_DIR}/.venv/bin"
+  local d
+  for d in Scripts bin; do
+    printf '#!/usr/bin/env bash\necho "venv tc cwd=$PWD" >> "%s/venv_tc.log"\nexit 0\n' "${TEST_TMPDIR}" \
+      > "${TEST_REPO_DIR}/.venv/${d}/venv-typecheck"
+    chmod +x "${TEST_REPO_DIR}/.venv/${d}/venv-typecheck"
+    cp "${TEST_REPO_DIR}/.venv/${d}/venv-typecheck" "${TEST_REPO_DIR}/.venv/${d}/venv-typecheck.exe"
+  done
+  _commit_file ok.py "x = 1"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=venv-typecheck
+    export CGW_TYPECHECK_CHECK_ARGS=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --ref HEAD
+  "
+  [ "${status}" -eq 0 ]
+  [ -f "${TEST_TMPDIR}/venv_tc.log" ]
+  ! grep -q "cwd=${TEST_REPO_DIR}\$" "${TEST_TMPDIR}/venv_tc.log"
+}
+
+@test "--ref and --modified-only together is an error" {
+  _commit_file ok.py "x = 1"
+  _run_check_lint_tc --ref HEAD --modified-only
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"--ref"* ]]
+}
+
+@test "--ref and --md-only together is an error" {
+  _commit_file ok.py "x = 1"
+  _run_check_lint_tc --ref HEAD --md-only
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"--ref"* ]]
+}
+
+@test "--base without --ref is an error" {
+  _run_check_lint_tc --base HEAD~1
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"require --ref"* ]]
+}
+
+@test "--ref with an unresolvable revision exits 1 with a clear message" {
+  _run_check_lint_tc --ref no-such-branch
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"no-such-branch"* ]]
+}
+
+@test "--ref without a value is an error" {
+  _run_check_lint_tc --ref
+  [ "${status}" -eq 1 ]
+}
+
+@test "--ref --unpushed: lint receives files from commits no remote has" {
+  install_mock_lint
+  _commit_file pushed.py "a = 1"
+  git -C "${TEST_REPO_DIR}" update-ref refs/remotes/origin/development HEAD
+  _commit_file unpushed.py "b = 1"
+  echo "a = 2" > "${TEST_REPO_DIR}/pushed.py"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --ref HEAD --unpushed
+  "
+  [ "${status}" -eq 0 ]
+  grep -q "unpushed.py" "${MOCK_BIN_DIR}/ruff.log"
+  ! grep -qE '(^|[ /])pushed\.py' "${MOCK_BIN_DIR}/ruff.log"
+}
