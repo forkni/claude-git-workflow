@@ -408,3 +408,95 @@ _commit_on_current_branch() {
   [[ "${output}" != *"upstream left unchanged"* ]]
   [ "$(git -C "${TEST_REPO_DIR}" rev-parse --abbrev-ref 'development@{u}')" = "origin/development" ]
 }
+
+# ── --pushed-only / CGW_PUSH_LINT_SCOPE ───────────────────────────────────────
+
+# A clean commit ahead of origin, plus an UNCOMMITTED type error and lint error.
+_dirty_worktree_over_clean_commit() {
+  install_mock_typecheck_content_aware
+  install_mock_lint_content_aware
+  export CGW_TYPECHECK_CMD=mock-typecheck
+  echo "x = 1" >"${TEST_REPO_DIR}/clean.py"
+  git -C "${TEST_REPO_DIR}" add clean.py
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: clean module"
+  echo "TYPE_ERR LINT-BAD" >"${TEST_REPO_DIR}/clean.py"
+}
+
+@test "default scope checks the working tree: uncommitted type error blocks, with a --pushed-only hint" {
+  _dirty_worktree_over_clean_commit
+  run _run_push "--dry-run"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Typecheck failed"* ]]
+  [[ "${output}" == *"--pushed-only"* ]]
+}
+
+@test "--pushed-only ignores uncommitted type and lint errors" {
+  _dirty_worktree_over_clean_commit
+  run _run_push "--dry-run --pushed-only"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"committed snapshot"* ]]
+  # the typechecker ran inside a snapshot dir, not the project
+  grep -q "cwd=.*cgw-snap" "${MOCK_BIN_DIR}/typecheck.log"
+}
+
+@test "CGW_PUSH_LINT_SCOPE=pushed behaves like --pushed-only" {
+  _dirty_worktree_over_clean_commit
+  export CGW_PUSH_LINT_SCOPE=pushed
+  run _run_push "--dry-run"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"committed snapshot"* ]]
+}
+
+@test "--worktree overrides CGW_PUSH_LINT_SCOPE=pushed" {
+  _dirty_worktree_over_clean_commit
+  export CGW_PUSH_LINT_SCOPE=pushed
+  run _run_push "--dry-run --worktree"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Typecheck failed"* ]]
+}
+
+@test "--pushed-only still blocks on a committed type error" {
+  install_mock_typecheck_content_aware
+  export CGW_TYPECHECK_CMD=mock-typecheck
+  echo "TYPE_ERR" >"${TEST_REPO_DIR}/bad.py"
+  git -C "${TEST_REPO_DIR}" add bad.py
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: bad module"
+  run _run_push "--dry-run --pushed-only"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Typecheck failed"* ]]
+}
+
+@test "--pushed-only lints only files the push changes (already-pushed bad file is not re-linted)" {
+  install_mock_lint_content_aware
+  echo "LINT-BAD" >"${TEST_REPO_DIR}/old_bad.py"
+  git -C "${TEST_REPO_DIR}" add old_bad.py
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: old bad"
+  git -C "${TEST_REPO_DIR}" push --quiet origin development
+  echo "ok = 1" >"${TEST_REPO_DIR}/new_ok.py"
+  git -C "${TEST_REPO_DIR}" add new_ok.py
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: new ok"
+  run _run_push "--dry-run --pushed-only"
+  [ "${status}" -eq 0 ]
+  ! grep -q "old_bad.py" "${MOCK_BIN_DIR}/ruff.log"
+  grep -q "new_ok.py" "${MOCK_BIN_DIR}/ruff.log"
+}
+
+@test "--pushed-only on a new branch lints the unpushed commits" {
+  install_mock_lint_content_aware
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b feature/scoped
+  echo "LINT-BAD" >"${TEST_REPO_DIR}/branch_bad.py"
+  git -C "${TEST_REPO_DIR}" add branch_bad.py
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: branch bad"
+  run _run_push "--dry-run --pushed-only"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Lint check failed"* ]]
+}
+
+@test "an invalid CGW_PUSH_LINT_SCOPE is rejected" {
+  # _config.sh resets an invalid enum to its default with a warning, so the
+  # push proceeds in worktree scope rather than guessing.
+  export CGW_PUSH_LINT_SCOPE=bogus
+  run _run_push "--dry-run --skip-lint"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"CGW_PUSH_LINT_SCOPE"* ]]
+}

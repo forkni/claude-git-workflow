@@ -1310,12 +1310,58 @@ extend-exclude = ["gen"]
   [ "${included_status}" -ne 0 ]
 }
 
+@test "cgw_run_lint_check: preserves CGW_LINT_EXCLUDES when files are explicitly passed" {
+  local fake_bin log
+  fake_bin="$(mktemp)"
+  log="$(mktemp)"
+  printf '#!/usr/bin/env bash\necho "$@" > "%s"\nexit 0\n' "${log}" > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_LINT_CMD='${fake_bin}'
+    CGW_LINT_CHECK_ARGS=''
+    CGW_LINT_EXCLUDES='--extend-exclude gen'
+    logfile='/dev/null'
+    cgw_run_lint_check src/foo.py
+  "
+  [ "${status}" -eq 0 ]
+  local args
+  args="$(cat "${log}")"
+  rm -f "${fake_bin}" "${log}"
+  [[ "${args}" == *"--extend-exclude gen"* ]]
+  [[ "${args}" == *"src/foo.py"* ]]
+}
+
 # ── cgw_run_format_check() ────────────────────────────────────────────────────
 
 @test "cgw_run_format_check: returns 0 silently when CGW_FORMAT_CMD is empty" {
   CGW_FORMAT_CMD="" logfile=/dev/null run cgw_run_format_check
   [ "${status}" -eq 0 ]
   [ -z "${output}" ]
+}
+
+@test "cgw_run_format_check: preserves CGW_FORMAT_EXCLUDES when files are explicitly passed" {
+  local fake_bin log
+  fake_bin="$(mktemp)"
+  log="$(mktemp)"
+  printf '#!/usr/bin/env bash\necho "$@" > "%s"\nexit 0\n' "${log}" > "${fake_bin}"
+  chmod +x "${fake_bin}"
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_FORMAT_CMD='${fake_bin}'
+    CGW_FORMAT_CHECK_ARGS=''
+    CGW_FORMAT_EXCLUDES='--exclude gen'
+    logfile='/dev/null'
+    cgw_run_format_check src/foo.py
+  "
+  [ "${status}" -eq 0 ]
+  local args
+  args="$(cat "${log}")"
+  rm -f "${fake_bin}" "${log}"
+  [[ "${args}" == *"--exclude gen"* ]]
+  [[ "${args}" == *"src/foo.py"* ]]
 }
 
 @test "cgw_run_format_check: returns 0 when format binary exits clean" {
@@ -1939,6 +1985,38 @@ extend-exclude = ["gen"]
   CGW_LINT_CMD="${fake_bin}" CGW_FORMAT_CMD="" CGW_LINT_FIX_ARGS="" CGW_LINT_EXCLUDES="" logfile=/dev/null run cgw_run_lint_fix
   [ "${status}" -eq 1 ]
   rm -f "${fake_bin}"
+}
+
+@test "cgw_run_lint_fix: preserves CGW_LINT_EXCLUDES and CGW_FORMAT_EXCLUDES when files are explicitly passed" {
+  local fake_lint fake_fmt log_lint log_fmt
+  fake_lint="$(mktemp)"
+  fake_fmt="$(mktemp)"
+  log_lint="$(mktemp)"
+  log_fmt="$(mktemp)"
+  printf '#!/usr/bin/env bash\necho "$@" > "%s"\nexit 0\n' "${log_lint}" > "${fake_lint}"
+  printf '#!/usr/bin/env bash\necho "$@" > "%s"\nexit 0\n' "${log_fmt}" > "${fake_fmt}"
+  chmod +x "${fake_lint}" "${fake_fmt}"
+  run bash -c "
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    CGW_LINT_CMD='${fake_lint}'
+    CGW_FORMAT_CMD='${fake_fmt}'
+    CGW_LINT_FIX_ARGS=''
+    CGW_FORMAT_FIX_ARGS=''
+    CGW_LINT_EXCLUDES='--extend-exclude gen'
+    CGW_FORMAT_EXCLUDES='--exclude gen'
+    logfile='/dev/null'
+    cgw_run_lint_fix src/foo.py
+  "
+  [ "${status}" -eq 0 ]
+  local args_lint args_fmt
+  args_lint="$(cat "${log_lint}")"
+  args_fmt="$(cat "${log_fmt}")"
+  rm -f "${fake_lint}" "${fake_fmt}" "${log_lint}" "${log_fmt}"
+  [[ "${args_lint}" == *"--extend-exclude gen"* ]]
+  [[ "${args_lint}" == *"src/foo.py"* ]]
+  [[ "${args_fmt}" == *"--exclude gen"* ]]
+  [[ "${args_fmt}" == *"src/foo.py"* ]]
 }
 
 # ── cgw_run_markdownlint_check() ──────────────────────────────────────────────
@@ -3230,4 +3308,88 @@ extend-exclude = ["gen"]
   CGW_FORMAT_CHECK_NONBLOCKING=1 CGW_FORMAT_CMD="${mock_bin}" \
     cgw_run_format_check --mode plain --result-var fmt_res || true
   [ "${fmt_res}" = "Format:WARN:0" ]
+}
+
+# ── cgw_pushed_files_for_lint() / cgw_snapshot_tree() ─────────────────────────
+# These build their own scratch repo: the shared repo above must not be mutated
+# in ways later tests could observe.
+
+_pushed_scratch_repo() {
+  PROJECT_ROOT="${BATS_TEST_TMPDIR}/scratch"
+  export PROJECT_ROOT
+  git init -q "${PROJECT_ROOT}"
+  git -C "${PROJECT_ROOT}" config user.email t@t
+  git -C "${PROJECT_ROOT}" config user.name t
+  echo base >"${PROJECT_ROOT}/base.py"
+  git -C "${PROJECT_ROOT}" add base.py
+  git -C "${PROJECT_ROOT}" commit -q -m "chore: base"
+  git -C "${PROJECT_ROOT}" tag base-ref
+}
+
+_scratch_commit() {
+  echo "$2" >"${PROJECT_ROOT}/$1"
+  git -C "${PROJECT_ROOT}" add "$1"
+  git -C "${PROJECT_ROOT}" commit -q -m "chore: $1"
+}
+
+@test "cgw_pushed_files_for_lint: with a base lists changed files filtered by extension" {
+  _pushed_scratch_repo
+  _scratch_commit a.py 1
+  _scratch_commit notes.txt 1
+  run cgw_pushed_files_for_lint HEAD base-ref "*.py"
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "a.py" ]
+}
+
+@test "cgw_pushed_files_for_lint: a file added then deleted inside the range is excluded" {
+  _pushed_scratch_repo
+  _scratch_commit gone.py 1
+  _scratch_commit kept.py 1
+  git -C "${PROJECT_ROOT}" rm -q gone.py
+  git -C "${PROJECT_ROOT}" commit -q -m "chore: drop gone"
+  run cgw_pushed_files_for_lint HEAD base-ref "*.py"
+  [ "${output}" = "kept.py" ]
+}
+
+@test "cgw_pushed_files_for_lint: without a base uses commits no remote ref contains" {
+  _pushed_scratch_repo
+  git -C "${PROJECT_ROOT}" update-ref refs/remotes/origin/main HEAD
+  _scratch_commit fresh.py 1
+  run cgw_pushed_files_for_lint HEAD "" "*.py"
+  [ "${output}" = "fresh.py" ]
+}
+
+@test "cgw_pushed_files_for_lint: without a base includes files changed in unpushed merge commits" {
+  _pushed_scratch_repo
+  git -C "${PROJECT_ROOT}" update-ref refs/remotes/origin/main HEAD
+  git -C "${PROJECT_ROOT}" checkout -q -b feat
+  _scratch_commit branch.py "feat content"
+  git -C "${PROJECT_ROOT}" checkout -q -b other-branch refs/remotes/origin/main
+  _scratch_commit other.py "other content"
+  git -C "${PROJECT_ROOT}" merge -q --no-ff feat -m "merge: feat into other-branch"
+  run cgw_pushed_files_for_lint HEAD "" "*.py"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"branch.py"* ]]
+  [[ "${output}" == *"other.py"* ]]
+}
+
+@test "cgw_snapshot_tree: materialises the committed tree and leaves index and worktree alone" {
+  _pushed_scratch_repo
+  _scratch_commit committed.py "ok"
+  echo "dirty" >"${PROJECT_ROOT}/committed.py"
+  echo "x" >"${PROJECT_ROOT}/untracked.py"
+  local before dest="${BATS_TEST_TMPDIR}/snap"
+  before="$(git -C "${PROJECT_ROOT}" status --porcelain)"
+  mkdir "${dest}"
+  run cgw_snapshot_tree HEAD "${dest}"
+  [ "${status}" -eq 0 ]
+  [ "$(cat "${dest}/committed.py")" = "ok" ]
+  [ ! -e "${dest}/untracked.py" ]
+  [ "$(git -C "${PROJECT_ROOT}" status --porcelain)" = "${before}" ]
+}
+
+@test "cgw_snapshot_tree: rejects a missing destination" {
+  _pushed_scratch_repo
+  run cgw_snapshot_tree HEAD "${BATS_TEST_TMPDIR}/nope"
+  [ "${status}" -eq 1 ]
 }

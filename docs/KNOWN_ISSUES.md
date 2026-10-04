@@ -234,6 +234,22 @@ Verified: a deliberately-broken staged file under an excluded dir is skipped ("N
 found"), a repo-root one is still flagged. Projects that override these args in `.cgw.conf` should
 add the flag to their overrides too.
 
+## Push-gate snapshot mode (`--pushed-only`) limitations
+
+`push_validated.sh --pushed-only` / `check_lint.sh --ref` check a snapshot of the *committed*
+tree. By design:
+
+- **Untracked/ignored files are absent.** A typecheck that needs generated stubs, a local config
+  or other git-ignored inputs may report errors in the snapshot that the working tree doesn't have
+  (or vice versa). Commit the input, or use the default worktree scope.
+- **Submodules are not populated** in the snapshot.
+- **Relative pyright `venvPath`/`venv`** settings in `pyproject.toml` resolve against the snapshot
+  directory, not the project; CGW exports `VIRTUAL_ENV` and prepends the project `.venv` to `PATH`,
+  which covers the common case.
+- `.gitattributes` is read from the working tree by `git checkout-index`, so an uncommitted
+  `.gitattributes` edit can change eol/filter handling in the snapshot.
+- Typecheck is whole-snapshot, so a type error in an already-pushed file still blocks the push.
+
 ## Found and fixed in the 2026-10 audit
 
 Audit against *Pro Git*, *Advanced Git*, *Git for Teams* and the shell style guide. Commits:

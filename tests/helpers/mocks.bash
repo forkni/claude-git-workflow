@@ -317,6 +317,29 @@ EOF
   chmod +x "${MOCK_BIN_DIR}/ruff"
 }
 
+# install_mock_typecheck_content_aware [cmd_name]
+# Creates a typechecker mock (default name: mock-typecheck) that scans every
+# *.py under its cwd: if any contains the marker "TYPE_ERR" it prints one
+# mypy-shaped diagnostic per offending file and exits 1, otherwise exits 0.
+# Records its cwd and argv in $MOCK_BIN_DIR/typecheck.log. Lets tests assert
+# WHICH tree (working tree vs committed snapshot) a typecheck actually saw.
+install_mock_typecheck_content_aware() {
+  local cmd_name="${1:-mock-typecheck}"
+  cat > "${MOCK_BIN_DIR}/${cmd_name}" << 'EOF'
+#!/usr/bin/env bash
+echo "mock cwd=$PWD args=$*" >> "${0%/*}/typecheck.log"
+rc=0
+while IFS= read -r f; do
+  if grep -q "TYPE_ERR" "$f"; then
+    echo "${f#./}:1: error: mock type error  [misc]"
+    rc=1
+  fi
+done < <(find . -name '*.py' -not -path './.git/*' -not -path './.venv/*')
+exit $rc
+EOF
+  chmod +x "${MOCK_BIN_DIR}/${cmd_name}"
+}
+
 # install_mock_markdownlint_content_aware
 # Creates a markdownlint mock whose exit status depends on the FILES it receives:
 # for each real-file argument, if the file contains the marker "MDLINT-BAD" it

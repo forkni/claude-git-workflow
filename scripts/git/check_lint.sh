@@ -13,6 +13,12 @@
 #   1 on lint/markdown errors (interactive callers may still offer an override)
 #   2 on typecheck errors specifically (fatal -- push_validated.sh never offers
 #     an interactive override for this code, only --skip-typecheck/CGW_SKIP_TYPECHECK=1)
+#
+# Snapshot mode (--ref <rev>): check the COMMITTED tree of <rev>, extracted into a
+# throwaway directory, instead of the working tree -- uncommitted and untracked
+# changes cannot affect the result. Typecheck always covers the whole snapshot
+# (a type checker needs whole-program context); lint/format/markdown narrow to
+# the files a push would publish when --base <rev> or --unpushed is also given.
 
 set -uo pipefail
 
@@ -20,11 +26,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/git/_common.sh
 source "${SCRIPT_DIR}/_common.sh"
 
+# Remove the --ref snapshot directory. Only ever deletes the exact directory
+# mktemp created (a cgw-snap.* name), never an arbitrary path.
+# shellcheck disable=SC2329 # invoked via trap
+_cgw_snapshot_cleanup() {
+  local d="${CGW_SNAPSHOT_DIR:-}"
+  # Windows cannot delete a directory that is the process cwd.
+  cd "${PROJECT_ROOT:-/}" 2>/dev/null || cd / || true
+  [[ -n "${d}" && "${d##*/}" == cgw-snap.* && -d "${d}" ]] && rm -rf "${d}"
+  return 0
+}
+
 main() {
   local modified_only=0
   local md_only=0
+  local ref="" base="" unpushed=0
+  # The parse loop below consumes "$@"; cgw_lint_plan needs the originals.
+  local -a orig_args=("$@")
 
-  for arg in "$@"; do
+  while [[ $# -gt 0 ]]; do
+    local arg="$1"
     case "$arg" in
       --help | -h)
         echo "Usage: ./scripts/git/check_lint.sh [OPTIONS]"
@@ -33,6 +54,13 @@ main() {
         echo ""
         echo "Options:"
         echo "  --modified-only   Only check files modified vs HEAD"
+        echo "  --ref <rev>       Check the committed tree of <rev> (in a temp dir), not the"
+        echo "                    working tree; uncommitted changes are ignored. Typecheck is"
+        echo "                    whole-snapshot; incompatible with --modified-only/--md-only"
+        echo "  --base <rev>      With --ref: lint/format/markdown only files changed in"
+        echo "                    <rev-base>...<ref> (what a push would publish)"
+        echo "  --unpushed        With --ref: scope to files in commits no remote-tracking ref"
+        echo "                    has yet (new-branch push); alternative to --base"
         echo "  --no-venv         Use system lint tool instead of .venv"
         echo "  --skip-lint       Skip all lint checks (code, markdown, and typecheck)"
         echo "  --skip-md-lint    Skip markdown lint only (CGW_MARKDOWNLINT_CMD step)"
@@ -60,17 +88,29 @@ main() {
       --md-only)
         md_only=1
         ;;
+      --ref | --base)
+        if [[ $# -lt 2 || -z "${2:-}" || "${2}" == -* ]]; then
+          echo "[ERROR] ${arg} requires a revision argument" >&2
+          exit 1
+        fi
+        [[ "$arg" == "--ref" ]] && ref="$2" || base="$2"
+        shift
+        ;;
+      --unpushed)
+        unpushed=1
+        ;;
       --skip-lint | --skip-md-lint | --skip-typecheck) ;;
       *)
         echo "[ERROR] Unknown flag: $arg" >&2
         exit 1
         ;;
     esac
+    shift
   done
 
   # Query the lint pipeline plan
   local plan
-  if ! plan=$(cgw_lint_plan check "$@"); then
+  if ! plan=$(cgw_lint_plan check "${orig_args[@]+"${orig_args[@]}"}"); then
     exit 1
   fi
 
@@ -116,6 +156,72 @@ main() {
     err "Cannot find project root"
     exit 1
   }
+
+  # Snapshot mode (--ref): check the committed tree of <ref> in a throwaway
+  # directory so uncommitted/untracked work cannot affect the verdict.
+  local ref_sha="" scoped=0
+  local -a lint_files=() md_files=()
+  if [[ -n "${ref}" ]]; then
+    if ! ref_sha=$(git rev-parse --verify --quiet "${ref}^{commit}"); then
+      err "Cannot resolve --ref '${ref}' to a commit"
+      exit 1
+    fi
+    if [[ -n "${base}" ]] && ! git rev-parse --verify --quiet "${base}^{commit}" >/dev/null; then
+      err "Cannot resolve --base '${base}' to a commit"
+      exit 1
+    fi
+    if [[ -n "${base}" || ${unpushed} -eq 1 ]]; then
+      scoped=1
+      local _resolved_code _resolved_md _lf
+      if ! _resolved_code="$(cgw_pushed_files_for_lint "${ref_sha}" "${base}")"; then
+        err "Failed to resolve pushed code files for ${ref}"
+        exit 1
+      fi
+      if ! _resolved_md="$(cgw_pushed_files_for_lint "${ref_sha}" "${base}" "*.md")"; then
+        err "Failed to resolve pushed markdown files for ${ref}"
+        exit 1
+      fi
+      while IFS= read -r _lf; do
+        [[ -n "${_lf}" ]] && lint_files+=("${_lf}")
+      done <<<"${_resolved_code}"
+      while IFS= read -r _lf; do
+        [[ -n "${_lf}" ]] && md_files+=("${_lf}")
+      done <<<"${_resolved_md}"
+    fi
+
+    CGW_SNAPSHOT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cgw-snap.XXXXXX")" || {
+      err "Cannot create snapshot directory"
+      exit 1
+    }
+    trap _cgw_snapshot_cleanup EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    if ! cgw_snapshot_tree "${ref_sha}" "${CGW_SNAPSHOT_DIR}"; then
+      err "Cannot extract a snapshot of ${ref} (${ref_sha:0:12})"
+      exit 1
+    fi
+
+    # The snapshot has no .venv (untracked); point the tools at the real one.
+    # shellcheck disable=SC2034  # read by get_python_path
+    CGW_VENV_ROOT="${PROJECT_ROOT}"
+    export CGW_VENV_ROOT
+    if [[ "${CGW_NO_VENV:-0}" != "1" ]]; then
+      local _vbin=""
+      [[ -d "${PROJECT_ROOT}/.venv/Scripts" ]] && _vbin="${PROJECT_ROOT}/.venv/Scripts"
+      [[ -z "${_vbin}" && -d "${PROJECT_ROOT}/.venv/bin" ]] && _vbin="${PROJECT_ROOT}/.venv/bin"
+      if [[ -n "${_vbin}" ]]; then
+        # A drive-letter path would be split on ':' inside PATH under MSYS.
+        command -v cygpath >/dev/null 2>&1 && _vbin="$(cygpath -u "${_vbin}")"
+        export VIRTUAL_ENV="${PROJECT_ROOT}/.venv"
+        export PATH="${_vbin}:${PATH}"
+      fi
+    fi
+
+    cd "${CGW_SNAPSHOT_DIR}" || {
+      err "Cannot enter snapshot directory"
+      exit 1
+    }
+  fi
 
   # Handle --modified-only mode (lint pipeline scoped to the modified files; console only)
   # Typecheck is deliberately NOT run here: a typechecker needs whole-program
@@ -169,6 +275,12 @@ main() {
     echo "Start Time: $(date)"
     echo "Working Directory: ${PROJECT_ROOT}"
     echo "Lint tool: ${CGW_LINT_CMD}"
+    if [[ -n "${ref_sha}" ]]; then
+      echo "Checked: ${ref_sha} (committed snapshot of ${ref}; uncommitted changes excluded)"
+      if [[ ${scoped} -eq 1 ]]; then
+        echo "Scope: ${#lint_files[@]} code file(s), ${#md_files[@]} markdown file(s) from the push; typecheck is whole-snapshot"
+      fi
+    fi
   } >"$logfile"
 
   local -a results=()
@@ -176,10 +288,12 @@ main() {
 
   if [[ ${md_only} -eq 0 ]]; then
     # LINT CHECK
-    if [[ "$lint_act" == "run" ]]; then
+    if [[ "$lint_act" == "run" ]] && [[ ${scoped} -eq 1 && ${#lint_files[@]} -eq 0 ]]; then
+      echo "  (lint check skipped -- no pushed files match ${CGW_LINT_EXTENSIONS:-*.py})" | tee -a "$logfile"
+    elif [[ "$lint_act" == "run" ]]; then
       local lint_start lint_end lint_duration lint_res
       lint_start=$(date +%s)
-      cgw_run_lint_check --result-var lint_res || lint_status=1
+      cgw_run_lint_check --result-var lint_res "${lint_files[@]+"${lint_files[@]}"}" || lint_status=1
       lint_end=$(date +%s)
       lint_duration=$((lint_end - lint_start))
       IFS=':' read -r _l_name _l_status _l_errors <<<"${lint_res}"
@@ -191,10 +305,12 @@ main() {
     # shfmt step (.github/workflows/branch-protection.yml), present since that
     # workflow's introduction. A format diff is reported but never gates
     # overall_status or the exit code -- only lint and markdown-lint do.
-    if [[ "$format_act" == "run" ]]; then
+    if [[ "$format_act" == "run" ]] && [[ ${scoped} -eq 1 && ${#lint_files[@]} -eq 0 ]]; then
+      echo "  (format check skipped -- no pushed files match ${CGW_LINT_EXTENSIONS:-*.py})" | tee -a "$logfile"
+    elif [[ "$format_act" == "run" ]]; then
       local format_start format_end format_duration format_res
       format_start=$(date +%s)
-      CGW_FORMAT_CHECK_NONBLOCKING=1 cgw_run_format_check --result-var format_res || true
+      CGW_FORMAT_CHECK_NONBLOCKING=1 cgw_run_format_check --result-var format_res "${lint_files[@]+"${lint_files[@]}"}" || true
       format_end=$(date +%s)
       format_duration=$((format_end - format_start))
       IFS=':' read -r _f_name _f_status _f_errors <<<"${format_res}"
@@ -236,10 +352,12 @@ main() {
     if [[ "$md_reason" == "--skip-md-lint" ]]; then
       echo "  (markdown lint skipped -- --skip-md-lint)" | tee -a "$logfile"
     fi
+  elif [[ ${scoped} -eq 1 && ${#md_files[@]} -eq 0 ]]; then
+    echo "  (markdown lint skipped -- no pushed .md files)" | tee -a "$logfile"
   else
     local md_start md_end md_duration md_res
     md_start=$(date +%s)
-    cgw_run_markdownlint_check --result-var md_res || md_lint_status=1
+    cgw_run_markdownlint_check --result-var md_res "${md_files[@]+"${md_files[@]}"}" || md_lint_status=1
     md_end=$(date +%s)
     md_duration=$((md_end - md_start))
     IFS=':' read -r _md_name _md_status _md_errors <<<"${md_res}"

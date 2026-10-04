@@ -182,6 +182,18 @@ CGW_TYPECHECK_CHECK_ARGS="check"
 CGW_TYPECHECK_EXCLUDES=""
 
 # ============================================================================
+# PUSH GATE SCOPE (push_validated.sh)
+# ============================================================================
+# What the pre-push lint/typecheck gate examines:
+#   worktree  the working tree, uncommitted changes included (default)
+#   pushed    the committed snapshot of the branch being pushed: typecheck
+#             covers the whole snapshot, lint/format/markdown only the files
+#             the push changes. Uncommitted work cannot block the push.
+# Override per run with --pushed-only / --worktree on push_validated.sh.
+# CGW_PUSH_LINT_SCOPE="worktree"
+CGW_PUSH_LINT_SCOPE="worktree"
+
+# ============================================================================
 # MODIFIED-ONLY LINT FILE EXTENSIONS (check_lint.sh, fix_lint.sh)
 # ============================================================================
 # Space-separated glob patterns controlling which files are matched in

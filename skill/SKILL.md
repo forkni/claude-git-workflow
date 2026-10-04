@@ -253,9 +253,9 @@ script with `--help` to confirm rather than inventing it.
 | Script | Accepted flags |
 |---|---|
 | `commit_enhanced.sh` | `--non-interactive`, `--interactive`, `--staged-only`, `--all`, `--only <path>` (repeatable), `--skip-lint`, `--skip-md-lint`, `--no-venv`, `--sign`, `--no-sign` |
-| `check_lint.sh` | `--no-venv`, `--modified-only`, `--skip-lint`, `--skip-md-lint`, `--skip-typecheck`, `--md-only` |
+| `check_lint.sh` | `--no-venv`, `--modified-only`, `--skip-lint`, `--skip-md-lint`, `--skip-typecheck`, `--md-only`, `--ref <rev>`, `--base <rev>`, `--unpushed` |
 | `fix_lint.sh` | `--non-interactive`, `--no-venv`, `--modified-only`, `--skip-md-lint`, `--md-only` — **no `--skip-lint`** |
-| `push_validated.sh` | `--non-interactive`, `--dry-run`, `--skip-lint`, `--skip-md-lint`, `--skip-typecheck`, `--no-venv`, `--force`, `--branch <name>` |
+| `push_validated.sh` | `--non-interactive`, `--dry-run`, `--skip-lint`, `--skip-md-lint`, `--skip-typecheck`, `--pushed-only`, `--worktree`, `--no-venv`, `--force`, `--branch <name>` |
 | `cherry_pick_commits.sh` | `--non-interactive`, `--commit <hash>`, `--only <pathspec>` (repeatable; partial pick), `--no-x`, `--dry-run`, `--source <branch>`, `--target <branch>` |
 
 Asymmetries that trip people up:
@@ -318,6 +318,9 @@ Typecheck: advisory in the pre-commit hook (when CGW_TYPECHECK_CMD is set), BLOC
            check_lint.sh/push_validated.sh. A failing typecheck blocks a push; --skip-typecheck
            (or CGW_SKIP_TYPECHECK=1) bypasses it. Not run under --md-only/--modified-only, and
            not run by commit_enhanced.sh — see script-reference.md.
+           If the push gate fails ONLY because of uncommitted work in the tree, re-run with
+           --pushed-only (or CGW_PUSH_LINT_SCOPE=pushed) -- do NOT reach for --skip-typecheck /
+           --skip-lint, which also stop checking the commits actually being pushed.
 
 After commit: verify with git log --oneline -1
 (that single check is enough — skip any git status/diff scan beforehand; commit_enhanced.sh
@@ -350,6 +353,7 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 ./scripts/git/push_validated.sh                       # with lint check
 ./scripts/git/push_validated.sh --no-venv             # no .venv (forwards to check_lint.sh)
 ./scripts/git/push_validated.sh --dry-run             # preview
+./scripts/git/push_validated.sh --pushed-only         # gate only the committed branch (ignores uncommitted work)
 ./scripts/git/push_validated.sh --skip-lint           # skip lint check entirely
 ./scripts/git/push_validated.sh --no-venv --skip-lint # both
 # One call is enough on its own -- no pre-check needed, regardless of urgency or stakes in
