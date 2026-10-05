@@ -15,22 +15,27 @@
 # Heuristic limits (defense-in-depth, not a sandbox): this classifier does not
 # evaluate `eval`, shell aliases/functions, nested shells (`bash -c '...'`),
 # `git -C <path> <subcmd>` / `git --git-dir=... <subcmd>` (the subcommand isn't
-# adjacent to `git`), or paths hidden inside quotes -- e.g. `rm -rf "$HOME/.git"`
-# is stripped by the quote-stripping heuristic below before pattern matching
-# runs. The git pre-commit / pre-push hooks remain the enforcement layer for
-# whatever gets through; the guardrails exist to redirect an agent to the CGW
-# wrappers early.
+# adjacent to `git`), or `$'...'` / `$"..."` ANSI-C and locale quoting (treated
+# like plain quotes). It also never identifies the executable: matching is position-independent so
+# `env git commit`, `command git commit`, `time git commit` are all caught, and
+# the same rule redirects `echo git commit` -- quoted or not (`echo 'git' commit`
+# dequotes to the identical text). Quoting changes nothing here: a quoted
+# single word matches like its unquoted form by design; only a quoted span
+# containing whitespace is kept as one non-matching token.
+# The git pre-commit / pre-push hooks remain the enforcement layer for whatever
+# gets through; the guardrails exist to redirect an agent to the CGW wrappers
+# early.
 
 cgw_guardrail_classify() {
   local command="$1"
   local unquoted joined segmented _invocation
 
-  # Strip quoted-string contents before pattern matching so that blocked keywords
-  # appearing inside commit messages or other string arguments do not cause false
-  # positives.  For example, commit_enhanced.sh "docs: explain git commit workflow"
-  # should not match the 'git commit' block.  Heuristic: removes "..." and '...'
-  # (does not handle nested/escaped quotes, but covers all practical CGW cases).
-  unquoted=$(sed 's/"[^"]*"//g; s/'"'"'[^'"'"']*'"'"'//g' <<<"${command}")
+  # Remove shell quotes but keep each quoted span as ONE token, so blocked keywords
+  # inside a commit message or other quoted sentence cannot match, while a quoted
+  # command word or flag still does. `commit_enhanced.sh "docs: explain git commit"`
+  # must not match the 'git commit' block, but `git "push" --force` must match
+  # 'git push --force' -- the shell runs it exactly like the unquoted form.
+  unquoted=$(_cgw_guardrail_dequote "${command}")
 
   # Split into individual shell invocations before pattern matching, so a flag or
   # exemption belonging to one command (e.g. `--cached` after a `;`) cannot satisfy
@@ -45,6 +50,41 @@ cgw_guardrail_classify() {
     _cgw_guardrail_check_invocation "${_invocation}" || return 1
   done <<<"${segmented}"
   return 0
+}
+
+# _cgw_guardrail_dequote <command> — print <command> with its "..." and '...'
+# quotes removed. Whitespace and shell separators (; | &) inside a quoted span
+# become \x1f, which is neither [[:space:]] nor a separator, so the span stays a
+# single token: no check can match across it and segmentation cannot split it.
+# Spans may cross newlines (multi-line messages). An unterminated quote leaves
+# the rest of the command as written. Pure bash: one regex match per span.
+# Backslash escapes follow the shell: outside quotes and inside "..." a `\x`
+# pair is content (so `\"` neither opens nor closes a span and
+# `"say \"git commit\" now"` stays one token); inside '...' a backslash is
+# literal and the first `'` always closes.
+_cgw_guardrail_dequote() {
+  local rest="$1" out="" span
+  local re_open='^((\\.|[^"'"'"'\\])*)(["'"'"'])(.*)$'
+  local re_dq='^((\\.|[^"\\])*)"(.*)$'
+  local re_sq="^([^']*)'(.*)$"
+
+  # Group layout: re_open -> 1=prefix 3=quote 4=rest; re_dq -> 1=span 3=rest;
+  # re_sq -> 1=span 2=rest (the (\\.|...) alternation adds an inner group).
+  while [[ ${rest} =~ ${re_open} ]]; do
+    out+="${BASH_REMATCH[1]}"
+    rest="${BASH_REMATCH[4]}"
+    if [[ ${BASH_REMATCH[3]} == '"' ]]; then
+      [[ ${rest} =~ ${re_dq} ]] || break
+      span="${BASH_REMATCH[1]}"
+      rest="${BASH_REMATCH[3]}"
+    else
+      [[ ${rest} =~ ${re_sq} ]] || break
+      span="${BASH_REMATCH[1]}"
+      rest="${BASH_REMATCH[2]}"
+    fi
+    out+="${span//[[:space:];|&]/$'\x1f'}"
+  done
+  printf '%s' "${out}${rest}"
 }
 
 # _cgw_guardrail_verdict <pattern> <redirect> — report a block to the caller.
@@ -143,7 +183,7 @@ _cgw_guardrail_check_invocation() {
   # anything may sit between it and `worktree remove`. If it is a plain word
   # (a subcommand), only a direct `worktree remove` matches, so
   # `git grep worktree remove` is not blocked. Quoted arguments are already
-  # stripped by now (`-C "/repo"` becomes `-C `).
+  # dequoted by now (`-C "/my repo"` becomes `-C /my<US>repo`, one token).
   if [[ ${padded} =~ git[[:space:]]+(-[^[:space:]]*[[:space:]]+(.*[[:space:]])?)?worktree[[:space:]]+remove[[:space:]] ]]; then
     _cgw_guardrail_verdict 'git worktree remove' \
       'Use ./scripts/git/worktree_manage.sh remove --execute <path> instead — it unlinks CGW tooling first. A raw remove can follow a legacy junction and delete the main checkout'"'"'s scripts/git and .githooks.'
