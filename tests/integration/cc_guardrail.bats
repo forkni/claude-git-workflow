@@ -428,6 +428,21 @@ _run_configure() {
   [ "${status}" -eq 0 ]
 }
 
+@test "quoting a single word never changes the verdict (executable is not identified)" {
+  # The classifier is position-independent by design (so `env git commit` is
+  # caught), which means `echo git commit` is redirected too. Quoting individual
+  # words must give the same verdict as the unquoted command the shell runs.
+  _require_jq
+  run _run_guardrail "echo git commit"
+  [ "${status}" -eq 2 ]
+  run _run_guardrail "echo 'git' commit"
+  [ "${status}" -eq 2 ]
+  run _run_guardrail "echo 'git' 'push' '--force'"
+  [ "${status}" -eq 2 ]
+  run _run_guardrail "echo 'git commit'"
+  [ "${status}" -eq 0 ]
+}
+
 # ── Guardrail script: fail-open behavior ─────────────────────────────────────
 
 @test "allows command when input JSON is empty" {

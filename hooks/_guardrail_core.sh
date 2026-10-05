@@ -16,6 +16,12 @@
 # evaluate `eval`, shell aliases/functions, nested shells (`bash -c '...'`),
 # `git -C <path> <subcmd>` / `git --git-dir=... <subcmd>` (the subcommand isn't
 # adjacent to `git`), or backslash-escaped quotes (`\"` is treated as a quote).
+# It also never identifies the executable: matching is position-independent so
+# `env git commit`, `command git commit`, `time git commit` are all caught, and
+# the same rule redirects `echo git commit` -- quoted or not (`echo 'git' commit`
+# dequotes to the identical text). Quoting changes nothing here: a quoted
+# single word matches like its unquoted form by design; only a quoted span
+# containing whitespace is kept as one non-matching token.
 # The git pre-commit / pre-push hooks remain the enforcement layer for whatever
 # gets through; the guardrails exist to redirect an agent to the CGW wrappers
 # early.
