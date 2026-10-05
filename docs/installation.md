@@ -12,29 +12,28 @@ git clone https://github.com/forkni/claude-git-workflow.git
 claude-git-workflow\cgw-install.cmd
 ```
 
-`cgw-install.cmd` validates prerequisites, copies scripts into your project, runs `configure.sh` interactively, and offers to clean up temporary files.
+`cgw-install.cmd` validates prerequisites, copies `scripts/git/*.sh` and `cgw.conf.example` into your project, then runs `configure.sh --template-dir <CGW clone>` interactively.
 
 ### Unix / manual
 
 ```bash
-# 1. Copy scripts + hook template into your project
-cp -r claude-git-workflow/scripts/git/ your-project/scripts/git/
-cp -r claude-git-workflow/hooks/ your-project/hooks/
-cp -r claude-git-workflow/skill/ your-project/skill/
-cp -r claude-git-workflow/command/ your-project/command/
+# 1. Copy the scripts into your project
+mkdir -p your-project/scripts/git
+cp claude-git-workflow/scripts/git/*.sh your-project/scripts/git/
 
-# 2. Auto-configure (scans project, generates config, installs hooks + skill)
-cd your-project && ./scripts/git/configure.sh
+# 2. Auto-configure (scans project, generates config, installs hooks + skill);
+#    --template-dir points at the clone that provides hooks/, skill/ and command/
+cd your-project && ./scripts/git/configure.sh --template-dir /path/to/claude-git-workflow
 ```
 
 ---
 
 ## Prerequisites
 
-- **bash 4.0+** — provided by Git for Windows, macOS, or any Linux
-- **git 2.0+**
-- **Lint tool** (optional) — ruff, eslint, golangci-lint, clang-tidy, cppcheck, or cargo. Set `CGW_LINT_CMD=""` to disable entirely.
-- **gh CLI** (optional) — only required for `create_pr.sh` (`gh auth login`)
+- **bash 4.2+** — provided by Git for Windows or any Linux; macOS ships bash 3.2, so install a newer bash (e.g. Homebrew)
+- **git 2.18+** (a few options need newer, e.g. `zdiff3` conflict style needs 2.35)
+- **Lint tool** (optional) — ruff, flake8, pylint, eslint, golangci-lint, clang-tidy, cppcheck, or cargo. Set `CGW_LINT_CMD=""` to disable entirely.
+- **gh CLI** (optional) — required for `create_pr.sh`, `merge_pr.sh`, `pr_checkout.sh` and the post-push CI gate (`gh auth login`)
 - **Claude Code CLI** (optional) — only required for Claude Code integration
 
 **Windows:** [Git for Windows](https://git-scm.com/download/win) provides both `bash` and `git`. The installer (`cgw-install.cmd`) validates this automatically.
@@ -46,7 +45,7 @@ cd your-project && ./scripts/git/configure.sh
 `configure.sh` is a one-time setup script. It runs five steps:
 
 1. **Detection** — Scans the project for branch names, lint tools, virtual environments, and files that exist on disk but aren't tracked by git.
-2. **Confirmation** — In interactive mode, shows detected values and lets you override each one. Press Enter to accept defaults.
+2. **Confirmation** — In interactive mode, shows detected values and lets you change the local-only file list. Press Enter to accept defaults. If `.cgw.conf` already exists, it asks before regenerating it (default no) and backs the old file up to `.cgw.conf.bak`.
 3. **Config generation** — Writes `.cgw.conf` (git-ignored), which tells all CGW scripts about your branches, lint tool, and local-only files.
 4. **Hook installation** — Copies the pre-commit, pre-push, and pre-rebase hook templates into `.githooks/`, then into `.git/hooks/`. Hooks read configuration from `.cgw.conf` at run time, so any changes to `CGW_LOCAL_FILES`, `CGW_EXTRA_PREFIXES`, `CGW_FREEFORM_MESSAGE_BRANCHES`, or `CGW_ALLOW_REBASE_PUBLISHED` take effect immediately without re-running this step.
 5. **Skill installation** — Copies skills, slash commands, and PreToolUse guardrails for Claude Code (`.claude/` or `~/.claude/`) and Antigravity Agents (`.agents/` or `~/.gemini/config/`).
@@ -57,7 +56,7 @@ cd your-project && ./scripts/git/configure.sh
 
 | Flag | Effect |
 |------|--------|
-| *(none)* | Interactive: shows detected values, prompts to confirm or override |
+| *(none)* | Interactive: shows detected values, prompts for the local-only file list |
 | `--template-dir <dir>` | Path to CGW source toolkit providing asset templates (decouples template sourcing from project root) |
 | `--non-interactive` | Accept all auto-detected defaults without prompting |
 | `--reconfigure` | Overwrite an existing `.cgw.conf` (re-run detection + confirmation); the previous file is saved to `.cgw.conf.bak` first |
@@ -127,7 +126,7 @@ project's initial install do not reach that project's `.cgw.conf` via batch-upda
 ships immediately (scripts are always overwritten, and so are outdated stock hooks), but the setting itself stays off
 until you add it to that project's `.cgw.conf` by hand, or run
 `configure.sh --reconfigure` there (which regenerates `.cgw.conf` from scratch and prompts for
-every value, backing up the old file to `.cgw.conf.bak` first).
+the local-only file list, backing up the old file to `.cgw.conf.bak` first).
 
 ---
 
@@ -142,7 +141,7 @@ every value, backing up the old file to `.cgw.conf.bak` first).
 ### Installer stops silently after `Project: ...` or before `configure.sh` (Windows)
 
 Both installers resolve `bash.exe` to an absolute path from `%PATH%` during pre-flight
-(`[PASS] BF-02 bash available: C:\Program Files\Git\bin\bash.exe`) and never call it by bare
+(`[PASS] PI-03 bash available: ...` in `cgw-install.cmd`, `[PASS] BF-02 bash available: ...` in `cgw-batch-install.cmd`) and never call it by bare
 name. This matters because cmd.exe looks in the *current directory* before `%PATH%`, so a project
 that ships its own `bash.cmd` (Antigravity-enabled projects carry one as a shim) would otherwise
 be picked up instead of Git Bash — and a batch file invoked from a batch file without `call`
@@ -241,11 +240,14 @@ rm -f .cgw.conf
 # Remove Claude Code integration (if installed locally)
 rm -rf .claude/skills/auto-git-workflow/
 rm -f .claude/commands/auto-git-workflow-cmd.md
+rm -f .claude/hooks/cc-block-dangerous-git.sh .claude/hooks/_guardrail_core.sh
+# ...and delete the cc-block-dangerous-git entry from the PreToolUse list in .claude/settings.json
 
 # Remove Antigravity Agents integration (if installed locally)
 rm -rf .agents/skills/auto-git-workflow/
 rm -rf .agents/skills/auto-git-workflow-cmd/
-rm -f .agents/hooks/agy-block-dangerous-git.cmd .agents/hooks/agy-block-dangerous-git.sh
+rm -f .agents/hooks/agy-block-dangerous-git.cmd .agents/hooks/agy-block-dangerous-git.sh .agents/hooks/_guardrail_core.sh
+# ...and delete the agy-block-dangerous-git entry from .agents/hooks.json
 ```
 
 To remove globally-installed skills:
@@ -254,8 +256,12 @@ To remove globally-installed skills:
 # Claude Code global removal
 rm -rf ~/.claude/skills/auto-git-workflow/
 rm -f ~/.claude/commands/auto-git-workflow-cmd.md
+rm -f ~/.claude/hooks/cc-block-dangerous-git.sh ~/.claude/hooks/_guardrail_core.sh
+# ...and delete the cc-block-dangerous-git entry from ~/.claude/settings.json
 
 # Antigravity Agents global removal
 rm -rf ~/.gemini/config/skills/auto-git-workflow/
 rm -rf ~/.gemini/config/skills/auto-git-workflow-cmd/
+rm -f ~/.gemini/config/hooks/agy-block-dangerous-git.* ~/.gemini/config/hooks/_guardrail_core.sh
+# ...and delete the agy-block-dangerous-git entry from ~/.gemini/config/hooks.json
 ```

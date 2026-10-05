@@ -13,6 +13,8 @@
 #   1 on lint/markdown errors (interactive callers may still offer an override)
 #   2 on typecheck errors specifically (fatal -- push_validated.sh never offers
 #     an interactive override for this code, only --skip-typecheck/CGW_SKIP_TYPECHECK=1)
+#   3 on --ref snapshot setup failure (unresolvable ref, extraction error): the
+#     checks never ran, so this is fatal and never overridable as a "lint failure"
 #
 # Snapshot mode (--ref <rev>): check the COMMITTED tree of <rev>, extracted into a
 # throwaway directory, instead of the working tree -- uncommitted and untracked
@@ -26,15 +28,85 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/git/_common.sh
 source "${SCRIPT_DIR}/_common.sh"
 
-# Remove the --ref snapshot directory. Only ever deletes the exact directory
-# mktemp created (a cgw-snap.* name), never an arbitrary path.
+# Remove the --ref snapshot directory (and the import-isolation shim dir). Only
+# ever deletes the exact directories mktemp created (cgw-snap.* names), never
+# an arbitrary path.
 # shellcheck disable=SC2329 # invoked via trap
 _cgw_snapshot_cleanup() {
-  local d="${CGW_SNAPSHOT_DIR:-}"
+  local d
   # Windows cannot delete a directory that is the process cwd.
   cd "${PROJECT_ROOT:-/}" 2>/dev/null || cd / || true
-  [[ -n "${d}" && "${d##*/}" == cgw-snap.* && -d "${d}" ]] && rm -rf "${d}"
+  for d in "${CGW_SNAPSHOT_DIR:-}" "${CGW_SNAPSHOT_AUX_DIR:-}"; do
+    [[ -n "${d}" && "${d##*/}" == cgw-snap.* && -d "${d}" ]] && rm -rf "${d}"
+  done
   return 0
+}
+
+# Keep the snapshot typecheck from importing the working tree through the real
+# venv. An editable install leaves a .pth entry (or an __editable__ finder)
+# pointing at <project>/src, so a module missing from the snapshot would still
+# resolve to its untracked worktree copy and the gate would pass on code CI
+# will reject. Python imports a sitecustomize from PYTHONPATH before any tool
+# runs; this one chains to the next sitecustomize (e.g. a user-site hook), then
+# drops every sys.path entry under the project root except the snapshot and the
+# interpreter prefixes (the venv and its base install), and the setuptools editable finders.
+# Args: $1 = shim dir (outside the snapshot, so a `.` scan never sees it).
+_cgw_isolate_worktree_imports() {
+  local shim="$1" sep=":" snap="${CGW_SNAPSHOT_DIR}" root="${PROJECT_ROOT}" shim_n
+  cat >"${shim}/sitecustomize.py" <<'PYEOF'
+import importlib.abc
+import os
+import sys
+
+
+def _chain():
+    here = os.path.normcase(os.path.dirname(os.path.abspath(__file__)))
+    for entry in list(sys.path):
+        cand = os.path.join(entry or os.getcwd(), "sitecustomize.py")
+        if os.path.normcase(os.path.dirname(os.path.abspath(cand))) == here:
+            continue
+        if os.path.isfile(cand):
+            with open(cand, "rb") as fh:
+                code = compile(fh.read(), cand, "exec")
+            exec(code, {"__name__": "sitecustomize", "__file__": cand})
+            return
+
+
+def _under(path, base):
+    path = os.path.normcase(os.path.abspath(path))
+    return path == base or path.startswith(base + os.sep)
+
+
+try:
+    _chain()
+except Exception:
+    pass
+
+_root = os.environ.get("CGW_ISOLATE_ROOT")
+if _root:
+    _root = os.path.normcase(os.path.abspath(_root))
+    _keep = [os.path.normcase(os.path.abspath(os.environ.get("CGW_ISOLATE_KEEP", os.getcwd())))]
+    for _p in (sys.prefix, sys.exec_prefix, sys.base_prefix, sys.base_exec_prefix):
+        _keep.append(os.path.normcase(os.path.abspath(_p)))
+    sys.path[:] = [
+        p for p in sys.path
+        if p == "" or any(_under(p, k) for k in _keep) or not _under(p, _root)
+    ]
+    sys.meta_path[:] = [
+        f for f in sys.meta_path
+        if not getattr(type(f), "__module__", "").startswith("__editable__")
+    ]
+PYEOF
+  shim_n="${shim}"
+  if command -v cygpath >/dev/null 2>&1; then
+    # Native Windows python: ';' separator, drive-letter paths MSYS leaves alone.
+    sep=";"
+    shim_n="$(cygpath -m "${shim}")"
+    snap="$(cygpath -m "${snap}")"
+    root="$(cygpath -m "${root}")"
+  fi
+  export CGW_ISOLATE_ROOT="${root}" CGW_ISOLATE_KEEP="${snap}"
+  export PYTHONPATH="${shim_n}${PYTHONPATH:+${sep}${PYTHONPATH}}"
 }
 
 main() {
@@ -67,6 +139,9 @@ main() {
         echo "  --skip-typecheck  Skip typecheck only (CGW_TYPECHECK_CMD step)"
         echo "  --md-only         Only check markdown (skip code lint + format + typecheck)"
         echo "  -h, --help        Show this help"
+        echo ""
+        echo "Exit codes: 0 ok, 1 lint/markdown errors, 2 typecheck errors,"
+        echo "            3 --ref snapshot could not be prepared (checks did not run)"
         echo ""
         echo "Environment:"
         echo "  CGW_NO_VENV=1          Same as --no-venv"
@@ -164,62 +239,86 @@ main() {
   if [[ -n "${ref}" ]]; then
     if ! ref_sha=$(git rev-parse --verify --quiet "${ref}^{commit}"); then
       err "Cannot resolve --ref '${ref}' to a commit"
-      exit 1
+      exit 3
     fi
     if [[ -n "${base}" ]] && ! git rev-parse --verify --quiet "${base}^{commit}" >/dev/null; then
       err "Cannot resolve --base '${base}' to a commit"
-      exit 1
+      exit 3
     fi
     if [[ -n "${base}" || ${unpushed} -eq 1 ]]; then
       scoped=1
       local _resolved_code _resolved_md _lf
       if ! _resolved_code="$(cgw_pushed_files_for_lint "${ref_sha}" "${base}")"; then
         err "Failed to resolve pushed code files for ${ref}"
-        exit 1
+        exit 3
       fi
-      if ! _resolved_md="$(cgw_pushed_files_for_lint "${ref_sha}" "${base}" "*.md")"; then
+      # Same scope as the worktree markdown step: CGW_MARKDOWNLINT_PATHS, as git
+      # glob pathspecs (plain "**/*.md" would miss root-level files; "!x"/"#x"
+      # markdownlint-cli2 negations become excludes).
+      # Split via read (not an unquoted expansion) so bash never pathname-expands "**".
+      local _md_globs="" _mt
+      local -a _md_toks=()
+      read -r -a _md_toks <<<"${CGW_MARKDOWNLINT_PATHS:-**/*.md}"
+      for _mt in "${_md_toks[@]}"; do
+        case "${_mt}" in
+          '!'* | '#'*) _md_globs+=" :(glob,exclude)${_mt:1}" ;;
+          *) _md_globs+=" :(glob)${_mt}" ;;
+        esac
+      done
+      if ! _resolved_md="$(cgw_pushed_files_for_lint "${ref_sha}" "${base}" "${_md_globs# }")"; then
         err "Failed to resolve pushed markdown files for ${ref}"
-        exit 1
+        exit 3
       fi
       while IFS= read -r _lf; do
         [[ -n "${_lf}" ]] && lint_files+=("${_lf}")
       done <<<"${_resolved_code}"
+      # A directory or "**/*" entry in CGW_MARKDOWNLINT_PATHS matches every changed
+      # file under it as a pathspec; only markdown may reach markdownlint.
       while IFS= read -r _lf; do
-        [[ -n "${_lf}" ]] && md_files+=("${_lf}")
+        case "${_lf}" in
+          *.md | *.markdown) md_files+=("${_lf}") ;;
+        esac
       done <<<"${_resolved_md}"
     fi
 
     CGW_SNAPSHOT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cgw-snap.XXXXXX")" || {
       err "Cannot create snapshot directory"
-      exit 1
+      exit 3
     }
     trap _cgw_snapshot_cleanup EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
     if ! cgw_snapshot_tree "${ref_sha}" "${CGW_SNAPSHOT_DIR}"; then
       err "Cannot extract a snapshot of ${ref} (${ref_sha:0:12})"
-      exit 1
+      exit 3
     fi
 
     # The snapshot has no .venv (untracked); point the tools at the real one.
     # shellcheck disable=SC2034  # read by get_python_path
     CGW_VENV_ROOT="${PROJECT_ROOT}"
     export CGW_VENV_ROOT
-    if [[ "${CGW_NO_VENV:-0}" != "1" ]]; then
-      local _vbin=""
-      [[ -d "${PROJECT_ROOT}/.venv/Scripts" ]] && _vbin="${PROJECT_ROOT}/.venv/Scripts"
-      [[ -z "${_vbin}" && -d "${PROJECT_ROOT}/.venv/bin" ]] && _vbin="${PROJECT_ROOT}/.venv/bin"
-      if [[ -n "${_vbin}" ]]; then
-        # A drive-letter path would be split on ':' inside PATH under MSYS.
-        command -v cygpath >/dev/null 2>&1 && _vbin="$(cygpath -u "${_vbin}")"
-        export VIRTUAL_ENV="${PROJECT_ROOT}/.venv"
-        export PATH="${_vbin}:${PATH}"
-      fi
+    # Put the real venv's bin dir on PATH too, so tools the pipeline invokes by
+    # bare name (mypy, pyright, ...) resolve from it while cwd is the snapshot.
+    local _vbin=""
+    if get_python_path 2>/dev/null; then
+      _vbin="${PYTHON_BIN:-}"
     fi
+    if [[ -n "${_vbin}" ]]; then
+      # A drive-letter path would be split on ':' inside PATH under MSYS.
+      command -v cygpath >/dev/null 2>&1 && _vbin="$(cygpath -u "${_vbin}")"
+      export VIRTUAL_ENV="${PROJECT_ROOT}/.venv"
+      export PATH="${_vbin}:${PATH}"
+    fi
+
+    CGW_SNAPSHOT_AUX_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cgw-snap.XXXXXX")" || {
+      err "Cannot create snapshot directory"
+      exit 3
+    }
+    _cgw_isolate_worktree_imports "${CGW_SNAPSHOT_AUX_DIR}"
 
     cd "${CGW_SNAPSHOT_DIR}" || {
       err "Cannot enter snapshot directory"
-      exit 1
+      exit 3
     }
   fi
 

@@ -1,7 +1,7 @@
 # CGW git-workflow — known issues & fix roadmap
 
 Audit of the `scripts/git/` wrappers + `_common.sh` / `_config.sh`, 2026-07. Triggered by two bugs
-found and fixed in `commit_enhanced.sh` (`dbd3b0e`, `494fc0c`): a lint gate that silently scanned the
+found and fixed in `commit_enhanced.sh`: a lint gate that silently scanned the
 whole repo, and a fragile arg-parsing helper. This catalogues **similar** gaps found elsewhere.
 
 Each item's heading carries its status; everything below is fixed except where a heading says
@@ -14,21 +14,13 @@ against real failure scenarios, not worst-case. Line numbers verified 2026-07; r
 
 ## HIGH
 
-### F1 · No automated tests for the bash safety layer 🔴 — ADDRESSED in this repo (2026-09-29)
+### F1 · No automated tests for the bash safety layer 🔴 — ADDRESSED (2026-09-29)
 
-> **Status:** `tests/test_cgw_git.py` (+ `tests/cgw_sandbox.py`) now covers the items below against
-> disposable git repos with a local bare `origin` — `python -m unittest discover -s tests`, run in
-> CI. Covered: the local-file matcher (spaces/unicode/dir-prefix/exempt), the commit-message grammar,
-> the branch predicates, backup tags, stale-`index.lock` handling, `commit_enhanced.sh` (the staging
-> matrix, `--only`, local-file exclusion, freeform branches), `push_validated.sh`,
-> `undo_last.sh`, `merge_with_validation.sh` (incl. the local-file merge guard), and an
-> argument-handling contract over every script. Mutation-checked: 11/11 deliberate bugs are caught.
-> `rollback_merge.sh`, `cherry_pick_commits.sh` and `recover.sh` are covered by
-> `tests/test_cgw_recovery.py` (mutation-checked: 10/10 deliberate bugs caught).
-> **Not yet covered in this repo's Python unit tests:** conflict classification/resolution internals, `rebase_safe`, `worktree_manage`,
-> and the lint/format stages (disabled in the sandbox).
-> **Note on upstream testing:** Upstream `claude-git-workflow` is the canonical test home, maintaining a 35-file Bats suite (`tests/integration/*.bats` and `tests/unit/*.bats`) running via `tests/run.sh` covering 28+ of the 31 scripts.
-> The original finding is kept below for the record.
+> **Status:** FIXED. This repo ships a Bats suite (1148 tests across `tests/unit/` and
+> `tests/integration/`, run with `tests/run.sh --all`; CI always runs everything) that covers the
+> shared helpers and every wrapper script, including the staging matrix, the local-file matcher,
+> the commit-message grammar, backup tags, stale-`index.lock` handling, merge/cherry-pick guards,
+> and the `--pushed-only` snapshot gate. The original finding is kept below for the record.
 
 **Where:** entire `scripts/git/` (no `*.bats`, no `--selftest` in any `.sh` — verified).
 **Problem:** The Python half of this repo ships `--selftest` on every script; the ~20 mutating git
@@ -46,7 +38,7 @@ fixing several others — it turns every fix below into a regression-guarded cha
 
 ## MEDIUM
 
-### A1 · Markdown-lint commit gate runs whole-repo 🟡
+### A1 · Markdown-lint commit gate runs whole-repo 🟡 — FIXED
 
 **Where:** `commit_enhanced.sh:448` (bare call) → `_common.sh:974` → `_config.sh:138`.
 **Problem:** `cgw_run_markdownlint_check` is called with no files → whole-repo `**/*.md` scan. Can't
@@ -57,18 +49,18 @@ substituted. Sibling of the Python-lint bug already fixed.
 code-only commit is blocked by the gate.
 **Fix:** split config into `CGW_MARKDOWNLINT_PATHS` (replaceable target) + `CGW_MARKDOWNLINT_ARGS`
 (flags/exclusions), scope via `cgw_modified_files_for_lint staged "*.md"`. Full write-up:
-**see `markdownlint-scoping.md`.** Deferred because it's behavior-changing for existing
+**see `templates/markdownlint-cli2.jsonc`** for the gitignore-skipping config. Deferred because it's behavior-changing for existing
 `CGW_MARKDOWNLINT_CMD` users and untestable here (unset in this repo).
 
-### A2 · `cgw_run_typecheck` has the same bare-call whole-repo path 🟡 (latent)
+### A2 · `cgw_run_typecheck` has the same bare-call whole-repo path 🟡 — FIXED
 
 **Where:** `_common.sh:995`, whole-repo branch at `:1014`.
 **Problem:** identical shape to the lint/markdown bug — no-args → whole-repo typecheck. **Not wired
-into the commit gate today**, so it can't misfire yet, but any future typecheck gate inherits it.
+into the commit gate when this was written.** Now: typecheck is deliberately whole-project (a type checker needs whole-program context); it is blocking in `check_lint.sh` (exit 2) and `push_validated.sh`, advisory in `hooks/pre-commit`, and honours the `{files}` placeholder (`cgw_fill_path_placeholder`).
 **Fix:** when a caller scopes it, pass files + `cgw_strip_path_arg` (the lint path already does this
 at `_common.sh:868`). Combine with the A3 placeholder fix below.
 
-### A3 · `cgw_strip_path_arg` still assumes the path is a trailing `.` 🟡
+### A3 · `cgw_strip_path_arg` still assumes the path is a trailing `.` 🟡 — FIXED
 
 **Where:** `_common.sh:836` (already hardened in `494fc0c` — this is the *residual* limitation).
 **Problem:** it now strips only an exact trailing `.`. That's safe, but any `CGW_LINT_*_ARGS` whose
@@ -242,6 +234,16 @@ tree. By design:
 - **Untracked/ignored files are absent.** A typecheck that needs generated stubs, a local config
   or other git-ignored inputs may report errors in the snapshot that the working tree doesn't have
   (or vice versa). Commit the input, or use the default worktree scope.
+  Common cases: `tsc` needs `node_modules` (absent) and clang-tidy's `-p build` needs
+  `build/compile_commands.json` (absent).
+- **Editable installs are isolated, not eliminated.** A src-layout editable install points the
+  venv at `<project>/src`, which would let an uncommitted module satisfy a snapshot import. The
+  snapshot typecheck therefore runs with a `sitecustomize` (on `PYTHONPATH`, chained to any
+  existing one) that drops every `sys.path` entry under the project root except the snapshot and
+  the venv, plus setuptools `__editable__` finders. Verified for mypy, pyright and pyrefly. It
+  works through the interpreter, so a tool that does not start Python to learn its search path, or
+  a project that deliberately keeps needed code outside git under the project root, sees it
+  removed; use the default worktree scope for those.
 - **Submodules are not populated** in the snapshot.
 - **Relative pyright `venvPath`/`venv`** settings in `pyproject.toml` resolve against the snapshot
   directory, not the project; CGW exports `VIRTUAL_ENV` and prepends the project `.venv` to `PATH`,
@@ -336,7 +338,6 @@ now write errors to stderr.
 
 Not implemented; recorded so they are not rediscovered:
 
-- `merge.conflictStyle zdiff3` offer in conflict docs (*Pro Git*, advanced merging)
 - `--force-if-includes` alongside the explicit-SHA lease (*Pro Git*, git push)
 - `rebase --update-refs` for stacked branches (*Advanced Git*)
 - `git stash branch` recipe (*Pro Git*, stashing)
@@ -348,7 +349,7 @@ Not implemented; recorded so they are not rediscovered:
 ## Non-findings (checked clean — recorded so they aren't re-audited)
 
 - **No blind conflict resolution.** No `git checkout --ours/--theirs` or `-X ours|theirs` auto-merge
-  anywhere; `merge_with_validation.sh` only uses `--conflict=` (marker style) and optional
+  is ever executed (they appear only as printed hints); `merge_with_validation.sh` only uses `--conflict=` (marker style) and optional
   `-Xignore-space-change`. Conflicts route through `cgw_resolve_safe_conflicts` (manual investigation).
 - **Force-push is guarded.** `push_validated.sh` uses `--force-with-lease` (not `--force`) and
   requires a literal-token confirmation for protected branches.

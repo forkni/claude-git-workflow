@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.11.1 (2026-10-04)
+
+> Changes since `v0.11.0`
+
+### Behaviour changes
+
+- **`check_lint.sh --ref` exits `3` when the snapshot cannot be prepared** (unresolvable `--ref`/`--base`, pushed-file discovery, temp dir, extract, cd). Previously these exited `1`, which `push_validated.sh` treated as an overridable lint failure. `3` means the checks did not run: `push_validated.sh --pushed-only` now stops with "Could not check the pushed snapshot" and never offers the "push anyway" prompt. `--worktree` or `--skip-lint` remain the explicit bypasses. Exit codes: `0` ok, `1` lint/markdown, `2` typecheck, `3` setup failure.
+
+### Bug Fixes
+
+- **Editable installs no longer leak the working tree into the snapshot typecheck.** Cause: a src-layout editable install leaves a venv `.pth` pointing at `<project>/src`, so a committed file importing an uncommitted module (a forgotten `git add new.py`) resolved to the working-tree copy and mypy, pyright and pyrefly all passed on code CI rejects. `--ref` runs now put a `sitecustomize` on `PYTHONPATH` (chained to any existing one, kept outside the snapshot) that drops `sys.path` entries under the project root, except the snapshot and the interpreter prefixes, and setuptools `__editable__` finders. See `docs/KNOWN_ISSUES.md` for the remaining limits (`tsc`, clang-tidy).
+- **`--base` resolves through `refs/remotes/<remote>/<branch>`** so a local branch or tag named like the remote branch cannot shadow it.
+- **Non-ASCII file names are kept** when discovering pushed files (`core.quotePath=false`).
+- **Markdown scope in `--ref` mode follows `CGW_MARKDOWNLINT_PATHS`** (`:(glob)` pathspecs, root-level files included) and only `.md`/`.markdown` files reach markdownlint.
+- `get_python_path` honours `CGW_VENV_ROOT`, so snapshot runs use the project's `.venv`.
+
+### Documentation
+
+- `README.md` and `docs/` realigned with the scripts and CI: `--pushed-only` gate and exit codes, `branch_cleanup.sh`/`clean_build.sh` flags, `tests/run.sh` modes, guardrail behaviour, installer names and uninstall steps, and refreshed `KNOWN_ISSUES.md`.
+
 ## v0.11.0 (2026-10-04)
 
 > Changes since `v0.10.0`

@@ -31,7 +31,7 @@ are recoverable.
 
 **What it auto-detects:**
 
-- Branch names (from `git remote HEAD`, common names: main/master, development/develop/dev)
+- Branch names (from `git remote HEAD`, common names: main/master, dev/develop/development/staging)
 - Lint tool (from `pyproject.toml`, `setup.py`, `package.json`, `go.mod`, `Cargo.toml`, `CMakeLists.txt`, etc.)
 - Virtual environment location (`.venv/`, `venv/`, `env/`, `.env/`)
 - Local-only files (exist on disk but not tracked by git)
@@ -225,9 +225,9 @@ Typecheck runs whole-project when `CGW_TYPECHECK_CMD` is set, and is **blocking 
 | `check_lint.sh --md-only` / `--modified-only` | Not run — typecheck needs whole-project context, so it never runs scoped to a diff or a markdown-only pass |
 | `commit_enhanced.sh` | Not run — see "Why typecheck isn't scoped to staged files" below |
 
-Skip it at runtime with `CGW_SKIP_TYPECHECK=1` or `--skip-typecheck` (accepted by `check_lint.sh` and `push_validated.sh`); `--skip-lint` implies it too.
+Skip it at runtime with `CGW_SKIP_TYPECHECK=1` (skips the typecheck everywhere it runs: the pre-commit advisory check, `check_lint.sh` and `push_validated.sh`) or `--skip-typecheck` (accepted by `check_lint.sh` and `push_validated.sh`); `--skip-lint` implies it too.
 
-**Upgrading:** if your project already had `CGW_TYPECHECK_CMD` configured before this change, a failing typecheck used to only warn — it now also blocks `check_lint.sh` and `push_validated.sh`. Fix the type errors, or bypass with `CGW_SKIP_TYPECHECK=1` (keeps the advisory commit-time warning, un-gates the push) or `CGW_TYPECHECK_CMD=""` (turns it off entirely). A configured-but-not-installed checker is treated as an environment gap, not a failure: `check_lint.sh` warns and skips rather than blocking the push.
+**Upgrading:** if your project already had `CGW_TYPECHECK_CMD` configured before this change, a failing typecheck used to only warn — it now also blocks `check_lint.sh` and `push_validated.sh`. Fix the type errors, or bypass with `CGW_SKIP_TYPECHECK=1` (skips the typecheck at commit and push time alike) or `CGW_TYPECHECK_CMD=""` (turns it off entirely). A configured-but-not-installed checker is treated as an environment gap, not a failure: `check_lint.sh` warns and skips rather than blocking the push.
 
 ### Why typecheck isn't scoped to staged files
 

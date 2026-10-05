@@ -6,8 +6,8 @@ Three workflows are included in `.github/workflows/`:
 
 | Workflow | Trigger | Checks |
 |----------|---------|--------|
-| `branch-protection.yml` | Push/PR to `development`, `main` | Local-only file detection, `.gitattributes` presence, ShellCheck, shfmt format (advisory), Bats unit + integration tests |
-| `docs-validation.yml` | Changes to `*.md` files | Markdown linting, broken links, spelling (all advisory) |
+| `branch-protection.yml` | Push/PR to `development`, `main` | Local-only file detection, `.gitattributes` presence, ShellCheck (`--severity=error`, over `scripts/git/` and `hooks/`), shfmt format over `scripts/` and `hooks/` (advisory), Bats unit + integration tests |
+| `docs-validation.yml` | Push to `development`/`main` or a PR that changes `*.md` files (except `CLAUDE.md`, `MEMORY.md`) | Markdown linting, broken links, spelling of `README.md`, `skill/` and `command/` (all advisory) |
 | `release.yml` | Tag push matching `v*` | Creates GitHub Release with auto-generated notes and source archives |
 
 ---
@@ -36,7 +36,7 @@ This project uses [Charlie](https://charlielabs.ai) for AI-assisted code review 
 # .charlie/config.yml
 checkCommands:
   fix: shfmt -w -i 2 -ci scripts/   # auto-format after edits
-  lint: shellcheck -x --source-path=scripts/git scripts/git/*.sh  # static analysis
+  lint: shellcheck -x --severity=error --source-path=scripts/git scripts/git/*.sh  # static analysis
 ```
 
 **Setup** (repository admin): Install the `charliecreates` GitHub App and invite `@CharlieHelps` as a repository collaborator (Triage role minimum).
@@ -66,10 +66,10 @@ scoop install shellcheck shfmt
 shellcheck -x --source-path=scripts/git scripts/git/*.sh
 
 # shfmt (format check)
-shfmt -d -i 2 -ci scripts/
+shfmt -d -i 2 -ci scripts/ hooks/
 
 # shfmt (auto-fix)
-shfmt -w -i 2 -ci scripts/
+shfmt -w -i 2 -ci scripts/ hooks/
 
 # Bats tests
 bats tests/unit/
@@ -77,16 +77,17 @@ bats tests/integration/
 bats tests/unit/ && bats tests/integration/   # full suite
 
 # Or via the parallel runner (recommended locally):
-tests/run.sh                                  # full suite, parallel
-CGW_RUN_SLOW=1 tests/run.sh                   # include slow files (see below)
+tests/run.sh                                  # fast batch, parallel (skips the slow files)
+tests/run.sh --all                            # full suite (fast + slow); what CI runs
+tests/run.sh --slow                           # slow batch only
 ```
 
 Test prerequisites: `bats-core` v1.13.0, `bats-support` v0.3.0, `bats-assert` v2.2.4. A git identity must be configured (`git config user.email` / `user.name`).
 
-`tests/run.sh`'s default full-suite run skips a curated list of slow files
-locally (currently just `tests/unit/common.bats`, ~156s serial — it disables
-within-file parallelization to avoid a `bats --jobs` index.lock race, so it's
-the parallel wall-clock floor). CI always runs the full set (`CI` is set by
-GitHub Actions); set `CGW_RUN_SLOW=1` to include them locally too. Naming a
-file or directory explicitly (e.g. `tests/run.sh tests/unit/common.bats`)
-bypasses the gate.
+The suite is 1148 Bats tests across `tests/unit/` and `tests/integration/`. `tests/run.sh`'s
+default run is the **fast batch**: it skips the six heaviest files (`CGW_SLOW_FILES` in
+`tests/run.sh`) so local runs stay quick. Use `--all` (or `CGW_RUN_SLOW=1`) for everything, and
+`--slow` for the slow batch only. CI always runs the full set (`CI` is set by GitHub Actions).
+`CGW_TEST_TIMINGS=1` prints the slowest files (to retune `CGW_SLOW_FILES`) and `CGW_TEST_JOBS=N`
+overrides the core count. Naming a file or directory explicitly (e.g.
+`tests/run.sh tests/unit/common.bats`) bypasses the gate.

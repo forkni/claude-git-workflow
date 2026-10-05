@@ -500,3 +500,29 @@ _dirty_worktree_over_clean_commit() {
   [ "${status}" -eq 0 ]
   [[ "${output}" == *"CGW_PUSH_LINT_SCOPE"* ]]
 }
+
+@test "--pushed-only: a snapshot setup failure is fatal and never offers 'push anyway'" {
+  install_mock_lint_content_aware
+  echo "ok = 1" >"${TEST_REPO_DIR}/ok.py"
+  git -C "${TEST_REPO_DIR}" add ok.py
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: ok"
+  # Make the snapshot directory uncreatable: TMPDIR points at a file.
+  : >"${TEST_TMPDIR}/not-a-dir"
+  export TMPDIR="${TEST_TMPDIR}/not-a-dir"
+  run _run_push "--dry-run --pushed-only"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"checks did not run"* ]]
+  [[ "${output}" != *"Push anyway despite lint errors"* ]]
+}
+
+@test "--pushed-only: a local branch named origin/<target> does not shadow the remote base" {
+  install_mock_lint_content_aware
+  git -C "${TEST_REPO_DIR}" push --quiet origin development
+  git -C "${TEST_REPO_DIR}" branch origin/development HEAD
+  echo "LINT-BAD" >"${TEST_REPO_DIR}/bad.py"
+  git -C "${TEST_REPO_DIR}" add bad.py
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: bad"
+  run _run_push "--dry-run --pushed-only"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Lint check failed"* ]]
+}
