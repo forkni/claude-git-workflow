@@ -242,10 +242,16 @@ tree. By design:
 - **Untracked/ignored files are absent.** A typecheck that needs generated stubs, a local config
   or other git-ignored inputs may report errors in the snapshot that the working tree doesn't have
   (or vice versa). Commit the input, or use the default worktree scope.
-  Common cases: `tsc` needs `node_modules` (absent), clang-tidy's `-p build` needs
-  `build/compile_commands.json` (absent), and a src-layout editable install resolves the project's
-  own imports through its `.pth` file back to the **working tree**, so uncommitted code can leak
-  into a typecheck that is meant to see only committed code.
+  Common cases: `tsc` needs `node_modules` (absent) and clang-tidy's `-p build` needs
+  `build/compile_commands.json` (absent).
+- **Editable installs are isolated, not eliminated.** A src-layout editable install points the
+  venv at `<project>/src`, which would let an uncommitted module satisfy a snapshot import. The
+  snapshot typecheck therefore runs with a `sitecustomize` (on `PYTHONPATH`, chained to any
+  existing one) that drops every `sys.path` entry under the project root except the snapshot and
+  the venv, plus setuptools `__editable__` finders. Verified for mypy, pyright and pyrefly. It
+  works through the interpreter, so a tool that does not start Python to learn its search path, or
+  a project that deliberately keeps needed code outside git under the project root, sees it
+  removed; use the default worktree scope for those.
 - **Submodules are not populated** in the snapshot.
 - **Relative pyright `venvPath`/`venv`** settings in `pyproject.toml` resolve against the snapshot
   directory, not the project; CGW exports `VIRTUAL_ENV` and prepends the project `.venv` to `PATH`,

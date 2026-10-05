@@ -28,15 +28,84 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/git/_common.sh
 source "${SCRIPT_DIR}/_common.sh"
 
-# Remove the --ref snapshot directory. Only ever deletes the exact directory
-# mktemp created (a cgw-snap.* name), never an arbitrary path.
+# Remove the --ref snapshot directory (and the import-isolation shim dir). Only
+# ever deletes the exact directories mktemp created (cgw-snap.* names), never
+# an arbitrary path.
 # shellcheck disable=SC2329 # invoked via trap
 _cgw_snapshot_cleanup() {
-  local d="${CGW_SNAPSHOT_DIR:-}"
+  local d
   # Windows cannot delete a directory that is the process cwd.
   cd "${PROJECT_ROOT:-/}" 2>/dev/null || cd / || true
-  [[ -n "${d}" && "${d##*/}" == cgw-snap.* && -d "${d}" ]] && rm -rf "${d}"
+  for d in "${CGW_SNAPSHOT_DIR:-}" "${CGW_SNAPSHOT_AUX_DIR:-}"; do
+    [[ -n "${d}" && "${d##*/}" == cgw-snap.* && -d "${d}" ]] && rm -rf "${d}"
+  done
   return 0
+}
+
+# Keep the snapshot typecheck from importing the working tree through the real
+# venv. An editable install leaves a .pth entry (or an __editable__ finder)
+# pointing at <project>/src, so a module missing from the snapshot would still
+# resolve to its untracked worktree copy and the gate would pass on code CI
+# will reject. Python imports a sitecustomize from PYTHONPATH before any tool
+# runs; this one chains to the next sitecustomize (e.g. a user-site hook), then
+# drops every sys.path entry under the project root except the snapshot and the
+# interpreter prefix (the venv), and the setuptools editable finders.
+# Args: $1 = shim dir (outside the snapshot, so a `.` scan never sees it).
+_cgw_isolate_worktree_imports() {
+  local shim="$1" sep=":" snap="${CGW_SNAPSHOT_DIR}" root="${PROJECT_ROOT}" shim_n
+  cat >"${shim}/sitecustomize.py" <<'PYEOF'
+import importlib.abc
+import os
+import sys
+
+
+def _chain():
+    here = os.path.normcase(os.path.dirname(os.path.abspath(__file__)))
+    for entry in list(sys.path):
+        cand = os.path.join(entry or os.getcwd(), "sitecustomize.py")
+        if os.path.normcase(os.path.dirname(os.path.abspath(cand))) == here:
+            continue
+        if os.path.isfile(cand):
+            with open(cand, "rb") as fh:
+                code = compile(fh.read(), cand, "exec")
+            exec(code, {"__name__": "sitecustomize", "__file__": cand})
+            return
+
+
+def _under(path, base):
+    path = os.path.normcase(os.path.abspath(path))
+    return path == base or path.startswith(base + os.sep)
+
+
+try:
+    _chain()
+except Exception:
+    pass
+
+_root = os.environ.get("CGW_ISOLATE_ROOT")
+if _root:
+    _root = os.path.normcase(os.path.abspath(_root))
+    _keep = [os.path.normcase(os.path.abspath(os.environ.get("CGW_ISOLATE_KEEP", os.getcwd())))]
+    _keep.append(os.path.normcase(os.path.abspath(sys.prefix)))
+    sys.path[:] = [
+        p for p in sys.path
+        if p == "" or any(_under(p, k) for k in _keep) or not _under(p, _root)
+    ]
+    sys.meta_path[:] = [
+        f for f in sys.meta_path
+        if not getattr(type(f), "__module__", "").startswith("__editable__")
+    ]
+PYEOF
+  shim_n="${shim}"
+  if command -v cygpath >/dev/null 2>&1; then
+    # Native Windows python: ';' separator, drive-letter paths MSYS leaves alone.
+    sep=";"
+    shim_n="$(cygpath -m "${shim}")"
+    snap="$(cygpath -m "${snap}")"
+    root="$(cygpath -m "${root}")"
+  fi
+  export CGW_ISOLATE_ROOT="${root}" CGW_ISOLATE_KEEP="${snap}"
+  export PYTHONPATH="${shim_n}${PYTHONPATH:+${sep}${PYTHONPATH}}"
 }
 
 main() {
@@ -235,6 +304,12 @@ main() {
       export VIRTUAL_ENV="${PROJECT_ROOT}/.venv"
       export PATH="${_vbin}:${PATH}"
     fi
+
+    CGW_SNAPSHOT_AUX_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cgw-snap.XXXXXX")" || {
+      err "Cannot create snapshot directory"
+      exit 3
+    }
+    _cgw_isolate_worktree_imports "${CGW_SNAPSHOT_AUX_DIR}"
 
     cd "${CGW_SNAPSHOT_DIR}" || {
       err "Cannot enter snapshot directory"

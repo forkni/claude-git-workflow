@@ -861,6 +861,147 @@ _run_check_lint_tc() {
   ! grep -q "cwd=${TEST_REPO_DIR}\$" "${TEST_TMPDIR}/venv_tc.log"
 }
 
+# ── --ref: editable-install isolation ────────────────────────────────────────
+# A src-layout editable install leaves a venv .pth pointing at <project>/src.
+# Without isolation the snapshot typecheck resolves a module that was never
+# committed through that .pth to its untracked working-tree copy and passes.
+
+# _editable_fixture <tool>: venv + editable .pth, a committed a.py importing
+# mypkg.new, and new.py left UNTRACKED. Sets EDL_PY (venv python) and
+# EDL_SITE (venv purelib); skips when the tool or a python is unavailable.
+_editable_fixture() {
+  local tool="$1" py venv_py site
+  py="$(command -v python || command -v python3)" || skip "no python"
+  case "${tool}" in
+    mypy) "${py}" -m mypy --version >/dev/null 2>&1 || skip "mypy not installed" ;;
+    *) command -v "${tool}" >/dev/null 2>&1 || skip "${tool} not installed" ;;
+  esac
+  "${py}" -m venv --system-site-packages "${TEST_REPO_DIR}/.venv" >/dev/null 2>&1 || skip "cannot create a venv"
+  venv_py="${TEST_REPO_DIR}/.venv/Scripts/python.exe"
+  [[ -x "${venv_py}" ]] || venv_py="${TEST_REPO_DIR}/.venv/bin/python"
+  site="$("${venv_py}" -c 'import sysconfig;print(sysconfig.get_path("purelib"))')"
+  case "${site//\\//}" in
+    */repo/.venv/*) ;;
+    *) skip "venv purelib is outside the fixture: ${site}" ;;
+  esac
+  command -v cygpath >/dev/null 2>&1 && site="$(cygpath -u "${site}")"
+  EDL_PY="${venv_py}"
+  EDL_SITE="${site}"
+  local src="${TEST_REPO_DIR}/src"
+  command -v cygpath >/dev/null 2>&1 && src="$(cygpath -m "${src}")"
+  printf '%s\n' "${src}" > "${EDL_SITE}/_editable_mypkg.pth"
+  # mypy's own dependencies, as the base interpreter resolves them
+  "${py}" -c 'import importlib.util as u,os
+seen=[]
+for m in ("mypy","mypy_extensions","typing_extensions","pathspec"):
+    sp=u.find_spec(m)
+    if sp is None: continue
+    d=os.path.dirname(os.path.dirname(sp.origin)) if sp.submodule_search_locations else os.path.dirname(sp.origin)
+    if d not in seen: seen.append(d); print(d)' > "${EDL_SITE}/_deps.pth" 2>/dev/null || true
+  mkdir -p "${TEST_REPO_DIR}/src/mypkg"
+  _commit_file pyproject.toml '[tool.mypy]'
+  _commit_file src/mypkg/__init__.py ""
+  _commit_file src/mypkg/py.typed ""
+  _commit_file src/mypkg/a.py "from mypkg.new import f
+x: int = f()"
+  printf 'def f() -> int:\n    return 1\n' > "${TEST_REPO_DIR}/src/mypkg/new.py"
+}
+
+# _run_check_lint_real <tool>: real typechecker, snapshot of HEAD
+_run_check_lint_real() {
+  local tool="$1" cmd="$1" args=""
+  case "${tool}" in
+    mypy) cmd=python args="-m mypy ." ;;
+    pyrefly) args="check" ;;
+  esac
+  mkdir -p "${TEST_TMPDIR}/snap-tmp"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export TMPDIR='${TEST_TMPDIR}/snap-tmp'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD='${cmd}'
+    export CGW_TYPECHECK_CHECK_ARGS='${args}'
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --ref HEAD
+  "
+}
+
+@test "--ref: editable-install .pth does not leak an uncommitted module (mypy)" {
+  _editable_fixture mypy
+  _run_check_lint_real mypy
+  [ "${status}" -eq 2 ]
+  [[ "${output}" == *"mypkg.new"* ]]
+}
+
+@test "--ref: editable-install .pth does not leak an uncommitted module (pyright)" {
+  _editable_fixture pyright
+  _run_check_lint_real pyright
+  [ "${status}" -eq 2 ]
+  [[ "${output}" == *"mypkg.new"* ]]
+}
+
+@test "--ref: editable-install .pth does not leak an uncommitted module (pyrefly)" {
+  _editable_fixture pyrefly
+  _run_check_lint_real pyrefly
+  [ "${status}" -eq 2 ]
+  [[ "${output}" == *"mypkg.new"* ]]
+}
+
+@test "--ref: committing the module makes the editable-install snapshot pass" {
+  _editable_fixture pyrefly
+  git -C "${TEST_REPO_DIR}" add src/mypkg/new.py
+  git -C "${TEST_REPO_DIR}" -c core.hooksPath=/dev/null commit --quiet -m "chore: add new.py"
+  _run_check_lint_real pyrefly
+  [ "${status}" -eq 0 ]
+}
+
+@test "--ref: a package installed in the venv still resolves (isolation causes no false red)" {
+  _editable_fixture pyrefly
+  mkdir -p "${EDL_SITE}/thirdparty_pkg"
+  printf 'def g() -> int:\n    return 2\n' > "${EDL_SITE}/thirdparty_pkg/__init__.py"
+  : > "${EDL_SITE}/thirdparty_pkg/py.typed"
+  git -C "${TEST_REPO_DIR}" add src/mypkg/new.py
+  _commit_file src/mypkg/b.py "from thirdparty_pkg import g
+y: int = g()"
+  _run_check_lint_real pyrefly
+  [ "${status}" -eq 0 ]
+}
+
+@test "--ref: isolation chains to an existing sitecustomize on PYTHONPATH" {
+  local py hook="${TEST_TMPDIR}/hook" marker="${TEST_TMPDIR}/hook-ran"
+  py="$(command -v python || command -v python3)" || skip "no python"
+  mkdir -p "${hook}" "${TEST_TMPDIR}/bin" "${TEST_TMPDIR}/snap-tmp"
+  printf 'import os\nopen(os.environ["HOOK_MARKER"], "w").close()\n' > "${hook}/sitecustomize.py"
+  printf '#!/usr/bin/env bash\nexec "%s" -c "pass"\n' "${py}" > "${TEST_TMPDIR}/bin/chain-tc"
+  chmod +x "${TEST_TMPDIR}/bin/chain-tc"
+  _commit_file ok.py "x = 1"
+  local hook_n="${hook}" marker_n="${marker}"
+  if command -v cygpath >/dev/null 2>&1; then
+    hook_n="$(cygpath -m "${hook}")"
+    marker_n="$(cygpath -m "${marker}")"
+  fi
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export TMPDIR='${TEST_TMPDIR}/snap-tmp'
+    export PATH='${TEST_TMPDIR}/bin':\"\$PATH\"
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export PYTHONPATH='${hook_n}'
+    export HOOK_MARKER='${marker_n}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=chain-tc
+    export CGW_TYPECHECK_CHECK_ARGS=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --ref HEAD
+  "
+  [ "${status}" -eq 0 ]
+  [ -f "${marker}" ]
+}
+
 @test "--ref and --modified-only together is an error" {
   _commit_file ok.py "x = 1"
   _run_check_lint_tc --ref HEAD --modified-only
