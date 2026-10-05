@@ -49,7 +49,7 @@ _cgw_snapshot_cleanup() {
 # will reject. Python imports a sitecustomize from PYTHONPATH before any tool
 # runs; this one chains to the next sitecustomize (e.g. a user-site hook), then
 # drops every sys.path entry under the project root except the snapshot and the
-# interpreter prefix (the venv), and the setuptools editable finders.
+# interpreter prefixes (the venv and its base install), and the setuptools editable finders.
 # Args: $1 = shim dir (outside the snapshot, so a `.` scan never sees it).
 _cgw_isolate_worktree_imports() {
   local shim="$1" sep=":" snap="${CGW_SNAPSHOT_DIR}" root="${PROJECT_ROOT}" shim_n
@@ -86,7 +86,8 @@ _root = os.environ.get("CGW_ISOLATE_ROOT")
 if _root:
     _root = os.path.normcase(os.path.abspath(_root))
     _keep = [os.path.normcase(os.path.abspath(os.environ.get("CGW_ISOLATE_KEEP", os.getcwd())))]
-    _keep.append(os.path.normcase(os.path.abspath(sys.prefix)))
+    for _p in (sys.prefix, sys.exec_prefix, sys.base_prefix, sys.base_exec_prefix):
+        _keep.append(os.path.normcase(os.path.abspath(_p)))
     sys.path[:] = [
         p for p in sys.path
         if p == "" or any(_under(p, k) for k in _keep) or not _under(p, _root)
@@ -271,8 +272,12 @@ main() {
       while IFS= read -r _lf; do
         [[ -n "${_lf}" ]] && lint_files+=("${_lf}")
       done <<<"${_resolved_code}"
+      # A directory or "**/*" entry in CGW_MARKDOWNLINT_PATHS matches every changed
+      # file under it as a pathspec; only markdown may reach markdownlint.
       while IFS= read -r _lf; do
-        [[ -n "${_lf}" ]] && md_files+=("${_lf}")
+        case "${_lf}" in
+          *.md | *.markdown) md_files+=("${_lf}") ;;
+        esac
       done <<<"${_resolved_md}"
     fi
 

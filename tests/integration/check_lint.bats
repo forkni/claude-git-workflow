@@ -1162,6 +1162,27 @@ EOF
   ! grep -q "CHANGELOG.md" "${MOCK_BIN_DIR}/mdlint.log"
 }
 
+@test "--ref --base: a directory entry in CGW_MARKDOWNLINT_PATHS never sends non-markdown files to markdownlint" {
+  install_mock_markdownlint_content_aware
+  mkdir -p "${TEST_REPO_DIR}/docs"
+  _commit_file docs/guide.md "# guide"
+  _commit_file docs/tool.py "x = 1"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=markdownlint-cli2
+    export CGW_MARKDOWNLINT_PATHS='docs'
+    export CGW_TYPECHECK_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --ref HEAD --base HEAD~2
+  "
+  [ "${status}" -eq 0 ]
+  grep -q "guide.md" "${MOCK_BIN_DIR}/mdlint.log"
+  ! grep -q "tool.py" "${MOCK_BIN_DIR}/mdlint.log"
+}
+
 @test "--ref --base: default markdown scope still includes root-level .md files" {
   install_mock_markdownlint_content_aware
   _commit_file README.md "# readme"
