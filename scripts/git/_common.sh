@@ -112,32 +112,18 @@ get_python_path() {
   # that directory instead of the cwd, with an absolute PYTHON_BIN. A snapshot
   # checkout has no .venv of its own (it is untracked), and linking the real
   # one in would risk a recursive delete following the link at cleanup.
-  if [[ -n "${CGW_VENV_ROOT:-}" ]]; then
-    if [[ -d "${CGW_VENV_ROOT}/.venv/Scripts" ]]; then
-      # shellcheck disable=SC2034
-      PYTHON_BIN="${CGW_VENV_ROOT}/.venv/Scripts"
-      # shellcheck disable=SC2034
-      PYTHON_EXT=".exe"
-      return 0
-    elif [[ -d "${CGW_VENV_ROOT}/.venv/bin" ]]; then
-      # shellcheck disable=SC2034
-      PYTHON_BIN="${CGW_VENV_ROOT}/.venv/bin"
-      # shellcheck disable=SC2034
-      PYTHON_EXT=""
-      return 0
-    fi
-  fi
+  local root="${CGW_VENV_ROOT:+${CGW_VENV_ROOT}/}"
 
-  if [[ -d ".venv/Scripts" ]]; then
+  if [[ -d "${root}.venv/Scripts" ]]; then
     # Windows (Git Bash, MSYS)
     # shellcheck disable=SC2034
-    PYTHON_BIN=".venv/Scripts"
+    PYTHON_BIN="${root}.venv/Scripts"
     # shellcheck disable=SC2034
     PYTHON_EXT=".exe"
-  elif [[ -d ".venv/bin" ]]; then
+  elif [[ -d "${root}.venv/bin" ]]; then
     # Linux, macOS
     # shellcheck disable=SC2034
-    PYTHON_BIN=".venv/bin"
+    PYTHON_BIN="${root}.venv/bin"
     # shellcheck disable=SC2034
     PYTHON_EXT=""
   else
@@ -1365,12 +1351,12 @@ cgw_pushed_files_for_lint() {
   [[ -z "${rev}" ]] && return 1
   local files="" have=0 diffed=0
   if [[ -n "${base}" ]] && git -C "${PROJECT_ROOT:-.}" merge-base "${base}" "${rev}" >/dev/null 2>&1; then
-    files="$(git -C "${PROJECT_ROOT:-.}" diff --name-only --diff-filter=ACMR "${base}...${rev}" -- "${exts[@]}")" || return 1
+    files="$(git -C "${PROJECT_ROOT:-.}" -c core.quotePath=false diff --name-only --diff-filter=ACMR "${base}...${rev}" -- "${exts[@]}")" || return 1
     have=1
     diffed=1
   fi
   if [[ ${have} -eq 0 ]]; then
-    files="$(git -C "${PROJECT_ROOT:-.}" log -m --format= --name-only --diff-filter=ACMR "${rev}" --not --remotes -- "${exts[@]}")" || return 1
+    files="$(git -C "${PROJECT_ROOT:-.}" -c core.quotePath=false log -m --format= --name-only --diff-filter=ACMR "${rev}" --not --remotes -- "${exts[@]}")" || return 1
   fi
   local f
   while IFS= read -r f; do

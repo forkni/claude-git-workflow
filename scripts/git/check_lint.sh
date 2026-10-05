@@ -13,6 +13,8 @@
 #   1 on lint/markdown errors (interactive callers may still offer an override)
 #   2 on typecheck errors specifically (fatal -- push_validated.sh never offers
 #     an interactive override for this code, only --skip-typecheck/CGW_SKIP_TYPECHECK=1)
+#   3 on --ref snapshot setup failure (unresolvable ref, extraction error): the
+#     checks never ran, so this is fatal and never overridable as a "lint failure"
 #
 # Snapshot mode (--ref <rev>): check the COMMITTED tree of <rev>, extracted into a
 # throwaway directory, instead of the working tree -- uncommitted and untracked
@@ -67,6 +69,9 @@ main() {
         echo "  --skip-typecheck  Skip typecheck only (CGW_TYPECHECK_CMD step)"
         echo "  --md-only         Only check markdown (skip code lint + format + typecheck)"
         echo "  -h, --help        Show this help"
+        echo ""
+        echo "Exit codes: 0 ok, 1 lint/markdown errors, 2 typecheck errors,"
+        echo "            3 --ref snapshot could not be prepared (checks did not run)"
         echo ""
         echo "Environment:"
         echo "  CGW_NO_VENV=1          Same as --no-venv"
@@ -164,22 +169,35 @@ main() {
   if [[ -n "${ref}" ]]; then
     if ! ref_sha=$(git rev-parse --verify --quiet "${ref}^{commit}"); then
       err "Cannot resolve --ref '${ref}' to a commit"
-      exit 1
+      exit 3
     fi
     if [[ -n "${base}" ]] && ! git rev-parse --verify --quiet "${base}^{commit}" >/dev/null; then
       err "Cannot resolve --base '${base}' to a commit"
-      exit 1
+      exit 3
     fi
     if [[ -n "${base}" || ${unpushed} -eq 1 ]]; then
       scoped=1
       local _resolved_code _resolved_md _lf
       if ! _resolved_code="$(cgw_pushed_files_for_lint "${ref_sha}" "${base}")"; then
         err "Failed to resolve pushed code files for ${ref}"
-        exit 1
+        exit 3
       fi
-      if ! _resolved_md="$(cgw_pushed_files_for_lint "${ref_sha}" "${base}" "*.md")"; then
+      # Same scope as the worktree markdown step: CGW_MARKDOWNLINT_PATHS, as git
+      # glob pathspecs (plain "**/*.md" would miss root-level files; "!x"/"#x"
+      # markdownlint-cli2 negations become excludes).
+      # Split via read (not an unquoted expansion) so bash never pathname-expands "**".
+      local _md_globs="" _mt
+      local -a _md_toks=()
+      read -r -a _md_toks <<<"${CGW_MARKDOWNLINT_PATHS:-**/*.md}"
+      for _mt in "${_md_toks[@]}"; do
+        case "${_mt}" in
+          '!'* | '#'*) _md_globs+=" :(glob,exclude)${_mt:1}" ;;
+          *) _md_globs+=" :(glob)${_mt}" ;;
+        esac
+      done
+      if ! _resolved_md="$(cgw_pushed_files_for_lint "${ref_sha}" "${base}" "${_md_globs# }")"; then
         err "Failed to resolve pushed markdown files for ${ref}"
-        exit 1
+        exit 3
       fi
       while IFS= read -r _lf; do
         [[ -n "${_lf}" ]] && lint_files+=("${_lf}")
@@ -191,35 +209,36 @@ main() {
 
     CGW_SNAPSHOT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cgw-snap.XXXXXX")" || {
       err "Cannot create snapshot directory"
-      exit 1
+      exit 3
     }
     trap _cgw_snapshot_cleanup EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
     if ! cgw_snapshot_tree "${ref_sha}" "${CGW_SNAPSHOT_DIR}"; then
       err "Cannot extract a snapshot of ${ref} (${ref_sha:0:12})"
-      exit 1
+      exit 3
     fi
 
     # The snapshot has no .venv (untracked); point the tools at the real one.
     # shellcheck disable=SC2034  # read by get_python_path
     CGW_VENV_ROOT="${PROJECT_ROOT}"
     export CGW_VENV_ROOT
-    if [[ "${CGW_NO_VENV:-0}" != "1" ]]; then
-      local _vbin=""
-      [[ -d "${PROJECT_ROOT}/.venv/Scripts" ]] && _vbin="${PROJECT_ROOT}/.venv/Scripts"
-      [[ -z "${_vbin}" && -d "${PROJECT_ROOT}/.venv/bin" ]] && _vbin="${PROJECT_ROOT}/.venv/bin"
-      if [[ -n "${_vbin}" ]]; then
-        # A drive-letter path would be split on ':' inside PATH under MSYS.
-        command -v cygpath >/dev/null 2>&1 && _vbin="$(cygpath -u "${_vbin}")"
-        export VIRTUAL_ENV="${PROJECT_ROOT}/.venv"
-        export PATH="${_vbin}:${PATH}"
-      fi
+    # Put the real venv's bin dir on PATH too, so tools the pipeline invokes by
+    # bare name (mypy, pyright, ...) resolve from it while cwd is the snapshot.
+    local _vbin=""
+    if get_python_path 2>/dev/null; then
+      _vbin="${PYTHON_BIN:-}"
+    fi
+    if [[ -n "${_vbin}" ]]; then
+      # A drive-letter path would be split on ':' inside PATH under MSYS.
+      command -v cygpath >/dev/null 2>&1 && _vbin="$(cygpath -u "${_vbin}")"
+      export VIRTUAL_ENV="${PROJECT_ROOT}/.venv"
+      export PATH="${_vbin}:${PATH}"
     fi
 
     cd "${CGW_SNAPSHOT_DIR}" || {
       err "Cannot enter snapshot directory"
-      exit 1
+      exit 3
     }
   fi
 

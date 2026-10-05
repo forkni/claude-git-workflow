@@ -242,6 +242,10 @@ tree. By design:
 - **Untracked/ignored files are absent.** A typecheck that needs generated stubs, a local config
   or other git-ignored inputs may report errors in the snapshot that the working tree doesn't have
   (or vice versa). Commit the input, or use the default worktree scope.
+  Common cases: `tsc` needs `node_modules` (absent), clang-tidy's `-p build` needs
+  `build/compile_commands.json` (absent), and a src-layout editable install resolves the project's
+  own imports through its `.pth` file back to the **working tree**, so uncommitted code can leak
+  into a typecheck that is meant to see only committed code.
 - **Submodules are not populated** in the snapshot.
 - **Relative pyright `venvPath`/`venv`** settings in `pyproject.toml` resolve against the snapshot
   directory, not the project; CGW exports `VIRTUAL_ENV` and prepends the project `.venv` to `PATH`,

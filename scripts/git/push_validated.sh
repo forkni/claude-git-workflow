@@ -122,11 +122,9 @@ main() {
   [[ "${CGW_NO_VENV:-0}" == "1" ]] && no_venv=1
 
   # CLI flag wins; otherwise CGW_PUSH_LINT_SCOPE; otherwise the working tree.
+  # An invalid CGW_PUSH_LINT_SCOPE is already reset to 'worktree' (with a warning)
+  # by the _config.sh registry, and the CLI flags only set valid values.
   [[ -z "${lint_scope}" ]] && lint_scope="${CGW_PUSH_LINT_SCOPE:-worktree}"
-  if [[ "${lint_scope}" != "worktree" && "${lint_scope}" != "pushed" ]]; then
-    echo "[ERROR] CGW_PUSH_LINT_SCOPE must be 'worktree' or 'pushed' (got '${lint_scope}')" >&2
-    exit 1
-  fi
 
   if [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]]; then
     export GIT_TERMINAL_PROMPT="${GIT_TERMINAL_PROMPT:-0}"
@@ -293,7 +291,8 @@ main() {
       # refs/heads/ so a same-named tag cannot shadow the branch being pushed
       lint_args+=("--ref" "refs/heads/${target_branch}")
       if [[ ${remote_branch_exists} -eq 1 && ${state_known} -eq 1 ]]; then
-        lint_args+=("--base" "${CGW_REMOTE}/${target_branch}")
+        # refs/remotes/ so a same-named local branch or tag cannot shadow it
+        lint_args+=("--base" "refs/remotes/${CGW_REMOTE}/${target_branch}")
       else
         lint_args+=("--unpushed")
       fi
@@ -314,6 +313,14 @@ main() {
       echo "  Type errors must be fixed by hand -- see log for details" | tee -a "$logfile"
       _hint_pushed_only "${lint_scope}"
       echo "  Bypass: --skip-typecheck (types only) or --skip-lint (all checks)" | tee -a "$logfile"
+      exit 1
+    elif [[ ${lint_check_status} -eq 3 ]]; then
+      # The pushed-snapshot could not be prepared, so NO check ran (including
+      # the blocking typecheck). Not a lint verdict -- never offer "push anyway".
+      echo "[!] Could not check the pushed snapshot (checks did not run)" | tee -a "$logfile"
+      log_section_end "PRE-PUSH LINT CHECK" "$logfile" "1"
+      echo "  See log for details: ${logfile}" | tee -a "$logfile"
+      echo "  Bypass: --worktree (check the working tree) or --skip-lint (all checks)" | tee -a "$logfile"
       exit 1
     else
       echo "[!] Lint check failed" | tee -a "$logfile"

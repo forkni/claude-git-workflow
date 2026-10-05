@@ -881,9 +881,9 @@ _run_check_lint_tc() {
   [[ "${output}" == *"require --ref"* ]]
 }
 
-@test "--ref with an unresolvable revision exits 1 with a clear message" {
+@test "--ref with an unresolvable revision exits 3 (setup failure) with a clear message" {
   _run_check_lint_tc --ref no-such-branch
-  [ "${status}" -eq 1 ]
+  [ "${status}" -eq 3 ]
   [[ "${output}" == *"no-such-branch"* ]]
 }
 
@@ -961,6 +961,80 @@ EOF
     bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --ref HEAD --unpushed
   "
   rm -rf "${bin_dir}"
-  [ "${status}" -eq 1 ]
+  [ "${status}" -eq 3 ]
   [[ "${output}" == *"Failed to resolve pushed code files"* ]]
+}
+
+@test "--ref --base: non-ASCII pushed file names reach lint unquoted" {
+  install_mock_lint
+  _commit_file "données.py" "a = 1"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --ref HEAD --base HEAD~1
+  "
+  [ "${status}" -eq 0 ]
+  grep -q "données.py" "${MOCK_BIN_DIR}/ruff.log"
+  ! grep -q '\303' "${MOCK_BIN_DIR}/ruff.log"
+}
+
+@test "--ref --unpushed: non-ASCII pushed file names are linted, not dropped" {
+  install_mock_lint
+  _commit_file "données.py" "a = 1"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --ref HEAD --unpushed
+  "
+  [ "${status}" -eq 0 ]
+  grep -q "données.py" "${MOCK_BIN_DIR}/ruff.log"
+}
+
+@test "--ref --base: markdown scope follows CGW_MARKDOWNLINT_PATHS (root files excluded when not listed)" {
+  install_mock_markdownlint_content_aware
+  mkdir -p "${TEST_REPO_DIR}/docs"
+  _commit_file CHANGELOG.md "# changelog MDLINT-BAD"
+  _commit_file docs/guide.md "# guide"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=markdownlint-cli2
+    export CGW_MARKDOWNLINT_PATHS='docs/**/*.md'
+    export CGW_TYPECHECK_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --ref HEAD --base HEAD~2
+  "
+  [ "${status}" -eq 0 ]
+  grep -q "guide.md" "${MOCK_BIN_DIR}/mdlint.log"
+  ! grep -q "CHANGELOG.md" "${MOCK_BIN_DIR}/mdlint.log"
+}
+
+@test "--ref --base: default markdown scope still includes root-level .md files" {
+  install_mock_markdownlint_content_aware
+  _commit_file README.md "# readme"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=markdownlint-cli2
+    unset CGW_MARKDOWNLINT_PATHS
+    export CGW_TYPECHECK_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' --ref HEAD --base HEAD~1
+  "
+  [ "${status}" -eq 0 ]
+  grep -q "README.md" "${MOCK_BIN_DIR}/mdlint.log"
 }
