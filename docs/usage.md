@@ -151,7 +151,18 @@ never deleted unless you pass `--delete-branch`. Undo a merge with
 ./scripts/git/push_validated.sh --dry-run     # preview
 ./scripts/git/push_validated.sh --no-venv     # use system lint tool (no .venv)
 ./scripts/git/push_validated.sh --branch hotfix/1.2  # push a different branch
+./scripts/git/push_validated.sh --pushed-only # gate the committed branch, not the working tree
+./scripts/git/push_validated.sh --worktree    # gate the working tree (default)
 ```
+
+**Pushed-only gate.** By default the pre-push lint/typecheck runs against your working tree, so
+uncommitted edits can make a push pass or fail. With `--pushed-only` (or
+`CGW_PUSH_LINT_SCOPE=pushed`) the gate extracts the *committed* branch into a throwaway directory:
+typecheck covers the whole snapshot, lint/format/markdown only the files the push publishes. It
+calls `check_lint.sh --ref <rev> [--base <rev> | --unpushed]`, which you can also run directly.
+`check_lint.sh` exits `0` (ok), `1` (lint/markdown), `2` (typecheck; never overridable) or `3`
+(the snapshot could not be set up, so no checks ran; fatal). Known gaps are listed in
+[KNOWN_ISSUES](KNOWN_ISSUES.md).
 
 **Post-Push CI Verification Gate:**
 
@@ -228,7 +239,7 @@ Enable signing globally in `.cgw.conf`: `CGW_SIGN_TAGS=1`. Requires a GPG or SSH
 ```bash
 ./scripts/git/clean_build.sh                  # dry-run (safe preview)
 ./scripts/git/clean_build.sh --execute        # actually delete
-./scripts/git/clean_build.sh --td --execute   # TouchDesigner artifacts only
+./scripts/git/clean_build.sh --td --execute   # TouchDesigner artifacts (plus common junk and any auto-detected categories)
 ```
 
 ### Repository health check
@@ -248,15 +259,16 @@ Enable signing globally in `.cgw.conf`: `CGW_SIGN_TAGS=1`. Requires a GPG or SSH
 ./scripts/git/undo_last.sh amend-message "fix: correct msg"  # rewrite last commit message
 ```
 
-Creates a backup tag before any destructive operation.
+`undo_last.sh commit` creates a `pre-undo-commit-<timestamp>-<pid>` backup tag first; `unstage`, `discard` and `amend-message` do not.
 
 ### Branch cleanup
 
 ```bash
 ./scripts/git/branch_cleanup.sh                              # dry-run preview (safe default)
-./scripts/git/branch_cleanup.sh --execute                    # delete merged branches + prune remote refs
+./scripts/git/branch_cleanup.sh --execute                    # delete merged local branches
+./scripts/git/branch_cleanup.sh --execute --remote           # also prune stale remote-tracking refs
 ./scripts/git/branch_cleanup.sh --tags --execute             # also remove old backup tags
-./scripts/git/branch_cleanup.sh --older-than 30 --execute   # only branches older than 30 days
+./scripts/git/branch_cleanup.sh --tags --older-than 30 --execute   # only backup tags older than 30 days
 ```
 
 ### Safe rebase
@@ -359,7 +371,7 @@ Earlier CGW versions linked `scripts/git` and `.githooks` with a symlink / NTFS 
 follows it and deletes the **main** worktree's gitignored tooling. Shims have no such link, but
 still remove worktrees with `worktree_manage.sh remove --execute` — it also clears any legacy
 link first, and the agent guardrail blocks raw `git worktree remove`. To recover an emptied
-main checkout, re-run `install.cmd` / `cgw-batch-install.cmd` from the CGW source repo (they
+main checkout, re-run `cgw-install.cmd` / `cgw-batch-install.cmd` from the CGW source repo (they
 leave `.cgw.conf` alone).
 
 ### Diff your branch against the default branch

@@ -144,13 +144,13 @@ CGW provides 30 user-facing scripts and 2 internal core modules in `scripts/git/
 | `pr_checkout.sh` | Guarded, logged wrapper around `gh pr checkout <N>` for reviewing PRs locally (`--branch`, `--force`, `--detach`, `--dry-run`) |
 | `install_hooks.sh` | Install git hooks (`pre-commit`, `pre-push`, `pre-rebase`) into `.githooks/` and `.git/hooks/` |
 | `setup_attributes.sh` | Generate `.gitattributes` for binary, text, and asset handling (Python, TouchDesigner, GLSL, LF line endings) |
-| `clean_build.sh` | Safe cleanup of build artifacts with dry-run default (`--dry-run`, `--force`) |
+| `clean_build.sh` | Safe cleanup of build artifacts; previews by default (`--dry-run`), deletes only with `--execute` |
 | `create_release.sh` | Create annotated version tags to trigger GitHub Release workflows (`--sign` for GPG/SSH tags, `--allow-non-semver` for archive tags) |
 | `stash_work.sh` | Safe stash wrapper with untracked file support, named stashes, non-interactive drop/clear, and logging |
 | `repo_health.sh` | Repository health inspection: integrity verification (`git fsck`), repository size report, large file discovery, git gc |
 | `bisect_helper.sh` | Guided git bisect with backup tag, automated good-ref detection, and test script runner |
 | `rebase_safe.sh` | Safe rebase: automatic backup tag, published-commit guards, abort/continue/skip commands, autostash |
-| `branch_cleanup.sh` | Prune merged branches, stale remote-tracking refs, and obsolete backup tags (`--dry-run`, `--force`) |
+| `branch_cleanup.sh` | Prune merged branches, stale remote-tracking refs, and obsolete backup tags; previews by default, deletes only with `--execute` (`--remote`, `--tags`, `--older-than <N>`) |
 | `changelog_generate.sh` | Generate categorized Markdown/text changelog from conventional commits (`--version`, `--prepend` for cumulative `CHANGELOG.md`) |
 | `md_toc.sh` | Offline Markdown table-of-contents generator/inserter with GitHub-compatible anchor slugs (`--insert`, `--check`, `--all`) |
 | `undo_last.sh` | Undo last commit (keeps changes staged), unstage files, discard changes, or amend commit message |
@@ -185,6 +185,7 @@ Priority 3: Built-in defaults                ← Safe defaults; works without an
 | `CGW_LINT_CMD` | `ruff` | Primary lint tool (`""` to disable) |
 | `CGW_FORMAT_CMD` | `ruff` | Code formatter (`""` to disable) |
 | `CGW_TYPECHECK_CMD` | `""` | Typecheck tool (`pyrefly`, `pyright`, `mypy`, `tsc`). Advisory at commit time, **blocking** at push |
+| `CGW_PUSH_LINT_SCOPE` | `worktree` | What the push gate checks: `worktree` (working tree) or `pushed` (the committed snapshot of the pushed branch, so unrelated uncommitted work can't block the push; same as `push_validated.sh --pushed-only`) |
 | `CGW_MARKDOWNLINT_CMD` | *(auto-detected)* | Markdown linter (`markdownlint-cli2` → `markdownlint` → `npx` fallback → disabled) |
 | `CGW_ALLOW_STAGED_DIVERGENCE` | `0` | `0` = fail commit closed if staged blob differs from validated working tree; `1` = allow staged-only divergence |
 | `CGW_COMMIT_SUBJECT_SOFT_LEN` | `50` | Soft subject line length limit (displays advisory guidance if exceeded) |
@@ -235,18 +236,18 @@ Contributions, bug reports, and suggestions are welcome!
 # Run unit and integration tests in parallel
 tests/run.sh
 
-# Run including slower test suites
-CGW_RUN_SLOW=1 tests/run.sh
+# Run everything, including the slowest files (what CI runs)
+tests/run.sh --all
 ```
 
 - Run static analysis and formatting checks:
 
 ```bash
 # ShellCheck static analysis
-shellcheck -x --source-path=scripts/git scripts/git/*.sh
+shellcheck -x --severity=error --source-path=scripts/git scripts/git/*.sh
 
 # shfmt format check
-shfmt -d -i 2 -ci scripts/
+shfmt -d -i 2 -ci scripts/ hooks/
 ```
 
 See [CONTRIBUTORS.md](CONTRIBUTORS.md) for contributor guidelines and project credits.

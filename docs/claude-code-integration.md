@@ -7,7 +7,7 @@
 These integrations provide two defensive layers:
 
 1. **Skills & Slash Command**: Teaches the agent to use `scripts/git/*.sh` wrapper scripts instead of raw `git` commands, ensuring lint checks, local-file protection, backup tags, and CI verification are never bypassed. Includes the interactive `/auto-git-workflow-cmd` menu.
-2. **PreToolUse Guardrails**: Hard enforcement at the harness layer. Intercepts tool calls before execution and blocks dangerous raw git commands (e.g., bare `git commit`, `git push`, `git merge`, `git reset --hard`, `git checkout -b`), printing an explanatory message that directs the agent to the corresponding CGW wrapper script.
+2. **PreToolUse Guardrails**: Hard enforcement at the harness layer. Intercepts tool calls before execution and blocks dangerous raw git commands (e.g., bare `git commit`, `--no-verify`, force-push, `git reset --hard`, `git branch -D`, `git checkout .`, raw `git worktree remove`), printing an explanatory message that directs the agent to the corresponding CGW wrapper script.
 
 ---
 
@@ -19,7 +19,7 @@ These integrations provide two defensive layers:
 | **Skill Location (Global)** | `~/.claude/skills/auto-git-workflow/` | `~/.gemini/config/skills/auto-git-workflow/` |
 | **Command Location (Local)** | `.claude/commands/auto-git-workflow-cmd.md` | `.agents/skills/auto-git-workflow-cmd/SKILL.md` |
 | **Command Location (Global)** | `~/.claude/commands/auto-git-workflow-cmd.md` | `~/.gemini/config/skills/auto-git-workflow-cmd/SKILL.md` |
-| **Guardrail Script** | `hooks/cc-block-dangerous-git.sh` | `hooks/agy-block-dangerous-git.cmd` (Win) / `.sh` (Unix) |
+| **Guardrail Script** | `.claude/hooks/cc-block-dangerous-git.sh` (+ `_guardrail_core.sh`) | `.agents/hooks/agy-block-dangerous-git.cmd` (Win) / `.sh` (Unix) (+ `_guardrail_core.sh`) |
 | **Guardrail Config** | `.claude/settings.json` | `.agents/hooks.json` (or `~/.gemini/config/hooks.json`) |
 | **Target Tool Intercepted** | Bash tool invocations | `run_command` tool calls |
 
@@ -66,7 +66,7 @@ It validates prerequisites, copies scripts and staging files, installs hooks, re
 
 ## Global vs Local Installation
 
-- **Local (default)**: Installed directly into the project's `.claude/` and `.agents/` directories. Active only within that repository. Both directories are git-ignored by default.
+- **Local (default)**: Installed directly into the project's `.claude/` and `.agents/` directories. Active only within that repository. Neither directory is added to `.gitignore` automatically (only `logs/`, `.cgw.conf` and `.cgw.conf.bak` are), so add them yourself if you don't want to commit them.
 - **Global (`--global`)**: Installed into `~/.claude/` and `~/.gemini/config/`. Makes CGW skills and guardrails available across **every project** on your machine:
 
 ```bash
@@ -80,12 +80,12 @@ It validates prerequisites, copies scripts and staging files, installs hooks, re
 
 Both harnesses support the `/auto-git-workflow-cmd` slash command. It opens a state-aware interactive menu:
 
-1. **⭐ Full promotion**: The entire release pipeline in one command — runs pre-commit validation, commits staged changes, pushes the feature branch, merges to target (or opens a PR), pushes target, and monitors CI runs to completion.
-2. **Commit & Stash**: Commit staged files, stash work safely with untracked files, auto-fix lint violations.
-3. **Push, Pull & Sync**: Validate remote reachability, run blocking typechecks, sync branches, and trigger the CI gate.
-4. **Branch, Merge & PR**: Validate branch state, preview diffs with `branch_diff.sh`, merge safely, or create GitHub PRs.
-5. **Undo & Recover**: Undo commits, browse reflog history, recover lost dangling commits via `recover.sh`.
-6. **Release & Maintain**: Tag releases (`create_release.sh`), generate changelogs (`changelog_generate.sh`), manage linked worktrees (`worktree_manage.sh`), and inspect repo health (`repo_health.sh`).
+1. **⭐ Full promotion**: commit → push → merge/PR → push, the full pipeline in one run.
+2. **Commit & Stash**: commit, amend the message, stash and restore work in progress.
+3. **Push, Pull & Sync**: push, publish a branch, sync branches with the remote.
+4. **Branch, Merge & PR**: merge, rebase, create or check out a PR, cherry-pick.
+5. **Undo & Recover**: undo a commit, unstage/discard, roll back a merge, rescue commits from the reflog.
+6. **Release & Maintain**: tag a release, generate a changelog, check repo health, clean artifacts.
 
 ### State-Aware Scanning
 
@@ -106,15 +106,15 @@ Every push performed through `/auto-git-workflow-cmd` (or via `push_validated.sh
 
 Guardrails run before the agent executes a shell command:
 
-- **Claude Code**: Registered as a `PreToolUse` hook in `.claude/settings.json`. Intercepts Bash tool calls matching patterns like `git commit`, `git push`, `git merge`, `git checkout -b`, `git reset --hard`, and `git branch -D`.
-- **Antigravity Agents**: Registered in `.agents/hooks.json` (or `~/.gemini/config/hooks.json`) as a `pre_tool_use` hook on the `run_command` tool. Uses `agy-block-dangerous-git.cmd` on Windows and `agy-block-dangerous-git.sh` on Unix.
+- **Claude Code**: Registered as a `PreToolUse` hook in `.claude/settings.json`. Intercepts Bash tool calls matching patterns like `git commit`, `--no-verify`, `git push --force` (`--force-with-lease` is allowed), `git reset --hard`, `git branch -D`, and `git checkout .`. Other raw commands such as plain `git push` or `git merge` are not intercepted; the skill rules direct the agent to the wrapper scripts, and the git hooks remain the enforcement layer.
+- **Antigravity Agents**: Registered in `.agents/hooks.json` (or `~/.gemini/config/hooks.json`) under the `cgw-git-guardrail` → `PreToolUse` key, matching the `run_command` tool. Uses `agy-block-dangerous-git.cmd` on Windows and `agy-block-dangerous-git.sh` on Unix.
 
-When an agent attempts a blocked command, the guardrail rejects execution with an exit code of `2` and surfaces guidance:
+When an agent attempts a blocked command, the guardrail rejects it and surfaces guidance. The Claude Code hook exits with code `2` and prints the message to stderr; the Antigravity hook returns `{"decision": "deny", "reason": ...}` and exits `0`:
 
 ```text
-[BLOCKED] Dangerous raw git command intercepted: git commit -m "..."
-Use CGW enhanced script instead:
-  ./scripts/git/commit_enhanced.sh "..."
+BLOCKED: Command matched dangerous pattern "git commit".
+Use ./scripts/git/commit_enhanced.sh "<type>: <msg>" instead — it runs lint, protects local-only files, and enforces conventional commit format.
+The user has prevented you from doing this.
 ```
 
 ---
@@ -128,5 +128,5 @@ Use CGW enhanced script instead:
 
 ### In Google Antigravity
 
-1. In the agent CLI, check `.agents/skills.json` or `.agents/skills/` to confirm `auto-git-workflow` and `auto-git-workflow-cmd` are present.
+1. In the agent CLI, check `.agents/skills/` to confirm `auto-git-workflow` and `auto-git-workflow-cmd` are present.
 2. Check `.agents/hooks.json` to verify the `agy-block-dangerous-git` hook entry exists.

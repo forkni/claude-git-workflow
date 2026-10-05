@@ -253,7 +253,6 @@ if "!INSTALL_AGY!"=="1" (
 )
 echo.
 echo   Then run: configure.sh (interactive)
-echo   Finally:  offer to remove temp files (hooks\, skill\, command\, templates\)
 echo.
 set /p "CONFIRM=Proceed with installation? [Y/n]: "
 if /i "!CONFIRM!"=="n"  goto :cancel
