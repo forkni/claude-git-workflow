@@ -355,6 +355,79 @@ _run_configure() {
   [ "${status}" -eq 0 ]
 }
 
+# ── Guardrail script: quoted command words and flags ────────────────────────
+# Regression tests for the quote bypass: quoted spans used to be deleted before
+# matching, so quoting a subcommand or flag hid it while the shell still ran it
+# (`git "push" --force` became `git  --force`). Quotes are now removed but their
+# content kept as one token, so a quoted word still matches and a quoted
+# sentence (a commit message) still cannot.
+
+@test "blocks a quoted subcommand: git \"push\" --force" {
+  _require_jq
+  run _run_guardrail 'git \"push\" --force'
+  [ "${status}" -eq 2 ]
+  [[ "${output}" == *"git push --force"* ]]
+}
+
+@test "blocks a quoted flag: git push '--force'" {
+  _require_jq
+  run _run_guardrail "git push '--force'"
+  [ "${status}" -eq 2 ]
+}
+
+@test "blocks quoted words across the blocked checks" {
+  _require_jq
+  run _run_guardrail '\"git\" push --force'
+  [ "${status}" -eq 2 ]
+  run _run_guardrail 'git \"commit\" -m x'
+  [ "${status}" -eq 2 ]
+  run _run_guardrail 'git reset \"--hard\"'
+  [ "${status}" -eq 2 ]
+  run _run_guardrail 'git \"branch\" -D x'
+  [ "${status}" -eq 2 ]
+  run _run_guardrail 'git clean \"-fd\"'
+  [ "${status}" -eq 2 ]
+  run _run_guardrail 'git \"worktree\" \"remove\" ../wt'
+  [ "${status}" -eq 2 ]
+  run _run_guardrail "git 'push' origin main '--force'"
+  [ "${status}" -eq 2 ]
+}
+
+@test "blocks rm -rf on a quoted .git path" {
+  _require_jq
+  run _run_guardrail 'rm -rf \".git\"'
+  [ "${status}" -eq 2 ]
+  run _run_guardrail 'rm -rf \"$HOME/repo/.git\"'
+  [ "${status}" -eq 2 ]
+}
+
+@test "allows blocked phrases inside a quoted sentence" {
+  run _run_guardrail './scripts/git/commit_enhanced.sh \"docs: explain git commit workflow\"'
+  [ "${status}" -eq 0 ]
+  run _run_guardrail 'gh pr create --title \"git reset --hard is dangerous\" --body x'
+  [ "${status}" -eq 0 ]
+  run _run_guardrail 'echo \"rm -rf .git\"'
+  [ "${status}" -eq 0 ]
+  run _run_guardrail 'git log --grep \"git commit\"'
+  [ "${status}" -eq 0 ]
+}
+
+@test "allows separators inside a quoted sentence (no false split)" {
+  run _run_guardrail "./scripts/git/commit_enhanced.sh 'fix: a; git push --force | b'"
+  [ "${status}" -eq 0 ]
+}
+
+@test "allows a quoted multi-line message that mentions blocked commands" {
+  # \n is the JSON escape for a newline; the quoted span crosses it.
+  run _run_guardrail './scripts/git/commit_enhanced.sh \"fix: guard\n\nnever git push --force\"'
+  [ "${status}" -eq 0 ]
+}
+
+@test "allows git rm --cached with a quoted force flag" {
+  run _run_guardrail 'git rm --cached \"-f\" a.txt'
+  [ "${status}" -eq 0 ]
+}
+
 # ── Guardrail script: fail-open behavior ─────────────────────────────────────
 
 @test "allows command when input JSON is empty" {
