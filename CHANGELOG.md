@@ -1,11 +1,12 @@
 # Changelog
 
-## v0.11.1 (2026-10-04)
+## v0.11.1 (2026-10-05)
 
 > Changes since `v0.11.0`
 
 ### Behaviour changes
 
+- **Guardrail: quoting a command word no longer hides it.** `cgw_guardrail_classify` used to delete every quoted span before matching, so `git "push" --force` or `git 'commit' -m x` slipped past the agent guardrail while the shell ran them unquoted. Quotes are now stripped but their content is kept as one token: a quoted single word matches like its unquoted form, while a quoted sentence (a commit message, PR title, `echo`/`grep` argument, even one containing `;`/`|`/`&` or newlines) stays a single non-matching token. The classifier still never identifies the executable, so `echo git commit` is redirected quoted or not, the same way `env git commit` is caught.
 - **`check_lint.sh --ref` exits `3` when the snapshot cannot be prepared** (unresolvable `--ref`/`--base`, pushed-file discovery, temp dir, extract, cd). Previously these exited `1`, which `push_validated.sh` treated as an overridable lint failure. `3` means the checks did not run: `push_validated.sh --pushed-only` now stops with "Could not check the pushed snapshot" and never offers the "push anyway" prompt. `--worktree` or `--skip-lint` remain the explicit bypasses. Exit codes: `0` ok, `1` lint/markdown, `2` typecheck, `3` setup failure.
 
 ### Bug Fixes
@@ -15,6 +16,7 @@
 - **Non-ASCII file names are kept** when discovering pushed files (`core.quotePath=false`).
 - **Markdown scope in `--ref` mode follows `CGW_MARKDOWNLINT_PATHS`** (`:(glob)` pathspecs, root-level files included) and only `.md`/`.markdown` files reach markdownlint.
 - `get_python_path` honours `CGW_VENV_ROOT`, so snapshot runs use the project's `.venv`.
+- **Guardrail dequoting follows shell backslash escapes.** A quoted message with escaped inner quotes (`commit_enhanced.sh "say \"git commit is\" dangerous"`) was split at the first `\"` and blocked as `git commit`. Outside quotes and inside `"..."` a backslash pair is now content, so `\"` neither opens nor closes a span; inside `'...'` a backslash stays literal and the first `'` closes.
 
 ### Documentation
 
