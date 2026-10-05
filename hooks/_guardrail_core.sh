@@ -15,8 +15,8 @@
 # Heuristic limits (defense-in-depth, not a sandbox): this classifier does not
 # evaluate `eval`, shell aliases/functions, nested shells (`bash -c '...'`),
 # `git -C <path> <subcmd>` / `git --git-dir=... <subcmd>` (the subcommand isn't
-# adjacent to `git`), or backslash-escaped quotes (`\"` is treated as a quote).
-# It also never identifies the executable: matching is position-independent so
+# adjacent to `git`), or `$'...'` / `$"..."` ANSI-C and locale quoting (treated
+# like plain quotes). It also never identifies the executable: matching is position-independent so
 # `env git commit`, `command git commit`, `time git commit` are all caught, and
 # the same rule redirects `echo git commit` -- quoted or not (`echo 'git' commit`
 # dequotes to the identical text). Quoting changes nothing here: a quoted
@@ -58,24 +58,31 @@ cgw_guardrail_classify() {
 # single token: no check can match across it and segmentation cannot split it.
 # Spans may cross newlines (multi-line messages). An unterminated quote leaves
 # the rest of the command as written. Pure bash: one regex match per span.
+# Backslash escapes follow the shell: outside quotes and inside "..." a `\x`
+# pair is content (so `\"` neither opens nor closes a span and
+# `"say \"git commit\" now"` stays one token); inside '...' a backslash is
+# literal and the first `'` always closes.
 _cgw_guardrail_dequote() {
   local rest="$1" out="" span
-  local re_open='^([^"'"'"']*)(["'"'"'])(.*)$'
-  local re_dq='^([^"]*)"(.*)$'
+  local re_open='^((\\.|[^"'"'"'\\])*)(["'"'"'])(.*)$'
+  local re_dq='^((\\.|[^"\\])*)"(.*)$'
   local re_sq="^([^']*)'(.*)$"
 
+  # Group layout: re_open -> 1=prefix 3=quote 4=rest; re_dq -> 1=span 3=rest;
+  # re_sq -> 1=span 2=rest (the (\\.|...) alternation adds an inner group).
   while [[ ${rest} =~ ${re_open} ]]; do
     out+="${BASH_REMATCH[1]}"
-    if [[ ${BASH_REMATCH[2]} == '"' ]]; then
-      rest="${BASH_REMATCH[3]}"
+    rest="${BASH_REMATCH[4]}"
+    if [[ ${BASH_REMATCH[3]} == '"' ]]; then
       [[ ${rest} =~ ${re_dq} ]] || break
-    else
+      span="${BASH_REMATCH[1]}"
       rest="${BASH_REMATCH[3]}"
+    else
       [[ ${rest} =~ ${re_sq} ]] || break
+      span="${BASH_REMATCH[1]}"
+      rest="${BASH_REMATCH[2]}"
     fi
-    span="${BASH_REMATCH[1]}"
     out+="${span//[[:space:];|&]/$'\x1f'}"
-    rest="${BASH_REMATCH[2]}"
   done
   printf '%s' "${out}${rest}"
 }

@@ -428,6 +428,26 @@ _run_configure() {
   [ "${status}" -eq 0 ]
 }
 
+@test "allows escaped inner quotes inside a quoted message (backslash is content)" {
+  # JSON escaping: \\\" in the bats string is a literal backslash-quote in the command,
+  # i.e. the shell command is:  commit_enhanced.sh "say \"git commit is\" dangerous"
+  run _run_guardrail './scripts/git/commit_enhanced.sh \"say \\\"git commit is\\\" dangerous\"'
+  [ "${status}" -eq 0 ]
+  run _run_guardrail './scripts/git/commit_enhanced.sh \"fix: path C:\\\\tmp\\\\ then git push --force\"'
+  [ "${status}" -eq 0 ]
+}
+
+@test "escaped quote outside quotes does not open a span" {
+  _require_jq
+  # Shell command:  echo \" git commit -m x   (the \" is a literal quote char; git commit still runs via echo args)
+  run _run_guardrail 'echo \\\" git commit -m x'
+  [ "${status}" -eq 2 ]
+  # Inside single quotes a backslash is literal and the first ' closes:
+  #   echo 'a\' git commit    -> git commit is outside the span
+  run _run_guardrail "echo 'a\\\\' git commit"
+  [ "${status}" -eq 2 ]
+}
+
 @test "quoting a single word never changes the verdict (executable is not identified)" {
   # The classifier is position-independent by design (so `env git commit` is
   # caught), which means `echo git commit` is redirected too. Quoting individual
