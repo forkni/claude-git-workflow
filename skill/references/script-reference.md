@@ -159,6 +159,18 @@ Override with `--all` to always bulk-stage, or `--only <path>` to explicitly sel
 - `--base <rev>` (needs `--ref`): scope lint/format/markdown to files changed in `<rev>...<ref>`
 - `--unpushed` (needs `--ref`): scope them to files touched by commits no remote-tracking ref has
   (a new branch); mutually exclusive with `--base`
+- Markdown scope in `--ref` mode follows `CGW_MARKDOWNLINT_PATHS` (default `**/*.md`) but only
+  `.md`/`.markdown` files are ever passed to markdownlint
+- **Exit codes:** `0` ok, `1` lint/markdown errors (overridable interactively in `push_validated.sh`),
+  `2` typecheck errors (never overridable), `3` the `--ref` snapshot could not be prepared (bad
+  `--ref`/`--base`, file discovery, temp dir, extract) — the checks did **not** run, so this is fatal
+  in `push_validated.sh` and never offers the "push anyway" override
+- **Editable installs are isolated** in `--ref` mode: the typecheck runs with a `sitecustomize` on
+  `PYTHONPATH` (chained to any existing one) that drops `sys.path` entries under the project root,
+  except the snapshot and the venv, plus setuptools `__editable__` finders. A module that exists
+  only in the working tree (e.g. a forgotten `git add new.py` behind a src-layout editable install)
+  therefore fails the snapshot typecheck instead of passing through the venv `.pth`. Verified for
+  mypy, pyright and pyrefly; see `docs/KNOWN_ISSUES.md` for the remaining limits (`tsc`, clang-tidy)
 - Skipped automatically if `CGW_LINT_CMD` is empty (typecheck skipped automatically if
   `CGW_TYPECHECK_CMD` is empty, independently of `CGW_LINT_CMD`)
 
@@ -516,7 +528,7 @@ token at a real terminal.
 | `--skip-lint` | Skip all pre-push lint checks (incl. typecheck) |
 | `--skip-md-lint` | Skip markdown lint only in pre-push check |
 | `--skip-typecheck` | Skip typecheck only in pre-push check (also honors `CGW_SKIP_TYPECHECK=1`); a failing typecheck otherwise blocks the push |
-| `--pushed-only` | Pre-push check the **committed** branch (`check_lint.sh --ref <branch> --base <remote>/<branch>`, or `--unpushed` for a new branch) instead of the working tree: whole-snapshot typecheck, lint/format/markdown on the pushed files only. Uncommitted work can't block the push. Also `CGW_PUSH_LINT_SCOPE=pushed` |
+| `--pushed-only` | Pre-push check the **committed** branch (`check_lint.sh --ref <branch> --base <remote>/<branch>`, or `--unpushed` for a new branch) instead of the working tree: whole-snapshot typecheck, lint/format/markdown on the pushed files only. Uncommitted work can't block the push. A snapshot setup failure (`check_lint.sh` exit 3) is fatal, not a lint error: fix the cause or use `--worktree` / `--skip-lint`. Also `CGW_PUSH_LINT_SCOPE=pushed` |
 | `--worktree` | Force the default working-tree scope for this run (overrides `CGW_PUSH_LINT_SCOPE=pushed`) |
 | `--no-venv` | Forward to `check_lint.sh`: use system lint tool (no .venv) |
 | `--force` | Allow force-push (explicit `--force-with-lease=<ref>:<sha>`, or an empty lease `<ref>:` when the branch doesn't exist on the remote yet; blocks for protected branches) |

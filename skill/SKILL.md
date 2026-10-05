@@ -321,6 +321,10 @@ Typecheck: advisory in the pre-commit hook (when CGW_TYPECHECK_CMD is set), BLOC
            If the push gate fails ONLY because of uncommitted work in the tree, re-run with
            --pushed-only (or CGW_PUSH_LINT_SCOPE=pushed) -- do NOT reach for --skip-typecheck /
            --skip-lint, which also stop checking the commits actually being pushed.
+           If --pushed-only reports "Could not check the pushed snapshot" (check_lint.sh exit 3),
+           the checks did NOT run: read the log for the cause (bad ref, temp dir, extract) --
+           it is not a lint error and there is no "push anyway" override. A committed file that
+           imports an uncommitted module now fails the snapshot typecheck (exit 2): `git add` it.
 
 After commit: verify with git log --oneline -1
 (that single check is enough — skip any git status/diff scan beforehand; commit_enhanced.sh

@@ -133,11 +133,11 @@ CGW provides 30 user-facing scripts and 2 internal core modules in `scripts/git/
 | `rollback_merge.sh` | Emergency rollback to pre-merge backup tag (`--revert` for safe history-preserving rollback) |
 | `cherry_pick_commits.sh` | Cherry-pick with source branch validation, dev-only file warnings, and backup tag (`--only <pathspec>` for partial picks) |
 | `merge_docs.sh` | Documentation-only merge from source branch to target branch |
-| `push_validated.sh` | Push with remote reachability check, blocking typecheck validation, force-push lease guards, and CI verification gate trigger |
+| `push_validated.sh` | Push with remote reachability check, blocking typecheck validation (`--pushed-only` checks the committed branch, ignoring uncommitted work), force-push lease guards, and CI verification gate trigger |
 | `sync_branches.sh` | Sync local branches via fetch + rebase (protected branches use `--ff-only` and refuse when diverged); auto-protects diverged `skip-worktree` local files across pulls |
 | `validate_branches.sh` | Check repository and branch state before critical operations (uncommitted changes, ahead/behind counts, tracking refs) |
 | `branch_diff.sh` | Show diff against the target branch (`--files`, `--stat`, `--no-ws`, `--base`) |
-| `check_lint.sh` | Read-only lint, format, typecheck, and Markdown validation (`--modified-only`, `--skip-md-lint`, `--skip-typecheck`) |
+| `check_lint.sh` | Read-only lint, format, typecheck, and Markdown validation (`--modified-only`, `--skip-md-lint`, `--skip-typecheck`, `--ref`/`--base`/`--unpushed` to check the committed snapshot) |
 | `fix_lint.sh` | Auto-fix code lint, code formatting, and Markdown issues (`--modified-only`, `--md-only`, `--skip-md-lint`) |
 | `create_pr.sh` | Create GitHub PR from source to target branch via `gh` CLI (triggers Charlie CI and GitHub Actions) |
 | `merge_pr.sh` | Guarded, logged wrapper around `gh pr merge --merge` with an explicit `--repo`; refuses non-OPEN PRs and non-green PR checks (`--wait-checks`, `--skip-checks`), `--retarget <M>` for stacked PRs, `--squash`/`--rebase` need `--allow-non-merge` (`--delete-branch`, `--dry-run`) |
