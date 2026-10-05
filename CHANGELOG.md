@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.11.1 (2026-10-04)
 
 > Changes since `v0.11.0`
 
@@ -15,6 +15,10 @@
 - **Non-ASCII file names are kept** when discovering pushed files (`core.quotePath=false`).
 - **Markdown scope in `--ref` mode follows `CGW_MARKDOWNLINT_PATHS`** (`:(glob)` pathspecs, root-level files included) and only `.md`/`.markdown` files reach markdownlint.
 - `get_python_path` honours `CGW_VENV_ROOT`, so snapshot runs use the project's `.venv`.
+
+### Documentation
+
+- `README.md` and `docs/` realigned with the scripts and CI: `--pushed-only` gate and exit codes, `branch_cleanup.sh`/`clean_build.sh` flags, `tests/run.sh` modes, guardrail behaviour, installer names and uninstall steps, and refreshed `KNOWN_ISSUES.md`.
 
 ## v0.11.0 (2026-10-04)
 
