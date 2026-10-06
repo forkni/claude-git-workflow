@@ -143,6 +143,16 @@ teardown() {
   [[ "${output}" == *"non-interactive"* ]] || [[ "${output}" == *"Refusing"* ]]
 }
 
+@test "discard: the abort text says no --yes exists and to use your own terminal" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  echo "modified" >> "${TEST_REPO_DIR}/DEV.md"
+
+  run run_script undo_last.sh discard DEV.md --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"no --yes exists for this prompt by design"* ]]
+  [[ "${output}" == *"run the command in your own terminal"* ]]
+}
+
 # ── amend-message subcommand ──────────────────────────────────────────────────
 
 @test "amend-message: updates last commit message" {

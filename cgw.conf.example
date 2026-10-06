@@ -176,10 +176,17 @@ CGW_FORMAT_EXCLUDES="--exclude logs --exclude .venv"
 #
 # Skip at runtime with CGW_SKIP_TYPECHECK=1, or --skip-typecheck on
 # check_lint.sh / push_validated.sh.
+#
+# uv projects: when CGW_TYPECHECK_CMD is set, uv.lock exists and uv is on PATH,
+# check_lint.sh first runs `uv sync --check <CGW_UV_SYNC_ARGS>` and fails with a
+# clear remedy if .venv has drifted from uv.lock (instead of a confusing import
+# error from the typechecker). Set the dependency groups the typechecker needs:
+# CGW_UV_SYNC_ARGS="--group dev"
 
 CGW_TYPECHECK_CMD=""
 CGW_TYPECHECK_CHECK_ARGS="check"
 CGW_TYPECHECK_EXCLUDES=""
+CGW_UV_SYNC_ARGS="--group dev"
 
 # ============================================================================
 # PUSH GATE SCOPE (push_validated.sh)

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### New Features
+
+- **`sync_cgw_tooling.sh`**: one reproducible step to refresh a project's vendored CGW tooling. It refuses a dirty tree, copies `scripts/git/*.sh` from a CGW checkout (never deleting, skipping itself), runs `configure.sh --overwrite-hooks` for the hooks and `.claude/`/`.agents/` twins, optionally copies the skill (`--extra-skill-dst`) and the slash-command skill with links adapted (`--extra-cmd-dst`) to forked locations, and commits everything as one `chore: sync CGW git tooling` commit.
+- **uv drift gate in `check_lint.sh`**: with a typechecker configured, a `uv.lock` and `uv` on PATH, `uv sync --check ${CGW_UV_SYNC_ARGS:---group dev}` runs first. A stale `.venv` now fails with `[FAIL] .venv is out of date with uv.lock; remedy: uv sync ...` (exit 2, like any typecheck failure) instead of a confusing import error from the typechecker. `--skip-typecheck` skips it.
+
+### Behaviour changes
+
+- **`commit_enhanced.sh -m` is rejected explicitly** ("there is no -m flag: pass the message as the one quoted positional argument") instead of storing `-m` as the message and then failing on the real one with unrelated `--only` advice. The skill now says so, and that a multi-line message is the one positional argument.
+- **`cgw_confirm` non-interactive abort** now says that no `--yes` exists for the prompt by design and to run the command in your own terminal. The skill documents deciding keep-or-drop for a colliding local change with `git merge-file -p <local> <base> <upstream>`.
+
 ## v0.11.1 (2026-10-05)
 
 > Changes since `v0.11.0`

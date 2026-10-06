@@ -2391,7 +2391,7 @@ cgw_confirm() {
       accept) return 0 ;;
       deny) return 1 ;;
       abort)
-        echo "[!] non-interactive: '${prompt}' requires confirmation — aborting" >&2
+        echo "[!] non-interactive: '${prompt}' requires confirmation — aborting (no --yes exists for this prompt by design; run the command in your own terminal)" >&2
         exit 1
         ;;
     esac

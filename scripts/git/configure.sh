@@ -3,7 +3,7 @@
 # Purpose: Scan project, generate .cgw.conf, install hooks and optional Claude skill
 # Usage: ./scripts/git/configure.sh [OPTIONS]
 #
-# Run this once after copying scripts/git/ into your project.
+# Run this once per project (to refresh an existing install, use sync_cgw_tooling.sh).
 # It auto-detects branch names, lint tools, and local-only files,
 # then generates .cgw.conf so all scripts work without manual editing.
 #

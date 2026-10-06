@@ -153,6 +153,7 @@ CGW provides 30 user-facing scripts and 2 internal core modules in `scripts/git/
 | `branch_cleanup.sh` | Prune merged branches, stale remote-tracking refs, and obsolete backup tags; previews by default, deletes only with `--execute` (`--remote`, `--tags`, `--older-than <N>`) |
 | `changelog_generate.sh` | Generate categorized Markdown/text changelog from conventional commits (`--version`, `--prepend` for cumulative `CHANGELOG.md`) |
 | `md_toc.sh` | Offline Markdown table-of-contents generator/inserter with GitHub-compatible anchor slugs (`--insert`, `--check`, `--all`) |
+| `sync_cgw_tooling.sh` | Refresh a project's vendored CGW scripts, hooks and skill/command copies from a CGW checkout as one `chore: sync CGW git tooling` commit (`--extra-skill-dst`, `--extra-cmd-dst` for forked skill copies) |
 | `undo_last.sh` | Undo last commit (keeps changes staged), unstage files, discard changes, or amend commit message |
 | `recover.sh` | Reflog exploration, dangling-commit discovery (`git fsck`), and safe branch restoration from any SHA |
 | `worktree_manage.sh` | Linked worktree management: list, add, link CGW tooling into worktrees, remove (dry-run default), prune stale metadata |

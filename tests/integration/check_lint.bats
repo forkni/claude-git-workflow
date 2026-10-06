@@ -1200,3 +1200,83 @@ EOF
   [ "${status}" -eq 0 ]
   grep -q "README.md" "${MOCK_BIN_DIR}/mdlint.log"
 }
+
+# ── uv drift gate (CGW_UV_SYNC_ARGS) ──────────────────────────────────────────
+# With a typechecker configured, a uv.lock and uv on PATH, check_lint.sh first runs
+# `uv sync --check` so a stale .venv fails with its real cause, not an import error.
+
+_install_mock_uv() {
+  local exit_code="$1"
+  cat >"${MOCK_BIN_DIR}/uv" <<UVEOF
+#!/usr/bin/env bash
+echo "uv \$*" >> "${MOCK_BIN_DIR}/uv.log"
+exit ${exit_code}
+UVEOF
+  chmod +x "${MOCK_BIN_DIR}/uv"
+}
+
+# _run_typecheck_gate <extra shell line> [check_lint.sh args...]
+_run_typecheck_gate() {
+  local extra="$1"
+  shift
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=mock-typecheck
+    export CGW_TYPECHECK_CHECK_ARGS=''
+    ${extra}
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh' $*
+  "
+}
+
+@test "uv drift gate: stale .venv exits 2 with the remedy and never runs the typechecker" {
+  install_mock_typecheck
+  _install_mock_uv 1
+  : >"${TEST_REPO_DIR}/uv.lock"
+  _run_typecheck_gate ":"
+  [ "${status}" -eq 2 ]
+  [[ "${output}" == *"[FAIL] .venv is out of date with uv.lock; remedy: uv sync --group dev"* ]]
+  [[ "$(cat "${MOCK_BIN_DIR}/uv.log")" == "uv sync --check --group dev" ]]
+  [ ! -f "${MOCK_BIN_DIR}/typecheck.log" ]
+}
+
+@test "uv drift gate: CGW_UV_SYNC_ARGS is passed through and shown in the remedy" {
+  install_mock_typecheck
+  _install_mock_uv 1
+  : >"${TEST_REPO_DIR}/uv.lock"
+  _run_typecheck_gate "export CGW_UV_SYNC_ARGS='--all-extras'"
+  [ "${status}" -eq 2 ]
+  [[ "${output}" == *"remedy: uv sync --all-extras"* ]]
+  [[ "$(cat "${MOCK_BIN_DIR}/uv.log")" == "uv sync --check --all-extras" ]]
+}
+
+@test "uv drift gate: an in-sync .venv lets the typecheck run" {
+  install_mock_typecheck
+  _install_mock_uv 0
+  : >"${TEST_REPO_DIR}/uv.lock"
+  _run_typecheck_gate ":"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"PASSED"* ]]
+  [ -f "${MOCK_BIN_DIR}/typecheck.log" ]
+}
+
+@test "uv drift gate: no uv.lock means uv is never called" {
+  install_mock_typecheck
+  _install_mock_uv 1
+  _run_typecheck_gate ":"
+  [ "${status}" -eq 0 ]
+  [ ! -f "${MOCK_BIN_DIR}/uv.log" ]
+}
+
+@test "uv drift gate: --skip-typecheck skips the gate too" {
+  install_mock_typecheck
+  _install_mock_uv 1
+  : >"${TEST_REPO_DIR}/uv.lock"
+  _run_typecheck_gate ":" --skip-typecheck
+  [ "${status}" -eq 0 ]
+  [ ! -f "${MOCK_BIN_DIR}/uv.log" ]
+}

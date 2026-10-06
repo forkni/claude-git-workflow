@@ -362,6 +362,15 @@ main() {
         echo "[ERROR] Unknown flag: $1" >&2
         exit 1
         ;;
+      -m)
+        # git muscle memory: there is no -m flag, the message is the one
+        # positional argument. Without this branch `-m` was stored as the
+        # message and the real one then failed as an "extra positional",
+        # with advice about --only that does not apply.
+        echo "[ERROR] there is no -m flag: pass the message as the one quoted positional argument" >&2
+        echo "  e.g. ./scripts/git/commit_enhanced.sh \"feat: msg\"" >&2
+        exit 1
+        ;;
       *)
         # A second bare positional used to silently overwrite the first --
         # the classic victim being `--only path1 path2 "msg"`, where path2
