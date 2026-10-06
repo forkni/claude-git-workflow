@@ -6,6 +6,18 @@
 export CGW_PROJECT_ROOT
 CGW_PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
+# Hermetic config: drop every config variable inherited from the caller's shell
+# (CGW_SOURCE_BRANCH, CGW_NON_INTERACTIVE, legacy CLAUDE_GIT_*, ...) so a test passes
+# or fails the same on a developer machine and on CI. Tests set what they need
+# explicitly. Runner knobs (CGW_TEST_*, CGW_RUN_SLOW) and CGW_PROJECT_ROOT survive.
+while IFS= read -r _cgw_var; do
+  case "${_cgw_var}" in
+    CGW_PROJECT_ROOT | CGW_TEST_* | CGW_RUN_SLOW) ;;
+    *) unset "${_cgw_var}" ;;
+  esac
+done < <(compgen -v | grep -E '^(CGW_|CLAUDE_GIT_)')
+unset _cgw_var
+
 # ── Temp directory management ─────────────────────────────────────────────────
 
 # create_temp_dir — set BATS_TEST_TMPDIR to an isolated temp dir
