@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.13.0 (2026-10-07)
+
+> Changes since `v0.12.0`
+
+### New Features
+
+- **Legacy Claude Code guardrail retirement**: when the in-process `git-guardrail` mod is deployed (`~/.claude/mods/git-guardrail`) and wired up via `CLAUDE_CODE_PLUGIN_DIRS`, `configure.sh` (and so `cgw-install.cmd` / `cgw-batch-install.cmd`) no longer installs `cc-block-dangerous-git.sh`, and retires an existing install: the `PreToolUse` entry is removed (other hooks kept) and the stock scripts are deleted, while customised copies are kept with a warning. Machines without the mod keep the shell hook. The Antigravity guardrail is unaffected.
+
 ## v0.12.0 (2026-10-07)
 
 > Changes since `v0.11.1`
