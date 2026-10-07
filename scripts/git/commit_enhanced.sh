@@ -35,6 +35,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
+cgw_set_reflog_action "commit_enhanced"
 
 generate_analysis_report() {
   cat >"${reportfile}" <<EOF

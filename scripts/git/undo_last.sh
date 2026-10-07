@@ -27,6 +27,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/git/_common.sh
 source "${SCRIPT_DIR}/_common.sh"
+cgw_set_reflog_action "undo_last"
 
 _show_help() {
   echo "Usage: ./scripts/git/undo_last.sh <subcommand> [OPTIONS]"
@@ -163,6 +164,11 @@ _cmd_undo_commit() {
 
   echo "Last commit to undo:"
   git log -1 --oneline
+  local last_reflog_msg
+  last_reflog_msg="$(git reflog -1 --format="%gs" HEAD 2>/dev/null || true)"
+  if [[ "${last_reflog_msg}" =~ ^${CGW_REFLOG_PREFIX:-cgw}: ]]; then
+    echo "  (Provenance: ${last_reflog_msg})"
+  fi
   echo ""
   echo "After undo: all changes will be staged (git reset --soft HEAD~1)"
   echo ""

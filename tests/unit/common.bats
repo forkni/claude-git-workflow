@@ -3393,3 +3393,28 @@ _scratch_commit() {
   run cgw_snapshot_tree HEAD "${BATS_TEST_TMPDIR}/nope"
   [ "${status}" -eq 1 ]
 }
+
+# ── Reflog action provenance ──────────────────────────────────────────────────
+
+@test "cgw_set_reflog_action: sets GIT_REFLOG_ACTION with default prefix" {
+  cgw_set_reflog_action "test_op"
+  [ "${GIT_REFLOG_ACTION}" = "cgw: test_op" ]
+}
+
+@test "cgw_set_reflog_action: respects custom CGW_REFLOG_PREFIX" {
+  local CGW_REFLOG_PREFIX="custom"
+  cgw_set_reflog_action "custom_op"
+  [ "${GIT_REFLOG_ACTION}" = "custom: custom_op" ]
+}
+
+@test "cgw_set_reflog_action: stamps git reflog on commit" {
+  _pushed_scratch_repo
+  cgw_set_reflog_action "commit_provenance_test"
+  echo "content" >"${PROJECT_ROOT}/prov.txt"
+  git -C "${PROJECT_ROOT}" add prov.txt
+  git -C "${PROJECT_ROOT}" commit -m "chore: test provenance"
+  local last_action
+  last_action="$(git -C "${PROJECT_ROOT}" reflog -1 --format="%gs")"
+  [[ "${last_action}" == *"cgw: commit_provenance_test"* ]]
+}
+

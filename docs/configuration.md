@@ -112,6 +112,8 @@ cp cgw.conf.example .cgw.conf
 | `CGW_INDEX_LOCK_WAIT_SECONDS` | `10` | Seconds to wait for a fresh `index.lock` to clear before escalating (`0` = don't wait) |
 | `CGW_LOCK_RETRY_ATTEMPTS` | `3` | Number of retry attempts when a git command encounters an in-flight index.lock race or transient collision |
 | `CGW_LOCK_RETRY_DELAY` | `1` | Base delay in seconds between lock retry attempts (uses backoff) |
+| `CGW_ICASE_PATHSPECS` | `1` | Auto-enable case-insensitive pathspecs on Windows (set to `0` to disable) |
+| `CGW_REFLOG_PREFIX` | `cgw` | Prefix prepended to `GIT_REFLOG_ACTION` for reflog auditability and recovery |
 | `CGW_NON_INTERACTIVE` | `0` | Set to `1` to suppress all prompts (CI mode) |
 | `CGW_NO_VENV` | `0` | Set to `1` to skip virtual environment detection |
 | `CGW_CI_VERIFY` | `1` | Set to `0` to disable the post-push CI verification gate entirely (agent procedure, see [`skill/references/ci-verification.md`](../skill/references/ci-verification.md)) |

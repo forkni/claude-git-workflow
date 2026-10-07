@@ -599,3 +599,40 @@ EOF
   project_root=$(echo "${result}" | grep "^PROJECT_ROOT=" | cut -d= -f2-)
   [ -d "${project_root}/.git" ]
 }
+
+# ── Non-interactive git environment and Windows pathspecs ───────────────────
+
+@test "CGW_NON_INTERACTIVE=1 exports non-interactive git environment variables" {
+  mkdir -p "${TEST_REPO_DIR}/scripts/git"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    export CGW_NON_INTERACTIVE=1
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"GIT_TERMINAL_PROMPT=\${GIT_TERMINAL_PROMPT}\"
+    echo \"GIT_PAGER=\${GIT_PAGER}\"
+    echo \"GIT_EDITOR=\${GIT_EDITOR}\"
+    echo \"GIT_SEQUENCE_EDITOR=\${GIT_SEQUENCE_EDITOR}\"
+    echo \"GIT_OPTIONAL_LOCKS=\${GIT_OPTIONAL_LOCKS}\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"GIT_TERMINAL_PROMPT=0"* ]]
+  [[ "${output}" == *"GIT_PAGER=cat"* ]]
+  [[ "${output}" == *"GIT_EDITOR=:"* ]]
+  [[ "${output}" == *"GIT_SEQUENCE_EDITOR=:"* ]]
+  [[ "${output}" == *"GIT_OPTIONAL_LOCKS=0"* ]]
+}
+
+@test "CGW_ICASE_PATHSPECS=0 suppresses GIT_ICASE_PATHSPECS export" {
+  mkdir -p "${TEST_REPO_DIR}/scripts/git"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    export CGW_ICASE_PATHSPECS=0
+    unset GIT_ICASE_PATHSPECS
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"GIT_ICASE_PATHSPECS=\${GIT_ICASE_PATHSPECS:-unset}\"
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"GIT_ICASE_PATHSPECS=unset"* ]]
+}

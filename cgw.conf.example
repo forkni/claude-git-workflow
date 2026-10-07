@@ -456,4 +456,12 @@ CGW_CI_REQUIRED_WORKFLOWS=""
 #
 # Base delay in seconds between lock retry attempts (uses backoff).
 # CGW_LOCK_RETRY_DELAY=1
+#
+# ── Windows pathspec case sensitivity & reflog provenance ────────────────────
+# Case-insensitive pathspecs on Windows (aligns Git with NTFS semantics).
+# Set to 0 to preserve strict case sensitivity on Windows.
+# CGW_ICASE_PATHSPECS=1
+#
+# Prefix prepended to GIT_REFLOG_ACTION for reflog auditability and disaster recovery.
+# CGW_REFLOG_PREFIX="cgw"
 

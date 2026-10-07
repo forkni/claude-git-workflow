@@ -35,6 +35,7 @@ init_logging "recover"
 _cmd_reflog() {
   local limit=20
   local ref="HEAD"
+  local cgw_only=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -45,6 +46,10 @@ _cmd_reflog() {
       --ref)
         ref="${2:-HEAD}"
         shift 2
+        ;;
+      --cgw-only)
+        cgw_only=1
+        shift
         ;;
       *)
         echo "[ERROR] Unknown option: $1" >&2
@@ -57,6 +62,7 @@ _cmd_reflog() {
   echo ""
   echo "  Ref:    ${ref}"
   echo "  Limit:  ${limit} entries"
+  [[ ${cgw_only} -eq 1 ]] && echo "  Filter: CGW-only actions (${CGW_REFLOG_PREFIX:-cgw}:*)"
   echo ""
   echo "  Git's reflog records every time a branch tip or HEAD moves — including"
   echo "  resets, rebases, and branch switches.  Use 'recover.sh show <entry>'"
@@ -73,11 +79,16 @@ _cmd_reflog() {
   # `| head` closes the pipe early, so git exits 141 (SIGPIPE) and `pipefail` would report the
   # pipeline as failed whenever the reflog is longer than the limit -- running every `||`
   # fallback (doubled output plus a false "no reflog entries"). Decide on the captured text instead.
+  local -a grep_args=()
+  if [[ ${cgw_only} -eq 1 ]]; then
+    grep_args=(--grep-reflog="^${CGW_REFLOG_PREFIX:-cgw}:")
+  fi
+
   local entries
-  entries="$(git reflog "${ref}" --date=relative --format="  %C(yellow)%h%C(reset)  %C(blue)%gd%C(reset)  %gs%C(auto)%d%C(reset)  %C(dim)(%cr)%C(reset)" \
+  entries="$(git reflog "${ref}" "${grep_args[@]}" --date=relative --format="  %C(yellow)%h%C(reset)  %C(blue)%gd%C(reset)  %gs%C(auto)%d%C(reset)  %C(dim)(%cr)%C(reset)" \
     2>/dev/null | head -n "${limit}" || true)"
   if [[ -z "${entries}" ]]; then
-    entries="$(git reflog "${ref}" --date=relative 2>/dev/null | head -n "${limit}" || true)"
+    entries="$(git reflog "${ref}" "${grep_args[@]}" --date=relative 2>/dev/null | head -n "${limit}" || true)"
   fi
   if [[ -n "${entries}" ]]; then
     printf '%s\n' "${entries}"
@@ -306,7 +317,7 @@ _show_help() {
   echo "Surfaces git's canonical safety nets (Pro Git §'Reflog' + §'Data Recovery')."
   echo ""
   echo "Subcommands:"
-  echo "  reflog   [--limit N] [--ref <ref>]   Pretty-print reflog with restore hints"
+  echo "  reflog   [--limit N] [--ref <ref>] [--cgw-only]  Pretty-print reflog with restore hints"
   echo "  show     <entry>                     Show log + stat for a reflog entry or SHA"
   echo "  dangling [--limit N]                 List unreachable commits via git fsck --full"
   echo "  restore  <sha> --branch <name>       Recover lost commit as a new branch"

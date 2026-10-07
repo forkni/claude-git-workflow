@@ -18,6 +18,20 @@ while IFS= read -r _cgw_var; do
 done < <(compgen -v | grep -E '^(CGW_|CLAUDE_GIT_)')
 unset _cgw_var
 
+# Hermetic Git environment isolation: drop host user and system git configs,
+# prevent git discovery from escaping above the test sandbox, disable optional index locks,
+# and enforce non-interactive prompts and deterministic test author/committer identity.
+export GIT_CONFIG_NOSYSTEM=1
+export GIT_CONFIG_GLOBAL=/dev/null
+export GIT_CEILING_DIRECTORIES="${BATS_RUN_TMPDIR:-${TEST_TMPDIR:-/tmp}}"
+export GIT_OPTIONAL_LOCKS=0
+export GIT_TERMINAL_PROMPT=0
+export GIT_PAGER=cat
+export GIT_AUTHOR_NAME="Test User"
+export GIT_AUTHOR_EMAIL="test@example.com"
+export GIT_COMMITTER_NAME="Test User"
+export GIT_COMMITTER_EMAIL="test@example.com"
+
 # ── Temp directory management ─────────────────────────────────────────────────
 
 # create_temp_dir — set BATS_TEST_TMPDIR to an isolated temp dir
