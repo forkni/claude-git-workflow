@@ -1,16 +1,26 @@
 # Changelog
 
-## Unreleased
+## v0.12.0 (2026-10-07)
+
+> Changes since `v0.11.1`
 
 ### New Features
 
+- **Hermetic non-interactive Git environment enforcement**: `_config.sh` exports `GIT_TERMINAL_PROMPT=0`, `GIT_PAGER=cat`, `GIT_EDITOR=:`, `GIT_SEQUENCE_EDITOR=:`, and `GIT_OPTIONAL_LOCKS=0` when `CGW_NON_INTERACTIVE=1` is active, eliminating background index lock contention and preventing interactive prompt freezes. On Windows, `GIT_ICASE_PATHSPECS=1` is automatically exported to match NTFS filesystem semantics (opt-out with `CGW_ICASE_PATHSPECS=0`).
+- **Reflog action provenance**: all mutating CGW wrappers stamp `${CGW_REFLOG_PREFIX:-cgw}: <script_basename>` via `GIT_REFLOG_ACTION`, enabling filtered auditing and disaster recovery via `recover.sh reflog --cgw-only` and provenance display in `undo_last.sh`.
 - **`sync_cgw_tooling.sh`**: one reproducible step to refresh a project's vendored CGW tooling. It refuses a dirty tree, copies `scripts/git/*.sh` from a CGW checkout (never deleting, skipping itself), runs `configure.sh --overwrite-hooks` for the hooks and `.claude/`/`.agents/` twins, optionally copies the skill (`--extra-skill-dst`) and the slash-command skill with links adapted (`--extra-cmd-dst`) to forked locations, and commits everything as one `chore: sync CGW git tooling` commit.
 - **uv drift gate in `check_lint.sh`**: with a typechecker configured, a `uv.lock` and `uv` on PATH, `uv sync --check ${CGW_UV_SYNC_ARGS:---group dev}` runs first. A stale `.venv` now fails with `[FAIL] .venv is out of date with uv.lock; remedy: uv sync ...` (exit 2, like any typecheck failure) instead of a confusing import error from the typechecker. `--skip-typecheck` skips it.
+- **Upstream overlap reconciliation**: `/auto-git-workflow-cmd` scans for uncommitted paths that also appear upstream and prompts for diff reconciliation before committing or syncing.
 
 ### Behaviour changes
 
 - **`commit_enhanced.sh -m` is rejected explicitly** ("there is no -m flag: pass the message as the one quoted positional argument") instead of storing `-m` as the message and then failing on the real one with unrelated `--only` advice. The skill now says so, and that a multi-line message is the one positional argument.
 - **`cgw_confirm` non-interactive abort** now says that no `--yes` exists for the prompt by design and to run the command in your own terminal. The skill documents deciding keep-or-drop for a colliding local change with `git merge-file -p <local> <base> <upstream>`.
+
+### Tests & Tooling
+
+- **Hermetic test harness isolation**: `tests/helpers/setup.bash` unsets ambient `CGW_*` env and exports `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`, and `GIT_CEILING_DIRECTORIES` to isolate tests from host git configuration.
+- **CI shfmt pinned**: updated `shfmt` download in `branch-protection.yml` to v3.13.0.
 
 ## v0.11.1 (2026-10-05)
 
