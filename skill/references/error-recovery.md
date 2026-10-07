@@ -41,6 +41,8 @@ unset SKIP_CGW_GUARDRAIL
 
 **Permanent uninstall:**
 
+> If the `git-guardrail` mod is deployed and wired (`CLAUDE_CODE_PLUGIN_DIRS`), `configure.sh` retires this shell hook automatically; the steps below are only for removing it by hand.
+
 1. Remove the PreToolUse entry from `.claude/settings.json` (delete the object whose `command` contains `cc-block-dangerous-git`)
 2. Delete `.claude/hooks/cc-block-dangerous-git.sh` and the shared classifier next to it, `.claude/hooks/_guardrail_core.sh`
 
