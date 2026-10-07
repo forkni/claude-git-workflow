@@ -152,6 +152,13 @@ _run_configure() {
   [ "${status}" -eq 2 ]
 }
 
+@test "blocks a CRLF line continuation (jq.exe on Windows emits CRLF)" {
+  _require_jq
+  # JSON escapes: backslash, CR, LF = a backslash-CR-LF continuation after the command word
+  run _run_guardrail 'git reset \\\r\n --hard'
+  [ "${status}" -eq 2 ]
+}
+
 @test "allows git grep for the worktree remove phrase" {
   _require_jq
   run _run_guardrail "git grep worktree remove"

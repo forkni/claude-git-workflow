@@ -43,7 +43,10 @@ cgw_guardrail_classify() {
   # newline continuations first so a wrapped command stays one invocation, then
   # split on shell separators (; | & newline). `&&` / `||` produce an empty
   # segment, which matches no pattern and is harmlessly skipped.
-  joined="${unquoted//\\$'\n'/ }"
+  # Windows jq.exe emits CRLF, so a continuation arrives as backslash-CR-LF;
+  # drop CRs first so it still joins.
+  joined="${unquoted//$'\r'/}"
+  joined="${joined//\\$'\n'/ }"
   segmented="${joined//[;|&$'\n']/$'\n'}"
 
   while IFS= read -r _invocation; do
