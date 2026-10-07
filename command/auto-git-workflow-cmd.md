@@ -52,6 +52,7 @@ echo "--- stash ---"; git stash list | head -3
 echo "--- in-progress ---"; ls "$(git rev-parse --git-dir 2>/dev/null)" 2>/dev/null | grep -E '^(MERGE_HEAD|CHERRY_PICK_HEAD|REVERT_HEAD|BISECT_LOG|rebase-merge|rebase-apply)$'
 echo "--- recent ---"; git log --oneline -3
 echo "--- unmerged-to-target ---"; tgt="$(git symbolic-ref -q --short "refs/remotes/${CGW_REMOTE:-origin}/HEAD" 2>/dev/null || echo "${CGW_TARGET_BRANCH:-main}")"; git log --oneline "$tgt..HEAD" 2>/dev/null | head -3
+echo "--- upstream-touched ---"; git diff --name-only HEAD...@{u} 2>/dev/null | head -20
 ```
 
 If the fetch fails (offline, no remote), continue — ahead/behind counts may just be
@@ -65,14 +66,15 @@ Pick **one** suggestion from the first matching row. Do not execute anything yet
 |---|---|---|
 | 1 | unmerged `u` lines, or any `in-progress` marker (`MERGE_HEAD`, `rebase-merge`, …) | Finish the in-progress operation — resolve conflicts per SKILL.md's conflict procedure, or continue/abort via the matching wrapper (e.g. `rebase_safe.sh --continue`) |
 | 2 | `branch.head (detached)` | Create a branch to keep the work before it becomes unreachable |
-| 3 | uncommitted work — any `1`/`2`/`?` entries | Commit it — ⭐ option 1 if it should also be pushed & merged, option 2 to just commit. If they were about to switch branches, offer stash instead |
-| 4 | `branch.ab +N -0` with N>0 — ahead only | Push to remote (option 3) |
-| 5 | `branch.ab +0 -M` with M>0 — behind only | Pull / sync with remote (option 3) |
-| 6 | ahead **and** behind — diverged | Sync first (`sync_branches.sh`), then push |
-| 7 | no `branch.upstream` line | Publish the branch — push with upstream (option 3) |
-| 8 | tree clean, `unmerged-to-target` non-empty (and not on the target branch) | Merge or PR to target (option 4) — or ⭐ option 1 next time work lands |
-| 9 | tree clean, stash list non-empty | Restore stashed work (`stash_work.sh pop`) |
-| 10 | everything clean and in sync | No suggestion — show the menu and note the tree is clean (start new work, or inspect history) |
+| 3 | uncommitted paths that also appear in `upstream-touched` (the remote already changed them) | Reconcile first: show `git diff HEAD @{u} -- <paths>`, then keep / discard / stash the local edit before committing or syncing — upstream may already carry the same fix |
+| 4 | uncommitted work — any `1`/`2`/`?` entries | Commit it — ⭐ option 1 if it should also be pushed & merged, option 2 to just commit. If they were about to switch branches, offer stash instead |
+| 5 | `branch.ab +N -0` with N>0 — ahead only | Push to remote (option 3) |
+| 6 | `branch.ab +0 -M` with M>0 — behind only | Pull / sync with remote (option 3) |
+| 7 | ahead **and** behind — diverged | Sync first (`sync_branches.sh`), then push |
+| 8 | no `branch.upstream` line | Publish the branch — push with upstream (option 3) |
+| 9 | tree clean, `unmerged-to-target` non-empty (and not on the target branch) | Merge or PR to target (option 4) — or ⭐ option 1 next time work lands |
+| 10 | tree clean, stash list non-empty | Restore stashed work (`stash_work.sh pop`) |
+| 11 | everything clean and in sync | No suggestion — show the menu and note the tree is clean (start new work, or inspect history) |
 
 ---
 
@@ -99,7 +101,7 @@ What would you like to do?
 Reply with a number, "y" for the suggestion, or describe what you want directly.
 ```
 
-Omit the `➤ Suggested` line when rule 10 matched. Trim the state line to the facts
+Omit the `➤ Suggested` line when rule 11 matched. Trim the state line to the facts
 that are non-zero — don't print "0 stashes".
 
 - "y" / "yes" → execute the suggested step through its category's rules below.

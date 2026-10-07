@@ -83,6 +83,7 @@ cp cgw.conf.example .cgw.conf
 | `CGW_TYPECHECK_CMD` | `` | Typecheck tool; set to e.g. `pyrefly` to enable (`""` to disable). Blocking in `check_lint.sh`/`push_validated.sh`, advisory in the pre-commit hook -- see [Typecheck](#typecheck) |
 | `CGW_TYPECHECK_CHECK_ARGS` | `check` | Arguments passed to the typecheck tool |
 | `CGW_TYPECHECK_EXCLUDES` | `` | Exclusion flags appended to the typecheck command |
+| `CGW_UV_SYNC_ARGS` | `--group dev` | uv projects only: with a typechecker configured, a `uv.lock` and `uv` on PATH, `check_lint.sh` first runs `uv sync --check <args>` and fails (exit 2) with the remedy `uv sync <args>` when `.venv` has drifted from the lock. Skipped by `--skip-typecheck` |
 | `CGW_PUSH_LINT_SCOPE` | `worktree` | What the push gate checks: `worktree` (working tree, uncommitted changes included) or `pushed` (committed snapshot of the pushed branch -- whole-snapshot typecheck, lint/format/markdown on the files the push changes). Per-run override: `push_validated.sh --pushed-only` / `--worktree` |
 | `CGW_ALLOW_STAGED_DIVERGENCE` | `0` | Set to `1` to let a genuine `--staged-only` commit record a staged blob that differs from the validated working tree (the `[3.5]` congruence guard otherwise fails closed); see [ADR-0001](adr/0001-partial-staging-fails-closed.md) |
 | `CGW_SKIP_TYPECHECK` | `0` | Set to `1` to skip the typecheck step at runtime -- the escape hatch when a blocking pre-push typecheck must be bypassed |
@@ -111,6 +112,8 @@ cp cgw.conf.example .cgw.conf
 | `CGW_INDEX_LOCK_WAIT_SECONDS` | `10` | Seconds to wait for a fresh `index.lock` to clear before escalating (`0` = don't wait) |
 | `CGW_LOCK_RETRY_ATTEMPTS` | `3` | Number of retry attempts when a git command encounters an in-flight index.lock race or transient collision |
 | `CGW_LOCK_RETRY_DELAY` | `1` | Base delay in seconds between lock retry attempts (uses backoff) |
+| `CGW_ICASE_PATHSPECS` | `1` | Auto-enable case-insensitive pathspecs on Windows (set to `0` to disable) |
+| `CGW_REFLOG_PREFIX` | `cgw` | Prefix prepended to `GIT_REFLOG_ACTION` for reflog auditability and recovery |
 | `CGW_NON_INTERACTIVE` | `0` | Set to `1` to suppress all prompts (CI mode) |
 | `CGW_NO_VENV` | `0` | Set to `1` to skip virtual environment detection |
 | `CGW_CI_VERIFY` | `1` | Set to `0` to disable the post-push CI verification gate entirely (agent procedure, see [`skill/references/ci-verification.md`](../skill/references/ci-verification.md)) |

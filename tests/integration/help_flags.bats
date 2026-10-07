@@ -35,6 +35,7 @@ CGW_SCRIPTS=(
   pr_checkout.sh
   merge_pr.sh
   md_toc.sh
+  sync_cgw_tooling.sh
 )
 
 # One repo + one mock-bin shared across all 52 --help tests.
@@ -69,6 +70,11 @@ setup() {
 
 @test "sync_branches.sh --help exits 0" {
   run run_script sync_branches.sh --help
+  [ "${status}" -eq 0 ]
+}
+
+@test "sync_cgw_tooling.sh --help exits 0" {
+  run run_script sync_cgw_tooling.sh --help
   [ "${status}" -eq 0 ]
 }
 
@@ -201,6 +207,12 @@ setup() {
 @test "merge_with_validation.sh unknown flag exits 1" {
   run run_script merge_with_validation.sh --foobar
   [ "${status}" -eq 1 ]
+}
+
+@test "sync_cgw_tooling.sh unknown flag exits 1" {
+  run run_script sync_cgw_tooling.sh --foobar
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Unknown flag"* ]]
 }
 
 @test "rollback_merge.sh unknown flag exits 1" {

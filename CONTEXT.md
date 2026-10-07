@@ -292,3 +292,32 @@ The shared module responsible for asserting repository invariants (working tree 
   - `push`: `${CGW_PROTECTED_BRANCHES}` only. Used by push wrappers to guard against force-pushing shared branches.
 
 **Callers**: `merge_with_validation.sh`, `rebase_safe.sh`, `rollback_merge.sh`, `sync_branches.sh`, `push_validated.sh`, `branch_cleanup.sh`.
+
+---
+
+## non-interactive environment
+
+The deterministic execution environment enforced when `CGW_NON_INTERACTIVE=1` is active (e.g. inside AI agent shells or automated CI runners). Enforces fail-fast discipline on operations that would otherwise block on stdin or terminal UI devices.
+
+**Enforced variables and contracts**:
+
+- `GIT_TERMINAL_PROMPT=0`: Git fails immediately with code 128 rather than blocking on stdin for passwords, tokens, or passphrases.
+- `GIT_PAGER=cat`: Prevents Git from launching interactive pagers (`less`, `more`) that stall agent command workers.
+- `GIT_EDITOR=:` / `GIT_SEQUENCE_EDITOR=:`: Evaluates to a no-op that accepts auto-generated messages (e.g. clean merges) while cleanly aborting commits with empty or unedited message templates.
+- `GIT_OPTIONAL_LOCKS=0`: Suppresses optional stat-cache lock acquisition on read-only inspection commands (`git status`, `git diff-index`, `git rev-parse`), eliminating index lock collisions between concurrent agents and background watchers.
+
+**Implementation seam**: `scripts/git/_config.sh` and `run_git_with_logging` in `scripts/git/_common.sh`.
+
+---
+
+## reflog action provenance
+
+The structured naming pattern stamped into Git's native reference logs (`.git/logs/HEAD` and `.git/logs/refs/heads/*`) via the `GIT_REFLOG_ACTION` environment variable during automated wrapper execution.
+
+**Format**: `${CGW_REFLOG_PREFIX:-cgw}: <script_basename>` (e.g. `cgw: commit_enhanced`, `cgw: merge_with_validation`, `cgw: rollback_merge`, `cgw: undo_last`).
+
+**Implementation seam**:
+
+- `cgw_set_reflog_action <action>` in `scripts/git/_common.sh`.
+- Stamped by all mutating scripts (`commit_enhanced.sh`, `merge_with_validation.sh`, `rebase_safe.sh`, `cherry_pick_commits.sh`, `rollback_merge.sh`, `undo_last.sh`).
+- Recognized and queried by `recover.sh reflog --cgw-only` (via `git reflog --grep-reflog="^cgw:"`) and `undo_last.sh commit` provenance inspection.

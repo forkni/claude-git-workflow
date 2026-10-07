@@ -24,6 +24,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
+cgw_set_reflog_action "merge_with_validation"
 
 init_logging "merge_with_validation"
 ensure_no_stale_index_lock || exit 1

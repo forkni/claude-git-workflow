@@ -33,6 +33,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/git/_common.sh
 source "${SCRIPT_DIR}/_common.sh"
+cgw_set_reflog_action "rebase_safe"
 
 init_logging "rebase_safe"
 ensure_no_stale_index_lock || exit 1

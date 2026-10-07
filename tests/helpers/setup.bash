@@ -6,6 +6,32 @@
 export CGW_PROJECT_ROOT
 CGW_PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
+# Hermetic config: drop every config variable inherited from the caller's shell
+# (CGW_SOURCE_BRANCH, CGW_NON_INTERACTIVE, legacy CLAUDE_GIT_*, ...) so a test passes
+# or fails the same on a developer machine and on CI. Tests set what they need
+# explicitly. Runner knobs (CGW_TEST_*, CGW_RUN_SLOW) and CGW_PROJECT_ROOT survive.
+while IFS= read -r _cgw_var; do
+  case "${_cgw_var}" in
+    CGW_PROJECT_ROOT | CGW_TEST_* | CGW_RUN_SLOW) ;;
+    *) unset "${_cgw_var}" ;;
+  esac
+done < <(compgen -v | grep -E '^(CGW_|CLAUDE_GIT_)')
+unset _cgw_var
+
+# Hermetic Git environment isolation: drop host user and system git configs,
+# prevent git discovery from escaping above the test sandbox, disable optional index locks,
+# and enforce non-interactive prompts and deterministic test author/committer identity.
+export GIT_CONFIG_NOSYSTEM=1
+export GIT_CONFIG_GLOBAL=/dev/null
+export GIT_CEILING_DIRECTORIES="${BATS_RUN_TMPDIR:-${TEST_TMPDIR:-/tmp}}"
+export GIT_OPTIONAL_LOCKS=0
+export GIT_TERMINAL_PROMPT=0
+export GIT_PAGER=cat
+export GIT_AUTHOR_NAME="Test User"
+export GIT_AUTHOR_EMAIL="test@example.com"
+export GIT_COMMITTER_NAME="Test User"
+export GIT_COMMITTER_EMAIL="test@example.com"
+
 # ── Temp directory management ─────────────────────────────────────────────────
 
 # create_temp_dir — set BATS_TEST_TMPDIR to an isolated temp dir

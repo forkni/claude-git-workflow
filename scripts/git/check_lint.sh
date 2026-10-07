@@ -433,6 +433,14 @@ main() {
       # same way an unset CGW_MARKDOWNLINT_CMD is treated as opt-out rather
       # than failure.
       echo "[!] Typecheck skipped -- '${CGW_TYPECHECK_CMD}' is configured but not found on PATH or in .venv" | tee -a "$logfile"
+    elif [[ -n "${CGW_TYPECHECK_CMD}" && -f "${PROJECT_ROOT}/uv.lock" ]] && command -v uv >/dev/null 2>&1 &&
+      ! { local -a _uv_args=() && read -ra _uv_args <<<"${CGW_UV_SYNC_ARGS:---group dev}" &&
+        (cd "${PROJECT_ROOT}" && uv sync --check "${_uv_args[@]}") >>"$logfile" 2>&1; }; then
+      # A stale .venv otherwise surfaces as a confusing import error from the
+      # typechecker. Name the real cause and the remedy, and skip the typecheck
+      # (it would only add noise); still a typecheck-class failure -> exit 2.
+      echo "[FAIL] .venv is out of date with uv.lock; remedy: uv sync ${CGW_UV_SYNC_ARGS:---group dev}" | tee -a "$logfile"
+      typecheck_status=1
     else
       local tc_start tc_end tc_duration tc_res
       tc_start=$(date +%s)

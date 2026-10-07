@@ -62,6 +62,13 @@ err_tee() {
   fi
 }
 
+# Set GIT_REFLOG_ACTION with the CGW prefix for provenance tracking in git reflogs.
+cgw_set_reflog_action() {
+  local action="${1:-unknown}"
+  local prefix="${CGW_REFLOG_PREFIX:-cgw}"
+  export GIT_REFLOG_ACTION="${prefix}: ${action}"
+}
+
 # Section timer storage -- associative array avoids global clobbering when
 # sections are nested (e.g. run_tool_with_logging called inside another section)
 declare -A _SECTION_START_TIMES=() 2>/dev/null || true
@@ -306,7 +313,7 @@ run_git_with_logging() {
     }
 
     if [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]]; then
-      GIT_OUTPUT=$(GIT_TERMINAL_PROMPT="${GIT_TERMINAL_PROMPT:-0}" git "$@" 2>&1)
+      GIT_OUTPUT=$(GIT_TERMINAL_PROMPT="${GIT_TERMINAL_PROMPT:-0}" GIT_OPTIONAL_LOCKS="${GIT_OPTIONAL_LOCKS:-0}" git "$@" 2>&1)
     else
       GIT_OUTPUT=$(git "$@" 2>&1)
     fi
@@ -2391,7 +2398,7 @@ cgw_confirm() {
       accept) return 0 ;;
       deny) return 1 ;;
       abort)
-        echo "[!] non-interactive: '${prompt}' requires confirmation — aborting" >&2
+        echo "[!] non-interactive: '${prompt}' requires confirmation — aborting (no --yes exists for this prompt by design; run the command in your own terminal)" >&2
         exit 1
         ;;
     esac

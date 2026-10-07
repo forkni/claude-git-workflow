@@ -189,6 +189,7 @@ CGW_ENFORCE_SUBJECT_LENGTH|1|bool|keep|conf
 CGW_TYPECHECK_CMD||str|keep|conf
 CGW_TYPECHECK_CHECK_ARGS|check|str|keep|conf
 CGW_TYPECHECK_EXCLUDES||str|keep|conf
+CGW_UV_SYNC_ARGS|--group dev|str|keep|conf
 CGW_PUSH_LINT_SCOPE|worktree|enum:worktree/pushed|fill|conf
 CGW_MERGE_CONFLICT_STYLE||computed|fill|conf
 CGW_MERGE_IGNORE_WHITESPACE|0|bool|fill|conf
@@ -207,6 +208,8 @@ CGW_INDEX_LOCK_MAX_AGE_SECONDS|30|int|fill|conf
 CGW_INDEX_LOCK_WAIT_SECONDS|10|int|fill|conf
 CGW_LOCK_RETRY_ATTEMPTS|3|int|fill|conf
 CGW_LOCK_RETRY_DELAY|1|int|fill|conf
+CGW_ICASE_PATHSPECS|1|bool|fill|conf
+CGW_REFLOG_PREFIX|cgw|str|fill|conf
 CGW_NON_INTERACTIVE|0|bool|fill|env
 CGW_NO_VENV|0|bool|fill|env
 CGW_STAGED_ONLY|0|bool|fill|env'
@@ -506,6 +509,26 @@ CGW_PROTECTED_BRANCHES="${CGW_PROTECTED_BRANCHES:-${CGW_TARGET_BRANCH}}"
 # CGW_LOCK_RETRY_ATTEMPTS: number of retry attempts for mutating git commands
 # when encountering an in-flight index.lock race or transient collision (default 3).
 # CGW_LOCK_RETRY_DELAY: base delay in seconds between retries with backoff (default 1).
+
+# --- Non-interactive & agent execution discipline ---
+# When CGW_NON_INTERACTIVE=1 is set, ensure git commands never prompt on stdin,
+# never invoke interactive pagers, never open interactive editors, and suppress optional locks.
+if [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]]; then
+  export GIT_TERMINAL_PROMPT="${GIT_TERMINAL_PROMPT:-0}"
+  export GIT_PAGER="${GIT_PAGER:-cat}"
+  export GIT_EDITOR="${GIT_EDITOR:-:}"
+  export GIT_SEQUENCE_EDITOR="${GIT_SEQUENCE_EDITOR:-:}"
+  export GIT_OPTIONAL_LOCKS="${GIT_OPTIONAL_LOCKS:-0}"
+fi
+
+# --- Windows pathspec case-insensitivity ---
+# On Windows (NTFS), filesystem paths are case-insensitive. Ensure Git pathspec matching
+# behaves consistently with the filesystem unless opted out via CGW_ICASE_PATHSPECS=0.
+if [[ "${CGW_ICASE_PATHSPECS:-1}" == "1" ]]; then
+  if [[ "${OSTYPE:-}" == "msys" || "${OSTYPE:-}" == "cygwin" || -n "${WINDIR:-}" ]]; then
+    export GIT_ICASE_PATHSPECS=1
+  fi
+fi
 
 # Callers source this file under `set -e`: always finish on a zero status,
 # whatever the last conditional above evaluated to.

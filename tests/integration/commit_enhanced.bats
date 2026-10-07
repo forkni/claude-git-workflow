@@ -1742,3 +1742,23 @@ GIT_MOCK
   [[ "${line}" == *"feat, fix"* ]]
   [[ "${line}" != *"|"* ]]
 }
+
+# ── there is no -m flag ───────────────────────────────────────────────────────
+
+@test "-m is rejected with a clear message, not the --only advice" {
+  echo "x" >"${TEST_REPO_DIR}/m.txt"
+  git -C "${TEST_REPO_DIR}" add m.txt
+  run _run_commit -m '"feat: add m"'
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"there is no -m flag"* ]]
+  [[ "${output}" != *"--only"* ]]
+}
+
+@test "a multi-line positional message commits with its body intact" {
+  echo "x" >"${TEST_REPO_DIR}/body.txt"
+  git -C "${TEST_REPO_DIR}" add body.txt
+  run _run_commit "\"\$(printf 'feat: add body\n\nwhy: the body explains it')\""
+  [ "${status}" -eq 0 ]
+  [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" = "feat: add body" ]
+  [[ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%b)" == *"why: the body explains it"* ]]
+}

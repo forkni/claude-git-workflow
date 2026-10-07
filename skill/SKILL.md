@@ -50,6 +50,8 @@ git commit -m "message"  # WRONG — bypasses lint, protection, logging
 
 `commit_enhanced.sh` provides: lint validation, local-only file protection, branch verification, commit message format checking, and comprehensive logging.
 
+Updating the vendored CGW scripts in a project: `./scripts/git/sync_cgw_tooling.sh --from <claude-git-workflow checkout>` (one commit; never hand-copy).
+
 > **Optional defense-in-depth:** If the CGW PreToolUse guardrail was installed (offered during `configure.sh`), this rule is also enforced at the Claude Code harness layer — even if asked to run `git commit` directly, the hook blocks it before it reaches the shell. See `references/error-recovery.md` → *PreToolUse Guardrail* for disable instructions.
 
 ### Rule 2: Use `--no-venv` When No Virtual Environment
@@ -216,8 +218,9 @@ extra detail in the commit body, not a long subject line. Tune via `CGW_COMMIT_S
 / `CGW_COMMIT_SUBJECT_HARD_LEN` / `CGW_ENFORCE_SUBJECT_LENGTH` in `.cgw.conf`.
 
 **Commit body (Git for Teams — "Constructing the Perfect Commit"):** `commit_enhanced.sh`
-accepts a multi-line `-m` message and only length-checks the first line, so use the body for
-anything the subject can't carry. A good body covers, as needed:
+takes the full multi-line message as its one positional argument (there is no `-m` flag); only
+the first line is length-checked (72 chars). Build it with `"$(cat <<'EOF' ... EOF)"`, and use
+the body for anything the subject can't carry. A good body covers, as needed:
 
 - **Why** the current code is a problem — not a restatement of what the diff shows.
 - The **rationale** for this approach and a high-level **how**.
@@ -526,6 +529,11 @@ merge of the branch re-applies those docs changes.
 # Discard working-tree changes (irreversible — interactive only):
 ./scripts/git/undo_last.sh discard <file>
 ```
+
+**Colliding local modification vs. incoming commit — keep or drop?** Decide on the result of
+`git merge-file -p <local> <base = old HEAD> <upstream>` written to the scratchpad: if local contains
+every upstream hunk, keep local. Blob hashes and memory of which side is newer decide nothing, and
+`discard` has no `--yes` (non-interactive runs abort by design).
 
 **Branch cleanup:**
 

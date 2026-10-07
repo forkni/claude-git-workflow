@@ -60,6 +60,26 @@ teardown() {
   [ "${entry_count}" -eq 2 ]
 }
 
+@test "reflog: --cgw-only filters entries to cgw actions" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+
+  # One manual commit
+  echo "manual" > "${TEST_REPO_DIR}/manual.txt"
+  git -C "${TEST_REPO_DIR}" add "manual.txt"
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: manual commit"
+
+  # One CGW commit
+  echo "cgw" > "${TEST_REPO_DIR}/cgw.txt"
+  git -C "${TEST_REPO_DIR}" add "cgw.txt"
+  GIT_REFLOG_ACTION="cgw: commit_enhanced" git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: cgw commit"
+
+  run run_script recover.sh reflog --cgw-only
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Filter: CGW-only actions"* ]]
+  [[ "${output}" == *"cgw: commit_enhanced"* ]]
+  [[ "${output}" != *"manual commit"* ]]
+}
+
 @test "reflog: reports no reflog entries when reflog is genuinely empty" {
   # Create a brand new ref with no reflog entries by creating an orphan branch without commits
   # Or test a ref with no reflog if applicable. If rev-parse fails it exits 1 with "Ref not found".
