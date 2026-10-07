@@ -18,6 +18,15 @@ while IFS= read -r _cgw_var; do
 done < <(compgen -v | grep -E '^(CGW_|CLAUDE_GIT_)')
 unset _cgw_var
 
+# Hermetic home: configure.sh probes ~/.claude for the git-guardrail mod (and retires
+# the legacy Claude Code hook when it is wired up), so a developer machine that has the
+# mod deployed must look the same as CI. Tests that need a populated home set HOME
+# themselves.
+unset CLAUDE_CODE_PLUGIN_DIRS
+HOME="${BATS_RUN_TMPDIR:-${TMPDIR:-/tmp}}/cgw-test-home"
+mkdir -p "${HOME}"
+export HOME
+
 # Hermetic Git environment isolation: drop host user and system git configs,
 # prevent git discovery from escaping above the test sandbox, disable optional index locks,
 # and enforce non-interactive prompts and deterministic test author/committer identity.

@@ -559,6 +559,83 @@ EOF
   fi
 }
 
+# ── git-guardrail mod supersedes the legacy Claude Code hook ──────────────────
+
+# Helper: a fake HOME where the mod is deployed. $1=wired (env names the mod) or
+# unwired (deployed only). Echoes the home path.
+_mod_home() {
+  local h="${TEST_TMPDIR}/modhome"
+  mkdir -p "${h}/.claude/mods/git-guardrail/.claude-plugin"
+  echo '{}' >"${h}/.claude/mods/git-guardrail/.claude-plugin/plugin.json"
+  if [[ "${1:-wired}" == "wired" ]]; then
+    printf '{"env":{"CLAUDE_CODE_PLUGIN_DIRS":"~/.claude/mods/git-guardrail"}}\n' >"${h}/.claude/settings.json"
+  fi
+  echo "${h}"
+}
+
+@test "mod active: legacy Claude Code guardrail is not installed" {
+  mkdir -p "${TEST_REPO_DIR}/.claude"
+  HOME="$(_mod_home wired)" _run_configure "--non-interactive"
+  [ ! -f "${TEST_REPO_DIR}/.claude/hooks/cc-block-dangerous-git.sh" ]
+  [ ! -f "${TEST_REPO_DIR}/.claude/hooks/_guardrail_core.sh" ]
+  if [[ -f "${TEST_REPO_DIR}/.claude/settings.json" ]]; then
+    ! grep -q "cc-block-dangerous-git" "${TEST_REPO_DIR}/.claude/settings.json"
+  fi
+}
+
+@test "mod deployed but not wired up: legacy guardrail is still installed" {
+  mkdir -p "${TEST_REPO_DIR}/.claude"
+  HOME="$(_mod_home unwired)" _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.claude/hooks/cc-block-dangerous-git.sh" ]
+  grep -q "cc-block-dangerous-git" "${TEST_REPO_DIR}/.claude/settings.json"
+}
+
+@test "mod active: an existing legacy install is retired, other hooks kept" {
+  _require_jq
+  mkdir -p "${TEST_REPO_DIR}/.claude"
+  _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.claude/hooks/cc-block-dangerous-git.sh" ]
+  # Add an unrelated hook next to the legacy one
+  local s="${TEST_REPO_DIR}/.claude/settings.json" tmp
+  tmp="$(mktemp)"
+  jq '.hooks.PreToolUse += [{"matcher":"ExitPlanMode","hooks":[{"type":"command","command":"keep-me.sh"}]}]' "${s}" >"${tmp}"
+  mv "${tmp}" "${s}"
+
+  HOME="$(_mod_home wired)" run _run_configure "--non-interactive"
+  [ ! -f "${TEST_REPO_DIR}/.claude/hooks/cc-block-dangerous-git.sh" ]
+  [ ! -f "${TEST_REPO_DIR}/.claude/hooks/_guardrail_core.sh" ]
+  ! grep -q "cc-block-dangerous-git" "${s}"
+  grep -q "keep-me.sh" "${s}"
+  jq -e . "${s}" >/dev/null
+}
+
+@test "mod active: a customised legacy script is kept with a warning" {
+  mkdir -p "${TEST_REPO_DIR}/.claude"
+  _run_configure "--non-interactive"
+  echo "# local tweak" >>"${TEST_REPO_DIR}/.claude/hooks/cc-block-dangerous-git.sh"
+
+  HOME="$(_mod_home wired)" run _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.claude/hooks/cc-block-dangerous-git.sh" ]
+  [[ "${output}" == *"differs from the stock CGW copy"* ]]
+}
+
+@test "mod active: Antigravity guardrail is unaffected and still blocks" {
+  mkdir -p "${TEST_REPO_DIR}/.claude" "${TEST_REPO_DIR}/.agents"
+  _run_configure "--non-interactive"
+  HOME="$(_mod_home wired)" _run_configure "--non-interactive"
+
+  [ ! -f "${TEST_REPO_DIR}/.claude/hooks/_guardrail_core.sh" ]
+  # AGY keeps its own adapter + core copy and its registration
+  [ -f "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.sh" ]
+  [ -f "${TEST_REPO_DIR}/.agents/hooks/_guardrail_core.sh" ]
+  grep -q "agy-block-dangerous-git" "${TEST_REPO_DIR}/.agents/hooks.json"
+
+  _require_jq
+  local payload='{"toolCall":{"name":"run_command","args":{"CommandLine":"git commit -m \"x\""}}}'
+  run bash "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.sh" <<<"${payload}"
+  [[ "${output}" =~ \"decision\"[[:space:]]*:[[:space:]]*\"deny\" ]]
+}
+
 @test "no-jq settings.json writer emits valid JSON for a command with embedded quotes" {
   _require_jq
   # Regression: the from-scratch printf path interpolated hook_cmd raw, so the

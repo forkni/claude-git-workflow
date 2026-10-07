@@ -672,6 +672,13 @@ _offer_harness_install() {
   local mode="local"
   [[ ${global} -eq 1 ]] && mode="global"
 
+  # The git-guardrail mod replaces the legacy Claude Code shell hook: retire it
+  # (idempotent, quiet when already gone) rather than offering to install it.
+  if [[ "${host}" == "cc" && "${what}" == "guardrail" ]] && _cc_guard_mod_active; then
+    _retire_cc_guardrail "${mode}"
+    return 0
+  fi
+
   echo ""
   _harness_spec "${host}" "${what}_blurb"
   if [[ "${what}" == "skill" && ${global} -eq 1 ]]; then
@@ -920,6 +927,133 @@ PYEOF
   printf '      {"%s":{"%s":[{"matcher":"%s","hooks":[{"type":"command","command":"%s"}]}]}}\n' \
     "${k1}" "${k2}" "${matcher}" "$(_json_escape_string "${cmd}")" >&2
   return 1
+}
+
+# _cc_guard_mod_active
+#   True when the in-process git-guardrail mod is deployed AND wired up on this
+#   machine: ~/.claude/mods/git-guardrail carries its plugin manifest, and
+#   CLAUDE_CODE_PLUGIN_DIRS (process env, else the "env" block of
+#   ~/.claude/settings.json) names it. Both are required so a deployed-but-never-
+#   loaded mod cannot cost a project its only guardrail. Machines without the
+#   mod keep the legacy shell hook.
+_cc_guard_mod_active() {
+  [[ -f "${HOME}/.claude/mods/git-guardrail/.claude-plugin/plugin.json" ]] || return 1
+  case "${CLAUDE_CODE_PLUGIN_DIRS:-}" in
+    *git-guardrail*) return 0 ;;
+  esac
+  grep -Eq '"CLAUDE_CODE_PLUGIN_DIRS"[[:space:]]*:[[:space:]]*"[^"]*git-guardrail' \
+    "${HOME}/.claude/settings.json" 2>/dev/null
+}
+
+# _unregister_guardrail <host> <json_file>
+#   Modifier, inverse of _register_guardrail: strips every command naming the
+#   host's marker from the PreToolUse array, drops entries and containers left
+#   empty, and keeps all other hooks (e.g. ExitPlanMode). No-op when nothing
+#   names the marker. Backends: jq, python, manual instructions.
+_unregister_guardrail() {
+  local host="$1" json="$2" marker keys k1 k2
+  [[ -f "${json}" ]] || return 0
+  marker="$(_guardrail_spec "${host}" marker)" || return 1
+  grep -qF -- "${marker}" "${json}" 2>/dev/null || return 0
+  keys="$(_guardrail_spec "${host}" keys)"
+  read -r k1 k2 <<<"${keys}"
+
+  if command -v jq &>/dev/null; then
+    local tmp
+    tmp="$(mktemp)"
+    jq --arg k1 "${k1}" --arg k2 "${k2}" --arg marker "${marker}" '
+      .[$k1][$k2] |= (
+        map(.hooks = ((.hooks // []) | map(select((.command // "") | contains($marker) | not))))
+        | map(select(.hooks | length > 0))
+      )
+      | if (.[$k1][$k2] | length) == 0 then del(.[$k1][$k2]) else . end
+      | if (.[$k1] | length) == 0 then del(.[$k1]) else . end' "${json}" >"${tmp}" || {
+      rm -f "${tmp}"
+      echo "  [!] Failed to update ${json} (malformed JSON?). Legacy guardrail NOT removed." >&2
+      return 1
+    }
+    if ! mv "${tmp}" "${json}"; then
+      rm -f "${tmp}"
+      echo "  [!] Failed to write ${json}. Legacy guardrail NOT removed." >&2
+      return 1
+    fi
+    echo "  [OK] Removed legacy guardrail registration from ${json}"
+    return 0
+  fi
+
+  local py_cmd
+  for py_cmd in python3 python; do
+    if command -v "${py_cmd}" &>/dev/null; then
+      if "${py_cmd}" - "${json}" "${k1}" "${k2}" "${marker}" 2>/dev/null <<'PYEOF'; then
+import json, sys
+path, k1, k2, marker = sys.argv[1:5]
+with open(path, encoding='utf-8') as f:
+    data = json.load(f)
+ptu = data.get(k1, {}).get(k2, [])
+for e in ptu:
+    e['hooks'] = [h for h in e.get('hooks', []) if marker not in h.get('command', '')]
+ptu[:] = [e for e in ptu if e['hooks']]
+if not ptu:
+    data[k1].pop(k2, None)
+if not data[k1]:
+    data.pop(k1)
+with open(path, 'w', encoding='utf-8') as f:
+    json.dump(data, f, indent=2)
+PYEOF
+        echo "  [OK] Removed legacy guardrail registration from ${json} (via python)"
+        return 0
+      fi
+    fi
+  done
+
+  echo "  [!] jq and python not found — cannot edit ${json}" >&2
+  echo "      Manually delete the hook entry whose command names ${marker}." >&2
+  return 1
+}
+
+# _remove_if_stock <installed_file> <stock_file>
+#   Delete <installed_file> only when it matches the CGW template copy (line
+#   endings ignored); a customised or unverifiable copy is kept with a warning.
+_remove_if_stock() {
+  local installed="$1" stock="${2:-}"
+  [[ -f "${installed}" ]] || return 0
+  if [[ -n "${stock}" && -f "${stock}" ]] &&
+    diff -q --strip-trailing-cr "${installed}" "${stock}" >/dev/null 2>&1; then
+    rm -f "${installed}"
+    echo "  [OK] Removed legacy ${installed}"
+  else
+    echo "  [!] ${installed} differs from the stock CGW copy -- left in place (delete it manually if unused)" >&2
+  fi
+}
+
+# _retire_cc_guardrail <local|global>
+#   The git-guardrail mod supersedes the legacy shell hook: unregister it and
+#   remove its stock scripts instead of installing it. The adapter goes first;
+#   _guardrail_core.sh follows only when nothing left in the directory sources it.
+_retire_cc_guardrail() {
+  local install_mode="${1:-local}"
+  local hook_dst settings_json hook_dir hooks_src="" f
+  hook_dst="$(_harness_spec cc "guardrail_dst:${install_mode}")"
+  settings_json="$(_harness_spec cc "settings_json:${install_mode}")"
+  hook_dir="$(dirname "${hook_dst}")"
+  hooks_src="$(_resolve_template_dir hooks 2>/dev/null)" || hooks_src=""
+
+  [[ -f "${hook_dst}" ]] || grep -qF -- "cc-block-dangerous-git" "${settings_json}" 2>/dev/null || return 0
+
+  echo ""
+  echo "git-guardrail mod detected -- retiring the legacy Claude Code guardrail..."
+  _unregister_guardrail cc "${settings_json}" || return 1
+  _remove_if_stock "${hook_dst}" "${hooks_src:+${hooks_src}/cc-block-dangerous-git.sh}"
+  if [[ -f "${hook_dir}/_guardrail_core.sh" ]]; then
+    for f in "${hook_dir}"/*; do
+      [[ "${f}" == "${hook_dir}/_guardrail_core.sh" || ! -f "${f}" ]] && continue
+      if grep -qF "_guardrail_core.sh" "${f}" 2>/dev/null; then
+        echo "  [!] ${f} still sources _guardrail_core.sh -- core left in place" >&2
+        return 0
+      fi
+    done
+    _remove_if_stock "${hook_dir}/_guardrail_core.sh" "${hooks_src:+${hooks_src}/_guardrail_core.sh}"
+  fi
 }
 
 _install_cc_guardrail() {
