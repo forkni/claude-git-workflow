@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.13.1 (2026-10-07)
+
+> Changes since `v0.13.0`
+
+### Bug Fixes
+
+- **Guardrail CRLF line continuations**: `hooks/_guardrail_core.sh` strips carriage returns before joining backslash-newline continuations. On Windows, `jq.exe` emits CRLF, so a wrapped dangerous command (e.g. `git reset \<CRLF> --hard`) was not joined and slipped past the classifier. Covered by a new bats regression test.
+
+### Documentation
+
+- `error-recovery.md` notes that `configure.sh` retires the Claude Code shell hook automatically when the `git-guardrail` mod is active.
+
 ## v0.13.0 (2026-10-07)
 
 > Changes since `v0.12.0`
