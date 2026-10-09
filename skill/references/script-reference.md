@@ -354,10 +354,10 @@ Creates `pre-bisect-<timestamp>-<pid>` backup tag before starting.
 |------------|---------|-------|
 | `commit` | `git reset --soft HEAD~1` — keeps changes staged | Creates `pre-undo-commit-<timestamp>-<pid>` backup tag |
 | `unstage <file>...` | Remove file(s) from staging area | Validates files are staged first |
-| `discard <file>...` | Discard working-tree changes (irreversible) | Refused in `--non-interactive` mode |
+| `discard <file>...` | Discard working-tree changes (irreversible) | Refused in `--non-interactive` mode (and without a TTY); run it in your own terminal |
 | `amend-message <msg>` | Rewrite last commit message | Warns if commit already pushed |
 
-Global flags: `--non-interactive`, `--dry-run`, `--help`
+Global flags: `--non-interactive`, `--dry-run`, `--help`. No TTY implies `--non-interactive`.
 
 **`branch_cleanup.sh`** — Prune stale branches and tags
 
@@ -550,7 +550,7 @@ is printed if it tracks a differently named remote branch).
 | `--branch <name>` | Sync a specific named branch (overrides `--all`) |
 | `--dry-run` | Show what would be synced without making changes |
 | `--prune` | Remove stale remote-tracking refs during fetch |
-| `--non-interactive` | Abort (instead of prompt) if uncommitted changes found |
+| `--non-interactive`, `--yes`/`-y` | Skip prompts: auto-stash uncommitted changes and proceed (no TTY implies this) |
 
 Runs `git fetch ${CGW_REMOTE}` then pulls each target: `--ff-only` for protected branches
 (`CGW_PROTECTED_BRANCHES`; a diverged one is refused with reconcile options), `--rebase=merges`
