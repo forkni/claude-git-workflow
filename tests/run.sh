@@ -63,11 +63,12 @@ jobs="${CGW_TEST_JOBS:-$((_cores / 2))}"
 # half the suite's total runtime. Retune from a fresh timing run when files grow.
 CGW_SLOW_FILES=(
   "tests/unit/common.bats"
+  "tests/integration/check_lint_snapshot.bats"
+  "tests/integration/merge_pr.bats"
   "tests/integration/commit_enhanced.bats"
-  "tests/integration/configure.bats"
-  "tests/integration/merge_validation.bats"
-  "tests/integration/cc_guardrail.bats"
-  "tests/integration/cherry_pick.bats"
+  "tests/integration/hook_preservation.bats"
+  "tests/integration/push_validated.bats"
+  "tests/integration/agy_guardrail.bats"
 )
 
 # Batch selection: --slow = only the slow files, --all = everything, default = fast batch.
