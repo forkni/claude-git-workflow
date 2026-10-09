@@ -64,6 +64,10 @@ unset SKIP_CGW_GUARDRAIL
 
 **Markdown lint on local-only files**: ignore — `CLAUDE.md`, `MEMORY.md`, etc. are never committed.
 
+**Markdown-lint failure in files the push does not touch** (old errors, gitignored docs): re-push with
+`push_validated.sh --skip-md-lint`. `--skip-lint` also skips the typecheck, so reserve it for real
+code-lint bypasses.
+
 ---
 
 ## Push Failures

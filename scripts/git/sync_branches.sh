@@ -310,7 +310,8 @@ main() {
         echo "  --branch <name>     Sync a specific named branch (overrides --all)"
         echo "  --dry-run           Show what would be synced without making changes"
         echo "  --prune             Remove stale remote-tracking refs during fetch"
-        echo "  --non-interactive   Abort (instead of prompt) if uncommitted changes found"
+        echo "  --non-interactive   Skip prompts (auto-stash uncommitted changes)"
+        echo "  -y, --yes           Same as --non-interactive"
         echo "  -h, --help          Show this help"
         echo ""
         echo "Behavior:"
@@ -338,7 +339,7 @@ main() {
         ;;
       --dry-run) dry_run=1 ;;
       --prune) prune=1 ;;
-      --non-interactive)
+      --non-interactive | --yes | -y)
         CGW_NON_INTERACTIVE=1
         ;;
       *)

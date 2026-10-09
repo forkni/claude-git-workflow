@@ -16,7 +16,7 @@
 #   discard <file>...    Discard working-tree changes to file(s) (git checkout -- <file>)
 #   amend-message <msg>  Change the message of the last commit (git commit --amend -m)
 # Options (all subcommands):
-#   --non-interactive    Skip confirmation prompts
+#   --non-interactive    Skip confirmation prompts (destructive ones abort)
 #   --dry-run            Show what would happen without changing anything
 #   -h, --help           Show help
 # Returns:
@@ -44,7 +44,7 @@ _show_help() {
   echo "                       (local only -- do not use after pushing)"
   echo ""
   echo "Options:"
-  echo "  --non-interactive    Skip confirmation prompts"
+  echo "  --non-interactive    Skip confirmation prompts (destructive ones abort)"
   echo "  --dry-run            Preview without making changes"
   echo "  -h, --help           Show this help"
   echo ""
@@ -70,6 +70,8 @@ main() {
   local non_interactive=0
   local dry_run=0
 
+  # Auto-detect non-interactive mode when no TTY (matches commit_enhanced.sh, stash_work.sh)
+  [[ ! -t 0 ]] && CGW_NON_INTERACTIVE=1
   [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
 
   # Pre-scan remaining args for global flags
