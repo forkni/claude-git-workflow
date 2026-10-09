@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.13.2 (2026-10-09)
+
+> Changes since `v0.13.1`
+
+### Bug Fixes
+
+- **`undo_last.sh` non-interactive auto-detection**: Inferred non-interactive mode when running without a TTY (`[ ! -t 0 ]`), preventing prompt hangs in non-interactive CI, background tasks, and script runners.
+- **Bats test suite assertion integrity**: Resolved all 60 instances of ShellCheck SC2314 (ineffective `! cmd` under `set -e`) across 16 test files by converting them to `run ! <cmd>` or negative output assertions, ensuring test assertions fail immediately on forbidden actions.
+- **Multiline regex branch matching in `branch_cleanup.bats`**: Replaced bash multiline regex with line-by-line grep with here-string to reliably detect protected default branches.
+
+### Performance & Test Suite Hardening
+
+- **`check_lint.bats` test suite partitioning**: Split the 489-second NTFS bottleneck into `tests/integration/check_lint.bats` (39 worktree/flag tests, ~137s) and `tests/integration/check_lint_snapshot.bats` (34 committed-snapshot `--ref`/`--base`, editable `.pth`, and `uv` drift tests, ~132s), cutting wall-clock execution time by 72% while preserving 100% test coverage.
+- **Test runner parallel batch retuning**: Retuned `CGW_SLOW_FILES` in `tests/run.sh` to match empirical parallel load measurements, placing the 7 heaviest files in the slow batch so the default fast run completes in < 3 minutes without unindexed bottlenecks.
+- **Continuous test static analysis**: Added Bats ShellCheck linting (`--shell=bash --severity=error tests/unit/*.bats tests/integration/*.bats`) to `.github/workflows/branch-protection.yml` to prevent SC2314 regressions permanently.
+
+### Documentation
+
+- Added `TESTING_GUIDE.md` establishing the test suite baseline, architectural structure, and test suite hardening metrics.
+- Added walkthrough guide for the in-process git guardrail mod (`docs/mods/walkthrough.md`).
+
 ## v0.13.1 (2026-10-07)
 
 > Changes since `v0.13.0`

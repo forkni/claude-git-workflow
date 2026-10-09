@@ -72,7 +72,8 @@ teardown() {
   run run_script branch_cleanup.sh --execute --non-interactive
   [ "${status}" -eq 0 ]
   # Branch is gone
-  ! git -C "${TEST_REPO_DIR}" branch | grep -q "feature/to-delete"
+  run git -C "${TEST_REPO_DIR}" branch
+  [[ "${output}" != *"feature/to-delete"* ]]
 }
 
 # ── protected branches ────────────────────────────────────────────────────────
@@ -104,10 +105,11 @@ teardown() {
   export CGW_TARGET_BRANCH=development
   run run_script branch_cleanup.sh --execute --non-interactive
   [ "${status}" -eq 0 ]
-  git -C "${TEST_REPO_DIR}" branch | grep -q "master"
-  git -C "${TEST_REPO_DIR}" branch | grep -qE '(^|[[:space:]])main$'
+  run git -C "${TEST_REPO_DIR}" branch
+  grep -q "master" <<< "${output}"
+  grep -qE '(^|[[:space:]])main$' <<< "${output}"
   # Control branch proves --execute actually processed the merged set.
-  ! git -C "${TEST_REPO_DIR}" branch | grep -q "feature/stale"
+  run ! grep -q "feature/stale" <<< "${output}"
 }
 
 @test "remote default branch survives when CGW_TARGET_BRANCH is overridden" {
@@ -120,8 +122,9 @@ teardown() {
   export CGW_TARGET_BRANCH=development
   run run_script branch_cleanup.sh --execute --non-interactive
   [ "${status}" -eq 0 ]
-  git -C "${TEST_REPO_DIR}" branch | grep -q "stable"
-  ! git -C "${TEST_REPO_DIR}" branch | grep -q "feature/stale"
+  run git -C "${TEST_REPO_DIR}" branch
+  [[ "${output}" == *"stable"* ]]
+  [[ "${output}" != *"feature/stale"* ]]
 }
 
 @test "branch checked out in a linked worktree is not listed for deletion" {
@@ -153,7 +156,8 @@ teardown() {
   run run_script branch_cleanup.sh --tags --execute --older-than 0 --non-interactive
   [ "${status}" -eq 0 ]
   # Tag is deleted
-  ! git -C "${TEST_REPO_DIR}" tag | grep -q "pre-merge-backup-20200101_000000"
+  run git -C "${TEST_REPO_DIR}" tag
+  [[ "${output}" != *"pre-merge-backup-20200101_000000"* ]]
 }
 
 @test "--tags cleans up new-format pre-merge tags (no -backup- infix)" {
@@ -161,5 +165,6 @@ teardown() {
 
   run run_script branch_cleanup.sh --tags --execute --older-than 0 --non-interactive
   [ "${status}" -eq 0 ]
-  ! git -C "${TEST_REPO_DIR}" tag | grep -q "pre-merge-20200101_000000-12345"
+  run git -C "${TEST_REPO_DIR}" tag
+  [[ "${output}" != *"pre-merge-20200101_000000-12345"* ]]
 }

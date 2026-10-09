@@ -477,7 +477,7 @@ _dirty_worktree_over_clean_commit() {
   git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: new ok"
   run _run_push "--dry-run --pushed-only"
   [ "${status}" -eq 0 ]
-  ! grep -q "old_bad.py" "${MOCK_BIN_DIR}/ruff.log"
+  run ! grep -q "old_bad.py" "${MOCK_BIN_DIR}/ruff.log"
   grep -q "new_ok.py" "${MOCK_BIN_DIR}/ruff.log"
 }
 

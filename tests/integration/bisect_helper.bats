@@ -53,7 +53,7 @@ teardown() {
   [ "${status}" -eq 0 ]
   [[ "${output}" == *"ry run"* ]] || [[ "${output}" == *"Would run"* ]]
   # No bisect session started
-  ! git -C "${TEST_REPO_DIR}" bisect log >/dev/null 2>&1
+  run ! git -C "${TEST_REPO_DIR}" bisect log
 }
 
 # ── auto-detect good ref ──────────────────────────────────────────────────────

@@ -61,7 +61,7 @@ _seed_docs_on_dev() {
   [[ "${output}" == *"Excluding local-only file"* ]]
   # Shared doc merged; local-only doc NOT in target history.
   git -C "${TEST_REPO_DIR}" cat-file -e "main:docs/guide.md"
-  ! git -C "${TEST_REPO_DIR}" cat-file -e "main:docs/private.md" 2>/dev/null
+  run ! git -C "${TEST_REPO_DIR}" cat-file -e "main:docs/private.md"
 }
 
 @test "docs merge with ONLY local-only changes exits 0 without a commit" {
@@ -77,7 +77,7 @@ _seed_docs_on_dev() {
   [ "${status}" -eq 0 ]
   # Target must not have advanced (nothing left to commit after exclusion).
   [ "$(git -C "${TEST_REPO_DIR}" rev-parse main)" = "${main_before}" ]
-  ! git -C "${TEST_REPO_DIR}" cat-file -e "main:docs/private.md" 2>/dev/null
+  run ! git -C "${TEST_REPO_DIR}" cat-file -e "main:docs/private.md"
 }
 
 @test "docs merge excludes a local-only file that the target tracks (restores HEAD version)" {

@@ -46,6 +46,9 @@ jobs:
       - name: Run ShellCheck (hooks)
         run: shellcheck -x --severity=error --source-path=hooks hooks/pre-commit hooks/pre-push hooks/*.sh
 
+      - name: Run ShellCheck (tests)
+        run: shellcheck --shell=bash --severity=error tests/unit/*.bats tests/integration/*.bats
+
       - name: Install shfmt
         run: |
           curl -sSL "https://github.com/mvdan/sh/releases/download/v3.13.0/shfmt_v3.13.0_linux_amd64" -o /usr/local/bin/shfmt

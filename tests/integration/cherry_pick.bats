@@ -232,7 +232,9 @@ _commit_two_files_on_dev() {
   sha=$(_commit_two_files_on_dev)
   run run_script cherry_pick_commits.sh --commit "${sha}" --no-x --non-interactive
   [ "${status}" -eq 0 ]
-  ! git -C "${TEST_REPO_DIR}" log main -1 --format=%B | grep -q "cherry picked from commit"
+  local msg
+  msg=$(git -C "${TEST_REPO_DIR}" log main -1 --format=%B)
+  [[ "${msg}" != *"cherry picked from commit"* ]]
 }
 
 @test "partial pick (--only) records the origin trailer and the only-note" {
@@ -245,7 +247,7 @@ _commit_two_files_on_dev() {
   [[ "${msg}" == *"(cherry picked from commit ${sha})"* ]]
   [[ "${msg}" == *"only: pick_one.txt"* ]]
   git -C "${TEST_REPO_DIR}" show main:pick_one.txt >/dev/null
-  ! git -C "${TEST_REPO_DIR}" cat-file -e main:pick_two.txt 2>/dev/null
+  run ! git -C "${TEST_REPO_DIR}" cat-file -e main:pick_two.txt
 }
 
 @test "partial pick with --no-x omits the origin trailer but keeps the only-note" {

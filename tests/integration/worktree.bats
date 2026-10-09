@@ -70,7 +70,7 @@ _install_hook_direct() {
   [ ! -e "${TEST_WORKTREE_DIR}/scripts/git/_common.sh" ]
   [ ! -e "${TEST_WORKTREE_DIR}/.githooks" ]
   [ ! -L "${TEST_WORKTREE_DIR}/scripts/git" ]
-  ! fsutil reparsepoint query "$(cygpath -w "${TEST_WORKTREE_DIR}/scripts/git" 2>/dev/null || echo "${TEST_WORKTREE_DIR}/scripts/git")" >/dev/null 2>&1
+  run ! fsutil reparsepoint query "$(cygpath -w "${TEST_WORKTREE_DIR}/scripts/git" 2>/dev/null || echo "${TEST_WORKTREE_DIR}/scripts/git")"
 }
 
 @test "link shims forward to main's script and keep the worktree as PROJECT_ROOT" {
@@ -325,7 +325,7 @@ _skip_unless_windows() {
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"Invalid base ref"* ]]
   [ ! -d "${TEST_TMPDIR}/wt-bad" ]
-  ! git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/topic-bad
+  run ! git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/topic-bad
 }
 
 @test "add: a base without a branch is refused" {

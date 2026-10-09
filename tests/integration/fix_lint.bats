@@ -296,7 +296,7 @@ VENV_EOF
   "
   [ "${status}" -eq 0 ]
   grep -q "mock ruff format" "${MOCK_BIN_DIR}/ruff.log"
-  ! grep -q "mock ruff check" "${MOCK_BIN_DIR}/ruff.log"
+  run ! grep -q "mock ruff check" "${MOCK_BIN_DIR}/ruff.log"
 }
 
 @test "fix_lint.sh rejects --skip-lint with exit 1" {
