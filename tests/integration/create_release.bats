@@ -45,7 +45,8 @@ teardown() {
   [ "${status}" -eq 0 ]
   [ "$(git -C "${TEST_REPO_DIR}" cat-file -t archive/pre-rewrite)" = "tag" ]
   # no v prefix was added
-  ! git -C "${TEST_REPO_DIR}" tag -l "varchive/pre-rewrite" | grep -q .
+  run git -C "${TEST_REPO_DIR}" tag -l "varchive/pre-rewrite"
+  [ -z "${output}" ]
 }
 
 @test "--allow-non-semver does not add a v prefix to a bare version" {
@@ -122,7 +123,8 @@ teardown() {
   [ "${status}" -eq 0 ]
   [[ "${output}" == *"ry run"* ]] || [[ "${output}" == *"would be"* ]]
   # Tag not created
-  ! git -C "${TEST_REPO_DIR}" tag -l "v1.0.0" | grep -q "v1.0.0"
+  run git -C "${TEST_REPO_DIR}" tag -l "v1.0.0"
+  [ -z "${output}" ]
 }
 
 # ── annotated tag ─────────────────────────────────────────────────────────────
@@ -150,5 +152,6 @@ teardown() {
 @test "--allow-non-semver rejects a tag name starting with a dash" {
   run run_script create_release.sh -- -oops --allow-non-semver --non-interactive
   [ "${status}" -ne 0 ]
-  ! git -C "${TEST_REPO_DIR}" tag -l | grep -q -- '-oops'
+  run git -C "${TEST_REPO_DIR}" tag -l
+  [[ "${output}" != *"-oops"* ]]
 }

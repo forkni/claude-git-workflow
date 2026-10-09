@@ -611,7 +611,7 @@ _mod_home() {
   HOME="$(_mod_home wired)" run _run_configure "--non-interactive"
   [ ! -f "${TEST_REPO_DIR}/.claude/hooks/cc-block-dangerous-git.sh" ]
   [ ! -f "${TEST_REPO_DIR}/.claude/hooks/_guardrail_core.sh" ]
-  ! grep -q "cc-block-dangerous-git" "${s}"
+  run ! grep -q "cc-block-dangerous-git" "${s}"
   grep -q "keep-me.sh" "${s}"
   jq -e . "${s}" >/dev/null
 }

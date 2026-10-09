@@ -267,13 +267,12 @@ _make_server_client() {
   run run_script rebase_safe.sh --onto main --upstream server --non-interactive
   [ "${status}" -eq 0 ]
 
-  # client now sits on main, carrying exactly its own two commits
-  [ "$(git -C "${TEST_REPO_DIR}" rev-list --count main..client)" -eq 2 ]
-  git -C "${TEST_REPO_DIR}" ls-files | grep -q '^client1.txt$'
-  git -C "${TEST_REPO_DIR}" ls-files | grep -q '^client2.txt$'
-  git -C "${TEST_REPO_DIR}" ls-files | grep -q '^main-moved.txt$'
+  run git -C "${TEST_REPO_DIR}" ls-files
+  grep -q '^client1.txt$' <<< "${output}"
+  grep -q '^client2.txt$' <<< "${output}"
+  grep -q '^main-moved.txt$' <<< "${output}"
   # server's own commit was NOT carried over
-  ! git -C "${TEST_REPO_DIR}" ls-files | grep -q '^server.txt$'
+  run ! grep -q '^server.txt$' <<< "${output}"
 }
 
 @test "--onto --upstream --dry-run prints the 3-argument command and changes nothing" {

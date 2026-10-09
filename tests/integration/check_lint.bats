@@ -295,7 +295,7 @@ EOF
   # The linter received the modified file; the {files} placeholder was resolved
   # (not leaked literally) and did not revert to a whole-repo scan.
   grep -q "mod.py" "${MOCK_BIN_DIR}/ruff.log"
-  ! grep -q "{files}" "${MOCK_BIN_DIR}/ruff.log"
+  run ! grep -q "{files}" "${MOCK_BIN_DIR}/ruff.log"
 }
 
 @test "--modified-only format-only failure is non-blocking (exit 0), mirrors full mode" {
@@ -794,8 +794,8 @@ _run_check_lint_tc() {
   "
   [ "${status}" -eq 0 ]
   grep -q "new.py" "${MOCK_BIN_DIR}/ruff.log"
-  ! grep -q "old.py" "${MOCK_BIN_DIR}/ruff.log"
-  ! grep -q "dirty.py" "${MOCK_BIN_DIR}/ruff.log"
+  run ! grep -q "old.py" "${MOCK_BIN_DIR}/ruff.log"
+  run ! grep -q "dirty.py" "${MOCK_BIN_DIR}/ruff.log"
 }
 
 @test "--ref --base: no pushed files matching the extensions skips lint cleanly" {
@@ -832,7 +832,7 @@ _run_check_lint_tc() {
   "
   [ "${status}" -eq 0 ]
   grep -q "new.md" "${MOCK_BIN_DIR}/mdlint.log"
-  ! grep -q "old.md" "${MOCK_BIN_DIR}/mdlint.log"
+  run ! grep -q "old.md" "${MOCK_BIN_DIR}/mdlint.log"
 }
 
 @test "--ref: typechecker resolves from the main repo's .venv while cwd is the snapshot" {
@@ -858,7 +858,7 @@ _run_check_lint_tc() {
   "
   [ "${status}" -eq 0 ]
   [ -f "${TEST_TMPDIR}/venv_tc.log" ]
-  ! grep -q "cwd=${TEST_REPO_DIR}\$" "${TEST_TMPDIR}/venv_tc.log"
+  run ! grep -q "cwd=${TEST_REPO_DIR}\$" "${TEST_TMPDIR}/venv_tc.log"
 }
 
 # ── --ref: editable-install isolation ────────────────────────────────────────
@@ -1051,7 +1051,7 @@ y: int = g()"
   "
   [ "${status}" -eq 0 ]
   grep -q "unpushed.py" "${MOCK_BIN_DIR}/ruff.log"
-  ! grep -qE '(^|[ /])pushed\.py' "${MOCK_BIN_DIR}/ruff.log"
+  run ! grep -qE '(^|[ /])pushed\.py' "${MOCK_BIN_DIR}/ruff.log"
 }
 
 @test "--ref --base: preserves CGW_LINT_EXCLUDES in snapshot mode" {
@@ -1121,7 +1121,7 @@ EOF
   "
   [ "${status}" -eq 0 ]
   grep -q "données.py" "${MOCK_BIN_DIR}/ruff.log"
-  ! grep -q '\303' "${MOCK_BIN_DIR}/ruff.log"
+  run ! grep -q '\303' "${MOCK_BIN_DIR}/ruff.log"
 }
 
 @test "--ref --unpushed: non-ASCII pushed file names are linted, not dropped" {
@@ -1159,7 +1159,7 @@ EOF
   "
   [ "${status}" -eq 0 ]
   grep -q "guide.md" "${MOCK_BIN_DIR}/mdlint.log"
-  ! grep -q "CHANGELOG.md" "${MOCK_BIN_DIR}/mdlint.log"
+  run ! grep -q "CHANGELOG.md" "${MOCK_BIN_DIR}/mdlint.log"
 }
 
 @test "--ref --base: a directory entry in CGW_MARKDOWNLINT_PATHS never sends non-markdown files to markdownlint" {
@@ -1180,7 +1180,7 @@ EOF
   "
   [ "${status}" -eq 0 ]
   grep -q "guide.md" "${MOCK_BIN_DIR}/mdlint.log"
-  ! grep -q "tool.py" "${MOCK_BIN_DIR}/mdlint.log"
+  run ! grep -q "tool.py" "${MOCK_BIN_DIR}/mdlint.log"
 }
 
 @test "--ref --base: default markdown scope still includes root-level .md files" {

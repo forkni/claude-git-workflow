@@ -52,13 +52,13 @@ _run_configure() {
   git -C "${TEST_REPO_DIR}" branch -D development
   _run_configure "--non-interactive" || true
   [ -f "${TEST_REPO_DIR}/.cgw.conf" ]
-  ! grep -q "CGW_SOURCE_BRANCH" "${TEST_REPO_DIR}/.cgw.conf"
+  run ! grep -q "CGW_SOURCE_BRANCH" "${TEST_REPO_DIR}/.cgw.conf"
 }
 
 @test "generated .cgw.conf never contains CGW_TARGET_BRANCH (auto-detected at runtime instead)" {
   _run_configure "--non-interactive" || true
   [ -f "${TEST_REPO_DIR}/.cgw.conf" ]
-  ! grep -q "CGW_TARGET_BRANCH" "${TEST_REPO_DIR}/.cgw.conf"
+  run ! grep -q "CGW_TARGET_BRANCH" "${TEST_REPO_DIR}/.cgw.conf"
 }
 
 # ── --reconfigure overwrites existing ────────────────────────────────────────
@@ -94,7 +94,7 @@ _run_configure() {
   _run_configure "--non-interactive --reconfigure"
   [ -f "${TEST_REPO_DIR}/.cgw.conf.bak" ]
   grep -q 'CGW_LINT_CMD="my-custom-lint"' "${TEST_REPO_DIR}/.cgw.conf.bak"
-  ! grep -q 'CGW_LINT_CMD="my-custom-lint"' "${TEST_REPO_DIR}/.cgw.conf"
+  run ! grep -q 'CGW_LINT_CMD="my-custom-lint"' "${TEST_REPO_DIR}/.cgw.conf"
 }
 
 @test "fresh install (no prior .cgw.conf) produces no .cgw.conf.bak" {
@@ -289,7 +289,7 @@ EOF
   # Test repo has both 'main' and 'development' -- fresh detection finds 'development'
   # as SOURCE. TARGET is never written (auto-detected at runtime instead).
   grep -q 'CGW_SOURCE_BRANCH="development"' "${TEST_REPO_DIR}/.cgw.conf"
-  ! grep -q "CGW_TARGET_BRANCH" "${TEST_REPO_DIR}/.cgw.conf"
+  run ! grep -q "CGW_TARGET_BRANCH" "${TEST_REPO_DIR}/.cgw.conf"
 }
 
 @test "--reconfigure on a single-branch repo omits both branch lines" {
@@ -300,8 +300,8 @@ CGW_TARGET_BRANCH="my-stable"
 CGW_LOCAL_FILES=".claude/ logs/"
 EOF
   _run_configure "--non-interactive --reconfigure"
-  ! grep -q "CGW_SOURCE_BRANCH" "${TEST_REPO_DIR}/.cgw.conf"
-  ! grep -q "CGW_TARGET_BRANCH" "${TEST_REPO_DIR}/.cgw.conf"
+  run ! grep -q "CGW_SOURCE_BRANCH" "${TEST_REPO_DIR}/.cgw.conf"
+  run ! grep -q "CGW_TARGET_BRANCH" "${TEST_REPO_DIR}/.cgw.conf"
 }
 
 @test "--reconfigure does not modify .gitignore" {

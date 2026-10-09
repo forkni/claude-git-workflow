@@ -431,7 +431,7 @@ _make_fresh_lock() {
   git tag "pre-rebase-20200101_000000-2"
   result=$(cgw_list_backup_tags merge)
   echo "${result}" | grep -q "pre-merge-"
-  ! echo "${result}" | grep -q "pre-rebase-"
+  run ! grep -q "pre-rebase-" <<< "${result}"
 }
 
 @test "cgw_list_backup_tags: no arg returns tags from all ops" {
@@ -516,8 +516,8 @@ _make_fresh_lock() {
   result=$(printf '%s\n' "CLAUDE.md" "src/foo.py" ".claude/bar" "README.md" | cgw_filter_local_files)
   echo "${result}" | grep -qx "CLAUDE.md"
   echo "${result}" | grep -qx ".claude/bar"
-  ! echo "${result}" | grep -qx "src/foo.py"
-  ! echo "${result}" | grep -qx "README.md"
+  run ! grep -qx "src/foo.py" <<< "${result}"
+  run ! grep -qx "README.md" <<< "${result}"
 }
 
 @test "cgw_filter_local_files: returns 1 when no matches" {
@@ -540,7 +540,7 @@ _make_fresh_lock() {
   result=$(cgw_filter_local_files "CLAUDE.md" "src/foo.py" ".claude/bar")
   echo "${result}" | grep -qx "CLAUDE.md"
   echo "${result}" | grep -qx ".claude/bar"
-  ! echo "${result}" | grep -qx "src/foo.py"
+  run ! grep -qx "src/foo.py" <<< "${result}"
 }
 
 # ── cgw_classify_conflicts() ─────────────────────────────────────────────────

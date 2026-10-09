@@ -912,7 +912,7 @@ _setup_uu_conflict() {
   run _run_commit "--staged-only \"feat: clean code\""
   [ "${status}" -eq 0 ]
   # The dirty unrelated file must never have been handed to the linter.
-  ! grep -q "dirty_unrelated.py" "${MOCK_BIN_DIR}/ruff.log"
+  run ! grep -q "dirty_unrelated.py" "${MOCK_BIN_DIR}/ruff.log"
 }
 
 @test "lint gate fails when a staged .py has a violation (content-aware)" {
@@ -1041,7 +1041,7 @@ _setup_uu_conflict() {
   "
   [ "${status}" -eq 0 ]
   # The dirty unrelated file must never have been handed to the linter.
-  ! grep -q "dirty_unrelated.md" "${MOCK_BIN_DIR}/mdlint.log"
+  run ! grep -q "dirty_unrelated.md" "${MOCK_BIN_DIR}/mdlint.log"
 }
 
 @test "markdown lint fails when a staged .md has a violation (content-aware)" {

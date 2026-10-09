@@ -111,7 +111,8 @@ teardown() {
   [ "${status}" -eq 0 ]
 
   # File no longer staged
-  ! git -C "${TEST_REPO_DIR}" diff --cached --name-only | grep -q "staged.txt"
+  run git -C "${TEST_REPO_DIR}" diff --cached --name-only
+  [[ "${output}" != *"staged.txt"* ]]
 }
 
 @test "unstage: no files specified exits 1" {

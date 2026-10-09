@@ -54,7 +54,7 @@ _run_merge_pr() {
   run _run_merge_pr 42
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"explicit --repo"* ]]
-  ! grep -q "pr merge" "${GH_LOG}"
+  run ! grep -q "pr merge" "${GH_LOG}"
 }
 
 # ── Argument validation ───────────────────────────────────────────────────────
@@ -91,7 +91,7 @@ _run_merge_pr() {
   run _run_merge_pr 42
   [ "${status}" -eq 0 ]
   grep -q -- "pr merge 42 --repo forkni/claude-git-workflow --merge" "${GH_LOG}"
-  ! grep -q -- "--delete-branch" "${GH_LOG}"
+  run ! grep -q -- "--delete-branch" "${GH_LOG}"
 }
 
 @test "success prints the merge SHA and the revert hint" {
@@ -107,7 +107,7 @@ _run_merge_pr() {
   run _run_merge_pr 42 --squash
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"--allow-non-merge"* ]]
-  ! grep -q "pr merge" "${GH_LOG}"
+  run ! grep -q "pr merge" "${GH_LOG}"
 }
 
 @test "--squash with --allow-non-merge merges with --squash and warns" {
@@ -132,7 +132,7 @@ _run_merge_pr() {
   MOCK_GH_PR_STATE=MERGED run _run_merge_pr 42
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"MERGED"* ]]
-  ! grep -q "pr merge" "${GH_LOG}"
+  run ! grep -q "pr merge" "${GH_LOG}"
 }
 
 @test "gh pr merge failure exits 1" {
@@ -177,8 +177,8 @@ _run_merge_pr() {
   run _run_merge_pr 42 --retarget 43
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"not stacked"* ]]
-  ! grep -q "pr merge" "${GH_LOG}"
-  ! grep -q "pr edit" "${GH_LOG}"
+  run ! grep -q "pr merge" "${GH_LOG}"
+  run ! grep -q "pr edit" "${GH_LOG}"
 }
 
 @test "--retarget of a PR that is not OPEN exits 1 before merging" {
@@ -188,7 +188,7 @@ _run_merge_pr() {
   export MOCK_GH_PR_43_STATE=CLOSED
   run _run_merge_pr 42 --retarget 43
   [ "${status}" -eq 1 ]
-  ! grep -q "pr merge" "${GH_LOG}"
+  run ! grep -q "pr merge" "${GH_LOG}"
 }
 
 # ── --delete-branch ───────────────────────────────────────────────────────────
@@ -197,7 +197,7 @@ _run_merge_pr() {
   install_mock_gh
   run _run_merge_pr 42
   [ "${status}" -eq 0 ]
-  ! grep -q "^gh api" "${GH_LOG}"
+  run ! grep -q "^gh api" "${GH_LOG}"
 }
 
 @test "--delete-branch deletes the head branch after merge and retarget" {
@@ -220,7 +220,7 @@ _run_merge_pr() {
   run _run_merge_pr 42 --delete-branch
   [ "${status}" -eq 0 ]
   grep -q -- "api --method DELETE repos/contributor/claude-git-workflow/git/refs/heads/feature-a" "${GH_LOG}"
-  ! grep -q -- "repos/forkni/claude-git-workflow/git/refs/heads" "${GH_LOG}"
+  run ! grep -q -- "repos/forkni/claude-git-workflow/git/refs/heads" "${GH_LOG}"
 }
 
 @test "--delete-branch failure makes the script exit non-zero" {
@@ -265,9 +265,9 @@ _run_merge_pr() {
   [[ "${output}" == *"DRY RUN"* ]]
   [[ "${output}" == *"Would run: gh pr merge 42"* ]]
   [[ "${output}" == *"Would run: gh pr edit 43"* ]]
-  ! grep -q "pr merge" "${GH_LOG}"
-  ! grep -q "pr edit" "${GH_LOG}"
-  ! grep -q "^gh api" "${GH_LOG}"
+  run ! grep -q "pr merge" "${GH_LOG}"
+  run ! grep -q "pr edit" "${GH_LOG}"
+  run ! grep -q "^gh api" "${GH_LOG}"
 }
 
 @test "--dry-run still refuses a non-OPEN PR" {
@@ -287,8 +287,8 @@ _run_merge_pr() {
   [ "${status}" -eq 0 ]
   [[ "${output}" != *"[OK] Merged PR #42"* ]]
   [[ "${output}" == *"not merged yet"* ]]
-  ! grep -q -- "pr edit 43" "${GH_LOG}"
-  ! grep -q -- "api --method DELETE" "${GH_LOG}"
+  run ! grep -q -- "pr edit 43" "${GH_LOG}"
+  run ! grep -q -- "api --method DELETE" "${GH_LOG}"
 }
 
 @test "an unfetchable base branch refuses the merge: no recovery point, no gh pr merge" {
@@ -298,7 +298,7 @@ _run_merge_pr() {
   run _run_merge_pr 42
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"refusing to merge without a recovery point"* ]]
-  ! grep -q -- "pr merge" "${GH_LOG}"
+  run ! grep -q -- "pr merge" "${GH_LOG}"
 }
 
 # ── PR checks gate ────────────────────────────────────────────────────────────
@@ -309,7 +309,7 @@ _run_merge_pr() {
   run _run_merge_pr 42
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"checks are not green"* ]]
-  ! grep -q -- "pr merge" "${GH_LOG}"
+  run ! grep -q -- "pr merge" "${GH_LOG}"
 }
 
 @test "pending PR checks refuse the merge without --wait-checks" {
@@ -318,7 +318,7 @@ _run_merge_pr() {
   run _run_merge_pr 42
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"still pending"* ]]
-  ! grep -q -- "pr merge" "${GH_LOG}"
+  run ! grep -q -- "pr merge" "${GH_LOG}"
 }
 
 @test "--wait-checks watches pending checks and merges when they go green" {
@@ -336,7 +336,7 @@ _run_merge_pr() {
   export MOCK_GH_CHECKS_WATCH_EXIT=1
   run _run_merge_pr 42 --wait-checks
   [ "${status}" -eq 1 ]
-  ! grep -q -- "pr merge" "${GH_LOG}"
+  run ! grep -q -- "pr merge" "${GH_LOG}"
 }
 
 @test "--skip-checks merges despite failing checks and warns" {
