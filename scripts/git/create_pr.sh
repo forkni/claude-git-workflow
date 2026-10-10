@@ -318,17 +318,26 @@ ${formatted_log}
 
   local pr_url gh_output
   if gh_output=$(gh pr create "${gh_flags[@]}" 2>&1 | tee -a "$logfile"); then
-    pr_url=$(echo "${gh_output}" | grep -oE 'https://github\.com/[^ ]+' | head -1)
+    pr_url=$(echo "${gh_output}" | tr -d '\r' | grep -oE 'https://github\.com/[^ ]+' | head -1)
     log_section_end "CREATE PR" "$logfile" "0"
     echo "" | tee -a "$logfile"
     echo "[OK] PR created: ${pr_url:-${gh_output}}" | tee -a "$logfile"
     # Handed to the CI gate (skill/references/ci-verification.md): the PR number avoids guessing it
     # from the current branch, and the head SHA is what the PR's checks must be reported against.
-    local pr_num pushed_sha
-    pr_num="${pr_url##*/pull/}"
-    [[ "${pr_num}" =~ ^[0-9]+$ ]] && echo "PR number: ${pr_num}" | tee -a "$logfile"
+    # A missing line must be loud -- the gate has nothing else to bind to.
+    local pr_num="" pushed_sha
+    [[ "${pr_url}" =~ /pull/([0-9]+) ]] && pr_num="${BASH_REMATCH[1]}"
+    if [[ -n "${pr_num}" ]]; then
+      echo "PR number: ${pr_num}" | tee -a "$logfile"
+    else
+      err_tee "[WARN] Could not parse the PR number from gh's output -- find it with: gh pr list --repo ${pr_repo} --head ${src_branch}"
+    fi
     pushed_sha=$(git ls-remote "${CGW_REMOTE}" "refs/heads/${src_branch}" 2>>"$logfile" | awk 'NR==1 {print $1}')
-    [[ -n "${pushed_sha}" ]] && echo "Head SHA: ${pushed_sha}" | tee -a "$logfile"
+    if [[ -n "${pushed_sha}" ]]; then
+      echo "Head SHA: ${pushed_sha}" | tee -a "$logfile"
+    else
+      err_tee "[WARN] Could not read ${CGW_REMOTE}/${src_branch}'s SHA via git ls-remote -- the CI gate must resolve it itself"
+    fi
     echo "" | tee -a "$logfile"
     if [[ ${draft} -eq 0 ]]; then
       echo "Charlie CI will auto-review this PR." | tee -a "$logfile"

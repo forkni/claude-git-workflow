@@ -202,6 +202,23 @@ _run_create_pr() {
   [[ "${output}" == *"Head SHA: ${pushed}"* ]]
 }
 
+@test "PR number is still reported when gh's URL line ends in a carriage return" {
+  install_mock_gh
+  export MOCK_GH_CREATE_OUTPUT='https://github.com/owner/repo/pull/42\r'
+  run _run_create_pr
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"PR number: 42"* ]]
+}
+
+@test "unparseable gh output warns loudly instead of silently omitting the PR number" {
+  install_mock_gh
+  export MOCK_GH_CREATE_OUTPUT='created (no url here)'
+  run _run_create_pr
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"PR number:"* ]]
+  [[ "${output}" == *"Could not parse the PR number"* ]]
+}
+
 # ── Explicit --repo (fork/upstream default-resolution bug) ──────────────────
 # Reproduces the fork/upstream repo shape offline: origin's *configured* URL
 # is rewritten to a fake github.com URL, but `url.<bare-dir>.insteadOf` sends

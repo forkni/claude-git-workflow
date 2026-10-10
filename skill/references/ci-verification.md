@@ -102,22 +102,36 @@ verdict: a false red right after a fix push, or a pass on a commit that never ra
 watch to the pushed SHA first:
 
 ```bash
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)   # explicit, as create_pr.sh does
+remote="${CGW_REMOTE:-origin}"
+# owner/repo from the remote's own URL, as create_pr.sh does -- NOT `gh repo view`, which
+# resolves a fork to its parent/upstream repo and would query the wrong PR.
+repo=$(git remote get-url --push "$remote" | sed -E 's#^.*[:/]([^/:]+/[^/]+)$#\1#; s#\.git$##')
 pr=<number>   # from create_pr.sh's "PR number: N" line, not `gh pr view` on the current branch
-sha=$(git ls-remote "${CGW_REMOTE:-origin}" "refs/heads/$CGW_SOURCE_BRANCH" | awk 'NR==1 {print $1}')
+sha=<sha>     # create_pr.sh's "Head SHA:" line; after a fix push: git ls-remote "$remote" "refs/heads/<branch>"
 
-# 1. wait (up to ~60s) until GitHub's PR head is the commit that was pushed
-until [[ "$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid)" == "$sha" ]]; do sleep 5; done
+# 1. wait (12 x 5s = ~60s) until GitHub's PR head is the commit that was pushed
+for _ in $(seq 12); do
+  [[ "$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid 2>/dev/null)" == "$sha" ]] && break
+  sleep 5
+done
+[[ "$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid 2>/dev/null)" == "$sha" ]] \
+  || echo "CI: unverified -- PR #$pr head has not caught up with $sha"   # STOP: do not watch
 
-# 2. wait (up to ~90s) for checks to exist on that head; "no checks reported" means "not yet" here
-until gh pr checks "$pr" --repo "$repo" 2>&1 | grep -qv "no checks reported"; do sleep 5; done
+# 2. wait (18 x 5s = ~90s) for checks to exist; a count > 0 is the only "exists" signal, so
+#    "no checks reported", empty output and gh errors (auth, network) all mean "not yet"
+for _ in $(seq 18); do
+  n=$(gh pr checks "$pr" --repo "$repo" --json name --jq length 2>/dev/null)
+  [[ "${n:-0}" -gt 0 ]] && break
+  sleep 5
+done
+[[ "${n:-0}" -gt 0 ]] || echo "CI: unverified -- no checks registered on $sha"   # see below
 
 # 3. only now watch to a terminal state
 gh pr checks "$pr" --repo "$repo" --watch --fail-fast --interval "${CGW_CI_POLL_INTERVAL:-15}"
 ```
 
-Bound both waits (loops above are the shape, not unbounded). Use the same
-"no checks after the window" rule as *Baseline + Resolve Runs*: report `CI: unverified`, never
+If step 2 ends empty, apply the same rule as *Baseline + Resolve Runs*: `gh workflow list`
+shows no active workflows → `CI: no workflow triggered`; otherwise `CI: unverified`, never
 green. After the watch, re-read `headRefOid`; if it changed, someone pushed mid-wait — restart
 from step 1. `merge_pr.sh` applies this same binding itself (`--wait-checks`, plus
 `--match-head-commit`), so it is the model to follow when merging.

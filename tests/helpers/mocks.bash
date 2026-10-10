@@ -117,6 +117,7 @@ EOF
 # Creates a fake `gh` that:
 #   - `gh auth status`  → exits $MOCK_GH_AUTH_EXIT (default 0)
 #   - `gh pr create`    → exits $MOCK_GH_PR_EXIT (default 0), prints a fake PR URL
+#                       (or $MOCK_GH_CREATE_OUTPUT, \r/\n escapes expanded)
 #   - `gh pr view N --json F` → prints env MOCK_GH_PR_<N>_<F> (else MOCK_GH_PR_<F>), F upper-cased,
 #                               e.g. MOCK_GH_PR_43_BASEREFNAME. Defaults: state=OPEN,
 #                               baseRefName=main, headRefName=feature, mergeCommit=abc1234def5678.
@@ -143,7 +144,7 @@ if [[ "\$1" == "auth" && "\$2" == "status" ]]; then
   exit ${auth_exit}
 fi
 if [[ "\$1" == "pr" && "\$2" == "create" ]]; then
-  echo "https://github.com/owner/repo/pull/42"
+  if [[ -n "\${MOCK_GH_CREATE_OUTPUT:-}" ]]; then printf '%b\n' "\${MOCK_GH_CREATE_OUTPUT}"; else echo "https://github.com/owner/repo/pull/42"; fi
   exit ${pr_exit}
 fi
 if [[ "\$1" == "pr" && "\$2" == "view" ]]; then
