@@ -354,3 +354,108 @@ _run_merge_pr() {
   run _run_merge_pr 42 --dry-run
   [ "${status}" -eq 1 ]
 }
+
+# ── PR head identity: checks must belong to the head being merged ────────────
+
+# _push_feature_head -- push branch `feature` (the mock's default headRefName) to the bare
+# remote with one extra commit; prints its SHA. Models "I just pushed a catch-up commit".
+_push_feature_head() {
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b feature development
+  echo "catch-up" >"${TEST_REPO_DIR}/catchup.txt"
+  git -C "${TEST_REPO_DIR}" add catchup.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: catch-up"
+  git -C "${TEST_REPO_DIR}" push --quiet origin feature
+  git -C "${TEST_REPO_DIR}" rev-parse HEAD
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+}
+
+@test "refuses to merge when GitHub's PR head has not caught up with the pushed branch" {
+  install_mock_gh
+  local pushed
+  pushed=$(_push_feature_head)
+  export MOCK_GH_PR_42_HEADREFOID=2222222222222222222222222222222222222222
+  export CGW_PR_HEAD_SYNC_SECONDS=0
+  run _run_merge_pr 42 --wait-checks
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"has not caught up"* ]]
+  [[ "${output}" == *"${pushed:0:7}"* ]]
+  run ! grep -q -- "pr merge" "${GH_LOG}"
+}
+
+@test "--wait-checks polls until the PR head catches up with the pushed branch, then merges" {
+  install_mock_gh
+  local pushed
+  pushed=$(_push_feature_head)
+  export MOCK_GH_PR_42_HEADREFOID=2222222222222222222222222222222222222222
+  export MOCK_GH_HEAD_CATCHUP_AFTER=2
+  export MOCK_GH_HEAD_CATCHUP_SHA="${pushed}"
+  export CGW_PR_CHECKS_POLL_SECONDS=0
+  export CGW_PR_HEAD_SYNC_SECONDS=30
+  run _run_merge_pr 42 --wait-checks
+  [ "${status}" -eq 0 ]
+  grep -q -- "pr merge 42 .*--match-head-commit ${pushed}" "${GH_LOG}"
+}
+
+@test "the merge is pinned to the head commit whose checks were verified" {
+  install_mock_gh
+  local pushed
+  pushed=$(_push_feature_head)
+  export MOCK_GH_PR_42_HEADREFOID="${pushed}"
+  run _run_merge_pr 42
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"checks passed on ${pushed:0:7}"* ]]
+  grep -q -- "pr merge 42 .*--match-head-commit ${pushed}" "${GH_LOG}"
+}
+
+@test "--dry-run shows the --match-head-commit pin" {
+  install_mock_gh
+  run _run_merge_pr 42 --dry-run
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"--match-head-commit 1111111111111111111111111111111111111111"* ]]
+}
+
+@test "a head that moves while checks are watched refuses the merge" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=8
+  export MOCK_GH_HEAD_CATCHUP_AFTER=1
+  export MOCK_GH_PR_42_HEADREFOID=1111111111111111111111111111111111111111
+  export MOCK_GH_HEAD_CATCHUP_SHA=3333333333333333333333333333333333333333
+  run _run_merge_pr 42 --wait-checks
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"head moved"* ]]
+  run ! grep -q -- "pr merge" "${GH_LOG}"
+}
+
+@test "no checks on a freshly pushed head refuse without --wait-checks" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=1
+  export MOCK_GH_CHECKS_OUTPUT="no checks reported on the 'feature' branch"
+  export MOCK_GH_PR_42_COMMITS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  run _run_merge_pr 42
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"has no checks on"* ]]
+  [[ "${output}" == *"with --wait-checks"* ]]
+  run ! grep -q -- "pr merge" "${GH_LOG}"
+}
+
+@test "no checks on an old head merge with a no-CI warning" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=1
+  export MOCK_GH_CHECKS_OUTPUT="no checks reported on the 'feature' branch"
+  run _run_merge_pr 42
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"treating as no CI"* ]]
+  grep -q -- "pr merge 42" "${GH_LOG}"
+}
+
+@test "--wait-checks waits out the appear window, then merges with a no-CI warning" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=1
+  export MOCK_GH_CHECKS_OUTPUT="no checks reported on the 'feature' branch"
+  export MOCK_GH_PR_42_COMMITS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  export CGW_PR_CHECKS_APPEAR_SECONDS=0
+  run _run_merge_pr 42 --wait-checks
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"treating as no CI"* ]]
+  grep -q -- "pr merge 42" "${GH_LOG}"
+}
