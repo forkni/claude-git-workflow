@@ -148,11 +148,19 @@ _run_bats_file() {
   local f="$1" out="$2"
   local slug
   slug="$(basename "${f}" .bats)"
-  local t0="${SECONDS}"
+  local t0="${SECONDS}" rc
   bats --tap "${f}" >"${out}/${slug}.tap" 2>&1
-  printf '%s' "$?" >"${out}/${slug}.exit"
+  rc="$?"
+  printf '%s' "${rc}" >"${out}/${slug}.exit"
   printf '%s' "$((SECONDS - t0))" >"${out}/${slug}.secs"
+  # One line per finished file so a background run shows progress (stderr, to keep stdout summary clean).
+  local done_n status=ok
+  done_n="$(find "${out}" -name '*.exit' | wc -l)"
+  ((rc == 0)) || status=FAIL
+  printf '[run.sh] [%d/%d] %s %s (%ss)\n' "${done_n}" "${_total_files}" "${f}" "${status}" "$((SECONDS - t0))" >&2
 }
+_total_files=${#_files[@]}
+export _total_files
 export -f _run_bats_file
 
 printf '%s\n' "${_files[@]}" |
