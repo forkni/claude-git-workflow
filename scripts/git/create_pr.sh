@@ -322,6 +322,13 @@ ${formatted_log}
     log_section_end "CREATE PR" "$logfile" "0"
     echo "" | tee -a "$logfile"
     echo "[OK] PR created: ${pr_url:-${gh_output}}" | tee -a "$logfile"
+    # Handed to the CI gate (skill/references/ci-verification.md): the PR number avoids guessing it
+    # from the current branch, and the head SHA is what the PR's checks must be reported against.
+    local pr_num pushed_sha
+    pr_num="${pr_url##*/pull/}"
+    [[ "${pr_num}" =~ ^[0-9]+$ ]] && echo "PR number: ${pr_num}" | tee -a "$logfile"
+    pushed_sha=$(git ls-remote "${CGW_REMOTE}" "refs/heads/${src_branch}" 2>>"$logfile" | awk 'NR==1 {print $1}')
+    [[ -n "${pushed_sha}" ]] && echo "Head SHA: ${pushed_sha}" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
     if [[ ${draft} -eq 0 ]]; then
       echo "Charlie CI will auto-review this PR." | tee -a "$logfile"
