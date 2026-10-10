@@ -59,7 +59,7 @@ jobs="${CGW_TEST_JOBS:-$((_cores / 2))}"
 # parallelization to avoid a bats --jobs index.lock race, so its ~126 tests
 # run serially and become the parallel wall-clock floor). Skipped on a default
 # full-suite run unless CI is set or CGW_RUN_SLOW=1; always run on CI.
-# Measured wall time per file under parallel load (CGW_TEST_TIMINGS=1): the six heaviest, roughly
+# Measured wall time per file under parallel load (CGW_TEST_TIMINGS=1): the heaviest files, roughly
 # half the suite's total runtime. Retune from a fresh timing run when files grow.
 CGW_SLOW_FILES=(
   "tests/unit/common.bats"
