@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.14.0 (2026-10-10)
+
+> Changes since `v0.13.2`
+
+### New Features
+
+- **`create_pr.sh` structured output**: Prints the created PR number and pushed head SHA in structured format for downstream callers and automated pipelines.
+
+### Bug Fixes
+
+- **`merge_pr.sh` PR head identity verification**: Ties the checks gate to the PR's verified head commit using `gh pr merge --match-head-commit`, preventing race conditions where checks belonged to a previous head or the head moved during check evaluation.
+- **`merge_pr.sh` check polling**: Added `--wait-checks` option to await checks appearance and completion on newly pushed heads, and refuse merging if the PR head lags behind the local branch.
+- **PR checks timeout bounding**: Hardened wait loops for PR checks verification with bounded retry timeouts and error handling.
+
+### Documentation
+
+- **CI gate SHA binding**: Documented binding CI verification to the pushed head SHA in `references/ci-verification.md` and related command references.
+
 ## v0.13.2 (2026-10-09)
 
 > Changes since `v0.13.1`
