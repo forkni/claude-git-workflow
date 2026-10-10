@@ -138,6 +138,7 @@ Override with `--all` to always bulk-stage, or `--only <path>` to explicitly sel
 
 **`check_lint.sh`** — Pre-commit validation (read-only)
 
+<!-- snippet-lint: skip -->
 ```bash
 ./scripts/git/check_lint.sh [--modified-only] [--no-venv] [--skip-lint] [--skip-md-lint] [--skip-typecheck] [--md-only] [--ref <rev> [--base <rev> | --unpushed]]
 ```
