@@ -110,6 +110,9 @@ cp cgw.conf.example .cgw.conf
 | `CGW_AUTO_REMOVE_INDEX_LOCK` | `1` | Set to `0` to only warn about an abandoned `.git/index.lock` instead of removing it (removal is always refused while a rebase/merge/cherry-pick/revert/bisect is in progress) |
 | `CGW_INDEX_LOCK_MAX_AGE_SECONDS` | `30` | Age in seconds past which an `index.lock` counts as abandoned |
 | `CGW_INDEX_LOCK_WAIT_SECONDS` | `10` | Seconds to wait for a fresh `index.lock` to clear before escalating (`0` = don't wait) |
+| `CGW_PR_CHECKS_POLL_SECONDS` | `5` | `merge_pr.sh --wait-checks`: seconds between polls while waiting for the PR head or its checks |
+| `CGW_PR_HEAD_SYNC_SECONDS` | `60` | `merge_pr.sh --wait-checks`: max seconds to wait for GitHub's PR head to match the pushed branch (otherwise the merge is refused) |
+| `CGW_PR_CHECKS_APPEAR_SECONDS` | `90` | `merge_pr.sh`: max seconds to wait for checks to appear on the head; also the "recent push" window (without `--wait-checks`, a head commit younger than this with no checks is refused). After the window a head with no checks merges with a no-CI warning |
 | `CGW_LOCK_RETRY_ATTEMPTS` | `3` | Number of retry attempts when a git command encounters an in-flight index.lock race or transient collision |
 | `CGW_LOCK_RETRY_DELAY` | `1` | Base delay in seconds between lock retry attempts (uses backoff) |
 | `CGW_ICASE_PATHSPECS` | `1` | Auto-enable case-insensitive pathspecs on Windows (set to `0` to disable) |

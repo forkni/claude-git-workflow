@@ -21,7 +21,9 @@
 #   --retarget <M>     After merging, retarget stacked PR #M (whose base is this PR's head
 #                      branch) onto this PR's base branch. Repeatable.
 #   --delete-branch    Delete this PR's head branch after merge and retarget (never by default)
-#   --wait-checks      If PR checks are still pending, wait for them (gh pr checks --watch)
+#   --wait-checks      Wait for the PR head to match the pushed branch, for checks to appear on
+#                      it, and for pending checks (gh pr checks --watch). The merge is pinned to
+#                      the verified head (gh pr merge --match-head-commit).
 #   --skip-checks      Merge without requiring green PR checks (logged as a warning)
 #   --dry-run          Validate and print the gh commands without merging
 #   --non-interactive  Accept all defaults, no prompts
@@ -76,7 +78,8 @@ main() {
         echo "                     branch (its base must be this PR's head). Repeatable."
         echo "  --delete-branch    Delete the head branch after merge and retarget"
         echo "                     (never deleted by default)"
-        echo "  --wait-checks      Wait for pending PR checks instead of refusing"
+        echo "  --wait-checks      Wait for the PR head to catch up with the pushed branch, for checks"
+        echo "                     to appear, and for pending checks, instead of refusing"
         echo "  --skip-checks      Merge without requiring green PR checks (not recommended)"
         echo "  --dry-run          Validate and print the gh commands without merging"
         echo "  --non-interactive  Accept all defaults, no prompts"
@@ -90,6 +93,10 @@ main() {
         echo "Notes:"
         echo "  The PR's checks must be green (gh pr checks) before anything is merged; pending checks"
         echo "  refuse unless --wait-checks, failing checks always refuse unless --skip-checks."
+        echo "  Checks must belong to the PR's current head: a head that lags the pushed branch is"
+        echo "  refused (or waited for), a recent head with no checks refuses without --wait-checks,"
+        echo "  and the merge is pinned to the verified commit (--match-head-commit)."
+        echo "  Tunables: CGW_PR_CHECKS_POLL_SECONDS, CGW_PR_HEAD_SYNC_SECONDS, CGW_PR_CHECKS_APPEAR_SECONDS."
         echo "  A merge commit keeps the feature revertable as one unit. After a merge, undo with:"
         echo "    ./scripts/git/rollback_merge.sh --revert --target <merge-sha>"
         echo "  Passes gh an explicit --repo resolved from \${CGW_REMOTE}'s URL, so a fork remote"
@@ -267,21 +274,89 @@ main() {
   echo "" | tee -a "${logfile}"
 
   # [2b/4] Required PR checks: the promotion contract merges only after CI is green.
-  # gh pr checks exits 0 = all passed, 8 = pending, 1 = failing; "no checks reported" is treated
-  # as nothing to gate on (a repo without CI).
+  # gh pr checks exits 0 = all passed, 8 = pending, 1 = failing. It carries no commit SHA: it
+  # reports on whatever head GitHub currently has for the PR. Right after a push that head can
+  # still be the OLD commit (green checks), or the new one before any check registered ("no
+  # checks reported"). So the gate (1) waits for the PR head to match the pushed branch, (2) waits
+  # for checks to appear on it, and (3) pins the merge to the verified head (--match-head-commit).
   log_section_start "PR CHECKS" "${logfile}"
+  local poll="${CGW_PR_CHECKS_POLL_SECONDS:-5}"
+  local sync_max="${CGW_PR_HEAD_SYNC_SECONDS:-60}"
+  local appear_max="${CGW_PR_CHECKS_APPEAR_SECONDS:-90}"
+  local step=$((poll > 0 ? poll : 1))
+  local head_sha
+  head_sha=$(_pr_view "${pr_number}" headRefOid .headRefOid) || head_sha=""
+  if [[ ! "${head_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+    err_tee "[ERROR] Could not read PR #${pr_number}'s head commit -- refusing to merge an unidentified head"
+    log_section_end "PR CHECKS" "${logfile}" "1"
+    exit 1
+  fi
+
   if [[ ${skip_checks} -eq 1 ]]; then
-    echo "[WARN] --skip-checks: merging PR #${pr_number} without verifying its checks" | tee -a "${logfile}"
+    echo "[WARN] --skip-checks: merging PR #${pr_number} (${head_sha:0:7}) without verifying its checks" | tee -a "${logfile}"
     log_section_end "PR CHECKS" "${logfile}" "0"
   else
-    local checks_out checks_rc
+    # (1) Head sync: the branch tip on the remote is what the user just pushed; a cross-repository
+    # PR's head lives in a fork we can't see, so only same-repo PRs are compared.
+    local expected_sha="" is_cross
+    is_cross=$(_pr_view "${pr_number}" isCrossRepository .isCrossRepository) || is_cross=""
+    if [[ "${is_cross}" != "true" ]]; then
+      expected_sha=$(git ls-remote "${CGW_REMOTE}" "refs/heads/${head_branch}" 2>>"${logfile}" | awk 'NR==1 {print $1}')
+    fi
+    local waited=0
+    while [[ -n "${expected_sha}" && "${head_sha}" != "${expected_sha}" ]]; do
+      if [[ ${wait_checks} -eq 0 || ${waited} -ge ${sync_max} ]]; then
+        err_tee "[ERROR] PR #${pr_number} head ${head_sha:0:7} has not caught up with ${CGW_REMOTE}/${head_branch} ${expected_sha:0:7} -- GitHub is still processing the push"
+        err_tee "[ERROR] Rerun with --wait-checks (waits up to ${sync_max}s), or retry in a moment"
+        log_section_end "PR CHECKS" "${logfile}" "1"
+        exit 1
+      fi
+      echo "PR #${pr_number} head ${head_sha:0:7} != pushed ${expected_sha:0:7} -- waiting for GitHub (${waited}/${sync_max}s)" | tee -a "${logfile}"
+      sleep "${poll}"
+      waited=$((waited + step))
+      head_sha=$(_pr_view "${pr_number}" headRefOid .headRefOid) || head_sha=""
+      if [[ ! "${head_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+        err_tee "[ERROR] Could not re-read PR #${pr_number}'s head commit"
+        log_section_end "PR CHECKS" "${logfile}" "1"
+        exit 1
+      fi
+    done
+
+    local checks_out checks_rc no_ci=0
     checks_out=$(gh pr checks "${pr_number}" --repo "${pr_repo}" 2>&1)
     checks_rc=$?
     echo "${checks_out}" >>"${logfile}"
+
+    # (2) "no checks reported": CI not registered yet (just pushed) or a repo without CI.
     if [[ ${checks_rc} -ne 0 && ${checks_rc} -ne 8 && "${checks_out}" == *"no checks reported"* ]]; then
-      echo "[!] PR #${pr_number} has no checks reported -- nothing to gate on" | tee -a "${logfile}"
-      checks_rc=0
+      local commit_date commit_epoch="" age=0
+      commit_date=$(_pr_view "${pr_number}" commits '.commits[-1].committedDate') || commit_date=""
+      commit_epoch=$(date -u -d "${commit_date}" +%s 2>/dev/null) ||
+        commit_epoch=$(date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "${commit_date}" +%s 2>/dev/null) || commit_epoch=""
+      # An unreadable commit date counts as fresh: fail closed (refuse) rather than merge unchecked.
+      [[ -n "${commit_epoch}" ]] && age=$(($(date -u +%s) - commit_epoch))
+      if [[ ${wait_checks} -eq 0 && (-z "${commit_epoch}" || ${age} -lt ${appear_max}) ]]; then
+        err_tee "[ERROR] PR #${pr_number} has no checks on ${head_sha:0:7} yet and its head commit is recent -- CI may not have registered"
+        err_tee "[ERROR] Rerun with --wait-checks (waits up to ${appear_max}s for checks to appear)"
+        log_section_end "PR CHECKS" "${logfile}" "1"
+        exit 1
+      fi
+      waited=0
+      while [[ ${wait_checks} -eq 1 && ${checks_rc} -ne 0 && ${checks_rc} -ne 8 && "${checks_out}" == *"no checks reported"* && ${waited} -lt ${appear_max} ]]; do
+        echo "PR #${pr_number} has no checks on ${head_sha:0:7} yet -- waiting for CI to register (${waited}/${appear_max}s)" | tee -a "${logfile}"
+        sleep "${poll}"
+        waited=$((waited + step))
+        checks_out=$(gh pr checks "${pr_number}" --repo "${pr_repo}" 2>&1)
+        checks_rc=$?
+        echo "${checks_out}" >>"${logfile}"
+      done
+      if [[ ${checks_rc} -ne 0 && ${checks_rc} -ne 8 && "${checks_out}" == *"no checks reported"* ]]; then
+        echo "[WARN] No checks on ${head_sha:0:7} after ${waited}s -- treating as no CI" | tee -a "${logfile}"
+        checks_rc=0
+        no_ci=1
+      fi
     fi
+
     if [[ ${checks_rc} -eq 8 && ${wait_checks} -eq 1 ]]; then
       echo "PR #${pr_number} checks pending -- waiting (gh pr checks --watch)" | tee -a "${logfile}"
       gh pr checks "${pr_number}" --repo "${pr_repo}" --watch --fail-fast 2>&1 | tee -a "${logfile}"
@@ -296,12 +371,22 @@ main() {
       log_section_end "PR CHECKS" "${logfile}" "1"
       exit 1
     fi
-    echo "[OK] PR #${pr_number} checks passed" | tee -a "${logfile}"
+
+    # (3) The head must still be the one that was checked (a push can land mid-wait).
+    local head_now
+    head_now=$(_pr_view "${pr_number}" headRefOid .headRefOid) || head_now=""
+    if [[ "${head_now}" != "${head_sha}" ]]; then
+      err_tee "[ERROR] PR #${pr_number} head moved from ${head_sha:0:7} to ${head_now:0:7} while checks ran -- rerun to verify the new head"
+      log_section_end "PR CHECKS" "${logfile}" "1"
+      exit 1
+    fi
+    [[ ${no_ci} -eq 0 ]] && echo "[OK] PR #${pr_number} checks passed on ${head_sha:0:7}" | tee -a "${logfile}"
     log_section_end "PR CHECKS" "${logfile}" "0"
   fi
   echo "" | tee -a "${logfile}"
 
-  local merge_args=("${pr_number}" --repo "${pr_repo}" "--${method}")
+  # --match-head-commit: gh refuses the merge if the head is no longer the commit verified above.
+  local merge_args=("${pr_number}" --repo "${pr_repo}" "--${method}" --match-head-commit "${head_sha}")
 
   if [[ ${dry_run} -eq 1 ]]; then
     echo "=== DRY RUN -- nothing merged ===" | tee -a "${logfile}"

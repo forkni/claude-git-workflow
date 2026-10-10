@@ -11,6 +11,7 @@ apply it manually at each push site listed in [SKILL.md](../SKILL.md).
 
 - Applicability Probe
 - Baseline + Resolve Runs
+- PR Checks (PR mode)
 - Watch
 - Verdict
 - Fix Loop
@@ -48,23 +49,92 @@ that happens, `gh run list --commit` alone returns runs from both branches. Filt
 **commit AND branch** costs nothing and removes the ambiguity unconditionally, so do it even
 on the direct-merge path where the collision cannot occur:
 
+**Name the branch you pushed, and take its SHA from the remote.** Never use `HEAD` or the
+current branch: the wrappers return you to `CGW_SOURCE_BRANCH` after a target push (`Phase 5`
+in [full-promotion.md](full-promotion.md) runs `git checkout` right after pushing), so `HEAD`
+is then the *source* branch and the query would find its already-green runs and call the
+unverified target green. Set `branch` explicitly (`$CGW_SOURCE_BRANCH` or `$CGW_TARGET_BRANCH`
+for the push just performed) and resolve the SHA from what the remote now holds:
+
 ```bash
-sha=$(git rev-parse HEAD)
-branch=$(git branch --show-current)
+branch="${CGW_SOURCE_BRANCH:-development}"   # or "${CGW_TARGET_BRANCH:-main}" after a target push
+sha=$(git ls-remote "${CGW_REMOTE:-origin}" "refs/heads/$branch" | awk 'NR==1 {print $1}')
 gh run list --commit "$sha" --branch "$branch" --limit 20 \
   --json databaseId,workflowName,status,conclusion \
   --jq '.[] | "\(.databaseId)\t\(.workflowName)\t\(.status)\t\(.conclusion)"'
 ```
 
-Runs take a few seconds to register after the push lands — poll the query above for up to
-~30s (2-3s interval) until at least one run appears, or the window elapses. If nothing appears
-after the window, report `CI: no workflow triggered` (e.g. a `paths:` filter didn't match, or
-this branch isn't in the workflow's `branches:` list) — this is not a failure, do not treat it
-as one.
+Runs take a few seconds to register after the push lands, and different workflows register at
+different times. So resolve the run set in two steps:
+
+1. **Wait for the first run**: poll the query above (2-3s interval) until at least one run
+   appears, up to ~30s.
+2. **Wait for the set to settle**: keep polling until the list is unchanged for ~10s, and — if
+   `CGW_CI_REQUIRED_WORKFLOWS` is set — until every named workflow is present. Watch the full
+   set, and re-run the query once more when the watches finish: a workflow that registered
+   late and was never watched means the verdict covers only part of the CI.
+
+If nothing appears after the window, do not assume there is no CI. Check whether the repo
+defines any:
+
+```bash
+gh workflow list --json name,state --jq '.[] | select(.state=="active") | .name'
+```
+
+- **No active workflows** → report `CI: no workflow triggered` (not a failure).
+- **Active workflows exist, or `CGW_CI_REQUIRED_WORKFLOWS` names one that never appeared** →
+  report `CI: unverified — no runs registered for <sha>` and do **not** call the push complete.
+  Retry once after `CGW_CI_POLL_INTERVAL`; a `paths:` filter that legitimately didn't match is
+  the only benign cause, and you can confirm it from the workflow's `on:` block. Registration
+  lag is the usual cause, and an empty list during lag is not a verdict.
 
 Optionally, capture the highest existing `databaseId` for this branch *before* pushing; run
 ids are monotonic, so anything greater after the push is unambiguously attributable to it —
 useful when the branch already has recent runs and you want to avoid re-watching a stale one.
+
+## PR Checks (PR mode)
+
+In PR mode (`create_pr.sh`, or a fix pushed to an open PR) watch the PR's own checks — but
+`gh pr checks` has no commit SHA: it reports on whatever head GitHub currently has for the PR.
+Straight after a push that is either the **previous** head (its old green or red checks) or the
+new head with **no checks registered yet**. Watching immediately therefore reports a stale
+verdict: a false red right after a fix push, or a pass on a commit that never ran. So bind the
+watch to the pushed SHA first:
+
+```bash
+remote="${CGW_REMOTE:-origin}"
+# owner/repo from the remote's own URL, as create_pr.sh does -- NOT `gh repo view`, which
+# resolves a fork to its parent/upstream repo and would query the wrong PR.
+repo=$(git remote get-url --push "$remote" | sed -E 's#^.*[:/]([^/:]+/[^/]+)$#\1#; s#\.git$##')
+pr=<number>   # from create_pr.sh's "PR number: N" line, not `gh pr view` on the current branch
+sha=<sha>     # create_pr.sh's "Head SHA:" line; after a fix push: git ls-remote "$remote" "refs/heads/<branch>"
+
+# 1. wait (12 x 5s = ~60s) until GitHub's PR head is the commit that was pushed
+for _ in $(seq 12); do
+  [[ "$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid 2>/dev/null)" == "$sha" ]] && break
+  sleep 5
+done
+[[ "$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid 2>/dev/null)" == "$sha" ]] \
+  || echo "CI: unverified -- PR #$pr head has not caught up with $sha"   # STOP: do not watch
+
+# 2. wait (18 x 5s = ~90s) for checks to exist; a count > 0 is the only "exists" signal, so
+#    "no checks reported", empty output and gh errors (auth, network) all mean "not yet"
+for _ in $(seq 18); do
+  n=$(gh pr checks "$pr" --repo "$repo" --json name --jq length 2>/dev/null)
+  [[ "${n:-0}" -gt 0 ]] && break
+  sleep 5
+done
+[[ "${n:-0}" -gt 0 ]] || echo "CI: unverified -- no checks registered on $sha"   # see below
+
+# 3. only now watch to a terminal state
+gh pr checks "$pr" --repo "$repo" --watch --fail-fast --interval "${CGW_CI_POLL_INTERVAL:-15}"
+```
+
+If step 2 ends empty, apply the same rule as *Baseline + Resolve Runs*: `gh workflow list`
+shows no active workflows → `CI: no workflow triggered`; otherwise `CI: unverified`, never
+green. After the watch, re-read `headRefOid`; if it changed, someone pushed mid-wait — restart
+from step 1. `merge_pr.sh` applies this same binding itself (`--wait-checks`, plus
+`--match-head-commit`), so it is the model to follow when merging.
 
 ## Watch
 
@@ -141,6 +211,9 @@ These are the ways this gate gets quietly subverted — call them out, don't jus
   only ever receives reviewed, gated content.
 - **Never** reach for `--skip-lint` to make a red run go green faster — local lint and remote
   CI are different checks; skipping one doesn't satisfy the other.
+- **Never** resolve runs from `HEAD` / the current branch, or read an empty run list or
+  "no checks reported" shortly after a push as "no CI" — name the pushed branch, take its SHA
+  from the remote, and treat absence inside the registration window as *not yet*.
 - **Never** report "Workflow complete" / "Push successful" while a watched run is still
   `in_progress`, `queued`, or concluded anything other than `success`/`skipped`.
 

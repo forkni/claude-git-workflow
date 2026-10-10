@@ -624,12 +624,12 @@ Wraps `gh pr checkout`. Requires `gh` CLI authenticated (`gh auth login`). Refus
 | `--allow-non-merge` | Acknowledge the flattening |
 | `--retarget <M>` | After the merge, `gh pr edit <M> --base <this PR's base>`; M's base must equal this PR's head (checked before merging). Repeatable |
 | `--delete-branch` | Delete the head branch after merge and retarget (never by default) |
-| `--wait-checks` | PR checks are required to be green (`gh pr checks`); wait for pending ones (`--watch --fail-fast`) instead of refusing |
+| `--wait-checks` | PR checks are required to be green (`gh pr checks`). Waits for the PR head to match the pushed branch (`CGW_PR_HEAD_SYNC_SECONDS`), for checks to appear on it (`CGW_PR_CHECKS_APPEAR_SECONDS`), and for pending ones (`--watch --fail-fast`) instead of refusing |
 | `--skip-checks` | Merge without the green-checks gate (logged as a warning; not recommended) |
 | `--dry-run` | Validate and print the `gh` commands without merging |
 | `--non-interactive` | Accept all defaults, no prompts |
 
-Wraps `gh pr merge --merge`. Requires `gh` CLI authenticated. Passes an explicit `--repo` resolved from `CGW_REMOTE`'s URL (like `create_pr.sh`) and aborts if it can't. Refuses a PR that isn't OPEN. On success prints the merge SHA and the undo command `rollback_merge.sh --revert --target <sha>`.
+Wraps `gh pr merge --merge`. Requires `gh` CLI authenticated. Passes an explicit `--repo` resolved from `CGW_REMOTE`'s URL (like `create_pr.sh`) and aborts if it can't. Refuses a PR that isn't OPEN. `gh pr checks` carries no commit SHA, so right after a push it can report the *previous* head's green checks or "no checks reported": the gate therefore refuses a PR head that lags the pushed branch, refuses a recent head with no checks unless `--wait-checks`, and pins the merge to the verified commit (`gh pr merge --match-head-commit`). After pushing, use `--wait-checks`. On success prints the merge SHA and the undo command `rollback_merge.sh --revert --target <sha>`.
 
 **`md_toc.sh`** — Generate/insert a Markdown Table of Contents
 

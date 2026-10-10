@@ -91,14 +91,19 @@ echo "${CGW_MERGE_MODE:-direct}"
   — exit 0: continue to Phase 5. exit ≠0: inspect conflict type, stop, see
   [error-recovery.md](error-recovery.md).
 - `pr` → **4B**: `./scripts/git/create_pr.sh --non-interactive`, then watch the PR's own
-  checks in place of a plain branch-run watch:
+  checks in place of a plain branch-run watch. Take the PR number from the `PR number: N`
+  line `create_pr.sh` prints (not `gh pr view` on the current branch, which can name a
+  different PR) and its `Head SHA:` line as the commit to wait for. `gh pr checks` has no SHA
+  and reports whatever head GitHub currently holds, so bind it first — wait for the PR's
+  `headRefOid` to equal that SHA, then for checks to exist ("no checks reported" means *not
+  yet* here, not *no CI*), then watch. Run the bounded three-step snippet in
+  ci-verification.md → *PR Checks (PR mode)* with `pr` = the printed PR number and `sha` = the
+  printed Head SHA — do not shortcut it to a bare `gh pr checks --watch`, which is exactly the
+  stale-head race. If either wait runs out it reports `CI: unverified`: not green, so do not
+  report the PR as done.
 
-  ```bash
-  pr_number=$(gh pr view --json number --jq .number)
-  gh pr checks "$pr_number" --watch --fail-fast --interval "${CGW_CI_POLL_INTERVAL:-15}"
-  ```
-
-  (exit `8` = still pending — `--watch` normally blocks past that to a terminal state.) Red →
+  (exit `8` from `gh pr checks` = still pending — `--watch` normally blocks past that to a
+  terminal state.) Red →
   run the Fix Loop from [ci-verification.md](ci-verification.md): commit the fix on
   `CGW_SOURCE_BRANCH`, `push_validated.sh` (this updates the open PR automatically), re-watch.
   Bounded by `CGW_CI_MAX_FIX_ROUNDS`; exhausted → stop and hand back to the user. Green →
@@ -128,7 +133,10 @@ exit ≠0 on the push: rerun without suppression, stop.
 ### Phase 5b — CI gate on target
 
 Apply [references/ci-verification.md](ci-verification.md) again, this time against
-`CGW_TARGET_BRANCH`. `merge_with_validation.sh`'s `--no-ff` merge gives `CGW_TARGET_BRANCH`
+`CGW_TARGET_BRANCH` — name it explicitly and take its SHA from the remote
+(`git ls-remote`), because Phase 5 has already checked out `CGW_SOURCE_BRANCH`, so `HEAD` and
+`git branch --show-current` now point at the *source* branch and its already-green runs.
+`merge_with_validation.sh`'s `--no-ff` merge gives `CGW_TARGET_BRANCH`
 its own merge-commit SHA, distinct from `CGW_SOURCE_BRANCH` — but resolve runs with **both**
 `--commit` and `--branch` regardless (ci-verification.md → *Baseline + Resolve Runs*), never
 commit alone. Other paths (a GitHub "Rebase and merge" PR, a manual `--ff-only`) can still
@@ -164,25 +172,48 @@ In PowerShell:
 
 ```powershell
 $BASH = "C:\Program Files\Git\bin\bash.exe"
+$WATCH = 'branch=$CGW_CI_BRANCH; set -- $(git ls-remote origin refs/heads/$branch); sha=$1; prev=-1; stable=0; for i in 1 2 3 4 5 6 7 8 9 10 11 12; do set -- $(gh run list --commit $sha --branch $branch --json databaseId --jq ''.[].databaseId''); if [ $# -gt 0 -a $# -eq $prev ]; then stable=$((stable+1)); else stable=0; fi; prev=$#; if [ $stable -ge 2 ]; then break; fi; sleep 5; done; if [ $# -eq 0 ]; then set -- $(gh workflow list --json id --jq ''.[].id''); if [ $# -eq 0 ]; then echo CI: no workflow triggered; exit 0; fi; echo CI: unverified - no runs registered for $sha; exit 1; fi; n0=$#; fail=0; for id; do gh run watch $id --exit-status --compact --interval 15; rc=$?; if [ $rc -ne 0 ]; then fail=1; fi; done; set -- $(gh run list --commit $sha --branch $branch --json databaseId --jq ''.[].databaseId''); if [ $# -ne $n0 ]; then echo CI: unverified - run set changed during the watch, re-resolve; fail=1; fi; exit $fail'
 & $BASH scripts/git/commit_enhanced.sh --non-interactive "feat: descriptive commit message"
 & $BASH scripts/git/push_validated.sh --non-interactive --skip-lint
-& $BASH -c "sha=$(git rev-parse HEAD); branch=$(git branch --show-current); gh run list --commit \"$sha\" --branch \"$branch\" --json databaseId --jq '.[].databaseId' | xargs -n1 gh run watch --exit-status --compact --interval 15"
+$env:CGW_CI_BRANCH = "development"; & $BASH -c $WATCH
 & $BASH scripts/git/merge_with_validation.sh --non-interactive
 & $BASH scripts/git/push_validated.sh --non-interactive --skip-lint
-& $BASH -c "sha=$(git rev-parse HEAD); branch=$(git branch --show-current); gh run list --commit \"$sha\" --branch \"$branch\" --json databaseId --jq '.[].databaseId' | xargs -n1 gh run watch --exit-status --compact --interval 15"
+$env:CGW_CI_BRANCH = "main"; & $BASH -c $WATCH
+Remove-Item Env:CGW_CI_BRANCH
 ```
 
 In cmd.exe:
 
 ```cmd
 set "BASH=C:\Program Files\Git\bin\bash.exe"
+set "WATCH=branch=$CGW_CI_BRANCH; set -- $(git ls-remote origin refs/heads/$branch); sha=$1; prev=-1; stable=0; for i in 1 2 3 4 5 6 7 8 9 10 11 12; do set -- $(gh run list --commit $sha --branch $branch --json databaseId --jq '.[].databaseId'); if [ $# -gt 0 -a $# -eq $prev ]; then stable=$((stable+1)); else stable=0; fi; prev=$#; if [ $stable -ge 2 ]; then break; fi; sleep 5; done; if [ $# -eq 0 ]; then set -- $(gh workflow list --json id --jq '.[].id'); if [ $# -eq 0 ]; then echo CI: no workflow triggered; exit 0; fi; echo CI: unverified - no runs registered for $sha; exit 1; fi; n0=$#; fail=0; for id; do gh run watch $id --exit-status --compact --interval 15; rc=$?; if [ $rc -ne 0 ]; then fail=1; fi; done; set -- $(gh run list --commit $sha --branch $branch --json databaseId --jq '.[].databaseId'); if [ $# -ne $n0 ]; then echo CI: unverified - run set changed during the watch, re-resolve; fail=1; fi; exit $fail"
 "%BASH%" scripts/git/commit_enhanced.sh --non-interactive "feat: descriptive commit message"
 "%BASH%" scripts/git/push_validated.sh --non-interactive --skip-lint
-"%BASH%" -c "sha=$(git rev-parse HEAD); branch=$(git branch --show-current); gh run list --commit \"$sha\" --branch \"$branch\" --json databaseId --jq '.[].databaseId' | xargs -n1 gh run watch --exit-status --compact --interval 15"
+set "CGW_CI_BRANCH=development" & "%BASH%" -c "%WATCH%"
 "%BASH%" scripts/git/merge_with_validation.sh --non-interactive
 "%BASH%" scripts/git/push_validated.sh --non-interactive --skip-lint
-"%BASH%" -c "sha=$(git rev-parse HEAD); branch=$(git branch --show-current); gh run list --commit \"$sha\" --branch \"$branch\" --json databaseId --jq '.[].databaseId' | xargs -n1 gh run watch --exit-status --compact --interval 15"
+set "CGW_CI_BRANCH=main" & "%BASH%" -c "%WATCH%"
+set "CGW_CI_BRANCH="
 ```
+
+`$CGW_CI_BRANCH` is the branch just pushed (your `CGW_SOURCE_BRANCH` for the first watch,
+`CGW_TARGET_BRANCH` for the second — substitute your configured names for `development` /
+`main`); it is cleared afterwards so a later reuse of `WATCH` cannot silently target a stale
+branch. The watch script implements the *Baseline + Resolve Runs* rules in miniature:
+
+- names that branch and takes its SHA from the remote instead of using `HEAD`;
+- polls until the run list is non-empty and unchanged for two polls (~10 s), up to ~60 s;
+- watches **every** run (a red one does not stop the others being watched) and exits `1` if
+  any failed;
+- re-queries after the watches and reports `CI: unverified` if the run set changed;
+- with no runs: `gh workflow list` empty → `CI: no workflow triggered` (exit `0`); active
+  workflows → `CI: unverified` (exit `1`).
+
+It does **not** enforce `CGW_CI_REQUIRED_WORKFLOWS` (workflow names contain spaces, which this
+quoting-safe one-liner cannot compare) — when that is set, check the named workflows were
+among the watched runs. It avoids `|`, `&&`, `||`, `%` and inner double quotes so it survives
+cmd.exe's quoting, and was exercised against a stub `gh` (no runs / no workflows / one red /
+all green); the cmd.exe quoting itself is documented behaviour, not covered by a bats test.
 
 Same gate as Section A applies at both watch points — see
 [references/ci-verification.md](ci-verification.md) for the full resolve/watch/verdict/fix-loop

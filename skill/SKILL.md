@@ -166,9 +166,12 @@ subscribing to the CI runs it triggered, waiting for a terminal verdict, and tre
 other than green as unfinished work: diagnose, fix on the source branch, re-push through the
 wrappers, and re-watch until green or a bounded retry budget is exhausted. Never report a
 push/merge/promotion "complete" while a resolved run is still pending or red. Full procedure —
-applicability probe, run resolution (commit **and** branch, since a direct-merge fast-forward
-can put the same SHA on two branches), watch, fix loop, hard prohibitions — in
-[references/ci-verification.md](references/ci-verification.md).
+applicability probe, run resolution (the pushed branch named explicitly and its SHA taken from
+the remote — never `HEAD` — and commit **and** branch, since a fast-forward can put the same
+SHA on two branches), PR-head binding, watch, fix loop, hard prohibitions — in
+[references/ci-verification.md](references/ci-verification.md). Right after a push, "no runs" or
+"no checks reported" means *not registered yet*, not *no CI*: wait out the registration window
+and report `CI: unverified` rather than green if nothing appears.
 
 ---
 
@@ -381,7 +384,7 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 ./scripts/git/create_pr.sh --source feature/hotfix --target release/1.2
 ```
 
-Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login`. Charlie CI auto-reviews on PR open. Rule 6 applies here too — watch the PR's checks (`gh pr checks <n> --watch`), not just Charlie's review, per ci-verification.md.
+Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login`. Charlie CI auto-reviews on PR open. It prints `PR number: N` and `Head SHA: <sha>` — Rule 6 applies here too: watch the PR's checks, not just Charlie's review, but first wait for the PR's `headRefOid` to equal that SHA (`gh pr checks` has no SHA and otherwise reports the previous head), per ci-verification.md → *PR Checks (PR mode)*.
 
 Always passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own URL — bare `gh pr create` resolves its own target repo and, when `CGW_REMOTE` is a fork, defaults to the fork's parent/upstream repo instead. If `CGW_REMOTE`'s URL can't be resolved to a `github.com` owner/repo, the script aborts rather than falling back to gh's own resolution. If this script ever fails or is unavailable, do not drop to raw `gh pr create` without `--repo`: it silently targets the wrong repo on a fork remote.
 
