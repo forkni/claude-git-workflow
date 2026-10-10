@@ -126,8 +126,10 @@ for _ in $(seq 18); do
 done
 [[ "${n:-0}" -gt 0 ]] || echo "CI: unverified -- no checks registered on $sha"   # see below
 
-# 3. only now watch to a terminal state
-gh pr checks "$pr" --repo "$repo" --watch --fail-fast --interval "${CGW_CI_POLL_INTERVAL:-15}"
+# 3. only now watch to a terminal state; --watch redraws the whole table every interval, so
+#    discard that stream and read one final snapshot instead
+gh pr checks "$pr" --repo "$repo" --watch --fail-fast --interval "${CGW_CI_POLL_INTERVAL:-15}" >/dev/null 2>&1
+gh pr checks "$pr" --repo "$repo"   # the verdict: exit 0 = all green, 1 = a check failed, 8 = still pending
 ```
 
 If step 2 ends empty, apply the same rule as *Baseline + Resolve Runs*: `gh workflow list`
@@ -145,7 +147,7 @@ gh run watch <run-id> --exit-status --compact --interval "${CGW_CI_POLL_INTERVAL
 ```
 
 Issue this as a **background** Bash call (`run_in_background: true`) — a full
-`branch-protection.yml` run (ShellCheck + shfmt + the 417-test Bats suite) regularly exceeds
+`branch-protection.yml` run (ShellCheck + shfmt + the full Bats suite) regularly exceeds
 the 300s default / 600s max Bash tool timeout, so a blocking call would time out mid-run
 without a verdict. The completion notification carries the exit status (`0` = success,
 non-zero = failure/cancelled). Multiple runs on the same push (e.g. `Branch Protection` +
