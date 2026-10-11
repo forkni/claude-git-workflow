@@ -55,6 +55,23 @@ _installed_hook_or_skip() {
   cmp "${CGW_PROJECT_ROOT}/command/auto-git-workflow-cmd.md" "${copy}"
 }
 
+@test "dogfood: Antigravity skill copy matches skill/" {
+  local inst="${CGW_PROJECT_ROOT}/.agents/skills/auto-git-workflow"
+  [[ -d "${inst}" ]] || skip "no Antigravity skill copy"
+  diff -r "${CGW_PROJECT_ROOT}/skill" "${inst}"
+}
+
+# configure.sh installs the command as its own Antigravity skill with the two
+# relative-link rewrites in _install_harness_skill (cmd_layout "skill"); a plain
+# link would carry the Claude-layout links, so this copy stays a generated file
+# and must equal the source after the same rewrite.
+@test "dogfood: Antigravity command skill matches command/ after the link rewrite" {
+  local inst="${CGW_PROJECT_ROOT}/.agents/skills/auto-git-workflow-cmd/SKILL.md"
+  [[ -f "${inst}" ]] || skip "no Antigravity command skill copy"
+  sed -e 's|\.\./skills/auto-git-workflow/|../auto-git-workflow/|g'     -e 's|\.claude/skills/auto-git-workflow/|auto-git-workflow/|g'     "${CGW_PROJECT_ROOT}/command/auto-git-workflow-cmd.md" >"${BATS_TEST_TMPDIR}/expected.md"
+  _assert_same_lf "${BATS_TEST_TMPDIR}/expected.md" "${inst}"
+}
+
 @test "dogfood: scripts/test/run_tests.sh (the pre-push shell-quality gate) is clean over the whole tree" {
   [[ -x "${CGW_PROJECT_ROOT}/scripts/test/run_tests.sh" ]] || skip "no pre-push gate script"
   run --separate-stderr "${CGW_PROJECT_ROOT}/scripts/test/run_tests.sh" --all

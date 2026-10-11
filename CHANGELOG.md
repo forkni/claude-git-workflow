@@ -13,7 +13,7 @@
 ### Tests & Tooling
 
 - **`verify_ci.bats`**: 30 integration tests over a virtual clock (`CGW_CI_TEST_SLEEP=0`) covering usage errors, the applicability probe, branch and PR mode, registration lag, timeouts, required workflows and the jq filters against a `gh run list` fixture; the `gh` mock gains `run list`, `workflow list` and `pr checks --json` branches.
-- **Dogfood tests**: `dogfood.bats` checks that this repo's installed hooks and skill/command copies match their sources, and that the pre-push gate below is clean over the whole tree.
+- **Dogfood tests**: `dogfood.bats` checks that this repo's installed hooks and skill/command copies (Claude Code and Antigravity, the latter after configure.sh's link rewrite) match their sources, and that the pre-push gate below is clean over the whole tree.
 - **Pre-push shell-quality gate**: new `scripts/test/run_tests.sh`, the file `hooks/pre-push` already runs as its local test gate, mirrors the three ShellCheck passes of CI's *Shell Script Quality* job (`scripts/git/*.sh`, `hooks/`, `tests/**/*.bats`) over the shell files that differ from the branch's upstream (`--all` for the whole tree; `SKIP_TESTS=1` bypasses it for one push). The tests pass is the one no local check covered before: a literal carriage return in a `.bats` comment reached CI as SC1017.
 - **Test runner failure digest**: `tests/run.sh` prints only the `not ok` lines and their diagnostics per failed file plus a `failed: <file>:<n> <name>` summary; `CGW_TEST_VERBOSE=1` restores the full TAP dump. The doc-snippet linter documents the synopsis convention (usage synopses in `text` fences) and prints a hint on findings.
 
