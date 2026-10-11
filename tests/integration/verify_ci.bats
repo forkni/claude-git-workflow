@@ -344,7 +344,7 @@ _push_feature_head() {
   local filter
   filter=$(sed -n "s/^readonly _CI_RUNS_JQ='\(.*\)'$/\1/p" "${CGW_PROJECT_ROOT}/scripts/git/verify_ci.sh")
   [ -n "${filter}" ]
-  # jq on Windows emits CRLF; the script strips  from every gh result, so do the same here.
+  # jq on Windows emits CRLF; the script strips \r from every gh result, so do the same here.
   run bash -c "jq -r '${filter}' '${CGW_PROJECT_ROOT}/tests/fixtures/gh_run_list.json' | tr -d '\r'"
   [ "${status}" -eq 0 ]
   [ "${#lines[@]}" -eq 3 ]
