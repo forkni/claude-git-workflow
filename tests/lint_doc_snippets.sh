@@ -9,6 +9,9 @@
 # Placeholders such as <branch> are replaced with PLACEHOLDER before linting. Preface a
 # fence with `<!-- snippet-lint: skip -->` to exempt a block that is pseudo-code.
 #
+# Convention: usage synopses such as `[--a | --b <x>]` go in ```text fences; ```bash is
+# for commands an agent runs verbatim.
+#
 # Usage: bash tests/lint_doc_snippets.sh [file.md ...]
 # Exit: 0 = clean, 1 = one or more findings (printed to stderr).
 set -uo pipefail
@@ -93,4 +96,7 @@ for doc in "${DOCS[@]}"; do
 done
 
 printf '%d snippet(s) checked, %d finding(s)\n' "${checked}" "${fail}"
+if ((fail > 0)); then
+  echo 'hint: usage synopses belong in a text fence; bash fences are linted as runnable commands' >&2
+fi
 ((fail == 0))

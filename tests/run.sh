@@ -5,6 +5,7 @@
 #   tests/run.sh --slow                   # slow batch only (the files in CGW_SLOW_FILES)
 #   tests/run.sh --all                    # fast + slow (what CI runs); same as CGW_RUN_SLOW=1
 #   CGW_TEST_TIMINGS=1 tests/run.sh ...   # print the slowest files afterwards (to retune CGW_SLOW_FILES)
+#   CGW_TEST_VERBOSE=1 tests/run.sh ...   # print the full TAP of each failed file (default: failures only)
 #   tests/run.sh tests/unit/              # unit tests only  (~25s)
 #   tests/run.sh tests/unit/config.bats   # single file
 #   CGW_TEST_JOBS=N tests/run.sh          # override parallelism (default: half logical cores)
@@ -188,10 +189,21 @@ for f in "${_files[@]}"; do
   done <"${tap}"
 done
 
-# Print full output for each failed file
+# Per failed file: the full TAP with CGW_TEST_VERBOSE=1, otherwise a digest that drops the
+# `ok N` and plan lines so the `not ok` line and its `#` diagnostics survive the output cap.
 for slug in "${_fail_slugs[@]}"; do
   printf '\n=== FAILURES: %s ===\n' "${slug}"
-  cat "${_tmpdir}/${slug}.tap"
+  if [[ "${CGW_TEST_VERBOSE:-0}" == "1" ]]; then
+    cat "${_tmpdir}/${slug}.tap"
+  else
+    grep -vE '^(ok [0-9]+|[0-9]+\.\.[0-9]+)' "${_tmpdir}/${slug}.tap"
+  fi
+done
+
+# One line per failing test, so the summary reads even when the digest above is truncated
+for slug in "${_fail_slugs[@]}"; do
+  grep -E '^not ok [0-9]+' "${_tmpdir}/${slug}.tap" | grep -v '# skip' |
+    sed -E "s/^not ok ([0-9]+) (.*)$/failed: ${slug}:\1 \2/"
 done
 
 # Slowest files, so CGW_SLOW_FILES can be tuned from data (wall time under parallel load)
