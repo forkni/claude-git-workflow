@@ -381,10 +381,11 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 ./scripts/git/create_pr.sh --dry-run                # preview only
 ./scripts/git/create_pr.sh --title "feat: my PR"   # override title
 ./scripts/git/create_pr.sh --draft                  # open as draft
+./scripts/git/create_pr.sh --body-file pr-body.md   # written body instead of the commit list
 ./scripts/git/create_pr.sh --source feature/hotfix --target release/1.2
 ```
 
-Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login`. Charlie CI auto-reviews on PR open. It prints `PR number: N` and `Head SHA: <sha>` — Rule 6 applies here too: watch the PR's checks, not just Charlie's review, but first wait for the PR's `headRefOid` to equal that SHA (`gh pr checks` has no SHA and otherwise reports the previous head), per ci-verification.md → *PR Checks (PR mode)*.
+Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login`. Charlie CI auto-reviews on PR open, so pass a written body at creation with `--body-file` (or `--body`) rather than following up with `gh pr edit`: the review would otherwise run against the generated commit list. It prints `PR number: N` and `Head SHA: <sha>` — Rule 6 applies here too: watch the PR's checks, not just Charlie's review, but first wait for the PR's `headRefOid` to equal that SHA (`gh pr checks` has no SHA and otherwise reports the previous head), per ci-verification.md → *PR Checks (PR mode)*.
 
 Always passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own URL — bare `gh pr create` resolves its own target repo and, when `CGW_REMOTE` is a fork, defaults to the fork's parent/upstream repo instead. If `CGW_REMOTE`'s URL can't be resolved to a `github.com` owner/repo, the script aborts rather than falling back to gh's own resolution. If this script ever fails or is unavailable, do not drop to raw `gh pr create` without `--repo`: it silently targets the wrong repo on a fork remote.
 

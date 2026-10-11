@@ -90,7 +90,7 @@ echo "${CGW_MERGE_MODE:-direct}"
 - `direct` (default) → **4A**: `./scripts/git/merge_with_validation.sh --non-interactive`
   — exit 0: continue to Phase 5. exit ≠0: inspect conflict type, stop, see
   [error-recovery.md](error-recovery.md).
-- `pr` → **4B**: `./scripts/git/create_pr.sh --non-interactive`, then watch the PR's own
+- `pr` → **4B**: `./scripts/git/create_pr.sh --non-interactive` (add `--body-file <path>` for a written body), then watch the PR's own
   checks in place of a plain branch-run watch. Take the PR number from the `PR number: N`
   line `create_pr.sh` prints (not `gh pr view` on the current branch, which can name a
   different PR) and its `Head SHA:` line as the commit to wait for. `gh pr checks` has no SHA

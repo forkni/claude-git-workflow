@@ -144,6 +144,8 @@ if [[ "\$1" == "auth" && "\$2" == "status" ]]; then
   exit ${auth_exit}
 fi
 if [[ "\$1" == "pr" && "\$2" == "create" ]]; then
+  # --body-file - : capture the body piped on stdin
+  case " \$* " in *" --body-file - "*) cat >"${MOCK_BIN_DIR}/gh.body" ;; esac
   if [[ -n "\${MOCK_GH_CREATE_OUTPUT:-}" ]]; then printf '%b\n' "\${MOCK_GH_CREATE_OUTPUT}"; else echo "https://github.com/owner/repo/pull/42"; fi
   exit ${pr_exit}
 fi
