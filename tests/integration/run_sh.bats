@@ -55,13 +55,16 @@ FIXTURE
   [[ "${output}" == *"2 tests, 1 failures, 0 skipped"* ]]
 }
 
-# A .bats file without a single @test (a helper-only file, or one whose tests were all
-# removed) makes bats exit 1 with "Found no tests" and no `not ok` line at all; a killed
-# bats process looks the same. The digest must still name the file.
+# bats can fail a file without printing a `not ok` line (bats 1.14 does so for a file
+# with no @test: "Found no tests", exit 1; a killed bats process looks the same). What
+# that takes differs between bats versions, so a bats shim on PATH produces the shape
+# directly: the behaviour under test is run.sh's digest, not bats.
 @test "run.sh names a failed file whose TAP has no not-ok line and hints at CGW_TEST_VERBOSE=1" {
-  mkdir -p "${BATS_TEST_TMPDIR}/suite"
+  mkdir -p "${BATS_TEST_TMPDIR}/suite" "${BATS_TEST_TMPDIR}/bin"
   printf '# helpers only, no @test\n_helper() {\n  true\n}\n' >"${BATS_TEST_TMPDIR}/suite/notests.bats"
-  run env CGW_TEST_TIMINGS=1 bash "${CGW_PROJECT_ROOT}/tests/run.sh" "${BATS_TEST_TMPDIR}/suite"
+  printf '#!/usr/bin/env bash\necho "ERROR: Found no tests."\necho "1..0"\nexit 1\n' >"${BATS_TEST_TMPDIR}/bin/bats"
+  chmod +x "${BATS_TEST_TMPDIR}/bin/bats"
+  run env PATH="${BATS_TEST_TMPDIR}/bin:${PATH}" CGW_TEST_TIMINGS=1 bash "${CGW_PROJECT_ROOT}/tests/run.sh" "${BATS_TEST_TMPDIR}/suite"
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"=== FAILURES: notests ==="* ]]
   [[ "${output}" == *"no 'not ok' line"*"CGW_TEST_VERBOSE=1"* ]]
