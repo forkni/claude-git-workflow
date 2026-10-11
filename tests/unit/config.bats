@@ -608,6 +608,7 @@ EOF
     cd '${TEST_REPO_DIR}'
     export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
     export CGW_NON_INTERACTIVE=1
+    unset GIT_EDITOR GIT_SEQUENCE_EDITOR
     source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
     echo \"GIT_TERMINAL_PROMPT=\${GIT_TERMINAL_PROMPT}\"
     echo \"GIT_PAGER=\${GIT_PAGER}\"

@@ -18,6 +18,8 @@
 # falling back to gh's own (unsafe) resolution.
 # Arguments:
 #   --title <title>        Override auto-generated PR title
+#   --body <text>          Use <text> as the PR body (replaces the commit-log body)
+#   --body-file <path>     Read the PR body from <path> (relative to the caller's cwd)
 #   --draft                Create PR as draft (not ready for review)
 #   --non-interactive      Accept all defaults, no prompts
 #   --dry-run              Preview PR details without creating
@@ -35,6 +37,7 @@ source "${SCRIPT_DIR}/_common.sh"
 
 main() {
   local pr_title=""
+  local body_text="" body_file="" body_source=""
   local draft=0
   local non_interactive=0
   local dry_run=0
@@ -59,6 +62,8 @@ main() {
         echo ""
         echo "Options:"
         echo "  --title <title>     Override auto-generated PR title"
+        echo "  --body <text>       Use <text> as the PR body (replaces the commit-log body)"
+        echo "  --body-file <path>  Read the PR body from <path> (not '-'; stdin is the title prompt)"
         echo "  --draft             Create as draft PR (not ready for review)"
         echo "  --non-interactive   Accept all defaults, no prompts"
         echo "  --dry-run           Preview PR details without creating"
@@ -90,6 +95,47 @@ main() {
           exit 1
         fi
         pr_title="${2}"
+        shift 2
+        ;;
+      --body)
+        if [[ $# -lt 2 ]] || [[ -z "${2:-}" ]]; then
+          err "--body requires a non-empty value"
+          exit 1
+        fi
+        if [[ -n "${body_source}" ]]; then
+          err "--body and --body-file are mutually exclusive"
+          exit 1
+        fi
+        body_text="${2}"
+        body_source="--body"
+        shift 2
+        ;;
+      --body-file)
+        if [[ $# -lt 2 ]] || [[ -z "${2:-}" ]]; then
+          err "--body-file requires a path"
+          exit 1
+        fi
+        if [[ -n "${body_source}" ]]; then
+          err "--body and --body-file are mutually exclusive"
+          exit 1
+        fi
+        if [[ "${2}" == "-" ]]; then
+          err "--body-file does not accept '-' (stdin is used for the title prompt)"
+          exit 1
+        fi
+        # Read now, before the cd to PROJECT_ROOT below, so a relative path
+        # resolves against the caller's cwd.
+        if [[ ! -r "${2}" ]] || [[ -d "${2}" ]]; then
+          err "--body-file: cannot read '${2}'"
+          exit 1
+        fi
+        body_text=$(cat "${2}")
+        if [[ -z "${body_text//[[:space:]]/}" ]]; then
+          err "--body-file: '${2}' is empty"
+          exit 1
+        fi
+        body_file="${2}"
+        body_source="--body-file"
         shift 2
         ;;
       --draft)
@@ -259,6 +305,9 @@ ${formatted_log}
 
 \`${src_branch}\` -> \`${tgt_branch}\`"
 
+  # A caller-supplied body replaces the generated one verbatim.
+  [[ -n "${body_source}" ]] && pr_body="${body_text}"
+
   echo "Title: ${pr_title}" | tee -a "$logfile"
   echo "" | tee -a "$logfile"
   echo "Commits:" | tee -a "$logfile"
@@ -301,6 +350,12 @@ ${formatted_log}
     echo "  Head:   ${src_branch}" | tee -a "$logfile"
     echo "  Base:   ${tgt_branch}" | tee -a "$logfile"
     echo "  Draft:  $([[ ${draft} -eq 1 ]] && echo yes || echo no)" | tee -a "$logfile"
+    case "${body_source}" in
+      --body) echo "  Body:   (from --body)" | tee -a "$logfile" ;;
+      --body-file) echo "  Body:   (from file ${body_file})" | tee -a "$logfile" ;;
+      *) echo "  Body:   (auto-generated from commit log)" | tee -a "$logfile" ;;
+    esac
+    echo "${pr_body}" | sed 's/^/    /' | tee -a "$logfile"
     echo "" | tee -a "$logfile"
     echo "Charlie CI will auto-review when PR is opened (non-draft)" | tee -a "$logfile"
     exit 0
@@ -313,11 +368,13 @@ ${formatted_log}
   gh_flags+=(--base "${tgt_branch}")
   gh_flags+=(--head "${src_branch}")
   gh_flags+=(--title "${pr_title}")
-  gh_flags+=(--body "${pr_body}")
+  # Body goes on stdin: no command-line length limit, and no MSYS path
+  # conversion of a file argument handed to a native gh.exe.
+  gh_flags+=(--body-file -)
   [[ ${draft} -eq 1 ]] && gh_flags+=(--draft)
 
   local pr_url gh_output
-  if gh_output=$(gh pr create "${gh_flags[@]}" 2>&1 | tee -a "$logfile"); then
+  if gh_output=$(gh pr create "${gh_flags[@]}" <<<"${pr_body}" 2>&1 | tee -a "$logfile"); then
     pr_url=$(echo "${gh_output}" | tr -d '\r' | grep -oE 'https://github\.com/[^ ]+' | head -1)
     log_section_end "CREATE PR" "$logfile" "0"
     echo "" | tee -a "$logfile"

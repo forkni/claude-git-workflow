@@ -178,6 +178,86 @@ _run_create_pr() {
   fi
 }
 
+# ── --body / --body-file ──────────────────────────────────────────────────────
+
+@test "no body flag: gh receives the auto-generated body on stdin" {
+  install_mock_gh
+  run _run_create_pr
+  [ "${status}" -eq 0 ]
+  grep -q "## Changes" "${MOCK_BIN_DIR}/gh.body"
+  grep -q "dev commit" "${MOCK_BIN_DIR}/gh.body"
+}
+
+@test "--body replaces the auto-generated body verbatim" {
+  install_mock_gh
+  run _run_create_pr --body "Hand-written body"
+  [ "${status}" -eq 0 ]
+  [ "$(cat "${MOCK_BIN_DIR}/gh.body")" = "Hand-written body" ]
+  ! grep -q "## Changes" "${MOCK_BIN_DIR}/gh.body"
+}
+
+@test "--body-file reads a relative path against the caller's cwd" {
+  install_mock_gh
+  local callerdir="${BATS_TEST_TMPDIR}/caller"
+  mkdir -p "${callerdir}"
+  printf '## Summary\n\nFrom a file.\n' >"${callerdir}/body.md"
+  run bash -c '
+    cd "$1" || exit 1
+    export SCRIPT_DIR="${CGW_PROJECT_ROOT}/scripts/git" PROJECT_ROOT="$2"
+    export CGW_SOURCE_BRANCH=development CGW_TARGET_BRANCH=main CGW_NON_INTERACTIVE=1
+    bash "${CGW_PROJECT_ROOT}/scripts/git/create_pr.sh" --body-file body.md 2>&1
+  ' _ "${callerdir}" "${TEST_REPO_DIR}"
+  [ "${status}" -eq 0 ]
+  [ "$(cat "${MOCK_BIN_DIR}/gh.body")" = "$(printf '## Summary\n\nFrom a file.')" ]
+}
+
+@test "--body and --body-file together exit 1" {
+  install_mock_gh
+  echo "x" >"${BATS_TEST_TMPDIR}/b.md"
+  run _run_create_pr --body "x" --body-file "${BATS_TEST_TMPDIR}/b.md"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"mutually exclusive"* ]]
+}
+
+@test "--body-file with a missing file exits 1" {
+  install_mock_gh
+  run _run_create_pr --body-file "${BATS_TEST_TMPDIR}/nope.md"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"cannot read"* ]]
+}
+
+@test "--body-file with an empty file exits 1" {
+  install_mock_gh
+  : >"${BATS_TEST_TMPDIR}/empty.md"
+  run _run_create_pr --body-file "${BATS_TEST_TMPDIR}/empty.md"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"is empty"* ]]
+}
+
+@test "--body-file - (stdin) is rejected" {
+  install_mock_gh
+  run _run_create_pr --body-file -
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"does not accept '-'"* ]]
+}
+
+@test "--body with an empty value exits 1" {
+  install_mock_gh
+  run _run_create_pr --body ""
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"--body requires a non-empty value"* ]]
+}
+
+@test "--dry-run --body shows the body and does not call gh pr create" {
+  install_mock_gh
+  run _run_create_pr --dry-run --body "Preview me"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Preview me"* ]]
+  if [ -f "${MOCK_BIN_DIR}/gh.log" ]; then
+    ! grep -q "pr create" "${MOCK_BIN_DIR}/gh.log"
+  fi
+}
+
 # ── Successful PR creation ────────────────────────────────────────────────────
 
 @test "successful PR creation exits 0" {

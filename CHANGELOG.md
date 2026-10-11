@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.15.0 (2026-10-11)
+
+> Changes since `v0.14.0`
+
+### New Features
+
+- **`create_pr.sh` `--body` and `--body-file` options**: A caller can now supply the PR body directly at creation instead of following up with `gh pr edit`, allowing Charlie's auto-review to run against the author's written summary rather than the generated commit list. The body is streamed to `gh` on stdin (`--body-file -`), bypassing Windows CLI limits and MSYS path conversion. In addition, `--body-file` resolves relative to the caller's working directory before changing to the project root, and `--dry-run` displays the body.
+
+### Documentation
+
+- **CI gate snapshot verification**: Silenced intermediate output during `gh pr checks --watch` and read a final snapshot upon completion in `references/ci-verification.md`.
+
+### Tests & Tooling
+
+- **Markdown bash snippet linting**: Added Bats static analysis to validate and lint all bash code blocks embedded in skill instructions and command documentation.
+- **Test runner progress reporting**: Added per-file progress output from the xargs fallback runner in `tests/run.sh`.
+- **Environment isolation**: Isolated `GIT_EDITOR` in non-interactive environment tests.
+
 ## v0.14.0 (2026-10-10)
 
 > Changes since `v0.13.2`

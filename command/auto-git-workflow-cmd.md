@@ -204,7 +204,8 @@ lock-file issues — see
 ## Token Efficiency
 
 - All successful commands: `>/dev/null 2>&1` (two exceptions: the Step 1 scan, whose
-  output feeds the suggestion rules; and the CI gate's `gh run watch` / `gh pr checks
-  --watch`, whose progress output is what confirms the wait is actually happening)
+  output feeds the suggestion rules; and the CI gate's `gh run watch`, whose progress
+  output confirms the wait is actually happening). `gh pr checks --watch` redraws its whole
+  table every interval, so silence it and read one final `gh pr checks` snapshot instead
 - Only show errors: remove suppression on retry
 - Keep the final summary to a few lines
