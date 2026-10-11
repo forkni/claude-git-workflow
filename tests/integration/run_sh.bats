@@ -55,6 +55,19 @@ FIXTURE
   [[ "${output}" == *"2 tests, 1 failures, 0 skipped"* ]]
 }
 
+# A .bats file without a single @test (a helper-only file, or one whose tests were all
+# removed) makes bats exit 1 with "Found no tests" and no `not ok` line at all; a killed
+# bats process looks the same. The digest must still name the file.
+@test "run.sh names a failed file whose TAP has no not-ok line and hints at CGW_TEST_VERBOSE=1" {
+  mkdir -p "${BATS_TEST_TMPDIR}/suite"
+  printf '# helpers only, no @test\n_helper() {\n  true\n}\n' >"${BATS_TEST_TMPDIR}/suite/notests.bats"
+  run env CGW_TEST_TIMINGS=1 bash "${CGW_PROJECT_ROOT}/tests/run.sh" "${BATS_TEST_TMPDIR}/suite"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"=== FAILURES: notests ==="* ]]
+  [[ "${output}" == *"no 'not ok' line"*"CGW_TEST_VERBOSE=1"* ]]
+  [[ "${output}" == *"failed: notests (bats exit 1, no not-ok line)"* ]]
+}
+
 @test "run.sh prints the full TAP of a failed file with CGW_TEST_VERBOSE=1" {
   _write_failing_fixture
   run env CGW_TEST_TIMINGS=1 CGW_TEST_VERBOSE=1 bash "${CGW_PROJECT_ROOT}/tests/run.sh" "${BATS_TEST_TMPDIR}/suite"

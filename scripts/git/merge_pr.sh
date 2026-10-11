@@ -41,10 +41,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
 ensure_no_stale_index_lock || exit 1
 
-# _pr_view <number> <json-field> <jq-expr>
-# Echoes one field of a PR via gh's built-in --jq (no external jq needed).
+# _pr_view <number> <json-field> <jq-expr> -- cgw_pr_view (_common.sh) against this repo
 _pr_view() {
-  gh pr view "${1}" --repo "${pr_repo}" --json "${2}" --jq "${3}" 2>/dev/null
+  cgw_pr_view "${pr_repo}" "$@"
 }
 
 main() {

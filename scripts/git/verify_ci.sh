@@ -80,9 +80,9 @@ _ci_out() {
   echo "$*" | tee -a "${logfile}"
 }
 
-# _pr_view <number> <json-field> <jq-expr>
+# _pr_view <number> <json-field> <jq-expr> -- cgw_pr_view (_common.sh) against this repo
 _pr_view() {
-  gh pr view "${1}" --repo "${ci_repo}" --json "${2}" --jq "${3}" 2>/dev/null | tr -d '\r'
+  cgw_pr_view "${ci_repo}" "$@"
 }
 
 # _ci_list_runs <sha> <branch> -- TSV rows id, workflow, event, status, conclusion, url
@@ -164,6 +164,39 @@ _ci_check_state() {
   esac
 }
 
+# _ci_settle <section> <green-sha> <noun> <where> -- one verdict round over the rows the
+# caller just parsed into red_lines / pending / unknown_line (its locals, visible here
+# through bash's dynamic scoping, as are its timeout and poll). On a verdict it prints
+# the CI: line, closes the log section and returns 0 green, 1 red or 2 unverified; while
+# something is still pending and the deadline holds it notes the wait, sleeps one poll
+# interval and returns 10, so the caller re-lists and calls again.
+_ci_settle() {
+  local section="${1}" green_sha="${2}" noun="${3}" where="${4}" line
+  if [[ ${#red_lines[@]} -gt 0 ]]; then
+    for line in "${red_lines[@]}"; do _ci_out "${line}"; done
+    log_section_end "${section}" "${logfile}" "1" >&2
+    return 1
+  fi
+  if [[ -n "${unknown_line}" ]]; then
+    _ci_out "CI: unverified -- ${unknown_line}"
+    log_section_end "${section}" "${logfile}" "1" >&2
+    return 2
+  fi
+  if [[ ${pending} -eq 0 ]]; then
+    _ci_out "CI: green ${green_sha}"
+    log_section_end "${section}" "${logfile}" "0" >&2
+    return 0
+  fi
+  if [[ ${_ci_clock} -ge ${timeout} ]]; then
+    _ci_out "CI: unverified -- timed out after ${_ci_clock}s with ${pending} ${noun} still pending on ${where}"
+    log_section_end "${section}" "${logfile}" "1" >&2
+    return 2
+  fi
+  _ci_note "${pending} ${noun} pending on ${where} (${_ci_clock}/${timeout}s)"
+  _ci_sleep "${poll}"
+  return 10
+}
+
 # _ci_branch_mode <branch> <sha>
 _ci_branch_mode() {
   local branch="${1}" sha="${2}"
@@ -224,7 +257,7 @@ _ci_branch_mode() {
 
   # (2) Watch: re-list until every judged run completed; the first red verdict stops.
   log_section_start "WATCH" "${logfile}" >&2
-  local judged row id name event status conclusion url state
+  local judged id name event status conclusion url state rc
   local -a red_lines
   local pending unknown_line
   while :; do
@@ -246,29 +279,9 @@ _ci_branch_mode() {
         unknown) [[ -z "${unknown_line}" ]] && unknown_line="run #${id} ${name} (${event}) concluded '${conclusion}'" ;;
       esac
     done <<<"${judged}"
-    if [[ ${#red_lines[@]} -gt 0 ]]; then
-      local line
-      for line in "${red_lines[@]}"; do _ci_out "${line}"; done
-      log_section_end "WATCH" "${logfile}" "1" >&2
-      return 1
-    fi
-    if [[ -n "${unknown_line}" ]]; then
-      _ci_out "CI: unverified -- ${unknown_line}"
-      log_section_end "WATCH" "${logfile}" "1" >&2
-      return 2
-    fi
-    if [[ ${pending} -eq 0 ]]; then
-      _ci_out "CI: green ${sha}"
-      log_section_end "WATCH" "${logfile}" "0" >&2
-      return 0
-    fi
-    if [[ ${_ci_clock} -ge ${timeout} ]]; then
-      _ci_out "CI: unverified -- timed out after ${_ci_clock}s with ${pending} run(s) still pending on ${sha:0:7}"
-      log_section_end "WATCH" "${logfile}" "1" >&2
-      return 2
-    fi
-    _ci_note "${pending} run(s) pending on ${sha:0:7} (${_ci_clock}/${timeout}s)"
-    _ci_sleep "${poll}"
+    _ci_settle "WATCH" "${sha}" "run(s)" "${sha:0:7}"
+    rc=$?
+    [[ ${rc} -ne 10 ]] && return "${rc}"
     rows=$(_ci_list_runs "${sha}" "${branch}") || {
       _ci_out "CI: unverified -- gh run list failed for ${ci_repo} (see ${logfile})"
       log_section_end "WATCH" "${logfile}" "1" >&2
@@ -301,6 +314,7 @@ _ci_pr_mode() {
     is_cross=$(_pr_view "${pr}" isCrossRepository .isCrossRepository) || is_cross=""
     if [[ "${is_cross}" != "true" ]]; then
       expected_sha=$(git ls-remote "${CGW_REMOTE}" "refs/heads/${head_branch}" 2>>"${logfile}" | awk 'NR==1 {print $1}')
+      [[ -z "${expected_sha}" ]] && _ci_note "Could not read ${CGW_REMOTE}/${head_branch}'s tip; judging the head GitHub reports (pass --sha to bind it)"
     fi
   fi
   local waited=0
@@ -351,7 +365,7 @@ _ci_pr_mode() {
 
   # (3) Poll until nothing is pending, re-reading the head each round (a push mid-wait
   # invalidates the verdict).
-  local bucket workflow name link state pending head_now
+  local bucket workflow name link state pending head_now rc
   local -a red_lines
   local unknown_line
   while :; do
@@ -367,29 +381,9 @@ _ci_pr_mode() {
         unknown) [[ -z "${unknown_line}" ]] && unknown_line="check '${name}' is in bucket '${bucket}'" ;;
       esac
     done <<<"${rows}"
-    if [[ ${#red_lines[@]} -gt 0 ]]; then
-      local line
-      for line in "${red_lines[@]}"; do _ci_out "${line}"; done
-      log_section_end "PR CHECKS" "${logfile}" "1" >&2
-      return 1
-    fi
-    if [[ -n "${unknown_line}" ]]; then
-      _ci_out "CI: unverified -- ${unknown_line}"
-      log_section_end "PR CHECKS" "${logfile}" "1" >&2
-      return 2
-    fi
-    if [[ ${pending} -eq 0 ]]; then
-      _ci_out "CI: green ${head_sha}"
-      log_section_end "PR CHECKS" "${logfile}" "0" >&2
-      return 0
-    fi
-    if [[ ${_ci_clock} -ge ${timeout} ]]; then
-      _ci_out "CI: unverified -- timed out after ${_ci_clock}s with ${pending} check(s) still pending on PR #${pr}"
-      log_section_end "PR CHECKS" "${logfile}" "1" >&2
-      return 2
-    fi
-    _ci_note "${pending} check(s) pending on PR #${pr} (${_ci_clock}/${timeout}s)"
-    _ci_sleep "${poll}"
+    _ci_settle "PR CHECKS" "${head_sha}" "check(s)" "PR #${pr}"
+    rc=$?
+    [[ ${rc} -ne 10 ]] && return "${rc}"
     head_now=$(_pr_view "${pr}" headRefOid .headRefOid) || head_now=""
     if [[ "${head_now}" != "${head_sha}" ]]; then
       _ci_out "CI: unverified -- PR #${pr} head moved to ${head_now}; rerun with --sha ${head_now}"
@@ -575,7 +569,10 @@ main() {
     if [[ -z "${sha}" ]]; then
       sha=$(git ls-remote "${CGW_REMOTE}" "refs/heads/${branch}" 2>>"${logfile}" | awk 'NR==1 {print $1}')
       if [[ -z "${sha}" ]]; then
-        sha=$(git ls-remote "${CGW_REMOTE}" "refs/tags/${branch}^{}" "refs/tags/${branch}" 2>>"${logfile}" | awk 'NR==1 {print $1}')
+        # ls-remote lists the tag object first and its peeled ^{} commit second (annotated
+        # tags only); the run is on the commit, so prefer the peeled line.
+        sha=$(git ls-remote "${CGW_REMOTE}" "refs/tags/${branch}^{}" "refs/tags/${branch}" 2>>"${logfile}" |
+          awk '$2 ~ /\^\{\}$/ {p = $1} $2 !~ /\^\{\}$/ {t = $1} END {print (p != "" ? p : t)}')
       fi
       if [[ ! "${sha}" =~ ^[0-9a-f]{40}$ ]]; then
         _ci_out "CI: unverified -- could not resolve ${CGW_REMOTE}/${branch} to a commit (pushed?)"

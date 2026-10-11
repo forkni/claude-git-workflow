@@ -150,6 +150,33 @@ _push_feature_head() {
   grep -q -- "--commit ${sha} --branch development" "${GH_LOG}"
 }
 
+# After create_release.sh --push the gate is run with the tag name: ls-remote lists the
+# annotated tag object before its peeled ^{} commit, and the run is on the commit.
+@test "branch mode: --branch <annotated tag> judges the tagged commit, not the tag object" {
+  install_mock_gh
+  export MOCK_GH_RUNS="${RUN_BP_OK}"
+  git -C "${TEST_REPO_DIR}" tag -a v1.2.3 -m "release v1.2.3" development
+  git -C "${TEST_REPO_DIR}" push --quiet origin v1.2.3
+  local tag_object
+  tag_object=$(git -C "${TEST_REPO_DIR}" rev-parse v1.2.3)
+  [ "${tag_object}" != "${DEV_SHA}" ]
+  run --separate-stderr _run_verify_ci --branch v1.2.3
+  [ "${status}" -eq 0 ]
+  [ "${output}" == "CI: green ${DEV_SHA}" ]
+  grep -q -- "--commit ${DEV_SHA} --branch v1.2.3" "${GH_LOG}"
+}
+
+@test "branch mode: --branch <lightweight tag> resolves to the tagged commit" {
+  install_mock_gh
+  export MOCK_GH_RUNS="${RUN_BP_OK}"
+  git -C "${TEST_REPO_DIR}" tag v1.2.4 development
+  git -C "${TEST_REPO_DIR}" push --quiet origin v1.2.4
+  run --separate-stderr _run_verify_ci --branch v1.2.4
+  [ "${status}" -eq 0 ]
+  [ "${output}" == "CI: green ${DEV_SHA}" ]
+  grep -q -- "--commit ${DEV_SHA} --branch v1.2.4" "${GH_LOG}"
+}
+
 @test "branch mode: a failed run exits 1 with one CI: red line per failure" {
   install_mock_gh
   export MOCK_GH_RUNS="${RUN_BP_OK}\n${RUN_DOCS_FAIL}"

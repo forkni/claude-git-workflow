@@ -31,6 +31,7 @@
 #   cgw_confirm()               - Unified confirmation prompt; handles NI mode, literal tokens, defaults
 #   cgw_default_branch()        - Echo the repo's default branch (origin/HEAD, falls back to CGW_TARGET_BRANCH)
 #   cgw_require_gh()            - Verify gh CLI is installed and authenticated; prints [ERROR] and returns 1 on failure
+#   cgw_pr_view()               - Echo one field of a PR via gh pr view --jq, CR-stripped
 
 # SCRIPT_DIR must be set by the caller before sourcing _common.sh:
 #   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -557,6 +558,14 @@ cgw_require_gh() {
     return 1
   fi
   return 0
+}
+
+# cgw_pr_view <owner/repo> <number> <json-field> <jq-expr>
+# Echoes one field of a PR via gh's built-in --jq (no external jq needed), with
+# CRs stripped (gh on Windows can emit CRLF). gh's exit status reaches the caller
+# through pipefail; callers fall back on an empty value.
+cgw_pr_view() {
+  gh pr view "${2}" --repo "${1}" --json "${3}" --jq "${4}" 2>/dev/null | tr -d '\r'
 }
 
 # ensure_no_stale_index_lock - Detect and auto-remove abandoned .git/index.lock files.

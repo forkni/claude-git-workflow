@@ -196,14 +196,24 @@ for slug in "${_fail_slugs[@]}"; do
   if [[ "${CGW_TEST_VERBOSE:-0}" == "1" ]]; then
     cat "${_tmpdir}/${slug}.tap"
   else
+    # bats can fail without running a test (a file with no @test, a killed process);
+    # then there is no `not ok` line to show and the digest would look empty.
+    if ! grep -qE '^not ok [0-9]+' "${_tmpdir}/${slug}.tap"; then
+      echo "(no 'not ok' line: bats failed before running this file's tests; re-run with CGW_TEST_VERBOSE=1 for its full output)"
+    fi
     grep -vE '^(ok [0-9]+|[0-9]+\.\.[0-9]+)' "${_tmpdir}/${slug}.tap"
   fi
 done
 
-# One line per failing test, so the summary reads even when the digest above is truncated
+# One line per failing test (or per failed file without one), so the summary reads
+# even when the digest above is truncated
 for slug in "${_fail_slugs[@]}"; do
-  grep -E '^not ok [0-9]+' "${_tmpdir}/${slug}.tap" | grep -v '# skip' |
-    sed -E "s/^not ok ([0-9]+) (.*)$/failed: ${slug}:\1 \2/"
+  if grep -qE '^not ok [0-9]+' "${_tmpdir}/${slug}.tap"; then
+    grep -E '^not ok [0-9]+' "${_tmpdir}/${slug}.tap" | grep -v '# skip' |
+      sed -E "s/^not ok ([0-9]+) (.*)$/failed: ${slug}:\1 \2/"
+  else
+    echo "failed: ${slug} (bats exit $(cat "${_tmpdir}/${slug}.exit" 2>/dev/null || echo '?'), no not-ok line)"
+  fi
 done
 
 # Slowest files, so CGW_SLOW_FILES can be tuned from data (wall time under parallel load)

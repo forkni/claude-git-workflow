@@ -72,9 +72,12 @@ _installed_hook_or_skip() {
   _assert_same_lf "${BATS_TEST_TMPDIR}/expected.md" "${inst}"
 }
 
-@test "dogfood: scripts/test/run_tests.sh (the pre-push shell-quality gate) is clean over the whole tree" {
+# Default scope: the files changed since the upstream (everything when there is no
+# upstream, as in a CI checkout). --all takes ~50s on Windows, and CI's Shell Script
+# Quality job already runs the same passes over the whole tree.
+@test "dogfood: scripts/test/run_tests.sh (the pre-push shell-quality gate) is clean over the files it would check" {
   [[ -x "${CGW_PROJECT_ROOT}/scripts/test/run_tests.sh" ]] || skip "no pre-push gate script"
-  run --separate-stderr "${CGW_PROJECT_ROOT}/scripts/test/run_tests.sh" --all
+  run --separate-stderr "${CGW_PROJECT_ROOT}/scripts/test/run_tests.sh"
   [ "${status}" -eq 0 ]
   [[ "${stderr}" == *"shellcheck clean"* || "${stderr}" == *"shellcheck is not runnable"* ]]
 }

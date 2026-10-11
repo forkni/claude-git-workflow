@@ -62,8 +62,20 @@ if [[ "${scope}" == "changed" ]]; then
   fi
 fi
 
-# _select <out-array-name> <candidates...>: keep the candidates that differ
-# from the base (working tree vs base, so uncommitted edits count too).
+# The changed set: files that differ from the base (working tree vs base, so
+# uncommitted edits count too) plus untracked files, which git diff never lists.
+# Read once; each candidate group is then filtered against it.
+declare -A changed=()
+if [[ "${scope}" == "changed" ]]; then
+  while IFS= read -r f; do
+    [[ -n "${f}" ]] && changed["${f}"]=1
+  done <<<"$(
+    git diff --name-only "${base}" -- scripts/git hooks tests
+    git ls-files --others --exclude-standard -- scripts/git hooks tests
+  )"
+fi
+
+# _select <out-array-name> <candidates...>: keep the candidates in scope.
 _select() {
   local -n _out="$1"
   shift
@@ -71,10 +83,7 @@ _select() {
   local f
   for f in "$@"; do
     [[ -f "${f}" ]] || continue
-    # Untracked files never show in git diff, so a brand-new file counts as changed.
-    if [[ "${scope}" == "all" ]] ||
-      ! git ls-files --error-unmatch -- "${f}" >/dev/null 2>&1 ||
-      ! git diff --quiet "${base}" -- "${f}"; then
+    if [[ "${scope}" == "all" || -n "${changed[${f}]:-}" ]]; then
       _out+=("${f}")
     fi
   done
