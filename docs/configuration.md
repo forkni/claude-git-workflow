@@ -119,11 +119,11 @@ cp cgw.conf.example .cgw.conf
 | `CGW_REFLOG_PREFIX` | `cgw` | Prefix prepended to `GIT_REFLOG_ACTION` for reflog auditability and recovery |
 | `CGW_NON_INTERACTIVE` | `0` | Set to `1` to suppress all prompts (CI mode) |
 | `CGW_NO_VENV` | `0` | Set to `1` to skip virtual environment detection |
-| `CGW_CI_VERIFY` | `1` | Set to `0` to disable the post-push CI verification gate entirely (agent procedure, see [`skill/references/ci-verification.md`](../skill/references/ci-verification.md)) |
-| `CGW_CI_TIMEOUT_SECONDS` | `900` | Max seconds the CI gate waits for all resolved runs to reach a terminal state |
-| `CGW_CI_POLL_INTERVAL` | `15` | Seconds between `gh run watch` / poll refreshes |
-| `CGW_CI_MAX_FIX_ROUNDS` | `3` | Fix → push → re-watch attempts before the CI gate stops and hands back to the user |
-| `CGW_CI_REQUIRED_WORKFLOWS` | `` | Space-separated workflow-name allow-list for the CI gate; empty = judge every triggered workflow |
+| `CGW_CI_VERIFY` | `1` | Set to `0` to disable the post-push CI verification gate (`verify_ci.sh` exits `3`; see [`skill/references/ci-verification.md`](../skill/references/ci-verification.md)) |
+| `CGW_CI_TIMEOUT_SECONDS` | `900` | Max seconds `verify_ci.sh` waits for all resolved runs to reach a terminal state (`--timeout` overrides per call) |
+| `CGW_CI_POLL_INTERVAL` | `15` | Seconds between `verify_ci.sh` run-list / check refreshes while watching (`--poll` overrides per call) |
+| `CGW_CI_MAX_FIX_ROUNDS` | `3` | Agent-facing (not read by any script): fix → push → re-run attempts before the CI gate stops and hands back to the user |
+| `CGW_CI_REQUIRED_WORKFLOWS` | `` | Comma-separated workflow names `verify_ci.sh` judges (e.g. `Branch Protection,Docs Validation`); when set, only these count and all must register. Empty = judge every triggered workflow |
 
 `configure.sh` also installs a `.markdownlint-cli2.jsonc` alongside `.markdownlint.json`
 (`templates/markdownlint-cli2.jsonc`), setting `"gitignore": ".gitignore"` so markdownlint-cli2

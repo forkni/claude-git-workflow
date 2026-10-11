@@ -97,9 +97,10 @@ git push origin <branch>
 ## CI Failures
 
 A push passing every local check can still turn up red once GitHub Actions runs —
-that's what [ci-verification.md](ci-verification.md) (SKILL.md Rule 6) watches for. This
-section is its fix-loop reference: map the failing `branch-protection.yml` job to a local
-repro command, fix, then re-promote through the wrappers.
+that's what `./scripts/git/verify_ci.sh` (SKILL.md Rule 6, [ci-verification.md](ci-verification.md))
+catches: exit `1` with a `CI: red <workflow> <url>` line per failed run. This section is its
+fix-loop reference: map the failing `branch-protection.yml` job to a local repro command,
+fix, then re-promote through the wrappers.
 
 **Read the failing steps only, not the whole log:**
 
@@ -133,7 +134,7 @@ commit the fix directly on `CGW_TARGET_BRANCH`; author it on `CGW_SOURCE_BRANCH`
 ./scripts/git/push_validated.sh --non-interactive --skip-lint
 ```
 
-Then re-watch from ci-verification.md's *Baseline + Resolve Runs* against the new SHA.
+Then re-run `./scripts/git/verify_ci.sh --branch <branch>` (or `--pr N --sha <new sha>`) against the new SHA.
 Bounded by `CGW_CI_MAX_FIX_ROUNDS` (default 3) — exhausted means stop and report, not
 silently give up or claim success while a run is still red.
 

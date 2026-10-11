@@ -4,23 +4,134 @@ Every push CGW performs — direct `push_validated.sh`, a merge's target push, `
 or `create_release.sh --push` — is followed by this gate: subscribe to the CI runs the push
 triggered, wait for a terminal verdict, and treat anything other than green as unfinished
 work. Do not report a push, merge, or promotion "complete" while a resolved run is still
-pending or red. This is an agent procedure (uses `gh`, not a `scripts/git/*.sh` wrapper) —
-apply it manually at each push site listed in [SKILL.md](../SKILL.md).
+pending or red. The gate is `scripts/git/verify_ci.sh` — run it at each push site listed in
+[SKILL.md](../SKILL.md). The sections after *Fix Loop* describe what the script does and the
+manual `gh` procedure to fall back on when it cannot run.
 
 ## Contents
 
-- Applicability Probe
-- Baseline + Resolve Runs
-- PR Checks (PR mode)
-- Watch
-- Verdict
+- Run verify_ci.sh
 - Fix Loop
 - Hard Prohibitions
 - Config Knobs
+- Manual fallback: Applicability Probe
+- Manual fallback: Baseline + Resolve Runs
+- Manual fallback: PR Checks (PR mode)
+- Manual fallback: Watch
+- Manual fallback: Verdict
 
 ---
 
-## Applicability Probe
+## Run verify_ci.sh
+
+```bash
+./scripts/git/verify_ci.sh --branch "${CGW_SOURCE_BRANCH:-development}"   # after push_validated.sh
+./scripts/git/verify_ci.sh --branch "${CGW_TARGET_BRANCH:-main}"          # after a merge's target push
+./scripts/git/verify_ci.sh --pr 42 --sha <sha>                            # after create_pr.sh (its PR number / Head SHA lines)
+./scripts/git/verify_ci.sh --branch v1.2.3                                # after a pushed release tag (tag name)
+./scripts/git/verify_ci.sh --branch development --timeout 600 --poll 10   # shorter wait, denser polling
+```
+
+Name the branch you pushed — never `HEAD` or the current branch, which the wrappers have
+already switched back to `CGW_SOURCE_BRANCH` after a target push. The script takes the SHA
+from the remote (`--sha` overrides it), queries runs by commit **and** branch, waits for the
+run set to register and settle, watches to a terminal state, and prints exactly one kind of
+`CI:` line on stdout (progress goes to stderr and `logs/verify_ci_*.log`):
+
+| Exit | stdout | Meaning |
+|---|---|---|
+| `0` | `CI: green <sha>` | Every judged run concluded `success`/`skipped`/`neutral` |
+| `1` | `CI: red <workflow> <url>` (one per red run) | A run concluded `failure`, `cancelled`, `timed_out`, `startup_failure` or `action_required` → *Fix Loop* |
+| `2` | `CI: unverified -- <reason>` | No verdict: runs never registered while workflows are active, `CGW_CI_TIMEOUT_SECONDS` elapsed, a required workflow is missing, the PR head lags or moved, or `gh` failed mid-watch. Report it as unverified, never as green |
+| `3` | `CI: not applicable (<why>)` / `CI: no workflow triggered (...)` | `CGW_CI_VERIFY=0`, no `gh`, no auth, a non-GitHub remote, or the repo has no active workflow |
+
+A usage error also exits `1` but prints `[ERROR]` and no `CI:` line.
+
+**Run it in the background.** The default `CGW_CI_TIMEOUT_SECONDS=900` exceeds the Bash
+tool's 600s maximum, and a full `branch-protection.yml` run regularly takes longer than the
+300s default: issue the call with `run_in_background: true`, or pass `--timeout` below the
+tool's cap. In PR mode `--sha` is the `Head SHA:` line `create_pr.sh` printed (or
+`git ls-remote` of the head branch after a fix push); without it the script resolves the head
+branch from `CGW_REMOTE` itself, and for a cross-repository PR (a fork) it skips the catch-up
+wait and judges whatever head GitHub currently reports — so always pass `--sha` right after a push.
+
+Exit `2` means the push is **not** verified: wait a moment and re-run (registration lag is
+the usual cause), or raise `--timeout`. A `paths:` filter that legitimately did not match is
+the only benign cause of "no run registered", and you can confirm it from the workflow's
+`on:` block.
+
+---
+
+## Fix Loop
+
+Bounded by `CGW_CI_MAX_FIX_ROUNDS` (default 3 attempts). On red:
+
+1. **Inspect** — pull failing steps only, not the whole log:
+
+   ```bash
+   gh run view <run-id> --log-failed
+   ```
+
+2. **Infrastructural failure** (runner outage, transient network/auth error unrelated to the
+   diff) — try one rerun before touching code: `gh run rerun <run-id> --failed`. Re-watch.
+3. **Otherwise, reproduce locally before editing.** Map the failing job to its local
+   equivalent (see [error-recovery.md](error-recovery.md) → *CI Failures*):
+   `shellcheck -x --source-path=scripts/git scripts/git/*.sh`, `tests/run.sh`,
+   `bash scripts/git/check_local_files.sh`, `./scripts/git/setup_attributes.sh`.
+4. **Fix, then re-promote through the wrappers** — never bypass Rule 1. Author the fix on
+   `CGW_SOURCE_BRANCH`:
+
+   ```bash
+   ./scripts/git/commit_enhanced.sh --non-interactive "fix: <what CI caught>"
+   ./scripts/git/push_validated.sh --non-interactive --skip-lint
+   ```
+
+   Re-run `./scripts/git/verify_ci.sh --branch <branch>` (or `--pr N --sha <new sha>`) against
+   the new SHA.
+5. **Budget exhausted** — stop. Report the failing workflow name, job, and the `gh run view`
+   URL, and hand back to the user. Never silently give up mid-loop, and never report success
+   while red.
+
+## Hard Prohibitions
+
+These are the ways this gate gets quietly subverted — call them out, don't just imply them:
+
+- **Never** `--amend` + force-push to "fix" a CI failure — the commit is already published;
+  amend rewrites history other clones may have fetched. Push a new fix commit instead.
+- **Never** commit a CI fix directly on the target branch. Author it on
+  `CGW_SOURCE_BRANCH` and re-promote through the normal merge/PR path, so the target branch
+  only ever receives reviewed, gated content.
+- **Never** reach for `--skip-lint` to make a red run go green faster — local lint and remote
+  CI are different checks; skipping one doesn't satisfy the other.
+- **Never** resolve runs from `HEAD` / the current branch, or read an empty run list or
+  "no checks reported" shortly after a push as "no CI" — name the pushed branch, take its SHA
+  from the remote, and treat absence inside the registration window as *not yet*.
+- **Never** report "Workflow complete" / "Push successful" while a watched run is still
+  `in_progress`, `queued`, or concluded anything other than `success`/`skipped`.
+
+## Config Knobs
+
+Read by `verify_ci.sh` from `.cgw.conf` (or overridden by environment, per the usual
+three-tier resolution); `--timeout` and `--poll` override the two timing knobs per call.
+`CGW_CI_MAX_FIX_ROUNDS` is the one agent-facing knob: the script reports a verdict, the agent
+runs the fix loop.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CGW_CI_VERIFY` | `1` | `0` disables the gate entirely (`verify_ci.sh` exits `3`) |
+| `CGW_CI_TIMEOUT_SECONDS` | `900` | Max wait for all resolved runs to reach a terminal state |
+| `CGW_CI_POLL_INTERVAL` | `15` | Seconds between run-list / check refreshes while watching |
+| `CGW_CI_MAX_FIX_ROUNDS` | `3` | Fix → push → re-run attempts before stopping (agent-facing, not read by the script) |
+| `CGW_CI_REQUIRED_WORKFLOWS` | *(empty)* | Comma-separated workflow names (e.g. `Branch Protection,Docs Validation`); when set, only these are judged and all of them must register. Empty = judge every triggered workflow |
+
+```bash
+[[ -f .cgw.conf ]] && . ./.cgw.conf
+echo "verify=${CGW_CI_VERIFY:-1} timeout=${CGW_CI_TIMEOUT_SECONDS:-900} poll=${CGW_CI_POLL_INTERVAL:-15} rounds=${CGW_CI_MAX_FIX_ROUNDS:-3}"
+```
+
+## Manual fallback: Applicability Probe
+
+The sections from here on describe what `verify_ci.sh` does, as a `gh` procedure to apply by hand only when the script cannot run (no bash, or a broken checkout).
 
 Skipping is silent and normal — most consumer projects installing CGW may have no GitHub
 remote, no `gh`, or no auth. Run once per session, not per push:
@@ -38,7 +149,7 @@ before the probe:
 [[ -f .cgw.conf ]] && . ./.cgw.conf; [[ "${CGW_CI_VERIFY:-1}" == "1" ]] && echo GATE_ENABLED
 ```
 
-## Baseline + Resolve Runs
+## Manual fallback: Baseline + Resolve Runs
 
 **Same commit can carry runs on two branches** — `merge_with_validation.sh` always merges
 with `--no-ff`, so a *direct*-mode merge never fast-forwards and `CGW_TARGET_BRANCH` gets its
@@ -92,7 +203,7 @@ Optionally, capture the highest existing `databaseId` for this branch *before* p
 ids are monotonic, so anything greater after the push is unambiguously attributable to it —
 useful when the branch already has recent runs and you want to avoid re-watching a stale one.
 
-## PR Checks (PR mode)
+## Manual fallback: PR Checks (PR mode)
 
 In PR mode (`create_pr.sh`, or a fix pushed to an open PR) watch the PR's own checks — but
 `gh pr checks` has no commit SHA: it reports on whatever head GitHub currently has for the PR.
@@ -132,13 +243,13 @@ gh pr checks "$pr" --repo "$repo" --watch --fail-fast --interval "${CGW_CI_POLL_
 gh pr checks "$pr" --repo "$repo"   # the verdict: exit 0 = all green, 1 = a check failed, 8 = still pending
 ```
 
-If step 2 ends empty, apply the same rule as *Baseline + Resolve Runs*: `gh workflow list`
+If step 2 ends empty, apply the same rule as *Manual fallback: Baseline + Resolve Runs*: `gh workflow list`
 shows no active workflows → `CI: no workflow triggered`; otherwise `CI: unverified`, never
 green. After the watch, re-read `headRefOid`; if it changed, someone pushed mid-wait — restart
 from step 1. `merge_pr.sh` applies this same binding itself (`--wait-checks`, plus
 `--match-head-commit`), so it is the model to follow when merging.
 
-## Watch
+## Manual fallback: Watch
 
 For each resolved run id, watch it to a terminal state:
 
@@ -161,7 +272,7 @@ Bound the whole wait by `CGW_CI_TIMEOUT_SECONDS` (default 900s) — if runs are 
 non-terminal past that, report `CI: timed out waiting for <workflow>` rather than waiting
 indefinitely.
 
-## Verdict
+## Manual fallback: Verdict
 
 Green — every resolved run's `conclusion` is `success` or `skipped`.
 
@@ -172,67 +283,3 @@ Red — any run concludes `failure`, `cancelled`, `timed_out`, `startup_failure`
 `success` — this is by design, not a gap to work around. `branch-protection.yml`'s `shfmt`
 step is likewise advisory. Judging on `conclusion` inherits that intent automatically; no
 special-casing needed.)
-
-## Fix Loop
-
-Bounded by `CGW_CI_MAX_FIX_ROUNDS` (default 3 attempts). On red:
-
-1. **Inspect** — pull failing steps only, not the whole log:
-
-   ```bash
-   gh run view <run-id> --log-failed
-   ```
-
-2. **Infrastructural failure** (runner outage, transient network/auth error unrelated to the
-   diff) — try one rerun before touching code: `gh run rerun <run-id> --failed`. Re-watch.
-3. **Otherwise, reproduce locally before editing.** Map the failing job to its local
-   equivalent (see [error-recovery.md](error-recovery.md) → *CI Failures*):
-   `shellcheck -x --source-path=scripts/git scripts/git/*.sh`, `tests/run.sh`,
-   `bash scripts/git/check_local_files.sh`, `./scripts/git/setup_attributes.sh`.
-4. **Fix, then re-promote through the wrappers** — never bypass Rule 1. Author the fix on
-   `CGW_SOURCE_BRANCH`:
-
-   ```bash
-   ./scripts/git/commit_enhanced.sh --non-interactive "fix: <what CI caught>"
-   ./scripts/git/push_validated.sh --non-interactive --skip-lint
-   ```
-
-   Re-watch from **Baseline + Resolve Runs** against the new SHA.
-5. **Budget exhausted** — stop. Report the failing workflow name, job, and the `gh run view`
-   URL, and hand back to the user. Never silently give up mid-loop, and never report success
-   while red.
-
-## Hard Prohibitions
-
-These are the ways this gate gets quietly subverted — call them out, don't just imply them:
-
-- **Never** `--amend` + force-push to "fix" a CI failure — the commit is already published;
-  amend rewrites history other clones may have fetched. Push a new fix commit instead.
-- **Never** commit a CI fix directly on the target branch. Author it on
-  `CGW_SOURCE_BRANCH` and re-promote through the normal merge/PR path, so the target branch
-  only ever receives reviewed, gated content.
-- **Never** reach for `--skip-lint` to make a red run go green faster — local lint and remote
-  CI are different checks; skipping one doesn't satisfy the other.
-- **Never** resolve runs from `HEAD` / the current branch, or read an empty run list or
-  "no checks reported" shortly after a push as "no CI" — name the pushed branch, take its SHA
-  from the remote, and treat absence inside the registration window as *not yet*.
-- **Never** report "Workflow complete" / "Push successful" while a watched run is still
-  `in_progress`, `queued`, or concluded anything other than `success`/`skipped`.
-
-## Config Knobs
-
-Not read by any `scripts/git/*.sh` — these are agent-facing conventions for this procedure,
-sourced from `.cgw.conf` (or overridden by environment, per the usual three-tier resolution).
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `CGW_CI_VERIFY` | `1` | `0` disables the gate entirely |
-| `CGW_CI_TIMEOUT_SECONDS` | `900` | Max wait for all resolved runs to reach a terminal state |
-| `CGW_CI_POLL_INTERVAL` | `15` | Seconds between `gh run watch` refreshes |
-| `CGW_CI_MAX_FIX_ROUNDS` | `3` | Fix → push → re-watch attempts before stopping |
-| `CGW_CI_REQUIRED_WORKFLOWS` | *(empty)* | Space-separated workflow-name allow-list; empty = judge every triggered workflow |
-
-```bash
-[[ -f .cgw.conf ]] && . ./.cgw.conf
-echo "verify=${CGW_CI_VERIFY:-1} timeout=${CGW_CI_TIMEOUT_SECONDS:-900} poll=${CGW_CI_POLL_INTERVAL:-15} rounds=${CGW_CI_MAX_FIX_ROUNDS:-3}"
-```

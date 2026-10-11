@@ -406,28 +406,32 @@ CGW_SIGN_TAGS="0"
 CGW_ALLOW_REBASE_PUBLISHED="0"
 
 # ============================================================================
-# CI VERIFICATION GATE (agent procedure — see skill/references/ci-verification.md)
+# CI VERIFICATION GATE (scripts/git/verify_ci.sh — see skill/references/ci-verification.md)
 # ============================================================================
-# Not read by any scripts/git/*.sh script. These are agent-facing conventions:
-# after every push CGW performs, the agent subscribes to the CI runs it
-# triggered, waits for a terminal verdict, and fixes-and-retries until green
-# (or the round budget below is exhausted) before reporting the push done.
-# Requires the gh CLI, installed + authenticated, and a GitHub remote; silently
-# no-ops otherwise.
+# Read by verify_ci.sh, which runs after every push CGW performs: it waits for
+# the CI runs the push triggered, watches them to a terminal verdict and exits
+# 0 green / 1 red / 2 unverified / 3 not applicable. The agent fixes-and-retries
+# on red until green (or the round budget below is exhausted) before reporting
+# the push done. Requires the gh CLI, installed + authenticated, and a GitHub
+# remote; exits 3 (not applicable) otherwise.
 #
-# Set to 0 to disable the gate entirely (push completes as soon as git accepts it).
+# Set to 0 to disable the gate entirely (verify_ci.sh exits 3 immediately).
 CGW_CI_VERIFY="1"
 
-# Max seconds to wait for all resolved runs to reach a terminal state.
+# Max seconds to wait for all resolved runs to reach a terminal state
+# (verify_ci.sh --timeout overrides per call).
 CGW_CI_TIMEOUT_SECONDS="900"
 
-# Seconds between `gh run watch` / poll refreshes.
+# Seconds between run-list / check refreshes while watching
+# (verify_ci.sh --poll overrides per call).
 CGW_CI_POLL_INTERVAL="15"
 
-# Fix -> push -> re-watch attempts before stopping and handing back to the user.
+# Agent-facing, not read by any script: fix -> push -> re-run attempts before
+# stopping and handing back to the user.
 CGW_CI_MAX_FIX_ROUNDS="3"
 
-# Space-separated workflow-name allow-list to judge (e.g. "Branch Protection").
+# Comma-separated workflow names to judge (e.g. "Branch Protection,Docs Validation").
+# When set, only these workflows count and every one of them must register.
 # Empty = judge every workflow run the push triggered (default).
 CGW_CI_REQUIRED_WORKFLOWS=""
 

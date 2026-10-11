@@ -95,9 +95,10 @@ Before displaying the menu, `/auto-git-workflow-cmd` inspects repository status 
 
 Every push performed through `/auto-git-workflow-cmd` (or via `push_validated.sh` in agent workflows) is followed by the **CI Verification Gate**:
 
-- The agent subscribes to GitHub Actions / Charlie CI runs triggered by the push.
-- Watches until all runs reach a terminal state.
-- If a workflow fails, the agent inspects the failure logs, attempts a fix, re-commits, re-pushes, and re-watches (up to `CGW_CI_MAX_FIX_ROUNDS=3`).
+- The agent runs `./scripts/git/verify_ci.sh --branch <pushed branch>` (or `--pr <N> --sha <head>` after `create_pr.sh`), which waits for the GitHub Actions runs the push triggered to reach a terminal state.
+- Exit `0` (`CI: green`) or `3` (not applicable) completes the step.
+- Exit `1` (`CI: red <workflow> <url>`): the agent inspects the failure logs, attempts a fix, re-commits, re-pushes, and re-runs the gate (up to `CGW_CI_MAX_FIX_ROUNDS=3`).
+- Exit `2` (`CI: unverified`) is reported as unverified, never as green.
 - See [CI Setup](ci-setup.md#ci-verification-gate) for details.
 
 ---

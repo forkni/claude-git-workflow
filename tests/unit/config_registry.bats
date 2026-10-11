@@ -10,10 +10,6 @@
 bats_require_minimum_version 1.5.0
 load '../helpers/setup'
 
-# Settings documented for the agent's CI procedure (skill/references/
-# ci-verification.md) -- never read by a script, so not in the registry.
-AGENT_ONLY_RE='^CGW_CI_'
-
 setup() {
   create_test_repo
   mkdir -p "${TEST_REPO_DIR}/scripts/git"
@@ -118,7 +114,6 @@ _registry() { _in_config cgw_config_registry; }
     grep -oE 'echo "(# )?CGW_[A-Z0-9_]+=' "${CGW_PROJECT_ROOT}/scripts/git/configure.sh" | sed -E 's/^echo "(# )?//; s/=$//'
   } | sort -u >"${TEST_REPO_DIR}/written.txt"
   while read -r n; do
-    [[ "${n}" =~ ${AGENT_ONLY_RE} ]] && continue
     [[ "${names}" == *" ${n} "* ]] || bad+="${n} "
   done <"${TEST_REPO_DIR}/written.txt"
   [ -z "${bad}" ] || { echo "not in cgw_config_registry: ${bad}"; false; }

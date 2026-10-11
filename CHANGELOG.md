@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### New Features
+
+- **`verify_ci.sh`: the post-push CI gate as one command**: `--branch <name>` (or `--pr <N>`, optionally pinned with `--sha`) resolves the pushed commit from the remote, waits for the GitHub Actions runs it triggered to register and settle, watches them to a terminal state and exits `0` green / `1` red / `2` unverified / `3` not applicable, printing a single `CI:` line on stdout. PR mode binds to the pushed head before reading checks, so a stale previous head can never pass as green. `--timeout`/`--poll` override `CGW_CI_TIMEOUT_SECONDS`/`CGW_CI_POLL_INTERVAL` per call; `CGW_CI_REQUIRED_WORKFLOWS` is now comma-separated and, when set, restricts the verdict to those workflows (all of which must register). The `CGW_CI_*` settings join the config registry; only `CGW_CI_MAX_FIX_ROUNDS` remains agent-facing.
+
+### Documentation
+
+- **CI gate docs point at `verify_ci.sh`**: SKILL.md Rule 6, the command doc, `full-promotion.md` (including the Windows section, whose inline watch one-liners are replaced by the script), `error-recovery.md`, `ci-setup.md`, `usage.md`, `claude-code-integration.md`, `configuration.md`, `cgw.conf.example`, README and CLAUDE.md now describe the one-command gate; `ci-verification.md` keeps the manual `gh` procedure as a fallback.
+
+### Tests & Tooling
+
+- **`verify_ci.bats`**: 30 integration tests over a virtual clock (`CGW_CI_TEST_SLEEP=0`) covering usage errors, the applicability probe, branch and PR mode, registration lag, timeouts, required workflows and the jq filters against a `gh run list` fixture; the `gh` mock gains `run list`, `workflow list` and `pr checks --json` branches.
+- **Dogfood tests**: `dogfood.bats` checks that this repo's installed hooks and skill/command copies match their sources.
+- **Test runner failure digest**: `tests/run.sh` prints only the `not ok` lines and their diagnostics per failed file plus a `failed: <file>:<n> <name>` summary; `CGW_TEST_VERBOSE=1` restores the full TAP dump. The doc-snippet linter documents the synopsis convention (usage synopses in `text` fences) and prints a hint on findings.
+
 ## v0.15.0 (2026-10-11)
 
 > Changes since `v0.14.0`

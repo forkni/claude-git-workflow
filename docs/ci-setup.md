@@ -15,16 +15,24 @@ Three workflows are included in `.github/workflows/`:
 ## CI Verification Gate
 
 CGW doesn't stop at "push succeeded" — every push it performs (direct push, a merge's
-target push, a PR, or a tagged release) is followed by an agent procedure that subscribes
-to the resulting GitHub Actions runs, waits for a terminal verdict, and fixes-and-retries
-on red rather than reporting the step done. This is an agent-driven procedure (`gh`, not a
-`scripts/git/*.sh` wrapper) documented in
-[`skill/references/ci-verification.md`](../skill/references/ci-verification.md); it degrades
-silently to a no-op when there's no `gh` CLI, no auth, or no GitHub remote.
+target push, a PR, or a tagged release) is followed by `scripts/git/verify_ci.sh`, which
+resolves the pushed commit from the remote, waits for the GitHub Actions runs it triggered to
+register and finish, and prints one verdict line:
+
+```bash
+./scripts/git/verify_ci.sh --branch development   # CI: green <sha> (0) / CI: red <workflow> <url> (1)
+./scripts/git/verify_ci.sh --pr 42 --sha <sha>    # CI: unverified -- <reason> (2) / CI: not applicable (3)
+```
+
+Exit `3` is the silent no-op case (no `gh` CLI, no auth, no GitHub remote, no active workflow,
+or `CGW_CI_VERIFY=0`). Agents fix-and-retry on exit `1` and report exit `2` as unverified
+rather than green — the procedure is in
+[`skill/references/ci-verification.md`](../skill/references/ci-verification.md).
 
 Knobs (`.cgw.conf` or environment — see [`configuration.md`](configuration.md)):
-`CGW_CI_VERIFY` (`0` disables the gate), `CGW_CI_TIMEOUT_SECONDS`, `CGW_CI_POLL_INTERVAL`,
-`CGW_CI_MAX_FIX_ROUNDS`, `CGW_CI_REQUIRED_WORKFLOWS`.
+`CGW_CI_VERIFY` (`0` disables the gate), `CGW_CI_TIMEOUT_SECONDS` (`--timeout`),
+`CGW_CI_POLL_INTERVAL` (`--poll`), `CGW_CI_REQUIRED_WORKFLOWS` (comma-separated), and the
+agent-facing `CGW_CI_MAX_FIX_ROUNDS`.
 
 ---
 

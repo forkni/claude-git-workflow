@@ -36,6 +36,7 @@ CGW_SCRIPTS=(
   merge_pr.sh
   md_toc.sh
   sync_cgw_tooling.sh
+  verify_ci.sh
 )
 
 # One repo + one mock-bin shared across all 52 --help tests.

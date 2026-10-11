@@ -634,6 +634,26 @@ Wraps `gh pr checkout`. Requires `gh` CLI authenticated (`gh auth login`). Refus
 
 Wraps `gh pr merge --merge`. Requires `gh` CLI authenticated. Passes an explicit `--repo` resolved from `CGW_REMOTE`'s URL (like `create_pr.sh`) and aborts if it can't. Refuses a PR that isn't OPEN. `gh pr checks` carries no commit SHA, so right after a push it can report the *previous* head's green checks or "no checks reported": the gate therefore refuses a PR head that lags the pushed branch, refuses a recent head with no checks unless `--wait-checks`, and pins the merge to the verified commit (`gh pr merge --match-head-commit`). After pushing, use `--wait-checks`. On success prints the merge SHA and the undo command `rollback_merge.sh --revert --target <sha>`.
 
+**`verify_ci.sh`** — Post-push CI gate: wait for the runs a push triggered and print one verdict
+
+```bash
+./scripts/git/verify_ci.sh --branch development                 # runs on the pushed branch head (SHA from the remote)
+./scripts/git/verify_ci.sh --branch main --timeout 600 --poll 10
+./scripts/git/verify_ci.sh --pr 42 --sha <sha>                  # PR checks, bound to create_pr.sh's printed Head SHA
+./scripts/git/verify_ci.sh --branch v1.2.3                      # a pushed release tag
+```
+
+| Flag | Purpose |
+|------|---------|
+| `--branch <name>` | Branch (or tag) just pushed; its SHA is resolved from `CGW_REMOTE`, never from `HEAD` |
+| `--pr <N>` | Judge a PR's checks instead; waits for the PR head to equal the pushed SHA first (mutually exclusive with `--branch`) |
+| `--sha <sha>` | Pin the commit to judge (40-hex); in PR mode use `create_pr.sh`'s `Head SHA:` line |
+| `--timeout <s>` | Override `CGW_CI_TIMEOUT_SECONDS` for this call |
+| `--poll <s>` | Override `CGW_CI_POLL_INTERVAL` for this call |
+| `--non-interactive` | Accepted for uniformity; the script never prompts |
+
+Exit `0` = `CI: green <sha>`; `1` = `CI: red <workflow> <url>` per failed run (or a usage error, which prints `[ERROR]` and no `CI:` line); `2` = `CI: unverified -- <reason>` (registration lag, timeout, required workflow missing, PR head lagging/moved, `gh` failure); `3` = `CI: not applicable (...)` / `CI: no workflow triggered (...)`. stdout carries only the `CI:` line(s); progress goes to stderr and `logs/verify_ci_*.log`. Reads `CGW_CI_VERIFY`, `CGW_CI_TIMEOUT_SECONDS`, `CGW_CI_POLL_INTERVAL` and `CGW_CI_REQUIRED_WORKFLOWS` (comma-separated; when set, only those workflows are judged and all must register). Requires `gh` authenticated and a `github.com` remote (`--repo` resolved from `CGW_REMOTE`'s URL). The default timeout exceeds the Bash tool's 600s cap: run it in the background or pass `--timeout`.
+
 **`md_toc.sh`** — Generate/insert a Markdown Table of Contents
 
 ```bash
@@ -693,6 +713,11 @@ Computes GitHub-compatible heading slugs locally (offline port of `gh-md-toc` �
 | `CGW_MARKDOWNLINT_ARGS=<args>` | Arguments passed to markdown lint tool |
 | `CGW_MARKDOWNLINT_FIX_ARGS=<args>` | Arguments for markdown auto-fix (default: `--fix`) |
 | `CGW_MARKDOWNLINT_NPX_FALLBACK=0` | Disable the `npx --yes markdownlint-cli2` fallback when no markdownlint binary is on `PATH` (default: `1` = enabled; auto-disabled if Node < 20 lacks RegExp `v` flag support) |
+| `CGW_CI_VERIFY=0` | Disable the post-push CI gate (`verify_ci.sh` exits `3`; default: `1`) |
+| `CGW_CI_TIMEOUT_SECONDS=<n>` | Max seconds `verify_ci.sh` waits for runs to finish (default: `900`; per-call `--timeout`) |
+| `CGW_CI_POLL_INTERVAL=<n>` | Seconds between `verify_ci.sh` refreshes while watching (default: `15`; per-call `--poll`) |
+| `CGW_CI_REQUIRED_WORKFLOWS=<names>` | Comma-separated workflow names `verify_ci.sh` judges; all must register (default: empty = every triggered workflow) |
+| `CGW_CI_MAX_FIX_ROUNDS=<n>` | Agent-facing: fix → push → re-run attempts before the CI gate stops (default: `3`; not read by any script) |
 
 ### Advanced lint/format arguments
 
