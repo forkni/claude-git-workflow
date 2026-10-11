@@ -54,3 +54,10 @@ _installed_hook_or_skip() {
   [[ -f "${copy}" ]] || skip "no local command copy"
   cmp "${CGW_PROJECT_ROOT}/command/auto-git-workflow-cmd.md" "${copy}"
 }
+
+@test "dogfood: scripts/test/run_tests.sh (the pre-push shell-quality gate) is clean over the whole tree" {
+  [[ -x "${CGW_PROJECT_ROOT}/scripts/test/run_tests.sh" ]] || skip "no pre-push gate script"
+  run --separate-stderr "${CGW_PROJECT_ROOT}/scripts/test/run_tests.sh" --all
+  [ "${status}" -eq 0 ]
+  [[ "${stderr}" == *"shellcheck clean"* || "${stderr}" == *"shellcheck is not runnable"* ]]
+}
