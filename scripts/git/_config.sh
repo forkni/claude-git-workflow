@@ -215,7 +215,12 @@ CGW_ICASE_PATHSPECS|1|bool|fill|conf
 CGW_REFLOG_PREFIX|cgw|str|fill|conf
 CGW_NON_INTERACTIVE|0|bool|fill|env
 CGW_NO_VENV|0|bool|fill|env
-CGW_STAGED_ONLY|0|bool|fill|env'
+CGW_STAGED_ONLY|0|bool|fill|env
+CGW_CI_VERIFY|1|bool|fill|conf
+CGW_CI_TIMEOUT_SECONDS|900|int|fill|conf
+CGW_CI_POLL_INTERVAL|15|int|fill|conf
+CGW_CI_MAX_FIX_ROUNDS|3|int|fill|conf
+CGW_CI_REQUIRED_WORKFLOWS||str|fill|conf'
 # Prints the table (builtins only -- _config.sh is sourced by every script).
 cgw_config_registry() { printf '%s\n' "${_CGW_REGISTRY}"; }
 

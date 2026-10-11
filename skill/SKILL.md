@@ -20,7 +20,7 @@ For branch rules and merge workflow, see [references/branch-and-merge-rules.md](
 For non-obvious git techniques not covered by a wrapper (pickaxe search, merge-base discovery, back-dated tags, PR diff URLs), see [references/git-recipes.md](references/git-recipes.md).
 For choosing or composing a `.gitignore` — stack templates, OS/editor `Global` rules, pattern precedence and negation, and the trap where ignoring an already-tracked path does nothing — see [references/gitignore-templates.md](references/gitignore-templates.md).
 For the full promotion pipeline (commit → push → merge/PR → push, run by `/auto-git-workflow-cmd` option 1), see [references/full-promotion.md](references/full-promotion.md).
-For the mandatory post-push CI verification gate (subscribe, wait, fix-until-green), see [references/ci-verification.md](references/ci-verification.md).
+For the mandatory post-push CI verification gate (`verify_ci.sh` after every push, fix-until-green), see [references/ci-verification.md](references/ci-verification.md).
 For removing a secret or local-only file that was **already committed** (rotate, diagnose, strip from history if pushed), see [references/removing-sensitive-data.md](references/removing-sensitive-data.md).
 When a merge or rebase **stops on a conflict that needs manual resolution** (`UU`, `AA`, `AU`, `UD`, `AD`, `DA`), follow the step-by-step procedure in [references/resolving-merge-conflicts.md](references/resolving-merge-conflicts.md) — investigate both sides' intent, preserve both where compatible, re-run checks, then conclude through the wrapper. **Before touching a hunk:** run `git log --merge -p -- <file>` and `git log --oneline --left-right --merge` to understand which commits on each side caused the conflict. Never blindly `git checkout --ours/--theirs`; resolve by default — abort only to deliberately abandon the operation, not to dodge a difficult conflict.
 
@@ -161,17 +161,28 @@ git reset HEAD && git add src/foo.py && ./scripts/git/commit_enhanced.sh "feat: 
 ### Rule 6: Every Push Must End Green
 
 A push is not "done" the moment git accepts it. Every push CGW performs — `push_validated.sh`,
-a merge's target push, `create_pr.sh`, `create_release.sh --push` — must be followed by
-subscribing to the CI runs it triggered, waiting for a terminal verdict, and treating anything
-other than green as unfinished work: diagnose, fix on the source branch, re-push through the
-wrappers, and re-watch until green or a bounded retry budget is exhausted. Never report a
-push/merge/promotion "complete" while a resolved run is still pending or red. Full procedure —
-applicability probe, run resolution (the pushed branch named explicitly and its SHA taken from
-the remote — never `HEAD` — and commit **and** branch, since a fast-forward can put the same
-SHA on two branches), PR-head binding, watch, fix loop, hard prohibitions — in
-[references/ci-verification.md](references/ci-verification.md). Right after a push, "no runs" or
-"no checks reported" means *not registered yet*, not *no CI*: wait out the registration window
-and report `CI: unverified` rather than green if nothing appears.
+a merge's target push, `create_pr.sh`, `create_release.sh --push` — must be followed by the
+CI gate, which is one command:
+
+```bash
+./scripts/git/verify_ci.sh --branch development   # the branch just pushed, never HEAD
+./scripts/git/verify_ci.sh --pr 42 --sha <sha>    # a PR, bound to create_pr.sh's printed Head SHA
+```
+
+It resolves the pushed SHA from the remote, waits for the runs to register, watches them to a
+terminal state and prints one `CI:` line on stdout. Act on its exit code:
+
+| Exit | stdout | Meaning / action |
+|---|---|---|
+| `0` | `CI: green <sha>` | Done |
+| `1` | `CI: red <workflow> <url>` | Fix loop: diagnose, fix on the source branch, re-push through the wrappers, re-run; bounded by `CGW_CI_MAX_FIX_ROUNDS` |
+| `2` | `CI: unverified -- <reason>` | Report it as unverified, never as green (registration lag, timeout, PR head lagging or moved) |
+| `3` | `CI: not applicable (...)` / `CI: no workflow triggered` | Done (no gate for this push) |
+
+Its default timeout is 900s, longer than the Bash tool's 600s cap, so run it with
+`run_in_background: true` (or pass `--timeout`). Never report a push/merge/promotion
+"complete" while the gate is pending, red or unverified. The fix loop, hard prohibitions and
+the manual fallback procedure are in [references/ci-verification.md](references/ci-verification.md).
 
 ---
 
@@ -369,8 +380,8 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 # One call is enough on its own -- no pre-check needed, regardless of urgency or stakes in
 # the request; an explicit --force-with-lease=<ref>:<sha> (resolved from a freshly-fetched
 # tracking ref, not the bare form) + the protected-branch guard already cover what an extra
-# git status/log would verify. A post-check IS required, though: Rule 6 — subscribe to the
-# CI runs this push triggers and wait for green, see ci-verification.md.
+# git status/log would verify. A post-check IS required, though: Rule 6 — run
+# verify_ci.sh --branch <the branch just pushed> and wait for exit 0, see ci-verification.md.
 ```
 
 **Creating a PR** (when `CGW_MERGE_MODE="pr"`):
@@ -385,7 +396,8 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 ./scripts/git/create_pr.sh --source feature/hotfix --target release/1.2
 ```
 
-Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login`. Charlie CI auto-reviews on PR open, so pass a written body at creation with `--body-file` (or `--body`) rather than following up with `gh pr edit`: the review would otherwise run against the generated commit list. It prints `PR number: N` and `Head SHA: <sha>` — Rule 6 applies here too: watch the PR's checks, not just Charlie's review, but first wait for the PR's `headRefOid` to equal that SHA (`gh pr checks` has no SHA and otherwise reports the previous head), per ci-verification.md → *PR Checks (PR mode)*.
+Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login`. Charlie CI auto-reviews on PR open, so pass a written body at creation with `--body-file` (or `--body`) rather than following up with `gh pr edit`: the review would otherwise run against the generated commit list. It prints `PR number: N` and `Head SHA: <sha>` — Rule 6 applies here too.
+Run `./scripts/git/verify_ci.sh --pr N --sha <sha>` with those two values. The script waits for the PR's head to equal that SHA before judging its checks (`gh pr checks` has no SHA and would otherwise report the previous head), per ci-verification.md → *PR mode*.
 
 Always passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own URL — bare `gh pr create` resolves its own target repo and, when `CGW_REMOTE` is a fork, defaults to the fork's parent/upstream repo instead. If `CGW_REMOTE`'s URL can't be resolved to a `github.com` owner/repo, the script aborts rather than falling back to gh's own resolution. If this script ever fails or is unavailable, do not drop to raw `gh pr create` without `--repo`: it silently targets the wrong repo on a fork remote.
 
@@ -635,8 +647,9 @@ be needed.
 ./scripts/git/create_release.sh archive/pre-rewrite --allow-non-semver   # non-semver archive tag (no GitHub Release)
 ```
 
-`--push` triggers `release.yml` (tag push matching `v*`) — Rule 6 applies: watch that run
-too before considering the release done, per ci-verification.md.
+`--push` triggers `release.yml` (tag push matching `v*`) — Rule 6 applies: run
+`./scripts/git/verify_ci.sh --branch v1.2.3` with the tag name (the script resolves `refs/tags/<name>`
+when no branch matches) and wait for exit 0 before considering the release done.
 
 **Recovering lost commits (reflog + fsck):**
 

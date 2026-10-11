@@ -28,3 +28,54 @@ load '../helpers/setup'
   [ "${status}" -eq 2 ]
   [[ "${output}" == *"must be the first argument"* ]]
 }
+
+# A fixture suite with one passing and one failing test, run through the xargs path
+# (CGW_TEST_TIMINGS=1 forces it on every OS) so the failure report is what run.sh prints.
+_write_failing_fixture() {
+  mkdir -p "${BATS_TEST_TMPDIR}/suite"
+  cat >"${BATS_TEST_TMPDIR}/suite/fixture.bats" <<'FIXTURE'
+@test "first test passes" {
+  true
+}
+@test "second test fails" {
+  echo "diagnostic line"
+  false
+}
+FIXTURE
+}
+
+@test "run.sh prints a failure digest with the not-ok line and a failed: summary" {
+  _write_failing_fixture
+  run env CGW_TEST_TIMINGS=1 bash "${CGW_PROJECT_ROOT}/tests/run.sh" "${BATS_TEST_TMPDIR}/suite"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"=== FAILURES: fixture ==="* ]]
+  [[ "${output}" == *"not ok 2 second test fails"* ]]
+  [[ "${output}" == *"failed: fixture:2 second test fails"* ]]
+  [[ "${output}" != *"ok 1 first test passes"* ]]
+  [[ "${output}" == *"2 tests, 1 failures, 0 skipped"* ]]
+}
+
+# bats can fail a file without printing a `not ok` line (bats 1.14 does so for a file
+# with no @test: "Found no tests", exit 1; a killed bats process looks the same). What
+# that takes differs between bats versions, so a bats shim on PATH produces the shape
+# directly: the behaviour under test is run.sh's digest, not bats.
+@test "run.sh names a failed file whose TAP has no not-ok line and hints at CGW_TEST_VERBOSE=1" {
+  mkdir -p "${BATS_TEST_TMPDIR}/suite" "${BATS_TEST_TMPDIR}/bin"
+  printf '# helpers only, no @test\n_helper() {\n  true\n}\n' >"${BATS_TEST_TMPDIR}/suite/notests.bats"
+  printf '#!/usr/bin/env bash\necho "ERROR: Found no tests."\necho "1..0"\nexit 1\n' >"${BATS_TEST_TMPDIR}/bin/bats"
+  chmod +x "${BATS_TEST_TMPDIR}/bin/bats"
+  run env PATH="${BATS_TEST_TMPDIR}/bin:${PATH}" CGW_TEST_TIMINGS=1 bash "${CGW_PROJECT_ROOT}/tests/run.sh" "${BATS_TEST_TMPDIR}/suite"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"=== FAILURES: notests ==="* ]]
+  [[ "${output}" == *"no 'not ok' line"*"CGW_TEST_VERBOSE=1"* ]]
+  [[ "${output}" == *"failed: notests (bats exit 1, no not-ok line)"* ]]
+}
+
+@test "run.sh prints the full TAP of a failed file with CGW_TEST_VERBOSE=1" {
+  _write_failing_fixture
+  run env CGW_TEST_TIMINGS=1 CGW_TEST_VERBOSE=1 bash "${CGW_PROJECT_ROOT}/tests/run.sh" "${BATS_TEST_TMPDIR}/suite"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"ok 1 first test passes"* ]]
+  [[ "${output}" == *"not ok 2 second test fails"* ]]
+  [[ "${output}" == *"failed: fixture:2 second test fails"* ]]
+}

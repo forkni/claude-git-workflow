@@ -131,6 +131,12 @@ EOF
 #                         first K views return MOCK_GH_PR_HEADREFOID, later ones MOCK_GH_HEAD_CATCHUP_SHA
 #   - `gh pr view --json commits` → latest commit's date (default 2020-01-01T00:00:00Z, i.e. old)
 #   - `gh api ...`      → exits $MOCK_GH_API_EXIT (default 0)
+#   - `gh run list ...` → prints MOCK_GH_RUNS (printf '%b': post-jq TSV rows, `\n`-separated);
+#                         with MOCK_GH_RUNS_AFTER=K the first K lists print it, later ones
+#                         MOCK_GH_RUNS_LATER; exits $MOCK_GH_RUN_LIST_EXIT (default 0)
+#   - `gh workflow list` → prints MOCK_GH_WORKFLOWS (post-jq active workflow names, one per line)
+#   - `gh pr checks --json` → prints MOCK_GH_CHECKS_JSON (post-jq TSV rows) with the same
+#                         MOCK_GH_CHECKS_JSON_AFTER / MOCK_GH_CHECKS_JSON_LATER switch
 #   - `gh pr view --json headRepository,headRepositoryOwner` → MOCK_GH_PR_HEADREPOSITORY_HEADREPOSITORYOWNER
 #                         (owner/name of the PR's head repo; default forkni/claude-git-workflow)
 #   - All calls are logged to $MOCK_BIN_DIR/gh.log
@@ -184,8 +190,28 @@ fi
 if [[ "\$1" == "api" ]]; then
   exit \${MOCK_GH_API_EXIT:-0}
 fi
+if [[ "\$1" == "run" && "\$2" == "list" ]]; then
+  c=\$(cat "${MOCK_BIN_DIR}/runlists" 2>/dev/null || echo 0)
+  echo \$((c + 1)) >"${MOCK_BIN_DIR}/runlists"
+  out="\${MOCK_GH_RUNS:-}"
+  if [[ -n "\${MOCK_GH_RUNS_AFTER:-}" && \$c -ge \$MOCK_GH_RUNS_AFTER ]]; then out="\${MOCK_GH_RUNS_LATER:-}"; fi
+  [[ -n "\$out" ]] && printf '%b\n' "\$out"
+  exit \${MOCK_GH_RUN_LIST_EXIT:-0}
+fi
+if [[ "\$1" == "workflow" && "\$2" == "list" ]]; then
+  [[ -n "\${MOCK_GH_WORKFLOWS:-}" ]] && printf '%b\n' "\$MOCK_GH_WORKFLOWS"
+  exit 0
+fi
 if [[ "\$1" == "pr" && "\$2" == "checks" ]]; then
   case " \$* " in
+    *" --json "*)
+      c=\$(cat "${MOCK_BIN_DIR}/checkviews" 2>/dev/null || echo 0)
+      echo \$((c + 1)) >"${MOCK_BIN_DIR}/checkviews"
+      out="\${MOCK_GH_CHECKS_JSON:-}"
+      if [[ -n "\${MOCK_GH_CHECKS_JSON_AFTER:-}" && \$c -ge \$MOCK_GH_CHECKS_JSON_AFTER ]]; then out="\${MOCK_GH_CHECKS_JSON_LATER:-}"; fi
+      [[ -n "\$out" ]] && printf '%b\n' "\$out"
+      exit 0
+      ;;
     *" --watch "*) exit \${MOCK_GH_CHECKS_WATCH_EXIT:-0} ;;
   esac
   [[ -n "\${MOCK_GH_CHECKS_OUTPUT:-}" ]] && echo "\$MOCK_GH_CHECKS_OUTPUT"

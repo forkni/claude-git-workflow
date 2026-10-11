@@ -141,6 +141,7 @@ CGW provides 30 user-facing scripts and 2 internal core modules in `scripts/git/
 | `fix_lint.sh` | Auto-fix code lint, code formatting, and Markdown issues (`--modified-only`, `--md-only`, `--skip-md-lint`) |
 | `create_pr.sh` | Create GitHub PR from source to target branch via `gh` CLI (triggers Charlie CI and GitHub Actions) |
 | `merge_pr.sh` | Guarded, logged wrapper around `gh pr merge --merge` with an explicit `--repo`; refuses non-OPEN PRs and non-green PR checks on the PR's current head (`--wait-checks`, `--skip-checks`; merge pinned with `--match-head-commit`), `--retarget <M>` for stacked PRs, `--squash`/`--rebase` need `--allow-non-merge` (`--delete-branch`, `--dry-run`) |
+| `verify_ci.sh` | Post-push CI gate: waits for the GitHub Actions runs a push triggered and prints one verdict (`--branch <name>` or `--pr <N>`, `--sha`, `--timeout`, `--poll`); exit `0` green, `1` red, `2` unverified, `3` not applicable |
 | `pr_checkout.sh` | Guarded, logged wrapper around `gh pr checkout <N>` for reviewing PRs locally (`--branch`, `--force`, `--detach`, `--dry-run`) |
 | `install_hooks.sh` | Install git hooks (`pre-commit`, `pre-push`, `pre-rebase`) into `.githooks/` and `.git/hooks/` |
 | `setup_attributes.sh` | Generate `.gitattributes` for binary, text, and asset handling (Python, TouchDesigner, GLSL, LF line endings) |
@@ -196,7 +197,7 @@ Priority 3: Built-in defaults                ← Safe defaults; works without an
 | `CGW_SIGN_COMMITS` | `0` | `1` to sign commits with GPG/SSH (`git commit -S`) |
 | `CGW_SIGN_TAGS` | `0` | `1` to sign release tags (`git tag -s`) |
 | `CGW_ALLOW_REBASE_PUBLISHED` | `0` | `0` = abort rebase if commits were already pushed to remote; `1` = allow rebasing published commits |
-| `CGW_CI_VERIFY` | `1` | `1` = agent CI verification gate watches post-push runs until green; `0` = disable gate |
+| `CGW_CI_VERIFY` | `1` | `1` = `verify_ci.sh` watches post-push runs until green; `0` = disable the gate (exit `3`) |
 | `CGW_AUTO_REMOVE_INDEX_LOCK` | `1` | Automatically detect and remove abandoned `.git/index.lock` files left by crashed processes |
 
 See [Configuration Guide](docs/configuration.md) for full options and ecosystem examples (Python, JavaScript/TypeScript, Go, Rust, C/C++), or inspect [`cgw.conf.example`](cgw.conf.example).

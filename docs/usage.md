@@ -168,7 +168,14 @@ calls `check_lint.sh --ref <rev> [--base <rev> | --unpushed]`, which you can als
 
 **Post-Push CI Verification Gate:**
 
-When operating through an AI agent harness (Claude Code or Antigravity), every push performed triggers the CI verification gate (`CGW_CI_VERIFY=1`). The agent automatically subscribes to and monitors triggered GitHub Actions or Charlie CI runs until they finish, automatically diagnosing, fixing, and retrying failures up to `CGW_CI_MAX_FIX_ROUNDS=3`. See [CI Setup](ci-setup.md#ci-verification-gate).
+Every push is followed by `verify_ci.sh`, which waits for the GitHub Actions runs the push triggered and prints one verdict line (`CGW_CI_VERIFY=0` disables it):
+
+```bash
+./scripts/git/verify_ci.sh --branch development        # exit 0 green, 1 red, 2 unverified, 3 not applicable
+./scripts/git/verify_ci.sh --pr 42 --sha <head-sha>    # a PR's checks, bound to the pushed head
+```
+
+When operating through an AI agent harness (Claude Code or Antigravity) the agent runs it after every push and, on exit `1`, diagnoses, fixes, and retries up to `CGW_CI_MAX_FIX_ROUNDS=3` times. See [CI Setup](ci-setup.md#ci-verification-gate).
 
 ### Sync with remote
 

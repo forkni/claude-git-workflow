@@ -19,9 +19,10 @@ by section name when executing.
 **Push gate.** Every push this command performs — direct push, a merge's target push, or a
 PR's checks — is followed by the CI verification gate in
 [`references/ci-verification.md`](../skills/auto-git-workflow/references/ci-verification.md)
-(SKILL.md Rule 6): subscribe to the resulting run(s), wait for a terminal verdict, and
-fix-and-retry on red before reporting that step done. The ⏱ marker on rows in Step 4's
-tables below flags exactly which actions this applies to.
+(SKILL.md Rule 6): run `./scripts/git/verify_ci.sh --branch <pushed branch>` (or
+`--pr <N> --sha <Head SHA>` after `create_pr.sh`) in the background, and fix-and-retry on exit
+`1` before reporting that step done; exit `2` is reported as unverified, never as green. The
+⏱ marker on rows in Step 4's tables below flags exactly which actions this applies to.
 
 **Output policy**: Suppress command output except errors. Show a brief summary at the end
 of whatever action was taken.
@@ -136,8 +137,8 @@ the user picks "Commit & Stash" with a dirty tree, default the conversation towa
 committing those files rather than asking what they want from scratch.
 
 ⏱ marks an action whose push is CI-gated per the Push gate above — do not report it
-done until [ci-verification.md](../skills/auto-git-workflow/references/ci-verification.md)'s
-verdict is green (or not applicable).
+done until `verify_ci.sh` exits `0` (`CI: green`) or `3` (not applicable), per
+[ci-verification.md](../skills/auto-git-workflow/references/ci-verification.md).
 
 ### 2. Commit & Stash
 
@@ -204,8 +205,7 @@ lock-file issues — see
 ## Token Efficiency
 
 - All successful commands: `>/dev/null 2>&1` (two exceptions: the Step 1 scan, whose
-  output feeds the suggestion rules; and the CI gate's `gh run watch`, whose progress
-  output confirms the wait is actually happening). `gh pr checks --watch` redraws its whole
-  table every interval, so silence it and read one final `gh pr checks` snapshot instead
+  output feeds the suggestion rules; and `verify_ci.sh`, whose single stdout `CI:` line is
+  the verdict — keep stdout, `2>/dev/null` is fine since progress goes to stderr and the log)
 - Only show errors: remove suppression on retry
 - Keep the final summary to a few lines
