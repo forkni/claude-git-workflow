@@ -251,6 +251,16 @@ Enable signing globally in `.cgw.conf`: `CGW_SIGN_TAGS=1`. Requires a GPG or SSH
 ./scripts/git/clean_build.sh --td --execute   # TouchDesigner artifacts (plus common junk and any auto-detected categories)
 ```
 
+### Keep vendored tooling copies in sync
+
+```bash
+./scripts/git/sync_cgw_tooling.sh --from <cgw-checkout>      # refresh scripts, hooks, skill/command copies; one commit
+./scripts/git/sync_cgw_tooling.sh --check                    # read-only: do the tracked copies agree? (exit 0 / 1)
+./scripts/git/sync_cgw_tooling.sh --check --from <cgw-checkout>   # also report copies stale against the CGW checkout
+```
+
+Skill and command copies are discovered from `git ls-files` (`*/auto-git-workflow/SKILL.md`, `*/auto-git-workflow-cmd/SKILL.md`, `*/commands/auto-git-workflow-cmd.md`), so sync and `--check` need no configuration and work in CI, where the gitignored `.cgw.conf` is absent. Without `--from`, `--check` compares the copies against the first one found (the command copy after its link rewrite) and needs no CGW checkout, so it can run in a CI job. `--extra-skill-dst` / `--extra-cmd-dst` only seed a new copy on the first sync.
+
 ### Repository health check
 
 ```bash

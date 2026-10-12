@@ -50,7 +50,7 @@ git commit -m "message"  # WRONG — bypasses lint, protection, logging
 
 `commit_enhanced.sh` provides: lint validation, local-only file protection, branch verification, commit message format checking, and comprehensive logging.
 
-Updating the vendored CGW scripts in a project: `./scripts/git/sync_cgw_tooling.sh --from <claude-git-workflow checkout>` (one commit; never hand-copy).
+Updating the vendored CGW scripts in a project: `./scripts/git/sync_cgw_tooling.sh --from <claude-git-workflow checkout>` (one commit; never hand-copy). `./scripts/git/sync_cgw_tooling.sh --check` is a read-only drift check over the project's tracked skill/command copies (no CGW checkout needed; exit 1 on drift).
 
 > **Optional defense-in-depth:** If the CGW PreToolUse guardrail was installed (offered during `configure.sh`), this rule is also enforced at the Claude Code harness layer — even if asked to run `git commit` directly, the hook blocks it before it reaches the shell. See `references/error-recovery.md` → *PreToolUse Guardrail* for disable instructions.
 

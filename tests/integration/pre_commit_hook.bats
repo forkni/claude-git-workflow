@@ -162,3 +162,23 @@ EOF
   [[ "${stderr}" == *"Attempting to add or modify local-only files"* ]]
   [[ "${output}" != *"Attempting to add or modify local-only files"* ]]
 }
+
+@test "pre-commit warns, without blocking, when the installed hook differs from .githooks/" {
+  mkdir -p "${TEST_REPO_DIR}/.githooks"
+  { cat "${CGW_PROJECT_ROOT}/hooks/pre-commit"; echo "# newer tracked copy"; } >"${TEST_REPO_DIR}/.githooks/pre-commit"
+  echo "real content" >"${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  run --separate-stderr git -C "${TEST_REPO_DIR}" commit -m "feat: add feature.txt"
+  [ "${status}" -eq 0 ]
+  [[ "${stderr}" == *"installed hook differs from .githooks/pre-commit"* ]]
+}
+
+@test "pre-commit stays silent about drift when the installed hook matches .githooks/" {
+  mkdir -p "${TEST_REPO_DIR}/.githooks"
+  cp "${CGW_PROJECT_ROOT}/hooks/pre-commit" "${TEST_REPO_DIR}/.githooks/pre-commit"
+  echo "real content" >"${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  run --separate-stderr git -C "${TEST_REPO_DIR}" commit -m "feat: add feature.txt"
+  [ "${status}" -eq 0 ]
+  [[ "${stderr}" != *"installed hook differs"* ]]
+}

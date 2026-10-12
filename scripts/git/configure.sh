@@ -144,6 +144,17 @@ _detect_lint_tool() {
       return 0
     fi
   fi
+  # Bare-script Python repo: tracked .py files but none of the markers above. Same probe order.
+  if [[ -n "$(git ls-files -- '*.py' 2>/dev/null | head -1)" ]]; then
+    local _py_tool
+    for _py_tool in ruff flake8 pylint; do
+      if command -v "${_py_tool}" &>/dev/null; then
+        echo "  [INFO] Lint tool ${_py_tool} detected from tracked *.py files (no Python project marker)" >&2
+        echo "${_py_tool}"
+        return 0
+      fi
+    done
+  fi
   echo "" # no lint tool detected
 }
 
