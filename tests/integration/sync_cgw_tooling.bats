@@ -105,3 +105,64 @@ teardown() {
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"No CGW source"* ]]
 }
+
+# ── --check: read-only drift report over the tracked copies ─────────────────────
+
+_seed_copies() {
+  run run_script sync_cgw_tooling.sh --from "${FAKE_SRC}" --no-pull \
+    --extra-skill-dst skills/auto-git-workflow \
+    --extra-cmd-dst skills/auto-git-workflow-cmd/SKILL.md
+  [ "${status}" -eq 0 ]
+}
+
+@test "--check passes on freshly synced copies and needs no CGW source" {
+  _seed_copies
+  run env -u CGW_TEMPLATE_DIR bash -c "cd '${TEST_REPO_DIR}' && SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git' PROJECT_ROOT='${TEST_REPO_DIR}' bash '${CGW_PROJECT_ROOT}/scripts/git/sync_cgw_tooling.sh' --check"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"in sync"* ]]
+}
+
+@test "--check discovers a tracked copy that no flag named, and exits 1 on drift" {
+  _seed_copies
+  printf '# hand edit\n' >>"${TEST_REPO_DIR}/skills/auto-git-workflow/references/r.md"
+  git -C "${TEST_REPO_DIR}" add skills/auto-git-workflow/references/r.md
+  head_before="$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)"
+  run run_script sync_cgw_tooling.sh --check
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"skills/auto-git-workflow/references/r.md"* ]]
+  # Read-only: nothing committed, nothing rewritten.
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "${head_before}" ]
+  grep -q 'hand edit' "${TEST_REPO_DIR}/skills/auto-git-workflow/references/r.md"
+}
+
+@test "--check treats a skill-layout and a file-layout command copy as the same text" {
+  _seed_copies
+  mkdir -p "${TEST_REPO_DIR}/.claude/commands"
+  cp "${FAKE_SRC}/command/auto-git-workflow-cmd.md" "${TEST_REPO_DIR}/.claude/commands/auto-git-workflow-cmd.md"
+  git -C "${TEST_REPO_DIR}" add -f .claude/commands/auto-git-workflow-cmd.md
+  run run_script sync_cgw_tooling.sh --check
+  [ "${status}" -eq 0 ]
+}
+
+@test "--check --from also reports a copy that is stale against the source" {
+  _seed_copies
+  printf '# skill v2\n' >"${FAKE_SRC}/skill/SKILL.md"
+  run run_script sync_cgw_tooling.sh --check --from "${FAKE_SRC}"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"skills/auto-git-workflow/SKILL.md"* ]]
+  # Without --from the copies still agree with each other.
+  run run_script sync_cgw_tooling.sh --check
+  [ "${status}" -eq 0 ]
+}
+
+@test "sync refreshes a tracked copy found by discovery, without any flag" {
+  _seed_copies
+  printf '# skill v2\n' >"${FAKE_SRC}/skill/SKILL.md"
+  git -C "${FAKE_SRC}" add -A
+  git -C "${FAKE_SRC}" commit --quiet -m "chore: v2"
+  run run_script sync_cgw_tooling.sh --from "${FAKE_SRC}" --no-pull
+  [ "${status}" -eq 0 ]
+  [ "$(cat "${TEST_REPO_DIR}/skills/auto-git-workflow/SKILL.md")" = "# skill v2" ]
+  run run_script sync_cgw_tooling.sh --check --from "${FAKE_SRC}"
+  [ "${status}" -eq 0 ]
+}

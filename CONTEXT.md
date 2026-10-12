@@ -258,6 +258,22 @@ An installed `.githooks/pre-commit`, `pre-push` or `pre-rebase` whose content (l
 
 ---
 
+## tooling copy
+
+A copy of the CGW skill (`SKILL.md` plus `references/*.md`) or of the `/auto-git-workflow-cmd` command that a project tracks in its own repository, for one or more agent harnesses. All tooling copies of a project are meant to hold the same text; the command's links are adapted to the layout it is installed in. A copy that differs from its siblings, or from the [[template source]], is **drifted**. Copies are found by what git tracks, not by configuration, because `.cgw.conf` is never committed and so is invisible to CI.
+
+**Implementation seam**: `_discover_skill_dirs`, `_discover_cmd_files` and `--check` in `scripts/git/sync_cgw_tooling.sh`.
+
+---
+
+## installed hook drift
+
+The state in which the hook git actually runs (`.git/hooks/<name>`) differs from the tracked `.githooks/<name>`, typically because a pull or branch switch changed the tracked file without the install step being re-run. It is advisory: the hook and `repo_health.sh` warn, and nothing is blocked. Distinct from a [[stock hook]] being outdated or customised, which compares a hook with the template's history.
+
+**Implementation seam**: the `cmp` warning at the top of each `hooks/` template; `[7/7] Installed Hooks` in `scripts/git/repo_health.sh`.
+
+---
+
 ## template source
 
 The external or repository directory tree containing the canonical template assets (`hooks/`, `skill/`, `command/`, `templates/`) copied into a consumer project's runtime configuration (git hooks in `.git/hooks/` and `.githooks/`, agent skills in `.claude/skills/` and `.agents/skills/`, slash commands in `.claude/commands/` and `.agents/skills/`, markdownlint in `.markdownlint.json`). Decoupled from the target repository root to eliminate temporary in-repo staging and accidental directory pollution.

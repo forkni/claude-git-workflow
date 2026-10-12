@@ -18,6 +18,9 @@
 #                             (repeatable; for a forked skill copy outside .claude/ and .agents/)
 #   --extra-cmd-dst <file>    Also write command/auto-git-workflow-cmd.md to <file> with its links
 #                             rewritten for the skills layout (repeatable; a forked cmd skill)
+#   --check                   Read-only drift report: compare the tracked auto-git-workflow skill and
+#                             command copies (found via git ls-files) with each other, or with --from
+#                             when given. Needs no CGW checkout; exits 1 on drift, writes nothing
 #   --no-pull                 Skip the sync_branches.sh step (no remote / offline)
 #   --non-interactive         Accepted for symmetry; this script never prompts
 #   -h, --help                Show help
@@ -44,6 +47,8 @@ _show_help() {
   echo "  --from <dir>             CGW source checkout (default: \$CGW_TEMPLATE_DIR)"
   echo "  --extra-skill-dst <dir>  Also copy skill/SKILL.md + references/*.md into <dir> (repeatable)"
   echo "  --extra-cmd-dst <file>   Also write the slash-command skill to <file>, links adapted (repeatable)"
+  echo "  --check                  Report drift between the tracked skill/command copies (read-only;"
+  echo "                           add --from to also compare against a CGW checkout); exit 1 on drift"
   echo "  --no-pull                Skip the sync_branches.sh step"
   echo "  --non-interactive        Accepted for symmetry; this script never prompts"
   echo "  -h, --help               Show this help"
@@ -65,8 +70,115 @@ _tool() {
   fi
 }
 
+# _cmd_normalize <file>: the slash-command skill with its links adapted for the skills layout, the
+# same rewrite configure.sh applies. Idempotent, so a file-layout and a skill-layout copy of the
+# same command normalise to identical text.
+_cmd_normalize() {
+  sed -e 's|\.\./skills/auto-git-workflow/|../auto-git-workflow/|g' \
+    -e 's|\.claude/skills/auto-git-workflow/|auto-git-workflow/|g' \
+    "$1"
+}
+
+# Tracked tooling copies, as project-relative paths. Tracked files only, so the answer is the same
+# in a CI checkout (where the gitignored .cgw.conf does not exist) as on a developer machine.
+_discover_skill_dirs() {
+  git -C "${PROJECT_ROOT}" ls-files -- 'auto-git-workflow/SKILL.md' '*/auto-git-workflow/SKILL.md' 2>/dev/null |
+    while IFS= read -r p; do dirname "${p}"; done | sort -u
+}
+
+_discover_cmd_files() {
+  git -C "${PROJECT_ROOT}" ls-files -- 'auto-git-workflow-cmd/SKILL.md' '*/auto-git-workflow-cmd/SKILL.md' \
+    '*/commands/auto-git-workflow-cmd.md' 2>/dev/null | sort -u
+}
+
+_DRIFT_COUNT=0
+
+# _skill_dir_drift <reference dir> <copy dir>: report SKILL.md + references/*.md that differ.
+_skill_dir_drift() {
+  local ref="$1" copy="$2" name
+  while IFS= read -r name; do
+    [[ -z "${name}" ]] && continue
+    if [[ ! -f "${copy}/${name}" ]]; then
+      echo "  [DRIFT] ${copy#"${PROJECT_ROOT}"/}/${name}: missing (present in reference)"
+    elif [[ ! -f "${ref}/${name}" ]]; then
+      echo "  [DRIFT] ${copy#"${PROJECT_ROOT}"/}/${name}: not in the reference"
+    elif cmp -s "${ref}/${name}" "${copy}/${name}"; then
+      continue
+    else
+      echo "  [DRIFT] ${copy#"${PROJECT_ROOT}"/}/${name}: differs from the reference"
+    fi
+    _DRIFT_COUNT=$((_DRIFT_COUNT + 1))
+  done < <(
+    {
+      (cd "${ref}" && find SKILL.md references -maxdepth 1 -name '*.md' -type f 2>/dev/null)
+      (cd "${copy}" && find SKILL.md references -maxdepth 1 -name '*.md' -type f 2>/dev/null)
+    } | sort -u
+  )
+}
+
+# _cmd_file_drift <reference file> <copy file>: compare after normalising both.
+_cmd_file_drift() {
+  local ref="$1" copy="$2" a b
+  a="$(mktemp)" && b="$(mktemp)" || return 1
+  _cmd_normalize "${ref}" >"${a}"
+  _cmd_normalize "${copy}" >"${b}"
+  if ! cmp -s "${a}" "${b}"; then
+    echo "  [DRIFT] ${copy#"${PROJECT_ROOT}"/}: differs from the reference"
+    _DRIFT_COUNT=$((_DRIFT_COUNT + 1))
+  fi
+  rm -f "${a}" "${b}"
+}
+
+# _run_check <CGW source or empty> <extra skill dirs...>: read-only drift report.
+#   Without a source, the first tracked copy is the reference and every other copy is compared to it.
+#   With a source, every copy is compared to the source (which also reports staleness).
+_run_check() {
+  local src="$1"
+  shift
+  cd "${PROJECT_ROOT}" || return 1
+  local -a skills=() cmds=()
+  local p
+  while IFS= read -r p; do [[ -n "${p}" ]] && skills+=("${PROJECT_ROOT}/${p}"); done < <(_discover_skill_dirs)
+  while IFS= read -r p; do [[ -n "${p}" ]] && cmds+=("${PROJECT_ROOT}/${p}"); done < <(_discover_cmd_files)
+  for p in "$@"; do
+    [[ -d "${p}" ]] && skills+=("$(cd "${p}" && pwd)")
+  done
+
+  local ref_skill ref_cmd i
+  if [[ -n "${src}" ]]; then
+    ref_skill="${src}/skill"
+    ref_cmd="${src}/command/auto-git-workflow-cmd.md"
+    i=0
+  else
+    if ((${#skills[@]} + ${#cmds[@]} == 0)); then
+      echo "[OK] no tracked auto-git-workflow copies found -- nothing to check"
+      return 0
+    fi
+    ref_skill="${skills[0]:-}"
+    ref_cmd="${cmds[0]:-}"
+    i=1
+  fi
+
+  for ((; i < ${#skills[@]}; i++)); do
+    _skill_dir_drift "${ref_skill}" "${skills[i]}"
+  done
+  # The cmd list has its own index: skip its first entry only when it is the reference.
+  local j=0
+  [[ -z "${src}" ]] && j=1
+  for ((; j < ${#cmds[@]}; j++)); do
+    _cmd_file_drift "${ref_cmd}" "${cmds[j]}"
+  done
+
+  if ((_DRIFT_COUNT > 0)); then
+    echo "[ERROR] ${_DRIFT_COUNT} tooling file(s) drifted from the reference (${src:-${ref_skill#"${PROJECT_ROOT}"/}})" >&2
+    echo "  Fix: ./scripts/git/sync_cgw_tooling.sh --from <claude-git-workflow checkout>" >&2
+    return 1
+  fi
+  echo "[OK] ${#skills[@]} skill + ${#cmds[@]} command copies are in sync"
+}
+
 main() {
-  local src="${CGW_TEMPLATE_DIR:-}" do_pull=1
+  local src="${CGW_TEMPLATE_DIR:-}" do_pull=1 check_only=0 from_given=0
   local -a extra_dsts=() cmd_dsts=()
 
   while [[ $# -gt 0 ]]; do
@@ -75,11 +187,16 @@ main() {
         _show_help
         return 0
         ;;
+      --check) check_only=1 ;;
       --from)
         shift
         src="${1:-}"
+        from_given=1
         ;;
-      --from=*) src="${1#*=}" ;;
+      --from=*)
+        src="${1#*=}"
+        from_given=1
+        ;;
       --extra-skill-dst)
         shift
         extra_dsts+=("${1:-}")
@@ -99,6 +216,22 @@ main() {
     esac
     shift
   done
+
+  # --check is read-only and needs no CGW checkout: only an explicit --from adds a staleness
+  # comparison, so the verdict never depends on the environment it runs in.
+  if [[ ${check_only} -eq 1 ]]; then
+    if [[ ${from_given} -eq 1 ]]; then
+      if [[ ! -f "${src}/skill/SKILL.md" || ! -f "${src}/command/auto-git-workflow-cmd.md" ]]; then
+        echo "[ERROR] '${src}' is not a claude-git-workflow checkout (missing skill/SKILL.md or command/auto-git-workflow-cmd.md)" >&2
+        return 1
+      fi
+      src="$(cd "${src}" && pwd)"
+    else
+      src=""
+    fi
+    _run_check "${src}" "${extra_dsts[@]+"${extra_dsts[@]}"}"
+    return $?
+  fi
 
   # 1. Source checkout: fail loudly rather than guess.
   if [[ -z "${src}" ]]; then
@@ -179,8 +312,17 @@ main() {
     return 1
   }
 
-  # 6. Forked skill copies outside .claude/ and .agents/.
-  for d in "${extra_dsts[@]+"${extra_dsts[@]}"}"; do
+  # 6. Forked skill copies outside .claude/ and .agents/: the destinations given as flags plus
+  #    every copy already tracked in the project, so a copy needs the flag only the first time.
+  local -a all_skill_dsts=("${extra_dsts[@]+"${extra_dsts[@]}"}") all_cmd_dsts=("${cmd_dsts[@]+"${cmd_dsts[@]}"}")
+  while IFS= read -r d; do
+    [[ -n "${d}" ]] && all_skill_dsts+=("${PROJECT_ROOT}/${d}")
+  done < <(_discover_skill_dirs)
+  while IFS= read -r d; do
+    [[ -n "${d}" ]] && all_cmd_dsts+=("${PROJECT_ROOT}/${d}")
+  done < <(_discover_cmd_files)
+
+  for d in "${all_skill_dsts[@]+"${all_skill_dsts[@]}"}"; do
     mkdir -p "${d}/references"
     cp "${src}/skill/SKILL.md" "${d}/SKILL.md"
     cp "${src}/skill/references/"*.md "${d}/references/" 2>/dev/null || true
@@ -188,11 +330,15 @@ main() {
   done
 
   # 6b. Forked slash-command skill: same link rewrite configure.sh applies for the skills layout.
-  for d in "${cmd_dsts[@]+"${cmd_dsts[@]}"}"; do
+  #     A tracked copy under commands/ is the file layout configure.sh installs verbatim; every
+  #     other destination is the skills layout and gets the rewrite.
+  for d in "${all_cmd_dsts[@]+"${all_cmd_dsts[@]}"}"; do
     mkdir -p "$(dirname "${d}")"
-    sed -e 's|\.\./skills/auto-git-workflow/|../auto-git-workflow/|g' \
-      -e 's|\.claude/skills/auto-git-workflow/|auto-git-workflow/|g' \
-      "${src}/command/auto-git-workflow-cmd.md" >"${d}"
+    if [[ "${d}" == */commands/auto-git-workflow-cmd.md ]]; then
+      cp "${src}/command/auto-git-workflow-cmd.md" "${d}"
+    else
+      _cmd_normalize "${src}/command/auto-git-workflow-cmd.md" >"${d}"
+    fi
     echo "  [OK] command skill written to ${d}"
   done
 

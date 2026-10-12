@@ -754,13 +754,26 @@ cgw_run_with_lock_retry() {
 # The first backup is <path>.bak; if that already exists (e.g. the user's original hook
 # saved by an earlier install), the new copy goes to <path>.bak.<YYYYMMDD_HHMMSS> so the
 # original survives every later update. Prints the backup path on stdout.
+# After a timestamped backup, only the newest CGW_BACKUP_KEEP (3) timestamped backups of <path> are
+# kept; the plain <path>.bak -- the user's original -- is never pruned.
 # Returns 0 on success, 1 if the copy failed.
+CGW_BACKUP_KEEP=3
 cgw_backup_file() {
   local src="$1"
   local dest="${src}.bak"
   [[ -e "${dest}" ]] && dest="${src}.bak.$(date +%Y%m%d_%H%M%S)-$$"
   cp "${src}" "${dest}" 2>/dev/null || return 1
   printf '%s\n' "${dest}"
+  if [[ "${dest}" != "${src}.bak" ]]; then
+    # Timestamps sort lexically, so a reverse sort lists the newest first. Prune failures are
+    # cosmetic and never fail the backup.
+    local old
+    while IFS= read -r old; do
+      [[ -n "${old}" ]] && rm -f -- "${old}" 2>/dev/null
+    done < <(printf '%s
+' "${src}".bak.* | sort -r | tail -n +$((CGW_BACKUP_KEEP + 1)))
+  fi
+  return 0
 }
 
 # cgw_rebase_in_progress — git-dir/worktree-safe rebase-in-progress check.
