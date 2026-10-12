@@ -106,6 +106,28 @@ teardown() {
   [[ "${output}" == *"No CGW source"* ]]
 }
 
+@test "sync replaces its own, running copy and still finishes and commits" {
+  # The project's copy is the one executing. The source's version is longer and different, so a
+  # bash that resumed reading at a stale offset would execute garbage or stop early.
+  mkdir -p "${TEST_REPO_DIR}/scripts/git"
+  cp "${CGW_PROJECT_ROOT}"/scripts/git/*.sh "${TEST_REPO_DIR}/scripts/git/"
+  git -C "${TEST_REPO_DIR}" add -f scripts/git
+  git -C "${TEST_REPO_DIR}" commit --quiet --no-verify -m "chore: vendor scripts"
+  cp "${CGW_PROJECT_ROOT}"/scripts/git/*.sh "${FAKE_SRC}/scripts/git/"
+  # Padding goes right after the shebang so every later byte offset shifts.
+  { head -n 1 "${CGW_PROJECT_ROOT}/scripts/git/sync_cgw_tooling.sh"
+    for i in $(seq 1 7); do echo "# padding line ${i} so the new copy is longer and its offsets shift"; done
+    tail -n +2 "${CGW_PROJECT_ROOT}/scripts/git/sync_cgw_tooling.sh"; } >"${FAKE_SRC}/scripts/git/sync_cgw_tooling.sh"
+  git -C "${FAKE_SRC}" add -A
+  git -C "${FAKE_SRC}" commit --quiet -m "chore: newer sync script"
+  run bash -c "cd '${TEST_REPO_DIR}' && PROJECT_ROOT='${TEST_REPO_DIR}' bash scripts/git/sync_cgw_tooling.sh --from '${FAKE_SRC}' --no-pull"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"CGW tooling synced"* ]]
+  cmp "${FAKE_SRC}/scripts/git/sync_cgw_tooling.sh" "${TEST_REPO_DIR}/scripts/git/sync_cgw_tooling.sh"
+  [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" = "chore: sync CGW git tooling" ]
+  [[ "$(git -C "${TEST_REPO_DIR}" show --name-only --format= HEAD)" == *"scripts/git/sync_cgw_tooling.sh"* ]]
+}
+
 # ── --check: read-only drift report over the tracked copies ─────────────────────
 
 _seed_copies() {
