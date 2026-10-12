@@ -36,7 +36,6 @@ source "${SCRIPT_DIR}/_common.sh"
 init_logging "sync_cgw_tooling"
 ensure_no_stale_index_lock || exit 1
 
-_SYNC_SELF="$(basename "${BASH_SOURCE[0]}")"
 
 _show_help() {
   echo "Usage: ./scripts/git/sync_cgw_tooling.sh --from <claude-git-workflow checkout> [OPTIONS]"
@@ -286,13 +285,13 @@ main() {
     }
   fi
 
-  # 4. Copy scripts/git/*.sh into the project. Copy only, never delete; this script is
-  #    skipped so a running copy is never overwritten from under bash.
+  # 4. Copy scripts/git/*.sh into the project, this script included (see the last lines: bash has
+  #    parsed the whole file before this runs, so overwriting it in place is safe). Copy only,
+  #    never delete.
   local dst="${PROJECT_ROOT}/scripts/git" f name copied=0
   mkdir -p "${dst}"
   for f in "${src}"/scripts/git/*.sh; do
     name="$(basename "${f}")"
-    [[ "${name}" == "${_SYNC_SELF}" ]] && continue
     if ! cmp -s "${f}" "${dst}/${name}"; then
       cp -p "${f}" "${dst}/${name}"
       copied=$((copied + 1))
@@ -301,7 +300,6 @@ main() {
   echo "  [OK] scripts/git/*.sh: ${copied} file(s) updated"
   for f in "${dst}"/*.sh; do
     name="$(basename "${f}")"
-    [[ "${name}" == "${_SYNC_SELF}" ]] && continue
     [[ -f "${src}/scripts/git/${name}" ]] || echo "  [!] ${name} exists here but not in the CGW source (left in place)"
   done
 
@@ -378,6 +376,7 @@ main() {
   echo "[OK] CGW tooling synced from ${src} (${sha})"
 }
 
-# The copy loop skips this file, so bash never reads a half-overwritten script.
-main "$@"
-exit $?
+# One line on purpose: bash reads a command whole before running it, so after main returns it never
+# goes back to the file. The sync may therefore replace this very script (new length, new content)
+# without bash resuming at a stale offset.
+main "$@"; exit $?
