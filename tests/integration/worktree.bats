@@ -340,3 +340,20 @@ _skip_unless_windows() {
   [[ "${output}" == *"-b topic-dry ${TEST_TMPDIR}/wt-dry development"* ]]
   [ ! -d "${TEST_TMPDIR}/wt-dry" ]
 }
+
+@test "add: a branch only on the remote is checked out tracking it, not created from HEAD" {
+  create_bare_remote "${TEST_TMPDIR}/remote.git"
+  git -C "${TEST_REPO_DIR}" remote add origin "${TEST_TMPDIR}/remote.git"
+  git -C "${TEST_REPO_DIR}" push --quiet origin development:refs/heads/remote-only
+  git -C "${TEST_REPO_DIR}" fetch --quiet origin
+  run ! git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/remote-only
+  local remote_sha
+  remote_sha=$(git -C "${TEST_REPO_DIR}" rev-parse refs/remotes/origin/remote-only)
+  [ "${remote_sha}" != "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" ]
+
+  run run_script worktree_manage.sh add "${TEST_TMPDIR}/wt-remote" remote-only --non-interactive
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Branch: remote-only (new, tracking origin/remote-only)"* ]]
+  [ "$(git -C "${TEST_TMPDIR}/wt-remote" rev-parse HEAD)" = "${remote_sha}" ]
+  [ "$(git -C "${TEST_TMPDIR}/wt-remote" rev-parse --abbrev-ref '@{upstream}')" = "origin/remote-only" ]
+}
