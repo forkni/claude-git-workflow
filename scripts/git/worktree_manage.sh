@@ -578,8 +578,13 @@ _cmd_remove() {
     echo ""
     echo "[OK] Worktree removed: ${path}"
   else
-    echo "[ERROR] Failed to remove worktree." >&2
-    echo "  If the worktree has uncommitted changes, use: git worktree remove --force '${path}'" >&2
+    err_tee "[ERROR] Failed to remove worktree: ${path}"
+    if [[ -d "${path}" ]]; then
+      err_tee "  git refuses while the worktree holds modified or untracked files. Left in it:"
+      git -C "${path}" status --porcelain --untracked-files=all 2>/dev/null | sed 's/^/    /' | tee -a "${logfile}" >&2
+      err_tee "  Commit, move or delete them by name (an untracked file is often a copy of the main"
+      err_tee "  worktree's: compare with git diff --no-index), then retry. --force would discard them."
+    fi
     exit 1
   fi
 }
