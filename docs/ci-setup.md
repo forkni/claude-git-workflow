@@ -2,13 +2,15 @@
 
 ## GitHub Actions
 
-Three workflows are included in `.github/workflows/`:
+Four workflows are included in `.github/workflows/` (configured with immutable commit-SHA action pins and least-privilege token permissions):
 
 | Workflow | Trigger | Checks |
 |----------|---------|--------|
-| `branch-protection.yml` | Push/PR to `development`, `main` | Local-only file detection, `.gitattributes` presence, ShellCheck (`--severity=error`, over `scripts/git/` and `hooks/`), shfmt format over `scripts/` and `hooks/` (advisory), Bats unit + integration tests |
-| `docs-validation.yml` | Push to `development`/`main` or a PR that changes `*.md` files (except `CLAUDE.md`, `MEMORY.md`) | Markdown linting, broken links, spelling of `README.md`, `skill/` and `command/` (all advisory) |
-| `release.yml` | Tag push matching `v*` | Creates GitHub Release with auto-generated notes and source archives |
+| `branch-protection.yml` | Push/PR to `development`, `main` | Parallel gates: local-only file detection & `.gitattributes` & Bats skip-count ratchet (`validate`); ShellCheck, shfmt format, snippet lint & command verification (`lint`); parallelized 2-batch matrix (`test: [fast, slow]`); aggregate required status check (`all-gates-green`). |
+| `docs-validation.yml` | Push to `development`/`main` or a PR that changes `*.md` files (except `CLAUDE.md`, `MEMORY.md`) | Markdown linting (`markdownlint-cli2`, blocking), spelling of `README.md`, `skill/`, `command/` (`typos`, blocking), broken link validation (`lychee`, advisory). |
+| `nightly.yml` | Scheduled (weekly Sundays 03:00 UTC) / manual dispatch | Cross-platform full test suite (`ubuntu-latest` + `windows-latest`), complete documentation link audit, and tooling/snippet drift canary. |
+| `release.yml` | Tag push matching `v*` | Creates GitHub Release with auto-generated notes and source archives with scoped `contents: write`. |
+| `.github/dependabot.yml` | Scheduled monthly | Automated dependency and commit-SHA updates for GitHub Actions. |
 
 ---
 

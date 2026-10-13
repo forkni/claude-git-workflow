@@ -27,6 +27,35 @@ _run_configure() {
   "
 }
 
+# ── Lint detection for bare-script Python repos ───────────────────────────────
+
+@test "lint detection falls back to tracked *.py files when no project marker exists" {
+  rm -f "${TEST_REPO_DIR}/pyproject.toml" "${TEST_REPO_DIR}/setup.py" "${TEST_REPO_DIR}/setup.cfg" "${TEST_REPO_DIR}/requirements.txt"
+  echo "print('hi')" >"${TEST_REPO_DIR}/tool.py"
+  git -C "${TEST_REPO_DIR}" add tool.py
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: add tool.py"
+  run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"detected from tracked *.py files"* ]]
+  grep -q '^CGW_LINT_CMD="ruff' "${TEST_REPO_DIR}/.cgw.conf"
+}
+
+@test "lint detection stays empty when there is neither a marker nor a tracked *.py file" {
+  rm -f "${TEST_REPO_DIR}/pyproject.toml" "${TEST_REPO_DIR}/setup.py" "${TEST_REPO_DIR}/setup.cfg" "${TEST_REPO_DIR}/requirements.txt"
+  run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"detected from tracked *.py files"* ]]
+}
+
+# ── Generated .gitattributes ──────────────────────────────────────────────────
+
+@test "setup_attributes.sh pins *.example to LF alongside *.conf" {
+  run run_script setup_attributes.sh --force
+  [ "${status}" -eq 0 ]
+  grep -qx '\*\.conf text eol=lf' "${TEST_REPO_DIR}/.gitattributes"
+  grep -qx '\*\.example text eol=lf' "${TEST_REPO_DIR}/.gitattributes"
+}
+
 # ── --non-interactive config generation ───────────────────────────────────────
 
 @test "generated .cgw.conf documents the CGW_AUTO_RESOLVE_MODIFY_DELETE opt-in" {

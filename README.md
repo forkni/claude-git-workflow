@@ -154,7 +154,7 @@ CGW provides 30 user-facing scripts and 2 internal core modules in `scripts/git/
 | `branch_cleanup.sh` | Prune merged branches, stale remote-tracking refs, and obsolete backup tags; previews by default, deletes only with `--execute` (`--remote`, `--tags`, `--older-than <N>`) |
 | `changelog_generate.sh` | Generate categorized Markdown/text changelog from conventional commits (`--version`, `--prepend` for cumulative `CHANGELOG.md`) |
 | `md_toc.sh` | Offline Markdown table-of-contents generator/inserter with GitHub-compatible anchor slugs (`--insert`, `--check`, `--all`) |
-| `sync_cgw_tooling.sh` | Refresh a project's vendored CGW scripts, hooks and skill/command copies from a CGW checkout as one `chore: sync CGW git tooling` commit (`--extra-skill-dst`, `--extra-cmd-dst` for forked skill copies) |
+| `sync_cgw_tooling.sh` | Refresh a project's vendored CGW scripts, hooks and skill/command copies from a CGW checkout as one `chore: sync CGW git tooling` commit; tracked skill/command copies are discovered via `git ls-files` (`--extra-skill-dst`, `--extra-cmd-dst` only seed a new copy). `--check` is a read-only drift report (exit 1 on drift, no CGW checkout needed, CI-safe; add `--from <cgw>` to also flag staleness) |
 | `undo_last.sh` | Undo last commit (keeps changes staged), unstage files, discard changes, or amend commit message |
 | `recover.sh` | Reflog exploration, dangling-commit discovery (`git fsck`), and safe branch restoration from any SHA |
 | `worktree_manage.sh` | Linked worktree management: list, add, link CGW tooling into worktrees, remove (dry-run default), prune stale metadata |
@@ -164,6 +164,18 @@ CGW provides 30 user-facing scripts and 2 internal core modules in `scripts/git/
 
 - `_common.sh`: Shared utilities, logging, platform shims, backup-tag registry, interactive confirmation prompts (`cgw_confirm`), sourced by every script.
 - `_config.sh`: Three-tier configuration loader, repository root auto-detection, and centralized settings registry.
+
+### Project-specific hook logic (`.githooks/<hook>.local`)
+
+Keep the installed hooks stock and put project additions in an **executable** `.githooks/<hook>.local`; the stock hook runs it, so CGW updates never collide with your logic. A non-zero exit blocks the operation.
+
+| Hook | When `.local` runs | Arguments |
+|------|--------------------|-----------|
+| `pre-commit` | After the local-only-file check, before the `CGW_SKIP_LINT` exit, so it runs even when lint is skipped | none |
+| `pre-push` | After the safety checks | git's `<remote> <url>` args, with the ref list on stdin |
+| `pre-rebase` | Before the `CGW_ALLOW_REBASE_PUBLISHED` bypass | `<upstream> [<branch>]` |
+
+Each stock hook also prints a non-blocking `WARN` when the installed copy in `.git/hooks/` differs from the tracked `.githooks/<hook>` (for example after a pull changed it); re-run `scripts/git/install_hooks.sh`. `repo_health.sh` reports the same check.
 
 ## Configuration
 

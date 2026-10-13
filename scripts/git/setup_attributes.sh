@@ -78,6 +78,7 @@ build_attributes() {
 *.ini text eol=lf
 *.cfg text eol=lf
 *.conf text eol=lf
+*.example text eol=lf
 *.md text eol=lf
 *.txt text eol=lf
 *.csv text eol=lf

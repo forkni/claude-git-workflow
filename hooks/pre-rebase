@@ -23,6 +23,12 @@ set -uo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
+# Warn, never block, when this installed hook is not the tracked .githooks/ copy (a pull or branch
+# switch changed .githooks/ without install_hooks.sh being re-run).
+if [[ -f "${REPO_ROOT}/.githooks/pre-rebase" ]] && ! cmp -s "$0" "${REPO_ROOT}/.githooks/pre-rebase"; then
+  echo "WARN [pre-rebase]: installed hook differs from .githooks/pre-rebase -- run scripts/git/install_hooks.sh" >&2
+fi
+
 # scripts/git/ is gitignored in some installs, so git never checks it out into a
 # linked worktree. Hooks are shared across worktrees ($GIT_COMMON_DIR/hooks), so
 # fall back to the MAIN worktree for the tooling. Only the TOOLING comes from

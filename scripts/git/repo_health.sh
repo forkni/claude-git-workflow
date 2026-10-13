@@ -60,6 +60,7 @@ main() {
         echo "  4. Stale backup tags count"
         echo "  5. Line-ending hygiene (CRLF retained in the index)"
         echo "  6. Branch divergence summary"
+  echo "  7. Installed git hooks match .githooks/"
         echo ""
         echo "Environment:"
         echo "  CGW_REMOTE   Remote name for divergence check (default: origin)"
@@ -92,7 +93,7 @@ main() {
   echo ""
 
   # -- [1] Integrity check (git fsck) ---------------------------------------
-  echo "--- [1/6] Integrity Check ---"
+  echo "--- [1/7] Integrity Check ---"
   local fsck_args=("--no-reflogs")
   [[ ${full_fsck} -eq 1 ]] && fsck_args=("--full")
 
@@ -107,7 +108,7 @@ main() {
   echo ""
 
   # -- [2] Object store size -------------------------------------------------
-  echo "--- [2/6] Object Store Size ---"
+  echo "--- [2/7] Object Store Size ---"
   # Use git count-objects (cross-platform, no GNU du needed)
   local obj_size_kb=0 pack_count=0
   while IFS=': ' read -r key val; do
@@ -133,7 +134,7 @@ main() {
   echo ""
 
   # -- [3] Large files in history --------------------------------------------
-  echo "--- [3/6] Large Files in History (>${large_threshold_mb}MB) ---"
+  echo "--- [3/7] Large Files in History (>${large_threshold_mb}MB) ---"
   local threshold_bytes=$((large_threshold_mb * 1048576))
   local large_count=0
 
@@ -159,7 +160,7 @@ main() {
   echo ""
 
   # -- [4] Backup tag count --------------------------------------------------
-  echo "--- [4/6] Backup Tags ---"
+  echo "--- [4/7] Backup Tags ---"
   local backup_count
   backup_count=$(cgw_list_backup_tags 2>/dev/null | wc -l | tr -d ' ')
   echo "  Backup tags: ${backup_count}"
@@ -176,7 +177,7 @@ main() {
   # Advisory only -- a CRLF-in-index file is legal git state and (after the
   # cgw_lint_files_diverging_from_index arbiter) no longer breaks the commit
   # gate. Surfaced here so users notice before it surprises them elsewhere.
-  echo "--- [5/6] Line-Ending Hygiene ---"
+  echo "--- [5/7] Line-Ending Hygiene ---"
   local -a crlf_files=()
   local crlf_f
   while IFS= read -r crlf_f; do
@@ -195,7 +196,7 @@ main() {
   echo ""
 
   # -- [6] Branch summary ----------------------------------------------------
-  echo "--- [6/6] Branch Status ---"
+  echo "--- [6/7] Branch Status ---"
   local current_branch
   current_branch=$(git branch --show-current 2>/dev/null || echo "(detached)")
   echo "  Current:  ${current_branch}"
@@ -211,6 +212,29 @@ main() {
       fi
     fi
   done
+  echo ""
+
+  # -- [7] Installed hooks vs tracked .githooks/ ---------------------------------
+  # Advisory only: git runs .git/hooks/<name>, so a pull or branch switch that changed the
+  # tracked copy is invisible until install_hooks.sh is re-run.
+  echo "--- [7/7] Installed Hooks ---"
+  local hooks_dir hook_name stale_hooks=0
+  hooks_dir="$(git rev-parse --git-common-dir 2>/dev/null)/hooks"
+  for hook_name in pre-commit pre-push pre-rebase; do
+    [[ -f ".githooks/${hook_name}" ]] || continue
+    if [[ ! -f "${hooks_dir}/${hook_name}" ]]; then
+      echo "  [!] ${hook_name}: tracked in .githooks/ but not installed"
+      stale_hooks=$((stale_hooks + 1))
+    elif ! cmp -s ".githooks/${hook_name}" "${hooks_dir}/${hook_name}"; then
+      echo "  [!] ${hook_name}: installed hook differs from .githooks/${hook_name}"
+      stale_hooks=$((stale_hooks + 1))
+    fi
+  done
+  if [[ ${stale_hooks} -eq 0 ]]; then
+    echo "  [OK] Installed hooks match .githooks/"
+  else
+    echo "  Fix with: ./scripts/git/install_hooks.sh"
+  fi
   echo ""
 
   # -- Garbage collection (optional) ----------------------------------------

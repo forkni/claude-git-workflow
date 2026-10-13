@@ -3396,6 +3396,24 @@ _scratch_commit() {
 
 # ── Reflog action provenance ──────────────────────────────────────────────────
 
+# ── cgw_backup_file pruning ───────────────────────────────────────────────────
+
+@test "cgw_backup_file: keeps the original .bak and only the newest 3 timestamped backups" {
+  local f="${BATS_TEST_TMPDIR}/hook"
+  local i
+  for i in 1 2 3 4 5 6; do
+    echo "v${i}" >"${f}"
+    cgw_backup_file "${f}" >/dev/null
+    sleep 1 # timestamps have one-second resolution
+  done
+  [ "$(cat "${f}.bak")" = "v1" ]
+  [ "$(ls -1 "${f}".bak.* | wc -l | tr -d ' ')" -eq 3 ]
+  # The survivors are the newest three (v4..v6); v2 and v3 were pruned.
+  local kept
+  kept="$(cat "${f}".bak.* | sort | tr '\n' ' ')"
+  [ "${kept}" = "v4 v5 v6 " ]
+}
+
 @test "cgw_set_reflog_action: sets GIT_REFLOG_ACTION with default prefix" {
   cgw_set_reflog_action "test_op"
   [ "${GIT_REFLOG_ACTION}" = "cgw: test_op" ]

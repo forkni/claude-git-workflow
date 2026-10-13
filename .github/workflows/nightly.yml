@@ -1,0 +1,96 @@
+name: Nightly Maintenance & Cross-Platform Regression
+
+on:
+  schedule:
+    # Run every Sunday at 03:00 UTC
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full-suite:
+    name: Full Test Suite (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Install ShellCheck (Ubuntu)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
+
+      - name: Install bats-core and helpers
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            git clone --depth 1 --branch v1.13.0 https://github.com/bats-core/bats-core.git "${RUNNER_TEMP}/bats"
+            git clone --depth 1 --branch v0.3.0 https://github.com/bats-core/bats-support.git "${RUNNER_TEMP}/bats-support"
+            git clone --depth 1 --branch v2.2.4 https://github.com/bats-core/bats-assert.git "${RUNNER_TEMP}/bats-assert"
+            echo "${RUNNER_TEMP}/bats/bin" >> "${GITHUB_PATH}"
+          else
+            git clone --depth 1 --branch v1.13.0 https://github.com/bats-core/bats-core.git /tmp/bats
+            sudo /tmp/bats/install.sh /usr/local
+            git clone --depth 1 --branch v0.3.0 https://github.com/bats-core/bats-support.git /tmp/bats-support
+            git clone --depth 1 --branch v2.2.4 https://github.com/bats-core/bats-assert.git /tmp/bats-assert
+          fi
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "nightly-ci@example.com"
+          git config --global user.name "Nightly CI"
+
+      - name: Run complete test suite (--all)
+        run: CGW_TEST_JOBS=4 bash tests/run.sh --all
+
+  doc-link-audit:
+    name: Full Documentation Link Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Comprehensive link audit
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8  # v2.9.0
+        with:
+          args: |
+            --verbose
+            --no-progress
+            --exclude-mail
+            '**/*.md'
+
+  tooling-drift:
+    name: Tooling & Documentation Drift Canary
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Install ShellCheck
+        run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
+
+      - name: Lint documentation code snippets
+        run: bash tests/lint_doc_snippets.sh
+
+      - name: Verify skill and command documentation sync
+        run: bash tests/verify_skill_commands.sh
+
+      - name: Check Bats skipped test count ratchet
+        run: bash tests/check_skipped_bats.sh
