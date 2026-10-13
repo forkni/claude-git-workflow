@@ -64,6 +64,6 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
       - name: Check spelling
-        uses: crate-ci/typos@6bf4070a25faab30026e4922ca52e92ec4ea323d  # v1.30.2
+        uses: crate-ci/typos@7bc041cbb7ca9167c9e0e4ccbb26f48eb0f9d4e0  # v1.30.2
         with:
           files: README.md skill/ command/
