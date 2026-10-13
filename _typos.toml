@@ -1,0 +1,6 @@
+[default.extend-words]
+synopsys = "synopsys"
+Synopsys = "Synopsys"
+
+[default.extend-identifiers]
+SynopsysVCS = "SynopsysVCS"
