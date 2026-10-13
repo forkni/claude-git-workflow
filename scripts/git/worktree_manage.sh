@@ -10,7 +10,8 @@
 # Subcommands:
 #   list              List all worktrees (main + linked)
 #   add  <path> [<branch> [<base>]]   Add a linked worktree (creates branch if needed,
-#                            from <base> -- default HEAD -- like git worktree add -b)
+#                            from <base> -- default HEAD, or tracking <remote>/<branch>
+#                            when only the remote has it -- like git worktree add -b)
 #   link [<path>]            Link scripts/git and .githooks from the main worktree
 #   remove <path>            Remove a linked worktree (dry-run default)
 #   prune                    Remove stale administrative files (dry-run default)
@@ -423,8 +424,16 @@ _cmd_add() {
         echo "  Branch: ${branch} (new — will be created from ${base})"
         git_args=(-b "${branch}" "${path}" "${base}")
       else
-        echo "  Branch: ${branch} (new — will be created from HEAD)"
-        git_args=(-b "${branch}" "${path}")
+        # No base: if the branch already exists on the remote, check it out tracking it
+        # (plain `git worktree add <path> <branch>` would do this too, but -b bypasses it).
+        local remote="${CGW_REMOTE:-origin}"
+        if git rev-parse --verify --quiet "refs/remotes/${remote}/${branch}" >/dev/null 2>&1; then
+          echo "  Branch: ${branch} (new, tracking ${remote}/${branch})"
+          git_args=(--track -b "${branch}" "${path}" "${remote}/${branch}")
+        else
+          echo "  Branch: ${branch} (new — will be created from HEAD)"
+          git_args=(-b "${branch}" "${path}")
+        fi
       fi
     else
       if [[ -n "${base}" ]]; then
@@ -645,7 +654,8 @@ _show_help() {
   echo "  list                      List all worktrees (main + linked)"
   echo "  add  <path> [<branch> [<base>]]"
   echo "                            Add a linked worktree; creates the branch if needed,"
-  echo "                            starting from <base> (default HEAD)"
+  echo "                            starting from <base> (default HEAD, or tracking"
+  echo "                            <remote>/<branch> when only the remote has it)"
   echo "  link [<path>]             Link scripts/git and .githooks from the main worktree"
   echo "  remove [--execute] <path> Remove a linked worktree (dry-run by default)"
   echo "  prune  [--execute]        Remove stale admin files (dry-run by default)"

@@ -431,6 +431,7 @@ Always protected, regardless of `CGW_TARGET_BRANCH`: `main`, `master`, the repo'
 ./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent     # add with new branch
 ./scripts/git/worktree_manage.sh add ../review review-feature    # add with existing branch
 ./scripts/git/worktree_manage.sh add ../part2 feat/part-2 feat/part-1  # new branch starting at another branch
+./scripts/git/worktree_manage.sh add ../pr feat/from-origin             # branch only on the remote: checked out tracking it
 ./scripts/git/worktree_manage.sh link                            # link CGW tooling into this worktree
 ./scripts/git/worktree_manage.sh remove --execute ../hotfix      # remove (--execute required)
 ./scripts/git/worktree_manage.sh prune                           # dry-run: show stale admin files
