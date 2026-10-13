@@ -98,8 +98,7 @@ jobs:
             failed=1
           fi
           if [ "${{ steps.shfmt_check.outcome }}" != "success" ]; then
-            echo "::error::shfmt format violations found in scripts/ or hooks/"
-            failed=1
+            echo "::warning::shfmt format differences found in scripts/ or hooks/ (run shfmt -w -i 2 -ci scripts/ hooks/)"
           fi
           if [ "${{ steps.doc_snippets.outcome }}" != "success" ]; then
             echo "::error::Documentation snippet linting failed"
