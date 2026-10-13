@@ -7,11 +7,15 @@ on:
       - '**/*.md'
       - '!CLAUDE.md'
       - '!MEMORY.md'
+      - '.github/workflows/docs-validation.yml'
+      - '_typos.toml'
   pull_request:
     paths:
       - '**/*.md'
       - '!CLAUDE.md'
       - '!MEMORY.md'
+      - '.github/workflows/docs-validation.yml'
+      - '_typos.toml'
 
 permissions:
   contents: read
@@ -67,3 +71,4 @@ jobs:
         uses: crate-ci/typos@7bc041cbb7ca9167c9e0e4ccbb26f48eb0f9d4e0  # v1.30.2
         with:
           files: README.md skill/ command/
+          config: _typos.toml
