@@ -120,10 +120,10 @@ echo "${CGW_MERGE_MODE:-direct}"
   ```text
   Workflow complete (PR mode)
   Source branch: [hash] "[message]" pushed
-  PR: [url] — checks: green, Charlie review: [pending|approved|changes requested]
+  PR: [url] — checks: green, review: [pending|approved|changes requested]
   ```
 
-  Charlie's review is tracked separately from checks (a reviewer, not a required check) —
+  A review is tracked separately from checks (a reviewer, not a required check) —
   mention its status but don't block on it. Stop here regardless — merging into
   `CGW_TARGET_BRANCH` happens on GitHub once the PR is approved and merged, outside this
   pipeline, so Phase 5/5b do not apply in PR mode. (If the user asks you to merge the PR,

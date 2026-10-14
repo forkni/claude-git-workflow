@@ -132,7 +132,7 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use GitHub PRs instead of direct loc
 1. Work and commit on source branch
 2. Push to remote: `./scripts/git/push_validated.sh`
 3. Create PR: `./scripts/git/create_pr.sh`
-4. Review PR on GitHub (Charlie CI auto-reviews on open)
+4. Review PR on GitHub
 5. Merge after CI passes: GitHub UI, or `./scripts/git/merge_pr.sh <N>` (merge commit; refuses unless PR checks are green; `--retarget <M>` moves stacked PRs onto the new base)
 6. Sync local branches: `./scripts/git/sync_branches.sh --all`
 

@@ -38,21 +38,6 @@ agent-facing `CGW_CI_MAX_FIX_ROUNDS`.
 
 ---
 
-## Charlie CI Agent
-
-This project uses [Charlie](https://charlielabs.ai) for AI-assisted code review on pull requests.
-
-```yaml
-# .charlie/config.yml
-checkCommands:
-  fix: shfmt -w -i 2 -ci scripts/   # auto-format after edits
-  lint: shellcheck -x --severity=error --source-path=scripts/git scripts/git/*.sh  # static analysis
-```
-
-**Setup** (repository admin): Install the `charliecreates` GitHub App and invite `@CharlieHelps` as a repository collaborator (Triage role minimum).
-
----
-
 ## Local Tool Installation
 
 Install the tools used by CI locally to catch issues before pushing:

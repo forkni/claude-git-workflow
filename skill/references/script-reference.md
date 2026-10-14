@@ -285,11 +285,11 @@ conflict-free if untouched).
 | `--title <title>` | Override auto-generated PR title |
 | `--body <text>` | Use `<text>` as the PR body, verbatim, in place of the generated commit list. Exclusive with `--body-file` |
 | `--body-file <path>` | Read the PR body from `<path>` (relative paths resolve against the caller's cwd; `-` is refused). Exclusive with `--body` |
-| `--draft` | Open PR as draft (skips Charlie CI auto-review) |
+| `--draft` | Open PR as draft (not ready for review) |
 | `--source <branch>` | Override source (head) branch for this invocation |
 | `--target <branch>` | Override target (base) branch for this invocation |
 
-Requires `gh` CLI authenticated (`gh auth login`). Checks ahead/behind status, then opens a PR. Charlie CI auto-reviews on PR open. The body reaches `gh` on stdin (`--body-file -`), so long bodies hit no command-line limit; `--dry-run` prints the body that would be sent.
+Requires `gh` CLI authenticated (`gh auth login`). Checks ahead/behind status, then opens a PR. The body reaches `gh` on stdin (`--body-file -`), so long bodies hit no command-line limit; `--dry-run` prints the body that would be sent.
 
 Passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own `github.com` URL (checks `pushurl` first, then `url`). Without this, `gh pr create` resolves its own target repo and — when `CGW_REMOTE` is a fork — defaults to the fork's parent/upstream repo instead of `CGW_REMOTE` itself. Aborts with an error if the remote isn't a recognizable `github.com` URL, rather than falling back to gh's own (unsafe) resolution.
 

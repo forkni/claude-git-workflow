@@ -828,10 +828,10 @@
     },
     {
       "id": "pr-001-draft",
-      "prompt": "Open a draft PR from feature/experimental to main so it skips the Charlie CI auto-review for now. State the exact command.",
+      "prompt": "Open a draft PR from feature/experimental to main since it is not ready for review yet. State the exact command.",
       "category": "pr",
       "split": "val",
-      "source": "SKILL.md Quick Decision Tree -- Opening a PR / references/script-reference.md -- create_pr.sh --draft skips Charlie CI auto-review",
+      "source": "SKILL.md Quick Decision Tree -- Opening a PR / references/script-reference.md -- create_pr.sh --draft opens a PR that is not ready for review",
       "checks": [
         {
           "type": "must_include",
