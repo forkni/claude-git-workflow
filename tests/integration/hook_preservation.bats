@@ -266,6 +266,65 @@ EOF
   [[ "${output}" == *"pre-commit.local failed"* ]]
 }
 
+@test "hooks/pre-push runs the main worktree's .githooks/pre-push.local from a linked worktree" {
+  create_test_repo_with_remote
+  git -C "${TEST_REPO_DIR}" checkout development
+
+  mkdir -p "${TEST_REPO_DIR}/scripts/git" "${TEST_REPO_DIR}/.githooks"
+  cp "${CGW_PROJECT_ROOT}/scripts/git/_common.sh" "${TEST_REPO_DIR}/scripts/git/_common.sh"
+  cp "${CGW_PROJECT_ROOT}/scripts/git/_config.sh" "${TEST_REPO_DIR}/scripts/git/_config.sh"
+  cp "${CGW_PROJECT_ROOT}/hooks/pre-push" "${TEST_REPO_DIR}/.git/hooks/pre-push"
+  chmod +x "${TEST_REPO_DIR}/.git/hooks/pre-push"
+
+  # Record the pushed ref list the hook pipes in, to prove stdin reaches the extension.
+  cat << 'EOF' > "${TEST_REPO_DIR}/.githooks/pre-push.local"
+#!/usr/bin/env bash
+cat > "${TEST_TMPDIR}/pp_stdin.txt"
+exit 0
+EOF
+  chmod +x "${TEST_REPO_DIR}/.githooks/pre-push.local"
+  export TEST_TMPDIR
+
+  git -C "${TEST_REPO_DIR}" worktree add --quiet -b feature/wt "${TEST_TMPDIR}/wt"
+  [ ! -e "${TEST_TMPDIR}/wt/.githooks" ]
+  echo "content" > "${TEST_TMPDIR}/wt/feature.txt"
+  git -C "${TEST_TMPDIR}/wt" add feature.txt
+  git -C "${TEST_TMPDIR}/wt" commit --quiet --no-verify -m "feat: add feature.txt"
+
+  run git -C "${TEST_TMPDIR}/wt" push origin feature/wt
+  [ "$status" -eq 0 ]
+  [[ "$(cat "${TEST_TMPDIR}/pp_stdin.txt")" == *"refs/heads/feature/wt"* ]]
+}
+
+@test "hooks/pre-rebase runs the main worktree's .githooks/pre-rebase.local from a linked worktree" {
+  create_test_repo
+  mkdir -p "${TEST_REPO_DIR}/scripts/git" "${TEST_REPO_DIR}/.githooks"
+  cp "${CGW_PROJECT_ROOT}/scripts/git/_common.sh" "${TEST_REPO_DIR}/scripts/git/_common.sh"
+  cp "${CGW_PROJECT_ROOT}/scripts/git/_config.sh" "${TEST_REPO_DIR}/scripts/git/_config.sh"
+  cp "${CGW_PROJECT_ROOT}/hooks/pre-rebase" "${TEST_REPO_DIR}/.git/hooks/pre-rebase"
+  chmod +x "${TEST_REPO_DIR}/.git/hooks/pre-rebase"
+
+  cat << 'EOF' > "${TEST_REPO_DIR}/.githooks/pre-rebase.local"
+#!/usr/bin/env bash
+echo "PRE_REBASE_LOCAL_RUN" > "$(git rev-parse --show-toplevel)/local_pr_marker.txt"
+exit 0
+EOF
+  chmod +x "${TEST_REPO_DIR}/.githooks/pre-rebase.local"
+
+  git -C "${TEST_REPO_DIR}" worktree add --quiet -b feature/wt "${TEST_TMPDIR}/wt"
+  [ ! -e "${TEST_TMPDIR}/wt/.githooks" ]
+  echo "topic" > "${TEST_TMPDIR}/wt/topic.txt"
+  git -C "${TEST_TMPDIR}/wt" add topic.txt
+  git -C "${TEST_TMPDIR}/wt" commit --quiet --no-verify -m "feat: topic"
+  echo "upstream" > "${TEST_REPO_DIR}/upstream.txt"
+  git -C "${TEST_REPO_DIR}" add upstream.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet --no-verify -m "feat: upstream"
+
+  run git -C "${TEST_TMPDIR}/wt" rebase development
+  [ "$status" -eq 0 ]
+  [ -f "${TEST_TMPDIR}/wt/local_pr_marker.txt" ]
+}
+
 @test "hooks/pre-rebase executes .githooks/pre-rebase.local when present" {
   create_test_repo
   mkdir -p "${TEST_REPO_DIR}/scripts/git" "${TEST_REPO_DIR}/.githooks"

@@ -85,19 +85,7 @@ fi
 # ── [0.1] Project-local pre-push hook extension ───────────────────────
 # .githooks/ is per-clone and git-ignored in some installs, so a linked worktree has none:
 # fall back to the main worktree's extension, as for the tooling above.
-_local_hook="${REPO_ROOT}/.githooks/pre-push.local"
-if [[ ! -x "${_local_hook}" ]]; then
-  _main_wt="$(git worktree list --porcelain 2>/dev/null | head -1)"
-  _local_hook="${_main_wt#worktree }/.githooks/pre-push.local"
-fi
-if [[ -x "${_local_hook}" ]]; then
-  if ! printf '%s\n' "${PUSH_INPUT}" | "${_local_hook}" "$@"; then
-    echo "" >&2
-    echo "ERROR [pre-push]: .githooks/pre-push.local failed." >&2
-    echo "" >&2
-    exit 1
-  fi
-fi
+printf '%s\n' "${PUSH_INPUT}" | cgw_run_local_hook "${REPO_ROOT}" pre-push "$@" || exit 1
 
 if [[ -n "${PUSH_INPUT}" ]]; then
   while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do

@@ -54,19 +54,7 @@ source "${CGW_HOME}/scripts/git/_common.sh"
 # ── Project-local pre-rebase hook extension ───────────────────────────
 # .githooks/ is per-clone and git-ignored in some installs, so a linked worktree has none:
 # fall back to the main worktree's extension, as for the tooling above.
-_local_hook="${REPO_ROOT}/.githooks/pre-rebase.local"
-if [[ ! -x "${_local_hook}" ]]; then
-  _main_wt="$(git worktree list --porcelain 2>/dev/null | head -1)"
-  _local_hook="${_main_wt#worktree }/.githooks/pre-rebase.local"
-fi
-if [[ -x "${_local_hook}" ]]; then
-  if ! "${_local_hook}" "$@"; then
-    echo "" >&2
-    echo "ERROR [pre-rebase]: .githooks/pre-rebase.local failed." >&2
-    echo "" >&2
-    exit 1
-  fi
-fi
+cgw_run_local_hook "${REPO_ROOT}" pre-rebase "$@" || exit 1
 
 # Bypass: CGW_ALLOW_REBASE_PUBLISHED=1 disables this check.
 if [[ "${CGW_ALLOW_REBASE_PUBLISHED:-0}" == "1" ]]; then
