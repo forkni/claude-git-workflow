@@ -377,7 +377,7 @@ CGW_CLEANUP_TESTS="0"
 #                     Fast, no PR required.
 #
 # "pr":               create a GitHub PR via create_pr.sh.
-#                     Triggers Charlie CI auto-review + GitHub Actions.
+#                     Triggers GitHub Actions.
 #                     Requires: gh CLI installed + authenticated.
 #
 # Use "pr" to enable CI agent review before merging to main.

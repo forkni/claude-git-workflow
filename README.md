@@ -16,7 +16,7 @@ Drop-in git automation and safety toolkit for any software repository. Provides 
 - **Multi-Tier Safety Gates**: Pre-commit code and Markdown lint validation with interactive auto-fixing, staged-blob congruence checks (failing closed when staged blobs diverge from the validated working tree), and commit subject-length limits (Pro Git 50/72 rule).
 - **Blocking Typecheck Verification**: Optional typechecking (`pyrefly`, `pyright`, `mypy`, `tsc`) that is advisory at commit time and strictly blocking prior to push.
 - **Safe Merges & Rollbacks**: Automatic pre-merge backup tags, automated resolution of both-deleted (`DD`) conflicts (modify/delete `DU` halts unless opted in), `git rerere` conflict replay, and instantaneous rollback to backup tags (`--revert` history-preserving mode).
-- **Post-Push CI Verification Gate**: Watches triggered GitHub Actions or Charlie CI runs until a green verdict is achieved, automatically fixing and retrying test failures up to a configurable round budget.
+- **Post-Push CI Verification Gate**: Watches triggered GitHub Actions runs until a green verdict is achieved, automatically fixing and retrying test failures up to a configurable round budget.
 - **Dual AI Agent Harness Integrations**: Full support for both **Claude Code** and **Google Antigravity Agents**, featuring state-aware repo scanning via `/auto-git-workflow-cmd` and PreToolUse guardrails that intercept and block dangerous raw `git` commands before execution.
 - **Repository Health & Recovery**: Linked worktree management (`worktree_manage.sh`), dangling commit discovery (`recover.sh`), automated changelog generation from conventional commits (`changelog_generate.sh`), offline Markdown TOC generation (`md_toc.sh`), and safe branch synchronization across diverged `skip-worktree` files.
 - **Cross-Project Batch Maintenance**: Update the CGW script and harness suite across dozens of repositories at once using `cgw-batch-install.cmd` without modifying individual project configs.
@@ -139,7 +139,7 @@ CGW provides 30 user-facing scripts and 2 internal core modules in `scripts/git/
 | `branch_diff.sh` | Show diff against the target branch (`--files`, `--stat`, `--no-ws`, `--base`) |
 | `check_lint.sh` | Read-only lint, format, typecheck, and Markdown validation (`--modified-only`, `--skip-md-lint`, `--skip-typecheck`, `--ref`/`--base`/`--unpushed` to check the committed snapshot) |
 | `fix_lint.sh` | Auto-fix code lint, code formatting, and Markdown issues (`--modified-only`, `--md-only`, `--skip-md-lint`) |
-| `create_pr.sh` | Create GitHub PR from source to target branch via `gh` CLI (triggers Charlie CI and GitHub Actions) |
+| `create_pr.sh` | Create GitHub PR from source to target branch via `gh` CLI (triggers GitHub Actions) |
 | `merge_pr.sh` | Guarded, logged wrapper around `gh pr merge --merge` with an explicit `--repo`; refuses non-OPEN PRs and non-green PR checks on the PR's current head (`--wait-checks`, `--skip-checks`; merge pinned with `--match-head-commit`), `--retarget <M>` for stacked PRs, `--squash`/`--rebase` need `--allow-non-merge` (`--delete-branch`, `--dry-run`) |
 | `verify_ci.sh` | Post-push CI gate: waits for the GitHub Actions runs a push triggered and prints one verdict (`--branch <name>` or `--pr <N>`, `--sha`, `--timeout`, `--poll`); exit `0` green, `1` red, `2` unverified, `3` not applicable |
 | `pr_checkout.sh` | Guarded, logged wrapper around `gh pr checkout <N>` for reviewing PRs locally (`--branch`, `--force`, `--detach`, `--dry-run`) |
@@ -221,7 +221,7 @@ See [Configuration Guide](docs/configuration.md) for full options and ecosystem 
 | [Installation Guide](docs/installation.md) | Setup steps, `configure.sh` flags, troubleshooting, and batch multi-project updates |
 | [Usage Guide](docs/usage.md) | Command-line examples for every script, conventional commit formats, and flag references |
 | [Configuration Reference](docs/configuration.md) | Three-tier configuration system details, options registry, and multi-language lint recipes |
-| [CI Setup & Verification](docs/ci-setup.md) | GitHub Actions workflows, Charlie CI integration, local tool installation, and the CI gate |
+| [CI Setup & Verification](docs/ci-setup.md) | GitHub Actions workflows, local tool installation, and the CI gate |
 | [Agent Integrations](docs/claude-code-integration.md) | Claude Code and Antigravity Agents skills, `/auto-git-workflow-cmd` menu, and guardrail setup |
 | [Known Issues](docs/KNOWN_ISSUES.md) | Documented platform behaviors, workarounds, and resolved edge cases |
 | [Configuration Example](cgw.conf.example) | Fully documented reference `.cgw.conf` file with examples for all settings |

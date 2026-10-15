@@ -11,7 +11,7 @@ git push -u origin development
 
 > **Note:** `git push -u origin development` above is a one-time bootstrap exception — CGW isn't configured yet at this point so the wrapper scripts aren't available. All subsequent pushes should use `./scripts/git/push_validated.sh`.
 
-Keep `main` as the GitHub default branch. Charlie reads its config from the default branch.
+Keep `main` as the GitHub default branch.
 
 ---
 
@@ -115,7 +115,7 @@ All four promotion scripts accept `--source`/`--target` to override the configur
 
 The overrides are ephemeral — they do not mutate `CGW_SOURCE_BRANCH` / `CGW_TARGET_BRANCH` in config.
 
-### Create PR (triggers Charlie CI + GitHub Actions)
+### Create PR (triggers GitHub Actions)
 
 ```bash
 ./scripts/git/create_pr.sh --dry-run          # preview title + commits

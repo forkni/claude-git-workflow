@@ -489,7 +489,7 @@ CGW_PROTECTED_BRANCHES="${CGW_PROTECTED_BRANCHES:-${CGW_TARGET_BRANCH}}"
 
 # --- Merge mode ---
 # "direct": merge locally via merge_with_validation.sh (default, no PR required)
-# "pr":     create a GitHub PR via create_pr.sh (triggers Charlie CI + GitHub Actions)
+# "pr":     create a GitHub PR via create_pr.sh (triggers GitHub Actions)
 
 # --- Commit and tag signing ---
 # GPG/SSH signing of commits and tags, matching Pro Git §"Signing Your Work".

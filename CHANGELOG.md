@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.17.0 (2026-10-15)
+
+> Changes since `v0.16.0`
+
+### New Features
+
+- **Default setup hardening & tooling-copy drift check**: `sync_cgw_tooling.sh` discovers tracked skill and command copies via `git ls-files` and adds a read-only `--check` mode (exits `1` on drift without needing a CGW checkout; `--from` also flags staleness against the source); `setup_attributes.sh` emits `*.example text eol=lf` so example configs no longer show phantom CRLF modifications; `configure.sh` falls back to probing `ruff`/`flake8`/`pylint` when tracked `*.py` files exist without a Python project marker; `cgw_backup_file` retains the plain `.bak` plus the newest 3 timestamped backups; and hooks plus `repo_health.sh` warn when an installed hook differs from `.githooks/<hook>`.
+- **CI pipeline security hardening, parallel gates & skip ratchet**: Parallelized `branch-protection.yml` into `validate`, `lint`, and `test` (`fast`/`slow` matrix) gated by `all-gates-green`; pinned all GitHub Actions to full-length commit SHAs (`actions/checkout` v7.0.1, `softprops/action-gh-release` v3.0.3, `crate-ci/typos` v1.51.1, `markdownlint-cli2-action` v24.2.0, `lychee-action` v2.9.0); added `tests/check_skipped_bats.sh` skip-count ratchet, `nightly.yml` cross-platform regression & drift canary workflow, `_typos.toml` spell-check configuration, and `.github/dependabot.yml` targeting `development`.
+
+### Bug Fixes
+
+- **Self-updating `sync_cgw_tooling.sh`**: Allow `sync_cgw_tooling.sh` to update its own copy during sync while keeping `main "$@"; exit $?` on one line so bash never resumes reading at a stale file offset after in-place replacement.
+- **Remote-only branch tracking in `worktree_manage.sh add`**: Automatically create a local branch tracking `${CGW_REMOTE}/<branch>` when adding a worktree for a branch that exists only on the remote.
+- **Actionable dirty-worktree diagnostic on `worktree_manage.sh remove`**: List blocking modified or untracked files via `git status --porcelain --untracked-files=all` instead of suggesting `--force` (which would discard those files).
+- **Linked-worktree `.githooks/*.local` fallback**: `pre-commit`, `pre-push`, and `pre-rebase` hooks now fall back to the main worktree's `.githooks/<hook>.local` when running inside a linked worktree where `.githooks/` is absent.
+
+### Maintenance
+
+- **Remove retired Charlie CI integration**: Removed `.charlie/`, `.agents/daemons/pr-review/`, and Charlie references across docs, skill references, and `create_pr.sh`.
+
 ## v0.16.0 (2026-10-11)
 
 > Changes since `v0.15.0`

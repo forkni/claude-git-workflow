@@ -221,6 +221,51 @@ EOF
   [ -f "${TEST_REPO_DIR}/local_pc_marker.txt" ]
 }
 
+@test "hooks/pre-commit runs the main worktree's .githooks/pre-commit.local from a linked worktree" {
+  create_test_repo
+  mkdir -p "${TEST_REPO_DIR}/scripts/git" "${TEST_REPO_DIR}/.githooks"
+  cp "${CGW_PROJECT_ROOT}/scripts/git/_common.sh" "${TEST_REPO_DIR}/scripts/git/_common.sh"
+  cp "${CGW_PROJECT_ROOT}/scripts/git/_config.sh" "${TEST_REPO_DIR}/scripts/git/_config.sh"
+  cp "${CGW_PROJECT_ROOT}/hooks/pre-commit" "${TEST_REPO_DIR}/.git/hooks/pre-commit"
+  chmod +x "${TEST_REPO_DIR}/.git/hooks/pre-commit"
+
+  cat << 'EOF' > "${TEST_REPO_DIR}/.githooks/pre-commit.local"
+#!/usr/bin/env bash
+echo "PRE_COMMIT_LOCAL_RUN" > "$(git rev-parse --show-toplevel)/local_pc_marker.txt"
+exit 0
+EOF
+  chmod +x "${TEST_REPO_DIR}/.githooks/pre-commit.local"
+
+  # The untracked .githooks/ and scripts/git/ stay behind: the worktree has neither.
+  git -C "${TEST_REPO_DIR}" worktree add --quiet -b feature/wt "${TEST_TMPDIR}/wt"
+  [ ! -e "${TEST_TMPDIR}/wt/.githooks" ]
+
+  echo "content" > "${TEST_TMPDIR}/wt/feature.txt"
+  git -C "${TEST_TMPDIR}/wt" add feature.txt
+  run git -C "${TEST_TMPDIR}/wt" commit -m "feat: add feature.txt"
+  [ "$status" -eq 0 ]
+  [ -f "${TEST_TMPDIR}/wt/local_pc_marker.txt" ]
+}
+
+@test "hooks/pre-commit fails the commit from a linked worktree when the main worktree's pre-commit.local fails" {
+  create_test_repo
+  mkdir -p "${TEST_REPO_DIR}/scripts/git" "${TEST_REPO_DIR}/.githooks"
+  cp "${CGW_PROJECT_ROOT}/scripts/git/_common.sh" "${TEST_REPO_DIR}/scripts/git/_common.sh"
+  cp "${CGW_PROJECT_ROOT}/scripts/git/_config.sh" "${TEST_REPO_DIR}/scripts/git/_config.sh"
+  cp "${CGW_PROJECT_ROOT}/hooks/pre-commit" "${TEST_REPO_DIR}/.git/hooks/pre-commit"
+  chmod +x "${TEST_REPO_DIR}/.git/hooks/pre-commit"
+
+  printf '#!/usr/bin/env bash\nexit 1\n' > "${TEST_REPO_DIR}/.githooks/pre-commit.local"
+  chmod +x "${TEST_REPO_DIR}/.githooks/pre-commit.local"
+  git -C "${TEST_REPO_DIR}" worktree add --quiet -b feature/wt "${TEST_TMPDIR}/wt"
+
+  echo "content" > "${TEST_TMPDIR}/wt/feature.txt"
+  git -C "${TEST_TMPDIR}/wt" add feature.txt
+  run git -C "${TEST_TMPDIR}/wt" commit -m "feat: add feature.txt"
+  [ "$status" -ne 0 ]
+  [[ "${output}" == *"pre-commit.local failed"* ]]
+}
+
 @test "hooks/pre-rebase executes .githooks/pre-rebase.local when present" {
   create_test_repo
   mkdir -p "${TEST_REPO_DIR}/scripts/git" "${TEST_REPO_DIR}/.githooks"

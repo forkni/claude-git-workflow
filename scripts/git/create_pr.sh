@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # create_pr.sh - Create a GitHub pull request from source to target branch
-# Purpose: Open a PR to trigger Charlie CI review and GitHub Actions
+# Purpose: Open a PR to trigger GitHub Actions
 # Usage: ./scripts/git/create_pr.sh [OPTIONS]
 #
 # Globals:
@@ -58,7 +58,7 @@ main() {
         echo "Usage: ./scripts/git/create_pr.sh [OPTIONS]"
         echo ""
         echo "Create a GitHub PR from source to target branch."
-        echo "Triggers Charlie CI auto-review and GitHub Actions workflows."
+        echo "Triggers GitHub Actions workflows."
         echo ""
         echo "Options:"
         echo "  --title <title>     Override auto-generated PR title"
@@ -357,7 +357,6 @@ ${formatted_log}
     esac
     echo "${pr_body}" | sed 's/^/    /' | tee -a "$logfile"
     echo "" | tee -a "$logfile"
-    echo "Charlie CI will auto-review when PR is opened (non-draft)" | tee -a "$logfile"
     exit 0
   fi
 
@@ -397,9 +396,9 @@ ${formatted_log}
     fi
     echo "" | tee -a "$logfile"
     if [[ ${draft} -eq 0 ]]; then
-      echo "Charlie CI will auto-review this PR." | tee -a "$logfile"
+      echo "PR created and ready for review." | tee -a "$logfile"
     else
-      echo "Draft PR created. Mark as Ready for Review to trigger Charlie CI." | tee -a "$logfile"
+      echo "Draft PR created. Mark as Ready for Review when it is ready." | tee -a "$logfile"
     fi
     echo "Full log: $logfile"
   else
