@@ -357,3 +357,24 @@ _skip_unless_windows() {
   [ "$(git -C "${TEST_TMPDIR}/wt-remote" rev-parse HEAD)" = "${remote_sha}" ]
   [ "$(git -C "${TEST_TMPDIR}/wt-remote" rev-parse --abbrev-ref '@{upstream}')" = "origin/remote-only" ]
 }
+
+# A stacked branch is created from its base, but it is not the base: with git's default
+# branch.autoSetupMerge a remote-tracking start point made the new branch track the base,
+# so a bare `git push`/`git pull` from the stack would have targeted the base's branch.
+@test "add: a new branch from a remote-tracking base does not track that base" {
+  create_bare_remote "${TEST_TMPDIR}/remote.git"
+  git -C "${TEST_REPO_DIR}" remote add origin "${TEST_TMPDIR}/remote.git"
+  git -C "${TEST_REPO_DIR}" push --quiet origin development
+  git -C "${TEST_REPO_DIR}" fetch --quiet origin
+  run run_script worktree_manage.sh add "${TEST_TMPDIR}/wt-stack" stack-tip origin/development --non-interactive
+  [ "${status}" -eq 0 ]
+  [ "$(git -C "${TEST_TMPDIR}/wt-stack" rev-parse HEAD)" = "$(git -C "${TEST_REPO_DIR}" rev-parse origin/development)" ]
+  run ! git -C "${TEST_TMPDIR}/wt-stack" rev-parse --abbrev-ref '@{upstream}'
+}
+
+@test "add: a new branch from a local base does not track it, even with autoSetupMerge=always" {
+  git -C "${TEST_REPO_DIR}" config branch.autoSetupMerge always
+  run run_script worktree_manage.sh add "${TEST_TMPDIR}/wt-local-stack" stack-local development --non-interactive
+  [ "${status}" -eq 0 ]
+  run ! git -C "${TEST_TMPDIR}/wt-local-stack" rev-parse --abbrev-ref '@{upstream}'
+}
