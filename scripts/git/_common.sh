@@ -791,6 +791,36 @@ cgw_rebase_in_progress() {
   return 1
 }
 
+# cgw_run_local_hook <repo-root> <hook-name> [hook args...] — run the project-local
+# .githooks/<hook-name>.local extension, if there is one, and propagate its failure.
+#
+# .githooks/ is per-clone and git-ignored in some installs, so a linked worktree may have no
+# copy: fall back to the main worktree's, as the hooks already do for the CGW tooling. The
+# fallback is skipped when the main worktree's path cannot be resolved, so a failed
+# `git worktree list` never produces a filesystem-root path like /.githooks/<hook>.local.
+# stdin and the hook arguments reach the extension unchanged (pre-push pipes its ref list in).
+#
+# Returns 0 when there is no extension or it succeeds, 1 when it fails (after printing the
+# error banner the hooks used to print themselves).
+cgw_run_local_hook() {
+  local root="$1" name="$2" hook main_wt
+  shift 2
+  hook="${root}/.githooks/${name}.local"
+  if [[ ! -x "${hook}" ]]; then
+    main_wt="$(git worktree list --porcelain 2>/dev/null | head -1)"
+    main_wt="${main_wt#worktree }"
+    [[ -n "${main_wt}" ]] && hook="${main_wt}/.githooks/${name}.local"
+  fi
+  [[ -x "${hook}" ]] || return 0
+  if ! "${hook}" "$@"; then
+    echo "" >&2
+    echo "ERROR [${name}]: .githooks/${name}.local failed." >&2
+    echo "" >&2
+    return 1
+  fi
+  return 0
+}
+
 # ── backup-tag module ──────────────────────────────────────────────────────────
 # Closed registry of CGW ops that create a backup tag before mutating state.
 # To add an op: edit this array AND add a cgw_create_backup_tag call to the script.
