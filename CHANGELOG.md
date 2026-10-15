@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.17.0 (2026-10-13)
+## v0.17.0 (2026-10-15)
 
 > Changes since `v0.16.0`
 
@@ -14,6 +14,11 @@
 - **Self-updating `sync_cgw_tooling.sh`**: Allow `sync_cgw_tooling.sh` to update its own copy during sync while keeping `main "$@"; exit $?` on one line so bash never resumes reading at a stale file offset after in-place replacement.
 - **Remote-only branch tracking in `worktree_manage.sh add`**: Automatically create a local branch tracking `${CGW_REMOTE}/<branch>` when adding a worktree for a branch that exists only on the remote.
 - **Actionable dirty-worktree diagnostic on `worktree_manage.sh remove`**: List blocking modified or untracked files via `git status --porcelain --untracked-files=all` instead of suggesting `--force` (which would discard those files).
+- **Linked-worktree `.githooks/*.local` fallback**: `pre-commit`, `pre-push`, and `pre-rebase` hooks now fall back to the main worktree's `.githooks/<hook>.local` when running inside a linked worktree where `.githooks/` is absent.
+
+### Maintenance
+
+- **Remove retired Charlie CI integration**: Removed `.charlie/`, `.agents/daemons/pr-review/`, and Charlie references across docs, skill references, and `create_pr.sh`.
 
 ## v0.16.0 (2026-10-11)
 
