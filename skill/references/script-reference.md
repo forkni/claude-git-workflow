@@ -466,7 +466,7 @@ Always protected, regardless of `CGW_TARGET_BRANCH`: `main`, `master`, the repo'
 | Subcommand | Purpose |
 |------------|---------|
 | `list` | All worktrees via `git worktree list --porcelain` |
-| `add <path> [<branch> [<base>]]` | Add linked worktree; creates branch with `-b` if new (from `<base>`, default HEAD; `--base <ref>` is the flag form; a base for an existing branch is refused); auto-links CGW tooling |
+| `add <path> [<branch> [<base>]]` | Add linked worktree; creates branch with `-b` if new (from `<base>`, default HEAD, with no upstream until first push; it tracks `<remote>/<branch>` instead when only the remote has the branch or `<base>` is that ref; `--base <ref>` is the flag form; a base for an existing branch is refused); auto-links CGW tooling |
 | `link [<path>]` | Write `scripts/git` shims that forward to the main worktree's scripts (default: current dir); migrates legacy links |
 | `remove [--execute] <path>` | Unlink any legacy CGW tooling link, then remove worktree (dry-run default) |
 | `prune [--execute]` | Remove stale admin files for missing paths (dry-run default) |

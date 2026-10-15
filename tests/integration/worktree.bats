@@ -378,3 +378,22 @@ _skip_unless_windows() {
   [ "${status}" -eq 0 ]
   run ! git -C "${TEST_TMPDIR}/wt-local-stack" rev-parse --abbrev-ref '@{upstream}'
 }
+
+@test "add: a new branch from the default HEAD does not track the current branch, even with autoSetupMerge=always" {
+  git -C "${TEST_REPO_DIR}" config branch.autoSetupMerge always
+  run run_script worktree_manage.sh add "${TEST_TMPDIR}/wt-head-stack" stack-head --non-interactive
+  [ "${status}" -eq 0 ]
+  [ "$(git -C "${TEST_TMPDIR}/wt-head-stack" rev-parse HEAD)" = "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" ]
+  run ! git -C "${TEST_TMPDIR}/wt-head-stack" rev-parse --abbrev-ref '@{upstream}'
+}
+
+@test "add: a base that is the branch's own remote counterpart still tracks it" {
+  create_bare_remote "${TEST_TMPDIR}/remote.git"
+  git -C "${TEST_REPO_DIR}" remote add origin "${TEST_TMPDIR}/remote.git"
+  git -C "${TEST_REPO_DIR}" push --quiet origin development:refs/heads/feat-x
+  git -C "${TEST_REPO_DIR}" fetch --quiet origin
+  run run_script worktree_manage.sh add "${TEST_TMPDIR}/wt-own" feat-x origin/feat-x --non-interactive
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"tracking origin/feat-x"* ]]
+  [ "$(git -C "${TEST_TMPDIR}/wt-own" rev-parse --abbrev-ref '@{upstream}')" = "origin/feat-x" ]
+}
