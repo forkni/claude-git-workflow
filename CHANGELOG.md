@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.18.0 (2026-10-15)
+
+> Changes since `v0.17.0`
+
+### New Features
+
+- **Stacked-PR and local-work guards in `merge_pr.sh` (#44)**: Before merging, `merge_pr.sh` queries open PRs targeting the head branch (`--retarget-all` retargets every stacked PR automatically; `--delete-branch` is refused if any stacked PR is not covered by `--retarget` or if the list cannot be parsed, with CRLF stripped from `gh pr list` output on Windows). Also refuses to merge when a local checkout of the head or base branch has uncommitted changes or unpushed commits (warn-only if `git ls-remote` returns no remote head; override with `--allow-local-changes`).
+- **Opt-in explicit staging in `commit_enhanced.sh` (#44)**: Added `CGW_REQUIRE_EXPLICIT_STAGING=1` (default `0`) to refuse non-interactive auto-staging of all tracked modifications unless `--only`, `--staged-only`, or `--all` is passed.
+
+### Refactoring
+
+- **Shared `.local` hook runner (#43)**: Extracted `cgw_run_local_hook` into `scripts/git/_common.sh` (with a guard for an empty main-worktree path) to deduplicate `.githooks/<hook>.local` discovery and linked-worktree fallback across `pre-commit`, `pre-push`, and `pre-rebase`, accompanied by unit and integration tests.
+
 ## v0.17.0 (2026-10-15)
 
 > Changes since `v0.16.0`
