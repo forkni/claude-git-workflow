@@ -397,6 +397,7 @@ _commit_on_current_branch() {
   run _run_push "--skip-lint"
   [ "${status}" -eq 0 ]
   [[ "${output}" == *"tracks origin/feature/other"* ]]
+  [[ "${output}" == *"git branch --set-upstream-to=origin/feature/renamed feature/renamed"* ]]
   [ "$(git -C "${TEST_REPO_DIR}" rev-parse --abbrev-ref 'feature/renamed@{u}')" = "origin/feature/other" ]
 }
 
