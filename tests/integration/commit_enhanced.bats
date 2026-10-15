@@ -209,6 +209,65 @@ _setup_uu_conflict() {
   [ "${status}" -eq 0 ]
 }
 
+# ── CGW_REQUIRE_EXPLICIT_STAGING ──────────────────────────────────────────────
+
+@test "CGW_REQUIRE_EXPLICIT_STAGING=1 refuses to auto-stage and leaves HEAD unchanged" {
+  echo "initial" > "${TEST_REPO_DIR}/tracked.txt"
+  git -C "${TEST_REPO_DIR}" add tracked.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add tracked"
+  echo "modified" > "${TEST_REPO_DIR}/tracked.txt"
+  local before
+  before=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+  export CGW_REQUIRE_EXPLICIT_STAGING=1
+  run _run_commit "--skip-lint \"feat: would auto-stage\""
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"refusing to auto-stage"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "${before}" ]
+  [ -z "$(git -C "${TEST_REPO_DIR}" diff --cached --name-only)" ]
+}
+
+@test "CGW_REQUIRE_EXPLICIT_STAGING=1 still commits with --all" {
+  echo "initial" > "${TEST_REPO_DIR}/tracked.txt"
+  git -C "${TEST_REPO_DIR}" add tracked.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add tracked"
+  echo "modified" > "${TEST_REPO_DIR}/tracked.txt"
+  export CGW_REQUIRE_EXPLICIT_STAGING=1
+  run _run_commit "--skip-lint --all \"feat: explicit bulk commit\""
+  [ "${status}" -eq 0 ]
+  git -C "${TEST_REPO_DIR}" show --name-only --pretty=format: HEAD | grep -q "^tracked.txt$"
+}
+
+@test "CGW_REQUIRE_EXPLICIT_STAGING=1 still commits with --only" {
+  echo "a v1" > "${TEST_REPO_DIR}/file_a.txt"
+  echo "b v1" > "${TEST_REPO_DIR}/file_b.txt"
+  git -C "${TEST_REPO_DIR}" add file_a.txt file_b.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add both files"
+  echo "a v2" > "${TEST_REPO_DIR}/file_a.txt"
+  echo "b v2" > "${TEST_REPO_DIR}/file_b.txt"
+  export CGW_REQUIRE_EXPLICIT_STAGING=1
+  run _run_commit "--skip-lint --only file_a.txt \"feat: only file_a\""
+  [ "${status}" -eq 0 ]
+  changed_files=$(git -C "${TEST_REPO_DIR}" show --name-only --pretty=format: HEAD | grep -v '^$')
+  [[ "${changed_files}" == *"file_a.txt"* ]]
+  [[ "${changed_files}" != *"file_b.txt"* ]]
+}
+
+@test "CGW_REQUIRE_EXPLICIT_STAGING=1 commits pre-staged files and leaves the rest" {
+  echo "a v1" > "${TEST_REPO_DIR}/file_a.txt"
+  echo "b v1" > "${TEST_REPO_DIR}/file_b.txt"
+  git -C "${TEST_REPO_DIR}" add file_a.txt file_b.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add both files"
+  echo "a v2" > "${TEST_REPO_DIR}/file_a.txt"
+  echo "b v2" > "${TEST_REPO_DIR}/file_b.txt"
+  git -C "${TEST_REPO_DIR}" add file_a.txt
+  export CGW_REQUIRE_EXPLICIT_STAGING=1
+  run _run_commit "--skip-lint \"feat: pre-staged file_a\""
+  [ "${status}" -eq 0 ]
+  changed_files=$(git -C "${TEST_REPO_DIR}" show --name-only --pretty=format: HEAD | grep -v '^$')
+  [[ "${changed_files}" == *"file_a.txt"* ]]
+  [[ "${changed_files}" != *"file_b.txt"* ]]
+}
+
 # ── Safe default: pre-staged files are respected ──────────────────────────────
 
 @test "pre-staged files only: unstaged changes do NOT get bundled (safe default)" {

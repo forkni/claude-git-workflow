@@ -243,6 +243,16 @@ CGW_LINT_EXTENSIONS="*.py"
 CGW_ALLOW_STAGED_DIVERGENCE="0"
 
 # ============================================================================
+# EXPLICIT STAGING (commit_enhanced.sh)
+# ============================================================================
+# With nothing pre-staged, a non-interactive commit stages every tracked change
+# (`git add -u`). In a checkout shared by several agents that sweeps other
+# sessions' edits into this commit. 1 = refuse instead: name the paths with
+# --only, pre-stage and pass --staged-only, or pass --all explicitly.
+# Interactive runs still prompt. 0 = auto-stage (default).
+CGW_REQUIRE_EXPLICIT_STAGING="0"
+
+# ============================================================================
 # COMMIT SUBJECT LENGTH (commit_enhanced.sh)
 # ============================================================================
 # Pro Git's "Commit Guidelines" recommend keeping the subject line (the part

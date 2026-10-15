@@ -139,6 +139,8 @@ EOF
 #                         MOCK_GH_CHECKS_JSON_AFTER / MOCK_GH_CHECKS_JSON_LATER switch
 #   - `gh pr view --json headRepository,headRepositoryOwner` → MOCK_GH_PR_HEADREPOSITORY_HEADREPOSITORYOWNER
 #                         (owner/name of the PR's head repo; default forkni/claude-git-workflow)
+#   - `gh pr list ...`  → prints MOCK_GH_PR_LIST_STACKED (printf '%b': post-jq PR numbers,
+#                         `\n`-separated; default none); exits $MOCK_GH_PR_LIST_EXIT (default 0)
 #   - All calls are logged to $MOCK_BIN_DIR/gh.log
 install_mock_gh() {
   local auth_exit="${MOCK_GH_AUTH_EXIT:-0}"
@@ -220,6 +222,10 @@ fi
 if [[ "\$1" == "pr" && "\$2" == "merge" ]]; then
   : >"${MOCK_BIN_DIR}/merged.\$3"
   exit \${MOCK_GH_MERGE_EXIT:-0}
+fi
+if [[ "\$1" == "pr" && "\$2" == "list" ]]; then
+  [[ -n "\${MOCK_GH_PR_LIST_STACKED:-}" ]] && printf '%b\n' "\$MOCK_GH_PR_LIST_STACKED"
+  exit \${MOCK_GH_PR_LIST_EXIT:-0}
 fi
 exit 0
 EOF
