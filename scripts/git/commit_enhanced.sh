@@ -285,6 +285,7 @@ main() {
         echo "  2. Nothing pre-staged            -> auto-stages all tracked changes"
         echo "  3. --only <path>                 -> resets index, stages only listed paths"
         echo "  4. --all                         -> always bulk-stage (old default)"
+        echo "  With CGW_REQUIRE_EXPLICIT_STAGING=1, case 2 refuses: use --only, --staged-only or --all"
         echo ""
         echo "Commit message format: <type>: <message>"
         echo "  Standard types: feat fix docs chore test refactor style perf"
@@ -549,6 +550,18 @@ main() {
     echo "Unstaged changes detected:"
     git diff --name-status
     echo ""
+
+    # CGW_REQUIRE_EXPLICIT_STAGING=1: an unattended run never sweeps every tracked change into
+    # the commit -- in a shared checkout that picks up other sessions' edits (Pro Git p.37-38:
+    # `commit -a` stages everything tracked). The caller names the paths or passes --all.
+    if [[ "${CGW_REQUIRE_EXPLICIT_STAGING:-0}" == "1" && ${non_interactive} -eq 1 && ${all_flag} -eq 0 ]]; then
+      echo "[X] CGW_REQUIRE_EXPLICIT_STAGING=1: refusing to auto-stage all tracked changes" >&2
+      echo "    Choose what goes into this commit:" >&2
+      echo "      --only <path> (repeatable)          stage exactly these paths" >&2
+      echo "      git add <paths> && --staged-only    commit what you staged" >&2
+      echo "      --all                               stage every tracked change (explicit)" >&2
+      exit 1
+    fi
 
     if cgw_confirm "Stage all tracked changes?" --non-interactive accept; then
       git add -u

@@ -459,3 +459,155 @@ _push_feature_head() {
   [[ "${output}" == *"treating as no CI"* ]]
   grep -q -- "pr merge 42" "${GH_LOG}"
 }
+
+# ── stacked-PR guard: --delete-branch / --retarget-all ────────────────────────
+
+@test "--delete-branch is refused while an open PR is stacked on the head and not retargeted" {
+  install_mock_gh
+  export MOCK_GH_PR_42_HEADREFNAME=feature-a
+  export MOCK_GH_PR_LIST_STACKED="43"
+  run _run_merge_pr 42 --delete-branch
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Open PR(s) #43 are based on feature-a"* ]]
+  run ! grep -q -- "pr merge" "${GH_LOG}"
+  run ! grep -q -- "api --method DELETE" "${GH_LOG}"
+}
+
+@test "--retarget-all retargets every stacked PR, then deletes the head branch" {
+  install_mock_gh
+  export MOCK_GH_PR_42_HEADREFNAME=feature-a
+  export MOCK_GH_PR_43_BASEREFNAME=feature-a
+  export MOCK_GH_PR_44_BASEREFNAME=feature-a
+  export MOCK_GH_PR_LIST_STACKED="43\n44"
+  run _run_merge_pr 42 --retarget-all --delete-branch
+  [ "${status}" -eq 0 ]
+  grep -q -- "pr list --repo forkni/claude-git-workflow --base feature-a --state open" "${GH_LOG}"
+  grep -q -- "pr edit 43 .*--base main" "${GH_LOG}"
+  grep -q -- "pr edit 44 .*--base main" "${GH_LOG}"
+  grep -q -- "api --method DELETE repos/forkni/claude-git-workflow/git/refs/heads/feature-a" "${GH_LOG}"
+}
+
+@test "--retarget M plus --retarget-all retargets M once" {
+  install_mock_gh
+  export MOCK_GH_PR_42_HEADREFNAME=feature-a
+  export MOCK_GH_PR_43_BASEREFNAME=feature-a
+  export MOCK_GH_PR_LIST_STACKED="43"
+  run _run_merge_pr 42 --retarget 43 --retarget-all --delete-branch
+  [ "${status}" -eq 0 ]
+  [ "$(grep -c -- "pr edit 43" "${GH_LOG}")" -eq 1 ]
+}
+
+@test "an uncovered stacked PR without --delete-branch only warns and merges" {
+  install_mock_gh
+  export MOCK_GH_PR_42_HEADREFNAME=feature-a
+  export MOCK_GH_PR_LIST_STACKED="43"
+  run _run_merge_pr 42
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"[WARN] Open PR(s) #43 stay based on feature-a"* ]]
+  grep -q -- "pr merge 42" "${GH_LOG}"
+}
+
+@test "a failed stacked-PR listing refuses --delete-branch (fail closed)" {
+  install_mock_gh
+  export MOCK_GH_PR_42_HEADREFNAME=feature-a
+  export MOCK_GH_PR_LIST_EXIT=1
+  run _run_merge_pr 42 --delete-branch
+  [ "${status}" -eq 1 ]
+  run ! grep -q -- "pr merge" "${GH_LOG}"
+}
+
+@test "CRLF stacked-PR output (Windows gh.exe) still refuses --delete-branch" {
+  install_mock_gh
+  export MOCK_GH_PR_42_HEADREFNAME=feature-a
+  export MOCK_GH_PR_LIST_STACKED="43\r\n44\r"
+  run _run_merge_pr 42 --delete-branch
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Open PR(s) #43 44 are based on feature-a"* ]]
+  run ! grep -q -- "pr merge" "${GH_LOG}"
+}
+
+@test "a non-numeric stacked-PR listing line refuses --delete-branch (fail closed)" {
+  install_mock_gh
+  export MOCK_GH_PR_42_HEADREFNAME=feature-a
+  export MOCK_GH_PR_LIST_STACKED="43\nnot-a-number"
+  run _run_merge_pr 42 --delete-branch
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Could not list open PRs"* ]]
+  run ! grep -q -- "pr merge" "${GH_LOG}"
+}
+
+@test "a local head branch missing on the remote warns that unpushed commits were not checked" {
+  install_mock_gh
+  export MOCK_GH_PR_42_HEADREFNAME=feature-a
+  git -C "${TEST_REPO_DIR}" branch feature-a
+  run _run_merge_pr 42 --dry-run
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Could not read origin/feature-a; unpushed local commits not checked"* ]]
+}
+
+@test "a failed stacked-PR listing without --delete-branch warns and merges" {
+  install_mock_gh
+  export MOCK_GH_PR_LIST_EXIT=1
+  run _run_merge_pr 42
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"stacked PRs not checked"* ]]
+  grep -q -- "pr merge 42" "${GH_LOG}"
+}
+
+# ── local work guard ──────────────────────────────────────────────────────────
+
+@test "uncommitted changes on the base-branch checkout refuse the merge" {
+  install_mock_gh
+  export MOCK_GH_PR_42_BASEREFNAME=development
+  echo "dirty" >>"${TEST_REPO_DIR}/README.md"
+  run _run_merge_pr 42
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"has uncommitted changes"* ]]
+  [[ "${output}" == *"README.md"* ]]
+  run ! grep -q -- "pr merge" "${GH_LOG}"
+}
+
+@test "--allow-local-changes merges despite a dirty base-branch checkout" {
+  install_mock_gh
+  export MOCK_GH_PR_42_BASEREFNAME=development
+  echo "dirty" >>"${TEST_REPO_DIR}/README.md"
+  run _run_merge_pr 42 --allow-local-changes
+  [ "${status}" -eq 0 ]
+  grep -q -- "pr merge 42" "${GH_LOG}"
+}
+
+@test "a dirty checkout of an unrelated branch does not block the merge" {
+  install_mock_gh
+  echo "dirty" >>"${TEST_REPO_DIR}/README.md"
+  run _run_merge_pr 42
+  [ "${status}" -eq 0 ]
+  grep -q -- "pr merge 42" "${GH_LOG}"
+}
+
+@test "unpushed commits on the local head branch refuse the merge" {
+  install_mock_gh
+  export MOCK_GH_PR_42_HEADREFNAME=feature-a
+  git -C "${TEST_REPO_DIR}" branch feature-a
+  git -C "${TEST_REPO_DIR}" push --quiet origin feature-a
+  git -C "${TEST_REPO_DIR}" checkout --quiet feature-a
+  echo "local only" >"${TEST_REPO_DIR}/local.txt"
+  git -C "${TEST_REPO_DIR}" add local.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: not pushed"
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  run _run_merge_pr 42
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"has commits not on origin/feature-a"* ]]
+  run ! grep -q -- "pr merge" "${GH_LOG}"
+}
+
+@test "a local head branch that matches the remote passes the guard" {
+  install_mock_gh
+  export MOCK_GH_PR_42_HEADREFNAME=feature-a
+  git -C "${TEST_REPO_DIR}" branch feature-a
+  git -C "${TEST_REPO_DIR}" push --quiet origin feature-a
+  MOCK_GH_PR_42_HEADREFOID=$(git -C "${TEST_REPO_DIR}" rev-parse feature-a)
+  export MOCK_GH_PR_42_HEADREFOID
+  run _run_merge_pr 42
+  [ "${status}" -eq 0 ]
+  grep -q -- "pr merge 42" "${GH_LOG}"
+}

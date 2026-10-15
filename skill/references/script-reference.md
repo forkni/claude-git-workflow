@@ -124,13 +124,13 @@ Passing a message still works and overrides git's prepared one.
 | Pre-staged? | Unstaged? | Action |
 |:-:|:-:|---|
 | No | No | Exit — nothing to commit |
-| No | Yes | Auto-stage all tracked changes (`git add -u`) |
+| No | Yes | Auto-stage all tracked changes (`git add -u`); refused when `CGW_REQUIRE_EXPLICIT_STAGING=1` |
 | Yes | No | Commit staged files as-is |
 | **Yes** | **Yes** | **Commit pre-staged ONLY** — warns about excluded changes |
 
 Override with `--all` to always bulk-stage, or `--only <path>` to explicitly select files (resets index first).
 
-**Environment**: `CGW_ALL=1` mirrors `--all`.
+**Environment**: `CGW_ALL=1` mirrors `--all`. `CGW_REQUIRE_EXPLICIT_STAGING=1` (default `0`) makes the non-interactive auto-stage row exit `1` instead, so a shared checkout never commits another session's edits: stage with `--only`, pre-stage plus `--staged-only`, or pass `--all`.
 
 ---
 
@@ -616,6 +616,7 @@ Wraps `gh pr checkout`. Requires `gh` CLI authenticated (`gh auth login`). Refus
 ```bash
 ./scripts/git/merge_pr.sh 42
 ./scripts/git/merge_pr.sh 42 --retarget 43 --retarget 44
+./scripts/git/merge_pr.sh 42 --retarget-all --delete-branch   # retarget every open PR stacked on #42, then delete its head
 ./scripts/git/merge_pr.sh 42 --dry-run
 ./scripts/git/merge_pr.sh 42 --wait-checks    # wait for pending PR checks instead of refusing
 ./scripts/git/merge_pr.sh 42 --squash --allow-non-merge
@@ -627,7 +628,9 @@ Wraps `gh pr checkout`. Requires `gh` CLI authenticated (`gh auth login`). Refus
 | `--squash` / `--rebase` | Flatten instead of a merge commit; refused non-interactively without `--allow-non-merge` (the PR can no longer be reverted as one unit) |
 | `--allow-non-merge` | Acknowledge the flattening |
 | `--retarget <M>` | After the merge, `gh pr edit <M> --base <this PR's base>`; M's base must equal this PR's head (checked before merging). Repeatable |
-| `--delete-branch` | Delete the head branch after merge and retarget (never by default) |
+| `--retarget-all` | Retarget every open PR whose base is this PR's head (`gh pr list --base <head>`); combines with `--retarget` without duplicates |
+| `--delete-branch` | Delete the head branch after merge and retarget (never by default). Refused before merging while an open PR based on the head is not covered by `--retarget`/`--retarget-all`, or when that list can't be read: GitHub closes PRs whose base branch is deleted |
+| `--allow-local-changes` | Merge although the local head/base checkout has uncommitted changes or the local head branch has unpushed commits (refused by default: the remote merge would leave them out) |
 | `--wait-checks` | PR checks are required to be green (`gh pr checks`). Waits for the PR head to match the pushed branch (`CGW_PR_HEAD_SYNC_SECONDS`), for checks to appear on it (`CGW_PR_CHECKS_APPEAR_SECONDS`), and for pending ones (`--watch --fail-fast`) instead of refusing |
 | `--skip-checks` | Merge without the green-checks gate (logged as a warning; not recommended) |
 | `--dry-run` | Validate and print the `gh` commands without merging |

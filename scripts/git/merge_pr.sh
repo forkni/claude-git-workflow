@@ -20,7 +20,12 @@
 #   --allow-non-merge  Acknowledge that --squash/--rebase make the PR non-revertable as a unit
 #   --retarget <M>     After merging, retarget stacked PR #M (whose base is this PR's head
 #                      branch) onto this PR's base branch. Repeatable.
-#   --delete-branch    Delete this PR's head branch after merge and retarget (never by default)
+#   --retarget-all     Retarget every open PR whose base is this PR's head branch
+#   --delete-branch    Delete this PR's head branch after merge and retarget (never by default).
+#                      Refused while an open PR based on the head branch is not retargeted:
+#                      deleting a PR's base branch through the API closes that PR.
+#   --allow-local-changes  Merge although the local checkout of the head or base branch has
+#                      uncommitted changes, or the local head branch has unpushed commits
 #   --wait-checks      Wait for the PR head to match the pushed branch, for checks to appear on
 #                      it, and for pending checks (gh pr checks --watch). The merge is pinned to
 #                      the verified head (gh pr merge --match-head-commit).
@@ -51,7 +56,9 @@ main() {
   local method="merge"
   local allow_non_merge=0
   local retarget=()
+  local retarget_all=0
   local delete_branch=0
+  local allow_local=0
   local wait_checks=0
   local skip_checks=0
   local dry_run=0
@@ -75,8 +82,13 @@ main() {
         echo "  --allow-non-merge  Required with --squash/--rebase when non-interactive"
         echo "  --retarget <M>     After merging, retarget stacked PR #M onto this PR's base"
         echo "                     branch (its base must be this PR's head). Repeatable."
+        echo "  --retarget-all     Retarget every open PR based on this PR's head branch"
         echo "  --delete-branch    Delete the head branch after merge and retarget"
-        echo "                     (never deleted by default)"
+        echo "                     (never deleted by default; refused while an open PR is still"
+        echo "                     based on it -- deleting a PR's base closes that PR)"
+        echo "  --allow-local-changes"
+        echo "                     Merge although the head/base checkout has uncommitted changes"
+        echo "                     or the local head branch has unpushed commits"
         echo "  --wait-checks      Wait for the PR head to catch up with the pushed branch, for checks"
         echo "                     to appear, and for pending checks, instead of refusing"
         echo "  --skip-checks      Merge without requiring green PR checks (not recommended)"
@@ -87,6 +99,7 @@ main() {
         echo "Examples:"
         echo "  ./scripts/git/merge_pr.sh 42"
         echo "  ./scripts/git/merge_pr.sh 42 --retarget 43 --retarget 44"
+        echo "  ./scripts/git/merge_pr.sh 42 --retarget-all --delete-branch"
         echo "  ./scripts/git/merge_pr.sh 42 --dry-run"
         echo ""
         echo "Notes:"
@@ -129,7 +142,9 @@ main() {
         retarget+=("${2}")
         shift
         ;;
+      --retarget-all) retarget_all=1 ;;
       --delete-branch) delete_branch=1 ;;
+      --allow-local-changes) allow_local=1 ;;
       --wait-checks) wait_checks=1 ;;
       --skip-checks) skip_checks=1 ;;
       --dry-run) dry_run=1 ;;
@@ -236,6 +251,45 @@ main() {
   fi
   echo "[OK] PR #${pr_number}: ${head_branch} -> ${base_branch} (OPEN)" | tee -a "${logfile}"
 
+  # Open PRs based on this PR's head branch. Deleting that branch through the API closes every
+  # one of them, so each must be retargeted before --delete-branch (Pro Git p.98-99: move the
+  # dependent branch before deleting its base). An unreadable list fails closed only where it
+  # matters (--delete-branch / --retarget-all); otherwise it is a warning. A line that is not a
+  # PR number counts as unreadable too: a silently dropped entry would let --delete-branch pass.
+  local stacked=() stacked_out="" stacked_known=0
+  if stacked_out=$(gh pr list --repo "${pr_repo}" --base "${head_branch}" --state open \
+    --json number --jq '.[].number' 2>>"${logfile}" | tr -d '\r'); then
+    stacked_known=1
+    while IFS= read -r m; do
+      [[ -z "${m}" ]] && continue
+      if [[ ! "${m}" =~ ^[0-9]+$ ]]; then
+        stacked_known=0
+        break
+      fi
+      [[ "${m}" != "${pr_number}" ]] && stacked+=("${m}")
+    done <<<"${stacked_out}"
+  fi
+  if [[ ${stacked_known} -eq 0 ]]; then
+    stacked=()
+    if [[ ${delete_branch} -eq 1 || ${retarget_all} -eq 1 ]]; then
+      err_tee "[ERROR] Could not list open PRs based on ${head_branch} -- refusing --delete-branch/--retarget-all"
+      err_tee "[ERROR] (deleting a PR's base branch closes that PR; check with: gh pr list --base ${head_branch})"
+      log_section_end "VALIDATE PR" "${logfile}" "1"
+      exit 1
+    fi
+    echo "[WARN] Could not list open PRs based on ${head_branch}; stacked PRs not checked" | tee -a "${logfile}"
+  fi
+
+  local s r found
+  if [[ ${retarget_all} -eq 1 ]]; then
+    for s in "${stacked[@]}"; do
+      found=0
+      for r in "${retarget[@]}"; do [[ "${r}" == "${s}" ]] && found=1; done
+      [[ ${found} -eq 0 ]] && retarget+=("${s}")
+    done
+    [[ ${#stacked[@]} -eq 0 ]] && echo "[OK] --retarget-all: no open PR is based on ${head_branch}" | tee -a "${logfile}"
+  fi
+
   for m in "${retarget[@]}"; do
     local m_state m_base
     m_state=$(_pr_view "${m}" state .state) || m_state=""
@@ -252,6 +306,62 @@ main() {
     fi
     echo "[OK] Stacked PR #${m}: base ${m_base} -> will retarget to ${base_branch}" | tee -a "${logfile}"
   done
+
+  local uncovered=()
+  for s in "${stacked[@]}"; do
+    found=0
+    for r in "${retarget[@]}"; do [[ "${r}" == "${s}" ]] && found=1; done
+    [[ ${found} -eq 0 ]] && uncovered+=("${s}")
+  done
+  if [[ ${#uncovered[@]} -gt 0 ]]; then
+    if [[ ${delete_branch} -eq 1 ]]; then
+      err_tee "[ERROR] Open PR(s) #${uncovered[*]} are based on ${head_branch}; --delete-branch would close them"
+      err_tee "[ERROR] Add --retarget <N> for each, or --retarget-all, or drop --delete-branch"
+      log_section_end "VALIDATE PR" "${logfile}" "1"
+      exit 1
+    fi
+    echo "[WARN] Open PR(s) #${uncovered[*]} stay based on ${head_branch} after the merge" | tee -a "${logfile}"
+    echo "       Retarget them with --retarget <N> or --retarget-all" | tee -a "${logfile}"
+  elif [[ ${stacked_known} -eq 1 && ${#stacked[@]} -gt 0 ]]; then
+    echo "[OK] Every open PR based on ${head_branch} will be retargeted" | tee -a "${logfile}"
+  fi
+
+  # Local work guard: the merge happens on GitHub, so uncommitted changes or unpushed commits
+  # on the local head branch are silently left out of it -- and --delete-branch then strands
+  # them. A dirty checkout of the base branch would also block the pull that follows.
+  # (Pro Git p.272: merge from a clean working directory.)
+  if [[ ${allow_local} -eq 0 ]]; then
+    local cur_branch local_head remote_head
+    cur_branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null) || cur_branch=""
+    if [[ -n "${cur_branch}" && ("${cur_branch}" == "${head_branch}" || "${cur_branch}" == "${base_branch}") ]] &&
+      ! cgw_is_tree_clean; then
+      err_tee "[ERROR] The checkout of ${cur_branch} has uncommitted changes:"
+      cgw_tree_dirty_paths | head -n 20 | sed 's/^/          /' | tee -a "${logfile}" >&2
+      err_tee "[ERROR] Commit and push them (or stash them), or pass --allow-local-changes"
+      log_section_end "VALIDATE PR" "${logfile}" "1"
+      exit 1
+    fi
+    local_head=$(git rev-parse --verify --quiet "refs/heads/${head_branch}^{commit}") || local_head=""
+    if [[ -n "${local_head}" ]]; then
+      remote_head=$(git ls-remote "${CGW_REMOTE}" "refs/heads/${head_branch}" 2>>"${logfile}" | awk 'NR==1 {print $1}')
+      if [[ -n "${remote_head}" && "${local_head}" != "${remote_head}" ]] &&
+        ! git cat-file -e "${remote_head}^{commit}" 2>/dev/null; then
+        git fetch --quiet "${CGW_REMOTE}" "refs/heads/${head_branch}" >>"${logfile}" 2>&1 || true
+      fi
+      if [[ -z "${remote_head}" ]]; then
+        echo "[WARN] Could not read ${CGW_REMOTE}/${head_branch}; unpushed local commits not checked" | tee -a "${logfile}"
+      elif [[ "${local_head}" != "${remote_head}" ]] &&
+        ! git cat-file -e "${remote_head}^{commit}" 2>/dev/null; then
+        echo "[WARN] Could not fetch ${CGW_REMOTE}/${head_branch}; unpushed local commits not checked" | tee -a "${logfile}"
+      elif [[ "${local_head}" != "${remote_head}" ]] &&
+        ! git merge-base --is-ancestor "${local_head}" "${remote_head}" 2>/dev/null; then
+        err_tee "[ERROR] Local ${head_branch} (${local_head:0:7}) has commits not on ${CGW_REMOTE}/${head_branch} (${remote_head:0:7})"
+        err_tee "[ERROR] They would be left out of the merge. Push them first, or pass --allow-local-changes"
+        log_section_end "VALIDATE PR" "${logfile}" "1"
+        exit 1
+      fi
+    fi
+  fi
 
   if [[ ${delete_branch} -eq 1 && ! "${head_branch}" =~ ^[A-Za-z0-9._/-]+$ ]]; then
     err_tee "[ERROR] Refusing to delete head branch with unusual name: ${head_branch}"

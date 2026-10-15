@@ -3436,3 +3436,64 @@ _scratch_commit() {
   [[ "${last_action}" == *"cgw: commit_provenance_test"* ]]
 }
 
+# ── cgw_run_local_hook ─────────────────────────────────────────────────────────
+
+# Write an executable .githooks/<name>.local under <root> that records its args and stdin.
+_make_local_hook() {
+  local root="$1" name="$2" rc="${3:-0}"
+  mkdir -p "${root}/.githooks"
+  printf '#!/usr/bin/env bash\necho "args=$*" >"%s/hook_ran.txt"\ncat >>"%s/hook_ran.txt"\nexit %s\n' \
+    "${root}" "${root}" "${rc}" >"${root}/.githooks/${name}.local"
+  chmod +x "${root}/.githooks/${name}.local"
+}
+
+@test "cgw_run_local_hook: returns 0 and prints nothing when no extension exists" {
+  _pushed_scratch_repo
+  cd "${PROJECT_ROOT}"
+  run cgw_run_local_hook "${PROJECT_ROOT}" pre-commit
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "cgw_run_local_hook: runs the extension with its arguments and stdin" {
+  _pushed_scratch_repo
+  _make_local_hook "${PROJECT_ROOT}" pre-push
+  cd "${PROJECT_ROOT}"
+  run bash -c "source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'; printf 'refs/heads/x abc\n' | cgw_run_local_hook '${PROJECT_ROOT}' pre-push origin url"
+  [ "$status" -eq 0 ]
+  grep -qx 'args=origin url' "${PROJECT_ROOT}/hook_ran.txt"
+  grep -qx 'refs/heads/x abc' "${PROJECT_ROOT}/hook_ran.txt"
+}
+
+@test "cgw_run_local_hook: returns 1 with the error banner when the extension fails" {
+  _pushed_scratch_repo
+  _make_local_hook "${PROJECT_ROOT}" pre-commit 1
+  cd "${PROJECT_ROOT}"
+  run cgw_run_local_hook "${PROJECT_ROOT}" pre-commit </dev/null
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"ERROR [pre-commit]: .githooks/pre-commit.local failed."* ]]
+}
+
+@test "cgw_run_local_hook: falls back to the main worktree's extension from a linked worktree" {
+  _pushed_scratch_repo
+  _make_local_hook "${PROJECT_ROOT}" pre-commit
+  git -C "${PROJECT_ROOT}" worktree add --quiet -b feature/wt "${BATS_TEST_TMPDIR}/wt"
+  [ ! -e "${BATS_TEST_TMPDIR}/wt/.githooks" ]
+  cd "${BATS_TEST_TMPDIR}/wt"
+  run cgw_run_local_hook "${BATS_TEST_TMPDIR}/wt" pre-commit </dev/null
+  [ "$status" -eq 0 ]
+  # The extension ran from the main worktree: its marker is written there.
+  [ -f "${PROJECT_ROOT}/hook_ran.txt" ]
+}
+
+@test "cgw_run_local_hook: returns 0 when the main worktree path cannot be resolved" {
+  # Outside any repository `git worktree list` prints nothing. The guard keeps the fallback from
+  # building /.githooks/pre-commit.local; a root-level hook can't be planted portably to prove
+  # that, so this pins only the no-error, no-output result.
+  mkdir -p "${BATS_TEST_TMPDIR}/norepo"
+  cd "${BATS_TEST_TMPDIR}/norepo"
+  run cgw_run_local_hook "${BATS_TEST_TMPDIR}/norepo" pre-commit </dev/null
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
