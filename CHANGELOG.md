@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.18.2 (2026-10-15)
+
+> Changes since `v0.18.1`
+
+### Bug Fixes
+
+- **Stacked worktrees no longer track their base**: `worktree_manage.sh add <path> <branch> [<base>]` now creates a new branch with `--no-track`, so a branch started from `origin/<base>` (or from any base or HEAD under `branch.autoSetupMerge=always`) has no upstream until its first push instead of silently pointing a bare `git push`/`git pull` at the base's branch. A base that is the branch's own `<remote>/<branch>` still tracks it. Updated `--help`, the header comment, `docs/usage.md` and `skill/references/script-reference.md`.
+- **Upstream mismatch hint in `push_validated.sh`**: when an existing upstream differs from the pushed branch, the `upstream left unchanged` notice is followed (after a successful push only) by the `git branch --set-upstream-to=<remote>/<branch>` command that fixes it.
+
+### Testing
+
+- **Reference-doc coverage check**: `tests/verify_skill_commands.sh` now scans `skill/references/script-reference.md`, and a new section fails when a script has no section there or when a flag listed in its `--help` is missing from that section. Section 2 credits a flag only to the script it follows on a line. The check surfaced and fixed missing `configure.sh` flags (`--claude`, `--antigravity`, `--skip-claude`, `--skip-antigravity`, `--skip-agy-skill`, `--skip-agy-guardrail`) and a missing `sync_cgw_tooling.sh` section.
+
 ## v0.18.1 (2026-10-15)
 
 > Changes since `v0.18.0`
