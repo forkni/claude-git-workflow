@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.18.1 (2026-10-15)
+
+> Changes since `v0.18.0`
+
+### Documentation
+
+- **Accurate `branch_cleanup.sh` flag descriptions**: `--execute` deletes merged local branches only (remote-tracking refs are pruned only with `--remote`), and `--older-than <N>` applies to backup tags only, so it does nothing without `--tags`. Corrected in `skill/references/script-reference.md`, `skill/SKILL.md`, and the script's header and `--help` text; added `--execute --remote` and `--tags --older-than` examples. No behavior change.
+
 ## v0.18.0 (2026-10-15)
 
 > Changes since `v0.17.0`

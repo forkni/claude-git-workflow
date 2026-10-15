@@ -366,19 +366,20 @@ Global flags: `--non-interactive`, `--dry-run`, `--help`. No TTY implies `--non-
 
 ```bash
 ./scripts/git/branch_cleanup.sh                          # dry-run preview (safe default)
-./scripts/git/branch_cleanup.sh --execute                # delete merged branches + prune remote refs
+./scripts/git/branch_cleanup.sh --execute                # delete merged local branches
+./scripts/git/branch_cleanup.sh --execute --remote       # also prune stale remote-tracking refs
 ./scripts/git/branch_cleanup.sh --tags --execute         # also remove old backup tags
-./scripts/git/branch_cleanup.sh --older-than 30 --execute
+./scripts/git/branch_cleanup.sh --tags --older-than 30 --execute   # only backup tags older than 30 days
 ```
 
 | Flag | Purpose |
 |------|---------|
 | *(no flags)* | Dry-run — shows what would be deleted (safe default) |
 | `--dry-run` | Preview only — explicit form of the default |
-| `--execute` | Actually perform deletions |
+| `--execute` | Actually perform deletions (remote pruning also needs `--remote`) |
 | `--remote` | Prune stale remote-tracking refs (`git remote prune`) |
 | `--tags` | Remove old `pre-merge-*`, `pre-cherry-pick-*`, `pre-docs-merge-*`, `pre-bisect-*`, `pre-rebase-*`, `pre-undo-commit-*`, `pre-recover-*` backup tags |
-| `--older-than <N>` | Only target branches/tags older than N days |
+| `--older-than <N>` | With `--tags`: only remove backup tags older than N days (default: 30). Does not affect branches |
 | `--non-interactive` | Skip confirmation prompts |
 
 Always protected, regardless of `CGW_TARGET_BRANCH`: `main`, `master`, the repo's `${CGW_REMOTE}/HEAD` default branch, `CGW_SOURCE_BRANCH`, `CGW_PROTECTED_BRANCHES`, the current branch, and any branch checked out in another worktree.

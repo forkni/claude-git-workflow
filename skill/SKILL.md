@@ -557,8 +557,11 @@ every upstream hunk, keep local. Blob hashes and memory of which side is newer d
 # Dry-run preview (safe default — shows what would be deleted):
 ./scripts/git/branch_cleanup.sh
 
-# Execute: delete merged branches + prune stale remote-tracking refs:
+# Execute: delete merged local branches:
 ./scripts/git/branch_cleanup.sh --execute
+
+# Also prune stale remote-tracking refs:
+./scripts/git/branch_cleanup.sh --execute --remote
 
 # Also clean up old backup tags:
 ./scripts/git/branch_cleanup.sh --tags --execute
