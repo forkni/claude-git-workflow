@@ -183,6 +183,7 @@ CGW_SKIP_MD_LINT|0|bool|keep|env
 CGW_SKIP_TYPECHECK|0|bool|keep|env
 CGW_ALL|0|bool|keep|env
 CGW_ALLOW_STAGED_DIVERGENCE|0|bool|keep|conf
+CGW_REQUIRE_EXPLICIT_STAGING|0|bool|fill|conf
 CGW_COMMIT_SUBJECT_SOFT_LEN|50|int|keep|conf
 CGW_COMMIT_SUBJECT_HARD_LEN|72|int|keep|conf
 CGW_ENFORCE_SUBJECT_LENGTH|1|bool|keep|conf
