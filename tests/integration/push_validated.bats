@@ -401,6 +401,23 @@ _commit_on_current_branch() {
   [ "$(git -C "${TEST_REPO_DIR}" rev-parse --abbrev-ref 'feature/renamed@{u}')" = "origin/feature/other" ]
 }
 
+@test "the set-upstream-to hint is not printed when the push fails" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b feature/stacked
+  _commit_on_current_branch "stacked"
+  git -C "${TEST_REPO_DIR}" branch --set-upstream-to=origin/development feature/stacked >/dev/null
+  # A remote that rejects every push, so origin/feature/stacked never comes into being.
+  local remote_dir
+  remote_dir=$(git -C "${TEST_REPO_DIR}" remote get-url origin)
+  mkdir -p "${remote_dir}/hooks"
+  printf '#!/bin/sh\nexit 1\n' >"${remote_dir}/hooks/pre-receive"
+  chmod +x "${remote_dir}/hooks/pre-receive"
+
+  run _run_push "--skip-lint"
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"upstream left unchanged"* ]]
+  [[ "${output}" != *"--set-upstream-to"* ]]
+}
+
 @test "an upstream that already matches stays silent and unchanged" {
   _commit_on_current_branch "plain"
   run _run_push "--skip-lint"

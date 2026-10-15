@@ -372,11 +372,13 @@ main() {
   # First push of a branch: record the upstream so plain `git pull`/`status` work.
   # Only when none is configured -- an existing upstream (even one pointing at a
   # differently named remote branch) is never overwritten.
-  local existing_upstream
+  local existing_upstream upstream_hint=""
   if existing_upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "${target_branch}@{u}" 2>/dev/null); then
     if [[ "${existing_upstream}" != "${CGW_REMOTE}/${target_branch}" ]]; then
       echo "[i] ${target_branch} tracks ${existing_upstream}, not ${CGW_REMOTE}/${target_branch} -- upstream left unchanged" | tee -a "$logfile"
-      echo "    If unintended (e.g. a branch created from its base): git branch --set-upstream-to=${CGW_REMOTE}/${target_branch} ${target_branch}" | tee -a "$logfile"
+      # Shown only after the push succeeds: before that ${CGW_REMOTE}/${target_branch}
+      # may not exist yet, and --set-upstream-to would fail on it.
+      upstream_hint="    If unintended (e.g. a branch created from its base): git branch --set-upstream-to=${CGW_REMOTE}/${target_branch} ${target_branch}"
     fi
   else
     push_flags+=("--set-upstream")
@@ -425,6 +427,7 @@ main() {
     echo "" | tee -a "$logfile"
     echo "  Branch: ${target_branch} -> ${CGW_REMOTE}/${target_branch}" | tee -a "$logfile"
     echo "  Commits pushed: ${ahead}" | tee -a "$logfile"
+    [[ -n "${upstream_hint}" ]] && echo "${upstream_hint}" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
     {
       echo ""
