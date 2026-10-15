@@ -26,9 +26,33 @@ Scans project, generates `.cgw.conf`, installs pre-commit + pre-push hooks, opti
 | `--reconfigure` | Overwrite existing `.cgw.conf` |
 | `--hooks-only` | Refresh only the git hooks, then exit (no `.cgw.conf`/skill/guardrail changes); pair with `--overwrite-hooks` and `--template-dir` |
 | `--skip-hooks` | Don't install git hooks |
-| `--skip-skill` | Don't install Claude Code skill |
+| `--skip-skill` | Don't install skills (skips both Claude and Antigravity) |
+| `--claude` | Explicitly enable Claude Code integration |
+| `--antigravity` | Explicitly enable Antigravity Agents integration |
+| `--skip-claude` | Skip Claude Code integration (skill + guardrail) |
+| `--skip-antigravity` | Skip Antigravity integration (skill + guardrail) |
 | `--skip-cc-guardrail` | Don't install the Claude Code PreToolUse hook |
-| `--global` | Install skill and slash command to `~/.claude/` (all projects) |
+| `--skip-agy-skill` | Don't install the Antigravity skill |
+| `--skip-agy-guardrail` | Don't install the Antigravity PreToolUse hook |
+| `--global` | Install skills globally (`~/.claude/` and `~/.gemini/config/`, all projects) |
+
+**`sync_cgw_tooling.sh`** — Refresh the vendored CGW tooling in a project, as one commit
+
+```bash
+./scripts/git/sync_cgw_tooling.sh --from ~/src/claude-git-workflow   # refresh scripts, skill and command; one commit
+./scripts/git/sync_cgw_tooling.sh --check                            # read-only drift check over the tracked skill/command copies
+```
+
+Never hand-copy the vendored scripts. Refuses to run on a dirty working tree and exits non-zero if the tree is not clean afterwards.
+
+| Flag | Purpose |
+|------|---------|
+| `--from <dir>` | CGW source checkout (default: `$CGW_TEMPLATE_DIR`) |
+| `--extra-skill-dst <dir>` | Also copy `skill/SKILL.md` + `references/*.md` into `<dir>` (repeatable) |
+| `--extra-cmd-dst <file>` | Also write the slash-command skill to `<file>`, links adapted (repeatable) |
+| `--check` | Report drift between the tracked skill/command copies (read-only; add `--from` to also compare against a CGW checkout); exit 1 on drift |
+| `--no-pull` | Skip the `sync_branches.sh` step |
+| `--non-interactive` | Accepted for symmetry; this script never prompts |
 
 **`install_hooks.sh`** — Install git hooks (pre-commit + pre-push + pre-rebase)
 
