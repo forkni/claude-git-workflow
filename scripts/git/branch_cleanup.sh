@@ -21,10 +21,10 @@
 #   CGW_SOURCE_BRANCH      - Source branch (also protected by default)
 # Arguments:
 #   --dry-run          Preview changes without deleting anything (default)
-#   --execute          Actually delete branches and prune refs
+#   --execute          Actually delete (merged branches; refs/tags only with --remote/--tags)
 #   --remote           Also prune stale remote-tracking refs (git remote prune)
 #   --tags             Also clean up old CGW backup tags (all pre-<op>-* families; see CGW_BACKUP_OPS in _common.sh)
-#   --older-than <N>   Only delete backup tags older than N days (default: 30)
+#   --older-than <N>   With --tags: only delete backup tags older than N days (default: 30)
 #   --non-interactive  Skip confirmation prompts
 #   -h, --help         Show help
 # Returns:
@@ -53,10 +53,10 @@ main() {
         echo ""
         echo "Options:"
         echo "  --dry-run          Preview only -- explicit form of the default"
-        echo "  --execute          Delete merged branches and prune (without this, only previews)"
+        echo "  --execute          Delete merged branches (without this, only previews)"
         echo "  --remote           Prune stale remote-tracking refs (git remote prune \${CGW_REMOTE})"
         echo "  --tags             Clean up old CGW backup tags (all pre-<op>-* families; see CGW_BACKUP_OPS in _common.sh)"
-        echo "  --older-than <N>   Only delete backup tags older than N days (default: 30)"
+        echo "  --older-than <N>   With --tags: only delete backup tags older than N days (default: 30)"
         echo "  --non-interactive  Skip confirmation prompts"
         echo "  -h, --help         Show this help"
         echo ""
