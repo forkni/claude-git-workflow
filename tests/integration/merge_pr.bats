@@ -516,6 +516,35 @@ _push_feature_head() {
   run ! grep -q -- "pr merge" "${GH_LOG}"
 }
 
+@test "CRLF stacked-PR output (Windows gh.exe) still refuses --delete-branch" {
+  install_mock_gh
+  export MOCK_GH_PR_42_HEADREFNAME=feature-a
+  export MOCK_GH_PR_LIST_STACKED="43\r\n44\r"
+  run _run_merge_pr 42 --delete-branch
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Open PR(s) #43 44 are based on feature-a"* ]]
+  run ! grep -q -- "pr merge" "${GH_LOG}"
+}
+
+@test "a non-numeric stacked-PR listing line refuses --delete-branch (fail closed)" {
+  install_mock_gh
+  export MOCK_GH_PR_42_HEADREFNAME=feature-a
+  export MOCK_GH_PR_LIST_STACKED="43\nnot-a-number"
+  run _run_merge_pr 42 --delete-branch
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Could not list open PRs"* ]]
+  run ! grep -q -- "pr merge" "${GH_LOG}"
+}
+
+@test "a local head branch missing on the remote warns that unpushed commits were not checked" {
+  install_mock_gh
+  export MOCK_GH_PR_42_HEADREFNAME=feature-a
+  git -C "${TEST_REPO_DIR}" branch feature-a
+  run _run_merge_pr 42 --dry-run
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Could not read origin/feature-a; unpushed local commits not checked"* ]]
+}
+
 @test "a failed stacked-PR listing without --delete-branch warns and merges" {
   install_mock_gh
   export MOCK_GH_PR_LIST_EXIT=1

@@ -254,15 +254,23 @@ main() {
   # Open PRs based on this PR's head branch. Deleting that branch through the API closes every
   # one of them, so each must be retargeted before --delete-branch (Pro Git p.98-99: move the
   # dependent branch before deleting its base). An unreadable list fails closed only where it
-  # matters (--delete-branch / --retarget-all); otherwise it is a warning.
-  local stacked=() stacked_out="" stacked_known=1
+  # matters (--delete-branch / --retarget-all); otherwise it is a warning. A line that is not a
+  # PR number counts as unreadable too: a silently dropped entry would let --delete-branch pass.
+  local stacked=() stacked_out="" stacked_known=0
   if stacked_out=$(gh pr list --repo "${pr_repo}" --base "${head_branch}" --state open \
-    --json number --jq '.[].number' 2>>"${logfile}"); then
+    --json number --jq '.[].number' 2>>"${logfile}" | tr -d '\r'); then
+    stacked_known=1
     while IFS= read -r m; do
-      [[ "${m}" =~ ^[0-9]+$ && "${m}" != "${pr_number}" ]] && stacked+=("${m}")
+      [[ -z "${m}" ]] && continue
+      if [[ ! "${m}" =~ ^[0-9]+$ ]]; then
+        stacked_known=0
+        break
+      fi
+      [[ "${m}" != "${pr_number}" ]] && stacked+=("${m}")
     done <<<"${stacked_out}"
-  else
-    stacked_known=0
+  fi
+  if [[ ${stacked_known} -eq 0 ]]; then
+    stacked=()
     if [[ ${delete_branch} -eq 1 || ${retarget_all} -eq 1 ]]; then
       err_tee "[ERROR] Could not list open PRs based on ${head_branch} -- refusing --delete-branch/--retarget-all"
       err_tee "[ERROR] (deleting a PR's base branch closes that PR; check with: gh pr list --base ${head_branch})"
@@ -340,10 +348,12 @@ main() {
         ! git cat-file -e "${remote_head}^{commit}" 2>/dev/null; then
         git fetch --quiet "${CGW_REMOTE}" "refs/heads/${head_branch}" >>"${logfile}" 2>&1 || true
       fi
-      if [[ -n "${remote_head}" && "${local_head}" != "${remote_head}" ]] &&
+      if [[ -z "${remote_head}" ]]; then
+        echo "[WARN] Could not read ${CGW_REMOTE}/${head_branch}; unpushed local commits not checked" | tee -a "${logfile}"
+      elif [[ "${local_head}" != "${remote_head}" ]] &&
         ! git cat-file -e "${remote_head}^{commit}" 2>/dev/null; then
         echo "[WARN] Could not fetch ${CGW_REMOTE}/${head_branch}; unpushed local commits not checked" | tee -a "${logfile}"
-      elif [[ -n "${remote_head}" && "${local_head}" != "${remote_head}" ]] &&
+      elif [[ "${local_head}" != "${remote_head}" ]] &&
         ! git merge-base --is-ancestor "${local_head}" "${remote_head}" 2>/dev/null; then
         err_tee "[ERROR] Local ${head_branch} (${local_head:0:7}) has commits not on ${CGW_REMOTE}/${head_branch} (${remote_head:0:7})"
         err_tee "[ERROR] They would be left out of the merge. Push them first, or pass --allow-local-changes"
