@@ -221,6 +221,42 @@ setup() {
   [ "${TOOL_ERROR_COUNT}" -eq 2 ]
 }
 
+# ruff's default "full" format puts the location on an indented " --> file:line:col"
+# line; each diagnostic must still count once (not zero, not per snippet line).
+_full_format_diagnostic() {
+  printf '%s\n' \
+    'E741 Ambiguous variable name: `l`' \
+    ' --> demo.py:2:17' \
+    '  |' \
+    '1 | x = [1]' \
+    '2 | print(any(l for l in x))' \
+    '  |                 ^' \
+    '  |' \
+    '' \
+    'Found 1 error.'
+}
+
+@test "run_tool_with_logging() counts a ruff full-format diagnostic once" {
+  cd "${TEST_REPO_DIR}"
+  init_logging "test"
+  run_tool_with_logging "MOCK" "${logfile}" bash -c "
+    $(declare -f _full_format_diagnostic)
+    _full_format_diagnostic
+    exit 1
+  " || true
+  [ "${TOOL_ERROR_COUNT}" -eq 1 ]
+}
+
+@test "_cgw_run_pipeline_tool plain counts a ruff full-format diagnostic once" {
+  cd "${TEST_REPO_DIR}"
+  _cgw_run_pipeline_tool plain "MOCK" "" bash -c "
+    $(declare -f _full_format_diagnostic)
+    _full_format_diagnostic
+    exit 1
+  " > /dev/null || true
+  [ "${TOOL_ERROR_COUNT}" -eq 1 ]
+}
+
 @test "run_tool_with_logging() TOOL_ERROR_COUNT=0 for clean output" {
   cd "${TEST_REPO_DIR}"
   init_logging "test"

@@ -213,9 +213,18 @@ log_section_end() {
   echo "[${section_name}] Ended: ${time_str} (${duration}s) - ${status}" | tee -a "${log_path}"
 }
 
+# Default diagnostic-line pattern, used when CGW_TOOL_ERROR_REGEX is unset. Matches
+# both shapes ruff prints: the concise "file:line:col: CODE msg" line, and the
+# indented " --> file:line:col" location line of the "full" format (ruff's default
+# since 0.5), where the diagnostic line itself carries no location. Each full-format
+# diagnostic has exactly one " --> " primary-location line, so it counts once.
+# Plain assignment, not readonly: _common.sh has no source guard.
+_CGW_DEFAULT_DIAG_REGEX='^[^:]+:[0-9]+:[0-9]+:|^[[:space:]]*--> .+:[0-9]+:[0-9]+'
+
 # run_tool_with_logging — run a command, capture output, log it under a named section.
 # Globals:   TOOL_OUTPUT (write — captured stdout+stderr of the command)
-#            TOOL_ERROR_COUNT (write — count of lines matching file:line:col: pattern)
+#            TOOL_ERROR_COUNT (write — count of lines matching the diagnostic pattern:
+#                              file:line:col: or ruff full-format " --> file:line:col")
 # Arguments: $1 tool_name — section label shown in log headers
 #            $2 log_path  — file path to append output to
 #            $@ command   — command and its arguments to execute
@@ -237,7 +246,7 @@ run_tool_with_logging() {
   # summary ("Lint FAILED 0 errors ... STATUS: FAILED"). Callers override via
   # a dynamically scoped CGW_TOOL_ERROR_REGEX local (same pattern as
   # CGW_SECTION_FAIL_LABEL).
-  TOOL_ERROR_COUNT=$(echo "$TOOL_OUTPUT" | grep -cE "${CGW_TOOL_ERROR_REGEX:-^[^:]+:[0-9]+:[0-9]+:}" || true)
+  TOOL_ERROR_COUNT=$(echo "$TOOL_OUTPUT" | grep -cE "${CGW_TOOL_ERROR_REGEX:-${_CGW_DEFAULT_DIAG_REGEX}}" || true)
 
   if [[ -n "$TOOL_OUTPUT" ]]; then
     echo "$TOOL_OUTPUT" | tee -a "$log_path"
@@ -1617,7 +1626,7 @@ _cgw_run_pipeline_tool() {
   if [[ "${mode}" == "plain" ]]; then
     TOOL_OUTPUT=$("$@" 2>&1)
     local exit_code=$?
-    TOOL_ERROR_COUNT=$(echo "$TOOL_OUTPUT" | grep -cE "${CGW_TOOL_ERROR_REGEX:-^[^:]+:[0-9]+:[0-9]+:}" || true)
+    TOOL_ERROR_COUNT=$(echo "$TOOL_OUTPUT" | grep -cE "${CGW_TOOL_ERROR_REGEX:-${_CGW_DEFAULT_DIAG_REGEX}}" || true)
     if [[ -n "$TOOL_OUTPUT" ]]; then
       echo "$TOOL_OUTPUT"
     fi
