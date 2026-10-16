@@ -52,6 +52,29 @@ EOF
   chmod +x "${MOCK_BIN_DIR}/ruff"
 }
 
+# install_mock_lint_full_format
+# Creates a fake `ruff` that exits 1 and prints ONE diagnostic in ruff's "full"
+# output format (the default since ruff 0.5): the location is on an indented
+# " --> path:line:col" line, not on the diagnostic line itself, so the
+# concise-shaped "file:line:col:" pattern never matches it. Output copied from
+# ruff 0.14.10 for `print(any(l for l in x))` (E741).
+install_mock_lint_full_format() {
+  cat > "${MOCK_BIN_DIR}/ruff" << 'EOF'
+#!/usr/bin/env bash
+echo 'E741 Ambiguous variable name: `l`'
+echo ' --> demo.py:2:17'
+echo '  |'
+echo '1 | x = [1]'
+echo '2 | print(any(l for l in x))'
+echo '  |                 ^'
+echo '  |'
+echo ''
+echo 'Found 1 error.'
+exit 1
+EOF
+  chmod +x "${MOCK_BIN_DIR}/ruff"
+}
+
 # ── Typecheck mock ─────────────────────────────────────────────────────────────
 
 # install_mock_typecheck [cmd_name]

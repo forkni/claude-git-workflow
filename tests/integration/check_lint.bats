@@ -343,6 +343,23 @@ MOCK
   [[ "${output}" != *"no diagnostics were parsed"* ]]
 }
 
+@test "ruff full-format diagnostics are counted in the error summary" {
+  install_mock_lint_full_format
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=ruff
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=''
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Total: 1 errors"* ]]
+  [[ "${output}" != *"no diagnostics were parsed"* ]]
+}
+
 @test "FAILED step with zero parsed diagnostics is named a tool/config failure" {
   cat > "${MOCK_BIN_DIR}/markdownlint-cli2" << 'MOCK'
 #!/usr/bin/env bash
