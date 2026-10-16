@@ -83,6 +83,44 @@ _run_create_pr() {
   [ "${status}" -eq 1 ]
 }
 
+# ── No source branch configured ──────────────────────────────────────────────
+
+# CGW_SOURCE_BRANCH has no default (see _config.sh), so a repo whose .cgw.conf
+# does not set it reaches create_pr.sh with an empty source. That must produce
+# the same "No source branch configured" error as validate_branch_pair, not
+# "Source branch '' does not exist locally".
+@test "no source branch configured: exits 1 and says so, not \"Source branch ''\"" {
+  install_mock_gh
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_SOURCE_BRANCH=''
+    export CGW_TARGET_BRANCH=main
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/create_pr.sh' 2>&1
+  "
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"No source branch configured"* ]]
+  [[ "${output}" == *"--source"* ]]
+  [[ "${output}" != *"Source branch ''"* ]]
+}
+
+@test "no source branch configured: --source still works" {
+  install_mock_gh
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_SOURCE_BRANCH=''
+    export CGW_TARGET_BRANCH=main
+    export CGW_NON_INTERACTIVE=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/create_pr.sh' --source development --dry-run 2>&1
+  "
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"DRY RUN"* ]]
+}
+
 # ── Source branch not pushed to remote ───────────────────────────────────────
 
 @test "source branch not pushed exits 1" {

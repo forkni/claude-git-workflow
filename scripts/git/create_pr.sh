@@ -7,7 +7,7 @@
 #   SCRIPT_DIR             - Directory containing this script
 #   PROJECT_ROOT           - Auto-detected git repo root (set by _config.sh)
 #   logfile                - Set by init_logging
-#   CGW_SOURCE_BRANCH      - Head branch for the PR (default: development)
+#   CGW_SOURCE_BRANCH      - Head branch for the PR (no default; --source or .cgw.conf)
 #   CGW_TARGET_BRANCH      - Base branch for the PR (default: main)
 #
 # Passes gh an explicit --repo resolved from CGW_REMOTE's own URL (see
@@ -212,6 +212,14 @@ main() {
   current_branch=$(git branch --show-current)
   echo "Current branch: ${current_branch}" | tee -a "$logfile"
   echo "PR: ${src_branch} -> ${tgt_branch}" | tee -a "$logfile"
+
+  # CGW_SOURCE_BRANCH has no default (see _config.sh); same message as validate_branch_pair.
+  if [[ -z "${src_branch}" ]]; then
+    err "No source branch configured. Pass --source <branch>, or set CGW_SOURCE_BRANCH in .cgw.conf."
+    [[ -n "${current_branch}" ]] && echo "  The current branch is '${current_branch}': pass --source ${current_branch}" >&2
+    log_section_end "BRANCH VALIDATION" "$logfile" "1"
+    exit 1
+  fi
 
   if [[ "${src_branch}" == "${tgt_branch}" ]]; then
     err "Source and target branch are the same: ${src_branch}"
