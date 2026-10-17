@@ -164,6 +164,7 @@ CGW_LOCAL_FILES_EXEMPT||str|fill|conf
 CGW_EXTRA_PREFIXES||str|fill|conf
 CGW_FREEFORM_MESSAGE_BRANCHES||str|fill|conf
 CGW_FREEFORM_MESSAGE_CHECK||str|fill|conf
+CGW_STAGED_CHECKS||str|keep|conf
 CGW_LINT_CMD|ruff|str|keep|conf
 CGW_LINT_CHECK_ARGS|check --force-exclude {files}|str|keep|conf
 CGW_LINT_FIX_ARGS|check --fix --force-exclude {files}|str|keep|conf
@@ -335,6 +336,11 @@ export CGW_ALL_PREFIXES # consumed by commit_enhanced.sh (cross-file, not detect
 # Receives the message as a file path in $1. Relative paths resolve against
 # PROJECT_ROOT. Empty (default): no check runs.
 export CGW_FREEFORM_MESSAGE_BRANCHES CGW_FREEFORM_MESSAGE_CHECK # consumed by commit_enhanced.sh, undo_last.sh, hooks/pre-push (cross-file, not detectable by shellcheck)
+
+# CGW_STAGED_CHECKS: path-scoped commit gates, one `<glob>... :: <command>`
+# per line, run by cgw_run_staged_checks (_common.sh) in commit_enhanced.sh's
+# lint step. Empty (default): no check runs.
+export CGW_STAGED_CHECKS # consumed by _common.sh cgw_run_staged_checks (cross-file, not detectable by shellcheck)
 
 # --- Lint configuration ---
 # Set CGW_LINT_CMD="" to disable lint checks entirely (e.g. non-Python projects
