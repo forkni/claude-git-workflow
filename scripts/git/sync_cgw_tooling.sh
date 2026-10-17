@@ -377,6 +377,6 @@ main() {
 
 # One line on purpose: bash reads a command whole before running it, so after main returns it never
 # goes back to the file. The sync may therefore replace this very script (new length, new content)
-# without bash resuming at a stale offset.
-main "$@"
-exit $?
+# without bash resuming at a stale offset. It is a single &&/|| list because shfmt splits a
+# "main; exit" pair onto two lines, and a second line would be read from the replaced file.
+main "$@" && exit 0 || exit $?
