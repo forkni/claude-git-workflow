@@ -83,6 +83,16 @@ CGW_FREEFORM_MESSAGE_BRANCHES=""
 # CGW_FREEFORM_MESSAGE_CHECK="hooks/commit-msg"
 CGW_FREEFORM_MESSAGE_CHECK=""
 
+# Optional: project gates scoped by staged path, run by commit_enhanced.sh in
+# its lint step (--skip-lint skips them). One entry per line:
+#   <glob> [<glob>...] :: <command>
+# A command runs from the project root when any staged file matches one of
+# its globs (bash [[ == ]] patterns, so * also crosses /). The matching paths
+# are in $CGW_CHECK_FILES, newline-separated. A non-zero exit, or a line
+# without " :: ", blocks the commit.
+# CGW_STAGED_CHECKS="dev/tests/* td/src/* :: python dev/tests/test_smell_baseline.py"
+CGW_STAGED_CHECKS=""
+
 # ============================================================================
 # LINT CONFIGURATION
 # ============================================================================

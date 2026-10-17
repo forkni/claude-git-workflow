@@ -761,6 +761,14 @@ main() {
       whole_file_intent=1
     fi
     _congruence_guard "${skip_md_lint}" "${whole_file_intent}" || exit 1
+
+    # [3.6] Project gates scoped by staged path (CGW_STAGED_CHECKS), run after
+    # the guard so they see the final index. A failure blocks the commit;
+    # --skip-lint is the bypass.
+    if ! cgw_run_staged_checks; then
+      echo "Commit cancelled -- fix the failing staged check (or --skip-lint to bypass)"
+      exit 1
+    fi
   fi
   echo ""
 

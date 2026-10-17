@@ -96,6 +96,7 @@ cp cgw.conf.example .cgw.conf
 | `CGW_EXTRA_PREFIXES` | `` | Extra commit prefixes (pipe-separated, e.g. `cuda\|tensorrt`) |
 | `CGW_FREEFORM_MESSAGE_BRANCHES` | `` | Space-separated bash globs of branches whose commit format is not checked (e.g. `up/*` for an upstream PR branch). The source, target, and any `CGW_PROTECTED_BRANCHES` entry are never exempted, even by a glob as broad as `*` |
 | `CGW_FREEFORM_MESSAGE_CHECK` | `` | Command run against a freeform branch's message instead of skipping validation (e.g. the target project's own `commit-msg` hook) |
+| `CGW_STAGED_CHECKS` | `` | Path-scoped commit gates, one `<glob> [<glob>...] :: <command>` per line. `commit_enhanced.sh` runs a command from the project root when a staged file matches one of its globs (matching paths in `$CGW_CHECK_FILES`); a failure or a line without ` :: ` blocks the commit. Runs in the lint step, so `--skip-lint` skips it |
 | `CGW_DOCS_PATTERN` | `` | Regex for allowed docs filenames (`""` to skip) |
 | `CGW_DEV_ONLY_FILES` | `` | Files to warn about in cherry-pick (space-separated) |
 | `CGW_ALLOW_LOCAL_FILES_IN_MERGE` | `0` | Set to `1` to allow a merge/cherry-pick to carry `CGW_LOCAL_FILES` into shared history (the guard otherwise aborts non-interactively) |

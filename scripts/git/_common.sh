@@ -2405,6 +2405,65 @@ cgw_freeform_message_check() {
   return ${status}
 }
 
+# cgw_run_staged_checks
+#   Project-specific commit gates scoped by path. CGW_STAGED_CHECKS holds one
+#   entry per line: `<glob> [<glob>...] :: <command>`. An entry runs when any
+#   staged path (added, copied, modified, renamed) matches one of its bash
+#   globs (`*` crosses `/`, so `dev/tests/*` covers the whole subtree). The
+#   command runs through `bash -c` from PROJECT_ROOT, with the matching paths
+#   newline-separated in CGW_CHECK_FILES; nothing is appended to its argv, so
+#   a whole-tree check (a test file, a baseline scan) runs as written. Like
+#   the lint step it reads the working tree. Every matching entry runs, and
+#   the first failure does not stop the rest, so one commit attempt reports
+#   every broken gate. Blank lines and lines starting with `#` are skipped; a
+#   line without ` :: ` is reported and counts as a failure (fail closed: a
+#   typo must not silently drop a gate). Returns 0 when nothing is configured,
+#   nothing matched, or every matching check passed; 1 otherwise.
+cgw_run_staged_checks() {
+  [[ -z "${CGW_STAGED_CHECKS:-}" ]] && return 0
+
+  local -a staged=()
+  local f
+  while IFS= read -r f; do
+    [[ -n "${f}" ]] && staged+=("${f}")
+  done < <(git diff --cached --name-only --diff-filter=ACMR)
+  [[ ${#staged[@]} -eq 0 ]] && return 0
+
+  local failed=0 line globs cmd g matched
+  local -a glob_list=()
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    [[ -z "${line}" || "${line}" == \#* ]] && continue
+    if [[ "${line}" != *" :: "* ]]; then
+      err "CGW_STAGED_CHECKS entry has no ' :: ' separator: ${line}"
+      failed=1
+      continue
+    fi
+    globs="${line%% :: *}"
+    cmd="${line#* :: }"
+    read -r -a glob_list <<<"${globs}"
+    matched=""
+    for f in "${staged[@]}"; do
+      for g in "${glob_list[@]}"; do
+        # shellcheck disable=SC2053 # ${g} is a glob on purpose
+        if [[ "${f}" == ${g} ]]; then
+          matched+="${f}"$'\n'
+          break
+        fi
+      done
+    done
+    [[ -z "${matched}" ]] && continue
+    echo "  Staged check (${globs}): ${cmd}"
+    if (cd "${PROJECT_ROOT}" && CGW_CHECK_FILES="${matched%$'\n'}" bash -c "${cmd}"); then
+      echo "[OK] Staged check passed: ${cmd}"
+    else
+      err "Staged check failed: ${cmd}"
+      failed=1
+    fi
+  done <<<"${CGW_STAGED_CHECKS}"
+  return ${failed}
+}
+
 # ── interactive prompts module ─────────────────────────────────────────────────
 # Unified confirmation prompt. Centralises all yes/no and literal-token
 # prompts so non-interactive policy, grammar, and default-value handling
