@@ -206,6 +206,58 @@ _run_create_pr() {
   [[ "${output}" == *"merge:"* ]] || [[ "${output}" == *"development"* ]]
 }
 
+# ── --task ────────────────────────────────────────────────────────────────────
+
+@test "--task appends the bracketed id to the auto-generated title" {
+  install_mock_gh
+  run _run_create_pr --task TZ-231
+  [ "${status}" -eq 0 ]
+  grep -qF -- "--title feat: dev commit [TZ-231]" "${MOCK_BIN_DIR}/gh.log"
+}
+
+@test "--task appends to a --title override, in either flag order" {
+  install_mock_gh
+  run _run_create_pr --task TZ-7 --title "docs: rule"
+  [ "${status}" -eq 0 ]
+  grep -qF -- "--title docs: rule [TZ-7]" "${MOCK_BIN_DIR}/gh.log"
+}
+
+@test "--task is repeatable, one bracket per id" {
+  install_mock_gh
+  run _run_create_pr --dry-run --title "fix: x" --task TZ-12 --task TZ-34
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Title:  fix: x [TZ-12] [TZ-34]"* ]]
+}
+
+@test "--task does not repeat an id the title already carries" {
+  install_mock_gh
+  run _run_create_pr --dry-run --title "fix: x [TZ-12] [TZ-34]" --task TZ-12 --task TZ-34
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Title:  fix: x [TZ-12] [TZ-34]"* ]]
+  [[ "${output}" != *"[TZ-34] [TZ-12]"* ]]
+}
+
+@test "--task no-task appends [no-task]" {
+  install_mock_gh
+  run _run_create_pr --dry-run --task no-task
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Title:  feat: dev commit [no-task]"* ]]
+}
+
+@test "--task rejects a malformed id and creates no PR" {
+  install_mock_gh
+  run _run_create_pr --task "TZ 231"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"--task requires an id like TZ-123"* ]]
+  ! grep -q "pr create" "${MOCK_BIN_DIR}/gh.log" 2>/dev/null
+}
+
+@test "--task without a value exits 1" {
+  install_mock_gh
+  run _run_create_pr --task
+  [ "${status}" -eq 1 ]
+}
+
 # ── --draft flag ──────────────────────────────────────────────────────────────
 
 @test "--draft passes --draft to gh pr create" {

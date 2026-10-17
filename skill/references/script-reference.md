@@ -298,7 +298,7 @@ conflict-free if untouched).
 **`create_pr.sh`** — Create a GitHub PR from source to target branch
 
 ```bash
-./scripts/git/create_pr.sh [--non-interactive] [--dry-run] [--title <title>] [--body <text>] [--body-file <path>] [--draft]
+./scripts/git/create_pr.sh [--non-interactive] [--dry-run] [--title <title>] [--task <id>] [--body <text>] [--body-file <path>] [--draft]
 ./scripts/git/create_pr.sh --source feature/hotfix --target release/1.2 --dry-run
 ```
 
@@ -307,6 +307,7 @@ conflict-free if untouched).
 | `--non-interactive` | Skip prompts |
 | `--dry-run` | Show what would be created without opening a PR |
 | `--title <title>` | Override auto-generated PR title |
+| `--task <id>` | Append `[<id>]` to the title (auto-generated or `--title`, and after the interactive prompt): a tracker id such as `TZ-123` (letters/digits, a dash, a number), or `no-task`. Repeatable, one bracket per id; an id already in the title is not added again. A malformed id exits 1 before anything is created |
 | `--body <text>` | Use `<text>` as the PR body, verbatim, in place of the generated commit list. Exclusive with `--body-file` |
 | `--body-file <path>` | Read the PR body from `<path>` (relative paths resolve against the caller's cwd; `-` is refused). Exclusive with `--body` |
 | `--draft` | Open PR as draft (not ready for review) |

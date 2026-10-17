@@ -391,6 +391,7 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use the PR workflow instead (see Cre
 ./scripts/git/create_pr.sh --non-interactive        # skip prompts
 ./scripts/git/create_pr.sh --dry-run                # preview only
 ./scripts/git/create_pr.sh --title "feat: my PR"   # override title
+./scripts/git/create_pr.sh --task TZ-123           # title ends " [TZ-123]" (tracker link)
 ./scripts/git/create_pr.sh --draft                  # open as draft
 ./scripts/git/create_pr.sh --body-file pr-body.md   # written body instead of the commit list
 ./scripts/git/create_pr.sh --source feature/hotfix --target release/1.2
