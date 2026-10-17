@@ -6,6 +6,28 @@
 
 - **Path-scoped commit gates (`CGW_STAGED_CHECKS`)**: `commit_enhanced.sh` now runs project checks chosen by staged path, one `<glob> [<glob>...] :: <command>` entry per line (e.g. `dev/tests/* td/src/* :: python dev/tests/test_smell_baseline.py`). A command runs from the project root when a staged file matches one of its globs, sees the matching paths in `$CGW_CHECK_FILES`, and blocks the commit on a non-zero exit; a line without ` :: ` fails closed. The gates run in the lint step after the congruence guard, so `--skip-lint` skips them. New `cgw_run_staged_checks` in `scripts/git/_common.sh`, registry row in `_config.sh`, documented in `cgw.conf.example`, `configure.sh`'s generated config, `docs/configuration.md` and `skill/references/script-reference.md`, with 7 tests in `tests/integration/staged_checks.bats`.
 
+## v0.19.1 (2026-10-17)
+
+> Changes since `v0.19.0`
+
+### CI
+
+- **Pipeline hardening (#48)**: Every job sets `timeout-minutes`. `branch-protection.yml` and `docs-validation.yml` cancel superseded pull-request runs only, so pushes to `development`/`main` always get a verdict, and `release.yml` and `nightly.yml` never cancel. A local composite action, `.github/actions/setup-shell-tools`, installs ShellCheck, shfmt, actionlint and bats-core at pinned versions, each verified by sha256 (bats-core by commit SHA). The lint job now runs `actionlint` and a pinned `zizmor` (exceptions in `.github/zizmor.yml`), shfmt is a blocking check, checkouts set `persist-credentials: false`, and Dependabot has a 7-day cooldown. A `main` ruleset requires `all-gates-green`, with admin bypass. Windows is covered by the weekly nightly only: a trial PR leg took 20+ minutes. Documented in `docs/ci-setup.md`.
+- **Link checks**: Dropped the `--exclude-mail` flag current lychee rejects, which had failed the nightly link audit and been hidden in `docs-validation.yml` behind `continue-on-error`. The slash command, whose `../skills/...` links are correct only in the installed layout, is excluded from the lychee runs (#50).
+
+### Bug Fixes
+
+- **`sync_cgw_tooling.sh` keeps ending on a single command line**: shfmt had split the trailing `main "$@"; exit $?` onto two lines, so a sync that replaced the running script could resume at a stale offset. It is one `&&`/`||` list again, which shfmt leaves alone.
+- **Windows nightly test failures (#50)**: bats cannot resolve `@test` names holding non-ASCII bytes under the Windows runner's locale, so the em-dash names in `typecheck.bats` and `worktree.bats` were silently dropped; they are ASCII now, and the new `tests/unit/test_names.bats` keeps them so. `cleanup_temp_dir` no longer returns 1 when a `setup()` skip fires before `TEST_TMPDIR` exists, which had failed teardown for every skipped test in `run_tests_gate.bats`.
+
+### Documentation
+
+- The README links Google Antigravity at `antigravity.google` instead of a 404 GitHub URL (#50).
+
+### Style
+
+- `repo_health.sh` and `sync_cgw_tooling.sh` pass `shfmt -i 2 -ci`, and `*.json`, `*.jsonc` and `*.toml` are pinned to LF in `.gitattributes` (whitespace-only renormalization of five JSON files).
+
 ## v0.19.0 (2026-10-16)
 
 > Changes since `v0.18.2`

@@ -61,12 +61,15 @@ jobs:
         with:
           persist-credentials: false
 
+      # The slash command links to ../skills/auto-git-workflow/..., which is correct in the installed
+      # layout (.claude/commands next to .claude/skills) but not in this repo's skill/ + command/ layout.
       - name: Comprehensive link audit
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8  # v2.9.0
         with:
           args: |
             --verbose
             --no-progress
+            --exclude-path command/auto-git-workflow-cmd.md
             '**/*.md'
 
   tooling-drift:
