@@ -6,6 +6,10 @@
 
 - **Path-scoped commit gates (`CGW_STAGED_CHECKS`)**: `commit_enhanced.sh` now runs project checks chosen by staged path, one `<glob> [<glob>...] :: <command>` entry per line (e.g. `dev/tests/* td/src/* :: python dev/tests/test_smell_baseline.py`). A command runs from the project root when a staged file matches one of its globs, sees the matching paths in `$CGW_CHECK_FILES`, and blocks the commit on a non-zero exit; a line without ` :: ` fails closed. The gates run in the lint step after the congruence guard, so `--skip-lint` skips them. New `cgw_run_staged_checks` in `scripts/git/_common.sh`, registry row in `_config.sh`, documented in `cgw.conf.example`, `configure.sh`'s generated config, `docs/configuration.md` and `skill/references/script-reference.md`, with 7 tests in `tests/integration/staged_checks.bats`.
 
+### Bug Fixes
+
+- **A quoted `.cgw.conf` value may span lines**: the loader read one line at a time, so the multi-line form of `CGW_STAGED_CHECKS` (one entry per line) loaded as a lone `"`, warned once per entry line, and the gate then failed closed on every commit. The value now runs to the next quote of the same kind, comments and blank lines inside it are kept, an environment variable still wins without a warning, and an unterminated value warns once and is ignored. Tests in `tests/unit/config.bats` and `tests/integration/staged_checks.bats`.
+
 ## v0.19.1 (2026-10-17)
 
 > Changes since `v0.19.0`

@@ -569,6 +569,95 @@ EOF
   "
 }
 
+# Helper: source _config.sh and print CGW_STAGED_CHECKS and CGW_LINT_CMD, with
+# stderr (the loader's [WARN] lines) merged in. Optional $1 is a shell statement
+# run first (e.g. an env export).
+_conf_multiline() {
+  bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    $1
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    printf 'STAGED=[%s]\n' \"\${CGW_STAGED_CHECKS}\"
+    printf 'LINT=[%s]\n' \"\${CGW_LINT_CMD}\"
+  " 2>&1
+}
+
+@test ".cgw.conf quoted value may span lines" {
+  # Regression: CGW_STAGED_CHECKS documents one entry per line. The loader read
+  # one line at a time, so the opening 'CGW_STAGED_CHECKS="' loaded as the single
+  # character '"', each entry line warned, and every commit failed the gate.
+  cat >"${TEST_REPO_DIR}/.cgw.conf" <<'EOF'
+CGW_STAGED_CHECKS="
+src/* :: python check_a.py
+# a comment inside the value
+
+lib/* :: [ ! -f b.py ] || python b.py
+"
+CGW_LINT_CMD="eslint"
+EOF
+  run _conf_multiline
+  [[ "${output}" != *"WARN"* ]]
+  [[ "${output}" == *"STAGED=["$'\n'"src/* :: python check_a.py"$'\n'"# a comment inside the value"$'\n'$'\n'"lib/* :: [ ! -f b.py ] || python b.py"$'\n'"]"* ]]
+  [[ "${output}" == *"LINT=[eslint]"* ]]
+}
+
+@test ".cgw.conf multi-line value with CRLF line endings is read correctly" {
+  printf 'CGW_STAGED_CHECKS="\r\nsrc/* :: exit 1\r\n"\r\nCGW_LINT_CMD="eslint"\r\n' >"${TEST_REPO_DIR}/.cgw.conf"
+  run _conf_multiline
+  [[ "${output}" != *"WARN"* ]]
+  [[ "${output}" == *"STAGED=["$'\n'"src/* :: exit 1"$'\n'"]"* ]]
+  [[ "${output}" == *"LINT=[eslint]"* ]]
+}
+
+@test ".cgw.conf single-quoted multi-line value is read" {
+  cat >"${TEST_REPO_DIR}/.cgw.conf" <<'EOF'
+CGW_STAGED_CHECKS='
+src/* :: echo "$CGW_CHECK_FILES"
+'
+EOF
+  run _conf_multiline
+  [[ "${output}" != *"WARN"* ]]
+  [[ "${output}" == *"STAGED=["$'\n''src/* :: echo "$CGW_CHECK_FILES"'$'\n'"]"* ]]
+}
+
+@test ".cgw.conf multi-line value: closing line may carry a trailing comment" {
+  cat >"${TEST_REPO_DIR}/.cgw.conf" <<'EOF'
+CGW_STAGED_CHECKS="
+src/* :: exit 1
+"  # gates
+CGW_LINT_CMD="eslint"
+EOF
+  run _conf_multiline
+  [[ "${output}" != *"WARN"* ]]
+  [[ "${output}" == *"STAGED=["$'\n'"src/* :: exit 1"$'\n'"]"* ]]
+  [[ "${output}" == *"LINT=[eslint]"* ]]
+}
+
+@test "env var wins over a multi-line .cgw.conf value without warning" {
+  cat >"${TEST_REPO_DIR}/.cgw.conf" <<'EOF'
+CGW_STAGED_CHECKS="
+src/* :: exit 1
+"
+CGW_LINT_CMD="eslint"
+EOF
+  run _conf_multiline "export CGW_STAGED_CHECKS='lib/* :: exit 2'"
+  [[ "${output}" != *"WARN"* ]]
+  [[ "${output}" == *"STAGED=[lib/* :: exit 2]"* ]]
+  [[ "${output}" == *"LINT=[eslint]"* ]]
+}
+
+@test ".cgw.conf unterminated quoted value warns once and is ignored" {
+  cat >"${TEST_REPO_DIR}/.cgw.conf" <<'EOF'
+CGW_STAGED_CHECKS="
+src/* :: exit 1
+EOF
+  run _conf_multiline
+  [[ "${output}" == *"[WARN] Unterminated quoted value for CGW_STAGED_CHECKS"* ]]
+  [[ "$(grep -c WARN <<<"${output}")" -eq 1 ]]
+  [[ "${output}" == *"STAGED=[]"* ]]
+}
+
 # ── Backward compatibility mappings ───────────────────────────────────────────
 
 @test "CLAUDE_GIT_NON_INTERACTIVE=1 sets CGW_NON_INTERACTIVE=1" {
