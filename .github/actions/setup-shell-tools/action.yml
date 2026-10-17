@@ -1,0 +1,91 @@
+name: Setup shell tooling
+description: >-
+  Install the pinned ShellCheck, shfmt, actionlint and bats-core used by CGW's workflows.
+  Every download is verified against a sha256 (or, for bats-core, a commit SHA) kept in this
+  file, so bumping a tool means editing one version and one checksum here.
+
+inputs:
+  shellcheck:
+    description: Install ShellCheck (Linux only)
+    default: 'false'
+  shfmt:
+    description: Install shfmt (Linux only)
+    default: 'false'
+  actionlint:
+    description: Install actionlint (Linux only)
+    default: 'false'
+  bats:
+    description: Install bats-core (Linux and Windows)
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Install ShellCheck
+      if: inputs.shellcheck == 'true' && runner.os == 'Linux'
+      shell: bash
+      env:
+        SHELLCHECK_VERSION: v0.11.0
+        SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+      run: |
+        set -euo pipefail
+        url="https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+        curl -sSfL "${url}" -o "${RUNNER_TEMP}/shellcheck.tar.xz"
+        echo "${SHELLCHECK_SHA256}  ${RUNNER_TEMP}/shellcheck.tar.xz" | sha256sum -c -
+        tar -xJf "${RUNNER_TEMP}/shellcheck.tar.xz" -C "${RUNNER_TEMP}"
+        sudo install -m 0755 "${RUNNER_TEMP}/shellcheck-${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
+        shellcheck --version
+
+    - name: Install shfmt
+      if: inputs.shfmt == 'true' && runner.os == 'Linux'
+      shell: bash
+      env:
+        SHFMT_VERSION: v3.13.0
+        SHFMT_SHA256: 70aa99784703a8d6569bbf0b1e43e1a91906a4166bf1a79de42050a6d0de7551
+      run: |
+        set -euo pipefail
+        url="https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64"
+        curl -sSfL "${url}" -o "${RUNNER_TEMP}/shfmt"
+        echo "${SHFMT_SHA256}  ${RUNNER_TEMP}/shfmt" | sha256sum -c -
+        sudo install -m 0755 "${RUNNER_TEMP}/shfmt" /usr/local/bin/shfmt
+        shfmt --version
+
+    - name: Install actionlint
+      if: inputs.actionlint == 'true' && runner.os == 'Linux'
+      shell: bash
+      env:
+        ACTIONLINT_VERSION: 1.7.12
+        ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+      run: |
+        set -euo pipefail
+        url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+        curl -sSfL "${url}" -o "${RUNNER_TEMP}/actionlint.tar.gz"
+        echo "${ACTIONLINT_SHA256}  ${RUNNER_TEMP}/actionlint.tar.gz" | sha256sum -c -
+        tar -xzf "${RUNNER_TEMP}/actionlint.tar.gz" -C "${RUNNER_TEMP}" actionlint
+        sudo install -m 0755 "${RUNNER_TEMP}/actionlint" /usr/local/bin/actionlint
+        actionlint -version
+
+    # bats-support / bats-assert are deliberately not installed: nothing under tests/ loads them.
+    - name: Install bats-core
+      if: inputs.bats == 'true'
+      shell: bash
+      env:
+        BATS_VERSION: v1.13.0
+        # Peeled commit of the v1.13.0 tag (git ls-remote --tags ... 'v1.13.0^{}').
+        BATS_COMMIT: 3bca150ec86275d6d9d5a4fd7d48ab8b6c6f3d87
+      # The directory added to GITHUB_PATH is our own clone under RUNNER_TEMP, checked out at a
+      # pinned commit and verified below, so the PATH write cannot be steered by untrusted input.
+      run: |  # zizmor: ignore[github-env]
+        set -euo pipefail
+        dest="${RUNNER_TEMP}/bats"
+        git clone --depth 1 --branch "${BATS_VERSION}" https://github.com/bats-core/bats-core.git "${dest}"
+        actual="$(git -C "${dest}" rev-parse HEAD)"
+        if [ "${actual}" != "${BATS_COMMIT}" ]; then
+          echo "::error::bats-core ${BATS_VERSION} resolved to ${actual}, expected ${BATS_COMMIT}"
+          exit 1
+        fi
+        if [ "${RUNNER_OS}" = "Windows" ]; then
+          echo "${dest}/bin" >> "${GITHUB_PATH}"
+        else
+          sudo "${dest}/install.sh" /usr/local
+        fi
