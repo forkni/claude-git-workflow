@@ -233,7 +233,7 @@ See [Configuration Guide](docs/configuration.md) for full options and ecosystem 
 - **Linters & Formatters** (optional): `ruff`, `eslint`, `prettier`, `golangci-lint`, `clang-tidy`, `cppcheck`, or `cargo` (disable with `CGW_LINT_CMD=""`).
 - **Markdown Linting** (optional): `markdownlint-cli2`, `markdownlint`, or `npx` (requires Node.js >= 20 supporting RegExp `v` flag).
 - **Typecheckers** (optional): `pyrefly`, `pyright`, `mypy`, `tsc` (disable with `CGW_TYPECHECK_CMD=""`).
-- **AI Agent Harnesses** (optional): [Claude Code CLI](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview) or [Google Antigravity](https://github.com/google/antigravity).
+- **AI Agent Harnesses** (optional): [Claude Code CLI](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview) or [Google Antigravity](https://antigravity.google/).
 - **GitHub CLI** (optional): `gh` CLI authenticated (`gh auth login`) for PR creation (`create_pr.sh`) and the CI verification gate.
 - **Utility Tools** (optional): `jq` for JSON merging in `configure.sh` (automatic Python fallback runs if `jq` is absent). On Windows: `winget install jqlang.jq`.
 
