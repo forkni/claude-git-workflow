@@ -122,6 +122,7 @@ The overrides are ephemeral — they do not mutate `CGW_SOURCE_BRANCH` / `CGW_TA
 ./scripts/git/create_pr.sh                    # interactive — confirm title
 ./scripts/git/create_pr.sh --non-interactive  # accept auto-generated title
 ./scripts/git/create_pr.sh --draft            # open as draft (skip auto-review)
+./scripts/git/create_pr.sh --task TZ-123      # append " [TZ-123]" to the title (or --task no-task)
 ./scripts/git/create_pr.sh --body-file pr.md  # use a written body instead of the commit list
 ./scripts/git/create_pr.sh --body "text"      # inline body (replaces the commit list)
 ```

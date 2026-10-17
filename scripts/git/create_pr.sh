@@ -18,6 +18,8 @@
 # falling back to gh's own (unsafe) resolution.
 # Arguments:
 #   --title <title>        Override auto-generated PR title
+#   --task <id>            Append " [<id>]" to the title (tracker id such as TZ-123,
+#                          or no-task); repeatable, one bracket per id
 #   --body <text>          Use <text> as the PR body (replaces the commit-log body)
 #   --body-file <path>     Read the PR body from <path> (relative to the caller's cwd)
 #   --draft                Create PR as draft (not ready for review)
@@ -37,6 +39,7 @@ source "${SCRIPT_DIR}/_common.sh"
 
 main() {
   local pr_title=""
+  local task_ids=()
   local body_text="" body_file="" body_source=""
   local draft=0
   local non_interactive=0
@@ -62,6 +65,8 @@ main() {
         echo ""
         echo "Options:"
         echo "  --title <title>     Override auto-generated PR title"
+        echo "  --task <id>         Append ' [<id>]' to the title: a tracker id such as TZ-123,"
+        echo "                      or no-task. Repeatable; an id already in the title is not added again"
         echo "  --body <text>       Use <text> as the PR body (replaces the commit-log body)"
         echo "  --body-file <path>  Read the PR body from <path> (not '-'; stdin is the title prompt)"
         echo "  --draft             Create as draft PR (not ready for review)"
@@ -95,6 +100,15 @@ main() {
           exit 1
         fi
         pr_title="${2}"
+        shift 2
+        ;;
+      --task)
+        # PROJECT-123 style (letters/digits, a dash, a number), or the explicit no-task marker.
+        if [[ $# -lt 2 ]] || ! [[ "${2:-}" =~ ^([A-Za-z][A-Za-z0-9]*-[0-9]+|no-task)$ ]]; then
+          err "--task requires an id like TZ-123, or no-task"
+          exit 1
+        fi
+        task_ids+=("${2}")
         shift 2
         ;;
       --body)
@@ -329,6 +343,13 @@ ${formatted_log}
       pr_title="${title_input}"
     fi
   fi
+
+  # Task ids go on last, so they survive both the auto-title and the prompt above.
+  local task_id
+  for task_id in "${task_ids[@]+"${task_ids[@]}"}"; do
+    [[ "${pr_title}" == *"[${task_id}]"* ]] || pr_title="${pr_title} [${task_id}]"
+  done
+  [[ ${#task_ids[@]} -gt 0 ]] && echo "Title with task id(s): ${pr_title}" | tee -a "$logfile"
 
   log_section_end "PR CONTENT" "$logfile" "0"
   echo "" | tee -a "$logfile"
