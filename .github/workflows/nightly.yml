@@ -67,7 +67,6 @@ jobs:
           args: |
             --verbose
             --no-progress
-            --exclude-mail
             '**/*.md'
 
   tooling-drift:

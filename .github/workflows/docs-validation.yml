@@ -62,7 +62,6 @@ jobs:
           args: |
             --verbose
             --no-progress
-            --exclude-mail
             '**/*.md'
         continue-on-error: true
 
