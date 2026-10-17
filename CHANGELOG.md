@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.19.0 (2026-10-16)
+
+> Changes since `v0.18.2`
+
+### New Features
+
+- **`--task <id>` flag on `create_pr.sh` (#47)**: Appends `[<id>]` (a tracker ID matching `[A-Za-z][A-Za-z0-9]*-[0-9]+` such as `TZ-123`, or `no-task`) to the PR title after auto-generation, `--title`, and any interactive title prompt. Repeatable with one bracket per ID, skips IDs already present in the title, and rejects malformed values before opening a PR. Documented in `docs/usage.md`, `skill/SKILL.md`, and `skill/references/script-reference.md` with 7 integration tests in `tests/integration/create_pr.bats`.
+
+### Bug Fixes
+
+- **Clear empty-source error in `create_pr.sh` (#46)**: When `CGW_SOURCE_BRANCH` is unset and `--source` is not passed, `create_pr.sh` now stops with the same `No source branch configured. Pass --source <branch>, or set CGW_SOURCE_BRANCH in .cgw.conf.` message used by `validate_branch_pair` (plus a `--source <current-branch>` hint) instead of `Source branch '' does not exist locally`.
+- **Count ruff full-format diagnostics in lint error totals (#45)**: Widened `_CGW_DEFAULT_DIAG_REGEX` in `scripts/git/_common.sh` (used by `run_tool_with_logging` and the plain path of `_cgw_run_pipeline_tool`) to match ruff >= 0.5's default indented `--> path:line:col` location line in addition to `^[^:]+:[0-9]+:[0-9]+:`, preventing real ruff findings from being misreported as 0 parsed diagnostics.
+
 ## v0.18.2 (2026-10-15)
 
 > Changes since `v0.18.1`
