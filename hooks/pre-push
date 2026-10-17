@@ -211,3 +211,6 @@ fi
 echo "pre-push: all checks passed"
 echo ""
 exit 0
+if true; then
+:
+fi
