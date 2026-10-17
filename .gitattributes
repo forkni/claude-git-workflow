@@ -20,4 +20,7 @@ hooks/pre-rebase text eol=lf
 *.example text eol=lf
 *.gitignore text eol=lf
 *.yml text eol=lf
+*.json text eol=lf
+*.jsonc text eol=lf
+*.toml text eol=lf
 LICENSE text eol=lf

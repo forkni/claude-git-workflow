@@ -1,0 +1,11 @@
+rules:
+  # `uses: $/...` only became available in July 2026 and actionlint does not yet document support
+  # for it, so the workspace-relative `./.github/actions/...` form stays. Revisit once actionlint
+  # accepts `$/`.
+  self-repository:
+    disable: true
+  # Kept over a `gh release` script: swapping the release mechanism can't be exercised without
+  # cutting a real tag.
+  superfluous-actions:
+    ignore:
+      - release.yml

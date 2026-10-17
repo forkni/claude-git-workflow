@@ -60,7 +60,7 @@ main() {
         echo "  4. Stale backup tags count"
         echo "  5. Line-ending hygiene (CRLF retained in the index)"
         echo "  6. Branch divergence summary"
-  echo "  7. Installed git hooks match .githooks/"
+        echo "  7. Installed git hooks match .githooks/"
         echo ""
         echo "Environment:"
         echo "  CGW_REMOTE   Remote name for divergence check (default: origin)"

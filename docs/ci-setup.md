@@ -6,11 +6,36 @@ Four workflows are included in `.github/workflows/` (configured with immutable c
 
 | Workflow | Trigger | Checks |
 |----------|---------|--------|
-| `branch-protection.yml` | Push/PR to `development`, `main` | Parallel gates: local-only file detection & `.gitattributes` & Bats skip-count ratchet (`validate`); ShellCheck, shfmt format, snippet lint & command verification (`lint`); parallelized 2-batch matrix (`test: [fast, slow]`); aggregate required status check (`all-gates-green`). |
+| `branch-protection.yml` | Push/PR to `development`, `main` | Parallel gates: local-only file detection & `.gitattributes` & Bats skip-count ratchet (`validate`); ShellCheck, shfmt format (blocking), `actionlint` & `zizmor` workflow lint, snippet lint & command verification (`lint`); 2-leg test matrix (`fast` + `slow` on `ubuntu-latest`); aggregate required status check (`all-gates-green`). |
 | `docs-validation.yml` | Push to `development`/`main` or a PR that changes `*.md` files (except `CLAUDE.md`, `MEMORY.md`) | Markdown linting (`markdownlint-cli2`, blocking), spelling of `README.md`, `skill/`, `command/` (`typos`, blocking), broken link validation (`lychee`, advisory). |
 | `nightly.yml` | Scheduled (weekly Sundays 03:00 UTC) / manual dispatch | Cross-platform full test suite (`ubuntu-latest` + `windows-latest`), complete documentation link audit, and tooling/snippet drift canary. |
 | `release.yml` | Tag push matching `v*` | Creates GitHub Release with auto-generated notes and source archives with scoped `contents: write`. |
 | `.github/dependabot.yml` | Scheduled monthly | Automated dependency and commit-SHA updates for GitHub Actions. |
+
+### Pipeline conventions
+
+- **Pinned tooling.** ShellCheck, shfmt, `actionlint` and bats-core are installed by the local
+  composite action `.github/actions/setup-shell-tools/action.yml`. Each download is checked
+  against a `sha256` in that file (bats-core against its tag's commit SHA), so bumping a tool
+  means editing one version and one checksum there. `zizmor` is pinned to an exact version in
+  `branch-protection.yml`. The nightly `tooling-drift` job deliberately uses the distro's
+  unpinned ShellCheck as a drift canary for the pinned one.
+- **Timeouts.** Every job sets `timeout-minutes` (2-15 for the PR gate, 120 for the nightly full
+  suite) instead of GitHub's 360-minute default. Tighten a value to about 3x the observed p95.
+- **Concurrency.** `branch-protection.yml` and `docs-validation.yml` cancel superseded
+  *pull-request* runs only, so every push to `development`/`main` gets a verdict. `release.yml`
+  and `nightly.yml` never cancel an in-flight run.
+- **Credentials.** Every `actions/checkout` sets `persist-credentials: false`; no job pushes.
+- **Windows.** Windows is tested only by the weekly nightly (`--all`, 120-minute timeout). A
+  trial Windows `fast` leg on PRs ran 20+ minutes (budget: 5) and exposed Windows-only failures
+  in `run_tests_gate.bats` and `typecheck.bats`, so it was kept out of the PR gate.
+
+### Required check on `main`
+
+Require only the single `all-gates-green` job in branch protection, never individual matrix
+legs, which are renamed whenever the matrix changes. A ruleset on `main` requires it, with
+repository admins allowed to bypass so local merge-and-push promotion keeps working; a pushed
+admin merge is then covered by the `push: [main]` run instead of a pre-merge check.
 
 ---
 
