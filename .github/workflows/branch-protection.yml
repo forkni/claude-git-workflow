@@ -9,20 +9,24 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded PR runs only: a push to development/main must always get a verdict,
+# otherwise the commit that broke the build can't be identified.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   validate:
     name: Validate Branch State
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Check for local-only files
         run: bash scripts/git/check_local_files.sh
@@ -41,16 +45,20 @@ jobs:
   lint:
     name: Shell Script Quality
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Install ShellCheck & shfmt
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y shellcheck
-          curl -sSL "https://github.com/mvdan/sh/releases/download/v3.13.0/shfmt_v3.13.0_linux_amd64" -o /usr/local/bin/shfmt
-          chmod +x /usr/local/bin/shfmt
+      - name: Install ShellCheck, shfmt & actionlint
+        uses: ./.github/actions/setup-shell-tools
+        with:
+          shellcheck: 'true'
+          shfmt: 'true'
+          actionlint: 'true'
 
       - name: ShellCheck production scripts
         id: sc_scripts
@@ -72,6 +80,16 @@ jobs:
         run: shfmt -d -i 2 -ci scripts/ hooks/
         continue-on-error: true
 
+      - name: Lint workflows (actionlint)
+        id: actionlint
+        run: actionlint
+        continue-on-error: true
+
+      - name: Audit workflows (zizmor)
+        id: zizmor
+        run: pipx run zizmor==1.31.1 --offline .github/
+        continue-on-error: true
+
       - name: Lint documentation code snippets
         id: doc_snippets
         run: bash tests/lint_doc_snippets.sh
@@ -83,54 +101,78 @@ jobs:
         continue-on-error: true
 
       - name: Aggregate lint verdict
+        env:
+          SC_SCRIPTS: ${{ steps.sc_scripts.outcome }}
+          SC_HOOKS: ${{ steps.sc_hooks.outcome }}
+          SC_TESTS: ${{ steps.sc_tests.outcome }}
+          SHFMT: ${{ steps.shfmt_check.outcome }}
+          ACTIONLINT: ${{ steps.actionlint.outcome }}
+          ZIZMOR: ${{ steps.zizmor.outcome }}
+          DOC_SNIPPETS: ${{ steps.doc_snippets.outcome }}
+          VERIFY_COMMANDS: ${{ steps.verify_commands.outcome }}
         run: |
           failed=0
-          if [ "${{ steps.sc_scripts.outcome }}" != "success" ]; then
+          if [ "${SC_SCRIPTS}" != "success" ]; then
             echo "::error::ShellCheck failed on scripts/git/"
             failed=1
           fi
-          if [ "${{ steps.sc_hooks.outcome }}" != "success" ]; then
+          if [ "${SC_HOOKS}" != "success" ]; then
             echo "::error::ShellCheck failed on hooks/"
             failed=1
           fi
-          if [ "${{ steps.sc_tests.outcome }}" != "success" ]; then
+          if [ "${SC_TESTS}" != "success" ]; then
             echo "::error::ShellCheck failed on tests/"
             failed=1
           fi
-          if [ "${{ steps.shfmt_check.outcome }}" != "success" ]; then
-            echo "::warning::shfmt format differences found in scripts/ or hooks/ (run shfmt -w -i 2 -ci scripts/ hooks/)"
+          if [ "${SHFMT}" != "success" ]; then
+            echo "::error::shfmt format differences found in scripts/ or hooks/ (run shfmt -w -i 2 -ci scripts/ hooks/)"
+            failed=1
           fi
-          if [ "${{ steps.doc_snippets.outcome }}" != "success" ]; then
+          if [ "${ACTIONLINT}" != "success" ]; then
+            echo "::error::actionlint found problems in .github/workflows/"
+            failed=1
+          fi
+          if [ "${ZIZMOR}" != "success" ]; then
+            echo "::error::zizmor found security findings in .github/"
+            failed=1
+          fi
+          if [ "${DOC_SNIPPETS}" != "success" ]; then
             echo "::error::Documentation snippet linting failed"
             failed=1
           fi
-          if [ "${{ steps.verify_commands.outcome }}" != "success" ]; then
+          if [ "${VERIFY_COMMANDS}" != "success" ]; then
             echo "::error::Skill/command script flag verification failed"
             failed=1
           fi
           exit $failed
 
   test:
-    name: Run Test Suite (${{ matrix.batch }})
-    runs-on: ubuntu-latest
+    name: Run Test Suite (${{ matrix.batch }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        batch: [fast, slow]
+        include:
+          - { os: ubuntu-latest, batch: fast }
+          - { os: ubuntu-latest, batch: slow }
+          - { os: windows-latest, batch: fast }
+
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Install ShellCheck
-        run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
-
-      - name: Install bats-core and helpers
-        run: |
-          git clone --depth 1 --branch v1.13.0 https://github.com/bats-core/bats-core.git /tmp/bats
-          sudo /tmp/bats/install.sh /usr/local
-          git clone --depth 1 --branch v0.3.0 https://github.com/bats-core/bats-support.git /tmp/bats-support
-          git clone --depth 1 --branch v2.2.4 https://github.com/bats-core/bats-assert.git /tmp/bats-assert
+      - name: Install ShellCheck and bats-core
+        uses: ./.github/actions/setup-shell-tools
+        with:
+          shellcheck: 'true'
+          bats: 'true'
 
       - name: Configure git identity for test repos
         run: |
@@ -138,23 +180,30 @@ jobs:
           git config --global user.name "CI Test"
 
       - name: Run ${{ matrix.batch }} test batch
-        run: CGW_TEST_JOBS=4 bash tests/run.sh --${{ matrix.batch }}
+        env:
+          BATCH: ${{ matrix.batch }}
+        run: CGW_TEST_JOBS=4 bash tests/run.sh --"${BATCH}"
 
   all-gates-green:
     name: all-gates-green
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     needs: [validate, lint, test]
     if: always()
     steps:
       - name: Decide aggregate outcome
+        env:
+          VALIDATE: ${{ needs.validate.result }}
+          LINT: ${{ needs.lint.result }}
+          TEST: ${{ needs.test.result }}
         run: |
-          if [ "${{ needs.validate.result }}" != "success" ] || \
-             [ "${{ needs.lint.result }}" != "success" ] || \
-             [ "${{ needs.test.result }}" != "success" ]; then
+          if [ "${VALIDATE}" != "success" ] || \
+             [ "${LINT}" != "success" ] || \
+             [ "${TEST}" != "success" ]; then
             echo "::error::One or more required pipeline gates did not succeed"
-            echo "validate: ${{ needs.validate.result }}"
-            echo "lint:     ${{ needs.lint.result }}"
-            echo "test:     ${{ needs.test.result }}"
+            echo "validate: ${VALIDATE}"
+            echo "lint:     ${LINT}"
+            echo "test:     ${TEST}"
             exit 1
           fi
           echo "All pipeline gates green."

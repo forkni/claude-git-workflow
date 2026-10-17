@@ -5,3 +5,6 @@ updates:
     target-branch: "development"
     schedule:
       interval: "monthly"
+    # Skip releases younger than a week, so a compromised or yanked release isn't proposed immediately.
+    cooldown:
+      default-days: 7

@@ -9,14 +9,16 @@ on:
 permissions:
   contents: read
 
+# Scheduled and manual runs queue behind each other instead of cancelling.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   full-suite:
     name: Full Test Suite (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -31,24 +33,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Install ShellCheck (Ubuntu)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
-
-      - name: Install bats-core and helpers
-        run: |
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            git clone --depth 1 --branch v1.13.0 https://github.com/bats-core/bats-core.git "${RUNNER_TEMP}/bats"
-            git clone --depth 1 --branch v0.3.0 https://github.com/bats-core/bats-support.git "${RUNNER_TEMP}/bats-support"
-            git clone --depth 1 --branch v2.2.4 https://github.com/bats-core/bats-assert.git "${RUNNER_TEMP}/bats-assert"
-            echo "${RUNNER_TEMP}/bats/bin" >> "${GITHUB_PATH}"
-          else
-            git clone --depth 1 --branch v1.13.0 https://github.com/bats-core/bats-core.git /tmp/bats
-            sudo /tmp/bats/install.sh /usr/local
-            git clone --depth 1 --branch v0.3.0 https://github.com/bats-core/bats-support.git /tmp/bats-support
-            git clone --depth 1 --branch v2.2.4 https://github.com/bats-core/bats-assert.git /tmp/bats-assert
-          fi
+      - name: Install ShellCheck (Linux only) and bats-core
+        uses: ./.github/actions/setup-shell-tools
+        with:
+          shellcheck: 'true'
+          bats: 'true'
 
       - name: Configure git identity
         run: |
@@ -61,10 +52,13 @@ jobs:
   doc-link-audit:
     name: Full Documentation Link Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Comprehensive link audit
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8  # v2.9.0
@@ -78,11 +72,16 @@ jobs:
   tooling-drift:
     name: Tooling & Documentation Drift Canary
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
+      # Deliberately the distro's unpinned ShellCheck: the PR gate pins a version via
+      # setup-shell-tools, so this canary surfaces drift from whatever apt ships.
       - name: Install ShellCheck
         run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
 
