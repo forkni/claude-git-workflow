@@ -103,3 +103,36 @@ EOF
   [ "${status}" -ne 0 ]
   [[ "${output}" == *"Staged check failed: exit 4"* ]]
 }
+
+@test "a multi-line .cgw.conf value runs every entry and loads without warnings" {
+  # Regression: the multi-line form loaded as a lone '"', which failed closed on
+  # every commit and printed one [WARN] per entry line.
+  _stage src/a.txt one
+  cat >"${TEST_REPO_DIR}/.cgw.conf" <<'EOF'
+CGW_STAGED_CHECKS="
+src/* :: echo first >> ${CHECK_LOG}
+src/* :: [ ! -f missing.py ] || exit 9; echo second >> ${CHECK_LOG}
+"
+EOF
+  run _run_commit "\"feat: add a\""
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"WARN"* ]]
+  [ "$(cat "${CHECK_LOG}")" = "$(printf 'first\nsecond')" ]
+}
+
+@test "a failing entry of a multi-line .cgw.conf value blocks the commit" {
+  _stage src/a.txt one
+  local before
+  before=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+  cat >"${TEST_REPO_DIR}/.cgw.conf" <<'EOF'
+CGW_STAGED_CHECKS="
+src/* :: true
+src/* :: exit 5
+"
+EOF
+  run _run_commit "\"feat: add a\""
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"Staged check failed: exit 5"* ]]
+  [[ "${output}" != *"WARN"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "${before}" ]
+}

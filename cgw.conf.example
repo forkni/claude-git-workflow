@@ -89,8 +89,12 @@ CGW_FREEFORM_MESSAGE_CHECK=""
 # A command runs from the project root when any staged file matches one of
 # its globs (bash [[ == ]] patterns, so * also crosses /). The matching paths
 # are in $CGW_CHECK_FILES, newline-separated. A non-zero exit, or a line
-# without " :: ", blocks the commit.
-# CGW_STAGED_CHECKS="dev/tests/* td/src/* :: python dev/tests/test_smell_baseline.py"
+# without " :: ", blocks the commit. A quoted value may span lines; the value
+# ends at the next quote of the same kind, so keep that quote out of commands.
+# CGW_STAGED_CHECKS="
+# dev/tests/* td/src/* :: python dev/tests/test_smell_baseline.py
+# tests/* :: python -m pytest -q tests
+# "
 CGW_STAGED_CHECKS=""
 
 # ============================================================================

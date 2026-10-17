@@ -108,8 +108,28 @@ if [[ -f "${_CGW_CONF}" ]]; then
   # Read .cgw.conf line-by-line, only applying variables not already set in the environment.
   # This ensures env vars take priority AND derived values (e.g. CGW_PROTECTED_BRANCHES
   # referencing CGW_TARGET_BRANCH) stay consistent with the values actually used.
+  # A quoted value may span lines (CGW_STAGED_CHECKS holds one entry per line):
+  # an opening quote with no closing quote on its line starts collecting, and
+  # the first matching quote ends it. Inside the value, comments and blank
+  # lines are content. _cgw_ml_var is empty while no such value is open.
+  _cgw_ml_var="" _cgw_ml_quote="" _cgw_ml_val="" _cgw_ml_set=1
   while IFS= read -r _line || [[ -n "${_line}" ]]; do
-    _line="${_line%$'\r'}"                         # tolerate CRLF .cgw.conf (e.g., touched by a Windows editor)
+    _line="${_line%$'\r'}" # tolerate CRLF .cgw.conf (e.g., touched by a Windows editor)
+    if [[ -n "${_cgw_ml_var}" ]]; then
+      if [[ "${_line}" == *"${_cgw_ml_quote}"* ]]; then
+        # Closing quote: keep the text before it, drop a trailing ` # comment`.
+        _cgw_ml_val+="${_line%%"${_cgw_ml_quote}"*}"
+        # Continuation lines are consumed even when the env var wins, so they never warn.
+        if ((_cgw_ml_set)); then
+          printf -v "${_cgw_ml_var}" '%s' "${_cgw_ml_val}"
+          export "${_cgw_ml_var?}"
+        fi
+        _cgw_ml_var=""
+      else
+        _cgw_ml_val+="${_line}"$'\n'
+      fi
+      continue
+    fi
     [[ "${_line}" =~ ^[[:space:]]*# ]] && continue # skip comments
     [[ "${_line}" =~ ^[[:space:]]*$ ]] && continue # skip blank lines
     # Only accept CGW_* assignment lines (optionally prefixed with export).
@@ -117,6 +137,15 @@ if [[ -f "${_CGW_CONF}" ]]; then
     if [[ "${_line}" =~ ^[[:space:]]*(export[[:space:]]+)?(CGW_[A-Z0-9_]+)=(.*) ]]; then
       _cgw_var="${BASH_REMATCH[2]}"
       _cgw_val="${BASH_REMATCH[3]}"
+      if [[ "${_cgw_val}" =~ ^\"[^\"]*$ ]] || [[ "${_cgw_val}" =~ ^\'[^\']*$ ]]; then
+        # Opening quote with no closing quote on this line: collect the following lines.
+        _cgw_ml_var="${_cgw_var}"
+        _cgw_ml_quote="${_cgw_val:0:1}"
+        _cgw_ml_val="${_cgw_val:1}"$'\n'
+        _cgw_ml_set=1
+        [[ -n "${!_cgw_var+x}" ]] && _cgw_ml_set=0
+        continue
+      fi
       # Only set if not already in environment (preserves env var priority)
       if [[ -z "${!_cgw_var+x}" ]]; then
         # Strip surrounding quotes and any trailing inline comment (` # …`).
@@ -137,7 +166,9 @@ if [[ -f "${_CGW_CONF}" ]]; then
       printf '%s\n' "[WARN] Ignoring unsupported line in .cgw.conf: ${_line}" >&2
     fi
   done <"${_CGW_CONF}"
-  unset _line _cgw_var _cgw_val
+  [[ -n "${_cgw_ml_var}" ]] &&
+    printf '%s\n' "[WARN] Unterminated quoted value for ${_cgw_ml_var} in .cgw.conf; ignoring it" >&2
+  unset _line _cgw_var _cgw_val _cgw_ml_var _cgw_ml_quote _cgw_ml_val _cgw_ml_set
 fi
 
 # ============================================================================
