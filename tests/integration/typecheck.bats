@@ -35,7 +35,7 @@ teardown() {
   [[ "${output}" != *"[WARN]"* ]]
 }
 
-@test "pre-commit hook: typecheck passes — exits 0 and prints [PASS]" {
+@test "pre-commit hook: typecheck passes - exits 0 and prints [PASS]" {
   local fake_tc
   fake_tc="$(mktemp)"
   printf '#!/usr/bin/env bash\nexit 0\n' > "${fake_tc}"
@@ -49,7 +49,7 @@ teardown() {
   rm -f "${fake_tc}"
 }
 
-@test "pre-commit hook: typecheck fails — prints [WARN] but exits 0 (non-blocking)" {
+@test "pre-commit hook: typecheck fails - prints [WARN] but exits 0 (non-blocking)" {
   local fake_tc
   fake_tc="$(mktemp)"
   printf '#!/usr/bin/env bash\necho "foo.py:1:1: error: missing return type"\nexit 1\n' > "${fake_tc}"

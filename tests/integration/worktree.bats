@@ -83,7 +83,7 @@ _install_hook_direct() {
   ls "${TEST_WORKTREE_DIR}/logs/"worktree_manage_*.log
 }
 
-@test "link is idempotent — re-running succeeds and refreshes the shims" {
+@test "link is idempotent - re-running succeeds and refreshes the shims" {
   run_script_at "${TEST_WORKTREE_DIR}" worktree_manage.sh link
 
   run run_script_at "${TEST_WORKTREE_DIR}" worktree_manage.sh link

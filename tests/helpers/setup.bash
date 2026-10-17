@@ -51,7 +51,10 @@ create_temp_dir() {
 }
 
 cleanup_temp_dir() {
-  [[ -n "${TEST_TMPDIR:-}" ]] && rm -rf "${TEST_TMPDIR}"
+  # `[[ ]] && rm` would return 1 when a setup() skip fires before TEST_TMPDIR exists, failing teardown.
+  if [[ -n "${TEST_TMPDIR:-}" ]]; then
+    rm -rf "${TEST_TMPDIR}"
+  fi
 }
 
 # ── Bare remote repo helper ───────────────────────────────────────────────────
