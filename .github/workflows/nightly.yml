@@ -18,7 +18,8 @@ jobs:
   full-suite:
     name: Full Test Suite (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # The Windows leg is the slow one: its fast batch alone took 20+ minutes on a PR runner.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
