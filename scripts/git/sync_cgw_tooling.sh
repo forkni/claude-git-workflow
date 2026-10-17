@@ -36,7 +36,6 @@ source "${SCRIPT_DIR}/_common.sh"
 init_logging "sync_cgw_tooling"
 ensure_no_stale_index_lock || exit 1
 
-
 _show_help() {
   echo "Usage: ./scripts/git/sync_cgw_tooling.sh --from <claude-git-workflow checkout> [OPTIONS]"
   echo ""
@@ -158,13 +157,13 @@ _run_check() {
     i=1
   fi
 
-  for ((; i < ${#skills[@]}; i++)); do
+  for (( ; i < ${#skills[@]}; i++)); do
     _skill_dir_drift "${ref_skill}" "${skills[i]}"
   done
   # The cmd list has its own index: skip its first entry only when it is the reference.
   local j=0
   [[ -z "${src}" ]] && j=1
-  for ((; j < ${#cmds[@]}; j++)); do
+  for (( ; j < ${#cmds[@]}; j++)); do
     _cmd_file_drift "${ref_cmd}" "${cmds[j]}"
   done
 
@@ -379,4 +378,5 @@ main() {
 # One line on purpose: bash reads a command whole before running it, so after main returns it never
 # goes back to the file. The sync may therefore replace this very script (new length, new content)
 # without bash resuming at a stale offset.
-main "$@"; exit $?
+main "$@"
+exit $?
