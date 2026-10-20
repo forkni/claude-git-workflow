@@ -244,6 +244,7 @@ CGW_PR_HEAD_SYNC_SECONDS|60|int|fill|conf
 CGW_PR_CHECKS_APPEAR_SECONDS|90|int|fill|conf
 CGW_LOCK_RETRY_ATTEMPTS|3|int|fill|conf
 CGW_LOCK_RETRY_DELAY|1|int|fill|conf
+CGW_NET_TIMEOUT|120|int|fill|conf
 CGW_ICASE_PATHSPECS|1|bool|fill|conf
 CGW_REFLOG_PREFIX|cgw|str|fill|conf
 CGW_NON_INTERACTIVE|0|bool|fill|env
@@ -555,6 +556,10 @@ CGW_PROTECTED_BRANCHES="${CGW_PROTECTED_BRANCHES:-${CGW_TARGET_BRANCH}}"
 # CGW_LOCK_RETRY_ATTEMPTS: number of retry attempts for mutating git commands
 # when encountering an in-flight index.lock race or transient collision (default 3).
 # CGW_LOCK_RETRY_DELAY: base delay in seconds between retries with backoff (default 1).
+#
+# --- Network timeout ---
+# CGW_NET_TIMEOUT: seconds a network git call (fetch, push, pull, ls-remote, remote prune)
+# may run before cgw_net_git (_common.sh) kills it and returns 124 (default 120; 0 = no limit).
 
 # --- Non-interactive & agent execution discipline ---
 # When CGW_NON_INTERACTIVE=1 is set, ensure git commands never prompt on stdin,
