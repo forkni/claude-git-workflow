@@ -267,6 +267,24 @@ CGW_ALLOW_STAGED_DIVERGENCE="0"
 CGW_REQUIRE_EXPLICIT_STAGING="0"
 
 # ============================================================================
+# UNTRACKED FILES (commit_enhanced.sh)
+# ============================================================================
+# `git add -u` never stages new files, so a new module is silently left out of
+# a commit unless it is named with --only. After the commit's file set is
+# final, commit_enhanced.sh lists untracked, non-ignored files that are not
+# part of it (CGW_LOCAL_FILES entries are skipped) as a WARNING on stderr:
+# the count and the first 10 paths. The commit still goes ahead.
+#
+# CGW_UNTRACKED_CHECK: 0 = silence the warning (same as --no-untracked-check
+# per run). 1 = warn (default).
+# CGW_STRICT_UNTRACKED: 1 = refuse the commit (exit 1, nothing committed)
+# while such files exist; fix each by `git add`, .gitignore or CGW_LOCAL_FILES
+# (same as --strict-untracked per run). 0 = warn only (default).
+# --no-untracked-check / CGW_UNTRACKED_CHECK=0 override strict mode.
+CGW_UNTRACKED_CHECK="1"
+CGW_STRICT_UNTRACKED="0"
+
+# ============================================================================
 # COMMIT SUBJECT LENGTH (commit_enhanced.sh)
 # ============================================================================
 # Pro Git's "Commit Guidelines" recommend keeping the subject line (the part
