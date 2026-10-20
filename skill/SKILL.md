@@ -706,6 +706,7 @@ If a hook reports `CGW not found` inside a linked worktree, run `link` — see
 ./scripts/git/clean_build.sh --all --execute      # all artifact types regardless of detection
 ./scripts/git/repo_health.sh                  # integrity check + size report
 ./scripts/git/repo_health.sh --gc             # also run garbage collection
+./scripts/git/repo_state.sh                   # read-only state snapshot + suggested next step (--json for JSON)
 ```
 
 There is no `setup_gitignore.sh` — unlike `.gitattributes`, `.gitignore` is hand-composed.

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### New Features
+
+- **`repo_state.sh`: tested repo-state scan for `/auto-git-workflow-cmd`**: the command's Step 1 no longer hand-runs seven git commands and maps them to the suggestion table by eye. `scripts/git/repo_state.sh [--json]` is read-only (no fetch, no log file; ahead/behind uses the remote-tracking refs already on disk) and reports the preconditions (inside a work tree, has commits, detached HEAD), branch, upstream, ahead/behind, staged/unstaged/untracked/conflicted counts, the in-progress operation (merge, rebase, cherry-pick, revert, bisect, also in linked worktrees), stash count, local-only files (`cgw_is_local_file`), the commits not yet on the target, and `suggestion=<1-11>` with `suggestion_label` encoding the command's 11-row table. Output is stable `key=value` lines, or one JSON object with `--json` (built in bash, no `jq`). Exit `0` whenever a report was produced, `1` for not-a-repo or no commits, `2` for a usage error. The table stays in the command as the rule documentation. Documented in `README.md`, `docs/usage.md`, `skill/SKILL.md` and `skill/references/script-reference.md`, with 51 tests in `tests/integration/repo_state.bats` (one per suggestion row, paused merge/rebase/cherry-pick/revert/bisect, detached HEAD, not-a-repo, JSON validity, and a check that status, refs, index and the `.git` tree are untouched).
+
 ## v0.20.0 (2026-10-18)
 
 > Changes since `v0.19.1`

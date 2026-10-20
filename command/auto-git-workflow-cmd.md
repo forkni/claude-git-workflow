@@ -43,39 +43,45 @@ section, run its command). Only run Steps 1-2 when invoked bare.
 Run this scan immediately on bare invocation, before showing the user anything — its
 results become the menu's state-summary and suggestion lines. If SKILL.md still needs
 loading, issue the Read and this Bash call in the same turn (parallel tool calls) so
-the menu appears in one round-trip. Run as a **single** Bash call — every line is
-read-only, safe to combine:
+the menu appears in one round-trip. Run as a **single** Bash call:
 
 ```bash
 git fetch --quiet 2>/dev/null || true
-git status --porcelain=v2 --branch
-echo "--- stash ---"; git stash list | head -3
-echo "--- in-progress ---"; ls "$(git rev-parse --git-dir 2>/dev/null)" 2>/dev/null | grep -E '^(MERGE_HEAD|CHERRY_PICK_HEAD|REVERT_HEAD|BISECT_LOG|rebase-merge|rebase-apply)$'
-echo "--- recent ---"; git log --oneline -3
-echo "--- unmerged-to-target ---"; tgt="$(git symbolic-ref -q --short "refs/remotes/${CGW_REMOTE:-origin}/HEAD" 2>/dev/null || echo "${CGW_TARGET_BRANCH:-main}")"; git log --oneline "$tgt..HEAD" 2>/dev/null | head -3
-echo "--- upstream-touched ---"; git diff --name-only HEAD...@{u} 2>/dev/null | head -20
+./scripts/git/repo_state.sh
 ```
 
+`repo_state.sh` is read-only (it never changes the repo and makes no network call; the
+`git fetch` above is what refreshes the remote-tracking refs behind the ahead/behind
+counts). It prints `key=value` lines (`--json` prints one JSON object): `branch`,
+`detached`, `upstream`, `ahead`, `behind`, `staged`, `unstaged`, `untracked`, `conflicted`,
+`in_progress`, `stash`, `local_only_dirty`, `unmerged_to_target`, `upstream_overlap`,
+`clean`, plus the result of the rules below as `suggestion=<row>` and `suggestion_label`.
+Use `suggestion` for the Step 2 suggestion line and the counts for its state line; run
+`./scripts/git/repo_state.sh --help` for the full key list.
+
 If the fetch fails (offline, no remote), continue — ahead/behind counts may just be
-stale. If the whole scan errors, skip straight to the menu with no suggestion line.
+stale. If `repo_state.sh` exits `1` (not a git repository, or no commits yet — the
+`error` key says which) or is missing, skip straight to the menu with no suggestion line.
 
 ### Suggestion rules — first match wins
 
-Pick **one** suggestion from the first matching row. Do not execute anything yet.
+`repo_state.sh` encodes this table in `suggestion` (row number) and `suggestion_label`;
+the table stays here as the rule documentation. Pick **one** suggestion from the first
+matching row. Do not execute anything yet.
 
-| # | Signal in scan output | Suggested next step |
-|---|---|---|
-| 1 | unmerged `u` lines, or any `in-progress` marker (`MERGE_HEAD`, `rebase-merge`, …) | Finish the in-progress operation — resolve conflicts per SKILL.md's conflict procedure, or continue/abort via the matching wrapper (e.g. `rebase_safe.sh --continue`) |
-| 2 | `branch.head (detached)` | Create a branch to keep the work before it becomes unreachable |
-| 3 | uncommitted paths that also appear in `upstream-touched` (the remote already changed them) | Reconcile first: show `git diff HEAD @{u} -- <paths>`, then keep / discard / stash the local edit before committing or syncing — upstream may already carry the same fix |
-| 4 | uncommitted work — any `1`/`2`/`?` entries | Commit it — ⭐ option 1 if it should also be pushed & merged, option 2 to just commit. If they were about to switch branches, offer stash instead |
-| 5 | `branch.ab +N -0` with N>0 — ahead only | Push to remote (option 3) |
-| 6 | `branch.ab +0 -M` with M>0 — behind only | Pull / sync with remote (option 3) |
-| 7 | ahead **and** behind — diverged | Sync first (`sync_branches.sh`), then push |
-| 8 | no `branch.upstream` line | Publish the branch — push with upstream (option 3) |
-| 9 | tree clean, `unmerged-to-target` non-empty (and not on the target branch) | Merge or PR to target (option 4) — or ⭐ option 1 next time work lands |
-| 10 | tree clean, stash list non-empty | Restore stashed work (`stash_work.sh pop`) |
-| 11 | everything clean and in sync | No suggestion — show the menu and note the tree is clean (start new work, or inspect history) |
+| # | Label | Signal (`repo_state.sh` key) | Suggested next step |
+|---|---|---|---|
+| 1 | `finish-in-progress` | `conflicted` > 0, or `in_progress` is not `none` (`merge`, `rebase`, `cherry-pick`, `revert`, `bisect`) | Finish the in-progress operation — resolve conflicts per SKILL.md's conflict procedure, or continue/abort via the matching wrapper (e.g. `rebase_safe.sh --continue`) |
+| 2 | `detached-head` | `detached=1` | Create a branch to keep the work before it becomes unreachable |
+| 3 | `reconcile-upstream` | uncommitted work and `upstream_overlap` > 0 (the remote already changed those paths) | Reconcile first: show `git diff HEAD @{u} -- <paths>`, then keep / discard / stash the local edit before committing or syncing — upstream may already carry the same fix |
+| 4 | `commit` | uncommitted work — `staged` + `unstaged` + `untracked` > 0 | Commit it — ⭐ option 1 if it should also be pushed & merged, option 2 to just commit. If they were about to switch branches, offer stash instead |
+| 5 | `push` | `ahead` > 0, `behind` = 0 — ahead only | Push to remote (option 3) |
+| 6 | `pull` | `behind` > 0, `ahead` = 0 — behind only | Pull / sync with remote (option 3) |
+| 7 | `sync-diverged` | `ahead` > 0 **and** `behind` > 0 — diverged | Sync first (`sync_branches.sh`), then push |
+| 8 | `publish-branch` | `upstream` empty | Publish the branch — push with upstream (option 3) |
+| 9 | `merge-or-pr` | tree clean, `unmerged_to_target` > 0, and not on the target branch | Merge or PR to target (option 4) — or ⭐ option 1 next time work lands |
+| 10 | `restore-stash` | tree clean, `stash` > 0 | Restore stashed work (`stash_work.sh pop`) |
+| 11 | `clean` | everything clean and in sync | No suggestion — show the menu and note the tree is clean (start new work, or inspect history) |
 
 ---
 
