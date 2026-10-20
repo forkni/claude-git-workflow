@@ -929,7 +929,8 @@
           "type": "must_include",
           "patterns": [
             "worktree_manage\\.sh\\s+remove",
-            "--execute"
+            "--execute",
+            "--non-interactive"
           ],
           "regex": true
         },
@@ -937,7 +938,7 @@
           "type": "expected_behavior",
           "id": "worktree_execute_required",
           "items": [
-            "Notes that --execute is required for worktree_manage.sh remove to actually delete the worktree link, since the default is a dry-run preview"
+            "Notes that --execute is required for worktree_manage.sh remove to actually delete the worktree link, since the default is a dry-run preview, and that an agent run needs --non-interactive to skip the confirmation prompt"
           ]
         }
       ]
