@@ -5,6 +5,7 @@
 - PreToolUse Guardrail
 - Lint Failures
 - Push Failures
+- Remote Hung or Unreachable (exit 124)
 - CI Failures
 - Merge Rollback
 - Branch Sync Issues
@@ -84,6 +85,7 @@ Common failures and fixes:
 2. **Auth failure**: check SSH key or token configuration
 3. **Branch protection**: resolve via PR workflow
 4. **Behind remote**: `./scripts/git/sync_branches.sh` to pull --rebase before pushing
+5. **Exit 124 / "timed out after Ns"**: the remote hung; see the next section
 
 **Raw fallback** (if push_validated.sh unavailable):
 
@@ -91,6 +93,31 @@ Common failures and fixes:
 git pull --rebase origin <branch>
 git push origin <branch>
 ```
+
+---
+
+## Remote Hung or Unreachable (exit 124)
+
+Network git calls (fetch, push, pull, `ls-remote`, remote prune, tag push) run under GNU `timeout`
+for `CGW_NET_TIMEOUT` seconds (default `120`). A hang ends with exit `124` and this message:
+
+```text
+[ERROR] git <op> timed out after <N>s (remote unreachable or hung). Raise the limit, or set 0 to disable it: CGW_NET_TIMEOUT=<seconds>
+```
+
+Exit `124` means the remote did not answer, not that the push or fetch was rejected. Nothing was
+changed on the remote side by the call that timed out.
+
+1. **Check the remote**: `git ls-remote --heads origin` by hand, or open the host's status page. A VPN,
+   proxy or captive portal is the usual cause.
+2. **Slow but working** (large push, slow link): retry with a higher limit, for example
+   `CGW_NET_TIMEOUT=600 ./scripts/git/push_validated.sh`, or set `CGW_NET_TIMEOUT` in `.cgw.conf`.
+3. **No limit wanted**: `CGW_NET_TIMEOUT=0` runs plain git.
+4. **Do not loop**: retrying the same call against an unreachable remote only repeats the wait. Fix
+   the connection first, then run the script once.
+
+Timeouts need GNU `timeout`. Where it is missing (or the `timeout` found is Windows `timeout.exe`),
+the helper runs plain git, so no limit applies. `verify_ci.sh --timeout` (CI polling) is a separate setting.
 
 ---
 

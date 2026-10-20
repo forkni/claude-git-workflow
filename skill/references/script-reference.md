@@ -742,6 +742,9 @@ Computes GitHub-compatible heading slugs locally (offline port of `gh-md-toc` â€
 | `CGW_FREEFORM_MESSAGE_BRANCHES=<globs>` | Space-separated bash globs of branches whose commit format is not checked (e.g. `"up/*"` for an upstream PR branch). Never exempts the source, target, or a `CGW_PROTECTED_BRANCHES` entry, even with `"*"` |
 | `CGW_FREEFORM_MESSAGE_CHECK=<cmd>` | Command run against a freeform branch's message instead of skipping validation (e.g. the target project's own `commit-msg` hook); receives the message as a file path in `$1` |
 | `CGW_STAGED_CHECKS=<entries>` | Path-scoped commit gates for `commit_enhanced.sh`, one `<glob> [<glob>...] :: <command>` per line; a command runs from the project root when a staged file matches (paths in `$CGW_CHECK_FILES`), and a failure blocks the commit. `--skip-lint` skips them |
+| `CGW_STRICT_UNTRACKED=1` | `commit_enhanced.sh` refuses (exit `1`) when untracked files would be left out; same as `--strict-untracked` |
+| `CGW_UNTRACKED_CHECK=0` | Skip the untracked-file notice and the strict refusal (default: `1`); same as `--no-untracked-check`, and wins over strict |
+| `CGW_NET_TIMEOUT=<seconds>` | Limit for network git calls (fetch, push, pull, `ls-remote`, prune, tag push) via `cgw_net_git`; default `120`, `0` = no limit. Exit `124` = timed out, see [error-recovery.md](error-recovery.md#remote-hung-or-unreachable-exit-124). Needs GNU `timeout`, else plain git |
 | `CGW_LOCAL_FILES=<paths>` | Space-separated files never committed (default: `CLAUDE.md MEMORY.md .claude/ logs/`) |
 | `CGW_LOCAL_FILES_EXEMPT=<paths>` | Space-separated paths exempt from the block (e.g. `.claude/settings.json` inside the blocked `.claude/`) |
 | `CGW_PROTECTED_BRANCHES=<list>` | Space-separated branches requiring `--force` confirmation for force-push |

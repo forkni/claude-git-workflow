@@ -11,6 +11,7 @@
 ### Documentation
 
 - **Secrets and local config**: new `skill/references/secrets-and-local-config.md` (gitignored real config plus a committed `*.example`, no hardcoded keys, rotate anything ever committed, and what `CGW_LOCAL_FILES` protects versus what it does not scan), linked from `SKILL.md` and `removing-sensitive-data.md`. The `commit_enhanced.sh` flag tables in `SKILL.md` and `script-reference.md` list the new flags.
+- **Network timeout in the skill**: `skill/references/error-recovery.md` gains a "Remote Hung or Unreachable (exit 124)" section (what the message means, raise or disable `CGW_NET_TIMEOUT`, do not retry in a loop, GNU `timeout` requirement), and the environment-variable table in `script-reference.md` lists `CGW_NET_TIMEOUT`, `CGW_STRICT_UNTRACKED` and `CGW_UNTRACKED_CHECK`.
 
 ## v0.20.0 (2026-10-18)
 
