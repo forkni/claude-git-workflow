@@ -18,6 +18,8 @@
 #   --no-venv          Use system ruff instead of .venv ruff
 #   --skip-lint        Skip all lint checks
 #   --skip-md-lint     Skip markdown lint only (CGW_MARKDOWNLINT_CMD step)
+#   --strict-untracked Refuse to commit while untracked (non-ignored) files are left out
+#   --no-untracked-check  Do not warn about untracked files left out of the commit
 #   -h, --help         Show help
 #
 # Staging behavior (non-interactive):
@@ -235,6 +237,53 @@ _fix_restage_recheck() {
   esac
 }
 
+# Untracked-file notice. `git add -u` never stages new files, so a new module
+# is silently left out unless named with --only (Kofler, "Scripting" p.361: his
+# git-acp lists them and only warns, since blocking is annoying). Lists
+# `git ls-files --others --exclude-standard` entries -- by definition not in
+# the index, so not part of this commit -- minus local-only files (same
+# matcher as every other enforcement point). Warning only (stderr, with the
+# count and the first _UNTRACKED_LIST_MAX paths); with <strict>=1 it instead
+# refuses and returns 1 so the caller aborts before anything is committed.
+#   _untracked_notice <strict 0|1>
+_UNTRACKED_LIST_MAX=10
+_untracked_notice() {
+  local strict="$1" f
+  local -a left_out=()
+  while IFS= read -r -d '' f; do
+    cgw_is_local_file "${f}" && continue
+    # logs/ is where init_logging writes this very run's log: CGW's own output
+    # is never "a file you forgot", even if CGW_LOCAL_FILES was overridden.
+    [[ "${f}" == logs/* ]] && continue
+    left_out+=("${f}")
+  done < <(git ls-files -z --others --exclude-standard 2>/dev/null)
+
+  local total=${#left_out[@]}
+  [[ ${total} -eq 0 ]] && return 0
+
+  local i shown=${_UNTRACKED_LIST_MAX}
+  [[ ${total} -lt ${shown} ]] && shown=${total}
+  if [[ "${strict}" -eq 1 ]]; then
+    err_tee "[X] --strict-untracked: ${total} untracked file(s) are not part of this commit; nothing was committed:"
+  else
+    err_tee "[WARN] ${total} untracked file(s) are NOT included in this commit:"
+  fi
+  for ((i = 0; i < shown; i++)); do
+    err_tee "  ?? ${left_out[i]}"
+  done
+  ((total > shown)) && err_tee "  ... and $((total - shown)) more"
+  if [[ "${strict}" -eq 1 ]]; then
+    err_tee "Resolve each one, then re-run:"
+    err_tee "  - include it:           git add <path>  (or --only <path>)"
+    err_tee "  - never track it:       add it to .gitignore"
+    err_tee "  - keep it local-only:   add it to CGW_LOCAL_FILES in .cgw.conf"
+    err_tee "  - ignore this check:    --no-untracked-check (or CGW_UNTRACKED_CHECK=0)"
+    return 1
+  fi
+  err_tee "(warning only -- git add <path>, .gitignore, or CGW_LOCAL_FILES to resolve; --no-untracked-check silences)"
+  return 0
+}
+
 main() {
   local non_interactive=0
   local skip_lint=0
@@ -245,6 +294,8 @@ main() {
   local commit_msg_param=""
   # Signing: -1 = unset (use CGW_SIGN_COMMITS), 0 = off, 1 = on
   local sign_flag=-1
+  local untracked_check=1
+  local strict_untracked=0
 
   # Auto-detect non-interactive mode when no TTY
   if [[ ! -t 0 ]]; then
@@ -259,6 +310,8 @@ main() {
   [[ "${CGW_NO_VENV:-0}" == "1" ]] && SKIP_VENV=1
   [[ "${CGW_SKIP_LINT:-0}" == "1" ]] && skip_lint=1 && skip_md_lint=1
   [[ "${CGW_SKIP_MD_LINT:-0}" == "1" ]] && skip_md_lint=1
+  [[ "${CGW_UNTRACKED_CHECK:-1}" == "0" ]] && untracked_check=0
+  [[ "${CGW_STRICT_UNTRACKED:-0}" == "1" ]] && strict_untracked=1
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -276,6 +329,9 @@ main() {
         echo "  --no-venv           Use system ruff instead of .venv ruff"
         echo "  --skip-lint         Skip all lint checks (code + markdown)"
         echo "  --skip-md-lint      Skip markdown lint only (CGW_MARKDOWNLINT_CMD step)"
+        echo "  --strict-untracked  Refuse to commit while untracked (non-ignored, non-local-only)"
+        echo "                      files are left out of the commit (default: warn only)"
+        echo "  --no-untracked-check  Do not warn about untracked files left out of the commit"
         echo "  --sign              GPG/SSH-sign the commit (git commit -S)"
         echo "  --no-sign           Disable signing even if CGW_SIGN_COMMITS=1"
         echo "  -h, --help          Show this help"
@@ -304,6 +360,8 @@ main() {
         echo "  CGW_SKIP_LINT=1         Same as --skip-lint"
         echo "  CGW_SKIP_MD_LINT=1      Same as --skip-md-lint"
         echo "  CGW_SIGN_COMMITS=1      Same as --sign (sign all commits by default)"
+        echo "  CGW_STRICT_UNTRACKED=1  Same as --strict-untracked"
+        echo "  CGW_UNTRACKED_CHECK=0   Same as --no-untracked-check (wins over strict)"
         echo "  (Also: CLAUDE_GIT_NON_INTERACTIVE, CLAUDE_GIT_STAGED_ONLY, CLAUDE_GIT_NO_VENV)"
         echo ""
         echo "Protected files (never committed): configured via CGW_LOCAL_FILES in .cgw.conf"
@@ -350,6 +408,14 @@ main() {
       --no-venv)
         SKIP_VENV=1
         CGW_NO_VENV=1
+        shift
+        ;;
+      --strict-untracked)
+        strict_untracked=1
+        shift
+        ;;
+      --no-untracked-check)
+        untracked_check=0
         shift
         ;;
       --sign)
@@ -521,6 +587,9 @@ main() {
       echo "[!] Merge in progress; resolved tree matches HEAD -- concluding merge commit"
     else
       echo "[!] No changes to commit"
+      # Nothing to refuse here, but a lone new file is the classic "why is
+      # there nothing to commit" case -- say so (warning only, even in strict).
+      [[ ${untracked_check} -eq 1 ]] && _untracked_notice 0
       exit 0
     fi
   fi
@@ -618,6 +687,14 @@ main() {
 
   echo "[OK] Staged files validated"
   echo ""
+
+  # [2.1] Untracked files left out of this commit. Staging is final here (bulk
+  # `git add -u`, pre-staged selection, or --only), and strict mode must refuse
+  # before lint auto-fix touches anything or a commit is created.
+  if [[ ${untracked_check} -eq 1 ]]; then
+    _untracked_notice "${strict_untracked}" || exit 1
+    echo ""
+  fi
 
   # [2.5] Whitespace check (non-blocking -- warns but does not abort)
   if git diff --cached --check >/dev/null 2>&1; then

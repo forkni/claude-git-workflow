@@ -153,6 +153,8 @@ Passing a message still works and overrides git's prepared one.
 | `--skip-md-lint` | Skip markdown lint only; also excludes `*.md` from the `[3.5]` congruence guard's validated scope for this run | When only markdown lint causes noise |
 | `--sign` | GPG/SSH-sign the commit (`git commit -S`); overrides `CGW_SIGN_COMMITS` | Signing this specific commit |
 | `--no-sign` | Unsigned commit even if `CGW_SIGN_COMMITS=1` | Skip signing for a single commit |
+| `--strict-untracked` | Refuse (exit `1`, nothing committed) when untracked files would be left out; mirrors `CGW_STRICT_UNTRACKED=1` | Shared repos where a forgotten new file breaks the build |
+| `--no-untracked-check` | Skip the untracked-file warning and the strict refusal; mirrors `CGW_UNTRACKED_CHECK=0` | Scratch files you know are staying out |
 
 **Auto-detection**: When no TTY (Claude Code context), script automatically enables `--non-interactive`.
 
@@ -168,6 +170,8 @@ Passing a message still works and overrides git's prepared one.
 Override with `--all` to always bulk-stage, or `--only <path>` to explicitly select files (resets index first).
 
 **Environment**: `CGW_ALL=1` mirrors `--all`. `CGW_REQUIRE_EXPLICIT_STAGING=1` (default `0`) makes the non-interactive auto-stage row exit `1` instead, so a shared checkout never commits another session's edits: stage with `--only`, pre-stage plus `--staged-only`, or pass `--all`.
+
+**Untracked files**: once the commit's file set is final (`--only` and `--staged-only` honoured), `commit_enhanced.sh` lists `git ls-files --others --exclude-standard` entries on stderr (`[WARN] N untracked file(s) are NOT included`, first 10 plus `... and K more`). Files matching `CGW_LOCAL_FILES` and CGW's own `logs/` are skipped. The warning never changes the exit code; `--strict-untracked` / `CGW_STRICT_UNTRACKED=1` turns it into a refusal, `--no-untracked-check` / `CGW_UNTRACKED_CHECK=0` turns it off (and wins over strict). See [secrets-and-local-config.md](secrets-and-local-config.md).
 
 ---
 
