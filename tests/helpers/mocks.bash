@@ -14,6 +14,12 @@ setup_mock_bin() {
   mkdir -p "${MOCK_BIN_DIR}"
   export PATH="${MOCK_BIN_DIR}:${PATH}"
 
+  # Bash caches the path of every command it has run, so on Linux a shim
+  # written here after the real `git`/`timeout` already ran is never found
+  # (Windows/MSYS hides this). Turn the cache off for the whole test instead
+  # of a `hash -r` after each chmod.
+  set +h
+
   # This dir only shadows PATH for names it explicitly mocks -- a real npx
   # from the host/CI runner (e.g. GitHub Actions' preinstalled Node.js) is
   # still resolvable, and _cgw_detect_markdownlint()'s npx fallback would
