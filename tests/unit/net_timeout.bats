@@ -36,6 +36,7 @@ esac
 exec "${REAL_GIT}" "\$@"
 EOF
   chmod +x "${MOCK_BIN_DIR}/git"
+  hash -r # bash caches the earlier git/timeout path; forget it
 }
 
 # _install_echo_git -- a `git` that reports what it saw instead of doing anything.
@@ -45,6 +46,7 @@ _install_echo_git() {
 echo "plain-git args=$* prompt=${GIT_TERMINAL_PROMPT-unset}"
 EOF
   chmod +x "${MOCK_BIN_DIR}/git"
+  hash -r # bash caches the earlier git/timeout path; forget it
 }
 
 # _install_gnu_timeout_stub -- a `timeout` that identifies as GNU coreutils,
@@ -62,6 +64,7 @@ shift
 exec "\$@"
 EOF
   chmod +x "${MOCK_BIN_DIR}/timeout"
+  hash -r # bash caches the earlier git/timeout path; forget it
 }
 
 # _install_windows_timeout_stub -- C:\Windows\System32\timeout.exe: rejects
@@ -77,6 +80,7 @@ echo "\$*" >>"${TIMEOUT_LOG}"
 exit 99
 EOF
   chmod +x "${MOCK_BIN_DIR}/timeout"
+  hash -r # bash caches the earlier git/timeout path; forget it
 }
 
 # ── pass-through ──────────────────────────────────────────────────────────────
@@ -141,6 +145,7 @@ echo "slow-but-fine"
 exit 7
 EOF
   chmod +x "${MOCK_BIN_DIR}/git"
+  hash -r # bash caches the earlier git/timeout path; forget it
   export CGW_NET_TIMEOUT=0
   run cgw_net_git fetch origin
   [ "${status}" -eq 7 ]
@@ -154,6 +159,7 @@ EOF
 exit 124
 EOF
   chmod +x "${MOCK_BIN_DIR}/git"
+  hash -r # bash caches the earlier git/timeout path; forget it
   export CGW_NET_TIMEOUT=0
   run cgw_net_git fetch origin
   [ "${status}" -eq 124 ]
