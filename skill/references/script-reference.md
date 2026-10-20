@@ -476,7 +476,7 @@ Always protected, regardless of `CGW_TARGET_BRANCH`: `main`, `master`, the repo'
 ./scripts/git/worktree_manage.sh add ../part2 feat/part-2 feat/part-1  # new branch starting at another branch (no upstream until first push)
 ./scripts/git/worktree_manage.sh add ../pr feat/from-origin             # branch only on the remote: checked out tracking it
 ./scripts/git/worktree_manage.sh link                            # link CGW tooling into this worktree
-./scripts/git/worktree_manage.sh remove --execute ../hotfix      # remove (--execute required)
+./scripts/git/worktree_manage.sh remove --execute --non-interactive ../hotfix  # remove (--execute required; --non-interactive skips the confirmation)
 ./scripts/git/worktree_manage.sh prune                           # dry-run: show stale admin files
 ./scripts/git/worktree_manage.sh prune --execute                 # remove stale admin files
 ```
@@ -745,6 +745,12 @@ Computes GitHub-compatible heading slugs locally (offline port of `gh-md-toc` â€
 | `CGW_STRICT_UNTRACKED=1` | `commit_enhanced.sh` refuses (exit `1`) when untracked files would be left out; same as `--strict-untracked` |
 | `CGW_UNTRACKED_CHECK=0` | Skip the untracked-file notice and the strict refusal (default: `1`); same as `--no-untracked-check`, and wins over strict |
 | `CGW_NET_TIMEOUT=<seconds>` | Limit for network git calls (fetch, push, pull, `ls-remote`, prune, tag push) via `cgw_net_git`; default `120`, `0` = no limit. Exit `124` = timed out, see [error-recovery.md](error-recovery.md#remote-hung-or-unreachable-exit-124). Needs GNU `timeout`, else plain git |
+| `CGW_LOCK_RETRY_ATTEMPTS=<n>` | Retries when a git command hits an in-flight `index.lock` race or transient collision (default: `3`) |
+| `CGW_LOCK_RETRY_DELAY=<seconds>` | Base delay between lock retries, with backoff (default: `1`) |
+| `CGW_PR_CHECKS_POLL_SECONDS=<seconds>` | `merge_pr.sh --wait-checks`: seconds between polls while waiting for the PR head or its checks (default: `5`) |
+| `CGW_ICASE_PATHSPECS=0` | Disable the automatic case-insensitive pathspecs on Windows (default: `1`) |
+| `CGW_REFLOG_PREFIX=<text>` | Prefix for `GIT_REFLOG_ACTION`, so CGW operations are identifiable in `recover.sh reflog` (default: `cgw`) |
+| `CGW_UV_SYNC_ARGS=<args>` | uv projects: `check_lint.sh` runs `uv sync --check <args>` when a typechecker and `uv.lock` exist, and fails (exit `2`) with the `uv sync <args>` remedy if `.venv` drifted (default: `--group dev`); `--skip-typecheck` skips it |
 | `CGW_LOCAL_FILES=<paths>` | Space-separated files never committed (default: `CLAUDE.md MEMORY.md .claude/ logs/`) |
 | `CGW_LOCAL_FILES_EXEMPT=<paths>` | Space-separated paths exempt from the block (e.g. `.claude/settings.json` inside the blocked `.claude/`) |
 | `CGW_PROTECTED_BRANCHES=<list>` | Space-separated branches requiring `--force` confirmation for force-push |

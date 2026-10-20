@@ -12,6 +12,8 @@
 
 - **Secrets and local config**: new `skill/references/secrets-and-local-config.md` (gitignored real config plus a committed `*.example`, no hardcoded keys, rotate anything ever committed, and what `CGW_LOCAL_FILES` protects versus what it does not scan), linked from `SKILL.md` and `removing-sensitive-data.md`. The `commit_enhanced.sh` flag tables in `SKILL.md` and `script-reference.md` list the new flags.
 - **Network timeout in the skill**: `skill/references/error-recovery.md` gains a "Remote Hung or Unreachable (exit 124)" section (what the message means, raise or disable `CGW_NET_TIMEOUT`, do not retry in a loop, GNU `timeout` requirement), and the environment-variable table in `script-reference.md` lists `CGW_NET_TIMEOUT`, `CGW_STRICT_UNTRACKED` and `CGW_UNTRACKED_CHECK`.
+- **Every setting is named in the skill**: a new test in `tests/unit/config_registry.bats` holds each `cgw_config_registry` row to `skill/`, the surface agents read (until now it checked only `cgw.conf.example` and `docs/configuration.md`). It found six settings the skill never mentioned, now in the `script-reference.md` environment table: `CGW_LOCK_RETRY_ATTEMPTS`, `CGW_LOCK_RETRY_DELAY`, `CGW_PR_CHECKS_POLL_SECONDS`, `CGW_ICASE_PATHSPECS`, `CGW_REFLOG_PREFIX` and `CGW_UV_SYNC_ARGS`.
+- **`worktree_manage.sh remove` needs `--non-interactive` from an agent**: `SKILL.md`, `script-reference.md` and `error-recovery.md` showed `remove --execute` alone, which prints `Cancelled` and removes nothing when no one answers the confirmation. The examples now pass `--non-interactive`, and the `worktree-001` benchmark eval expects it.
 
 ## v0.20.0 (2026-10-18)
 

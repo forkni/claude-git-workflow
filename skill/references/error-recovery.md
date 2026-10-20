@@ -415,8 +415,8 @@ directory it didn't create, or a link that doesn't resolve to the main worktree.
 **If the main checkout's `scripts/git` / `.githooks` were emptied** (typically by a raw
 `git worktree remove` following a legacy Windows junction): nothing tracked is lost, but the
 gitignored tooling is gone. Re-run `install.cmd` (or `cgw-batch-install.cmd`) from the CGW
-source repo; `.cgw.conf` is not touched. Then use `worktree_manage.sh remove --execute` for
-worktrees from now on. Worktrees created via
+source repo; `.cgw.conf` is not touched. Then use `worktree_manage.sh remove --execute --non-interactive`
+for worktrees from now on. Worktrees created via
 `worktree_manage.sh add` are linked automatically; this is only needed for worktrees created
 directly with `git worktree add`, or ones set up before this feature existed.
 
