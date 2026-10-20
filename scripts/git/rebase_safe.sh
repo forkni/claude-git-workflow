@@ -377,7 +377,7 @@ _cmd_rebase_onto() {
   # Check if onto_ref is a local or remote branch and fetch latest
   if git rev-parse "${CGW_REMOTE}/${onto_ref}" >/dev/null 2>&1; then
     echo "  Fetching latest ${onto_ref} from ${CGW_REMOTE}..." | tee -a "$logfile"
-    git fetch "${CGW_REMOTE}" "${onto_ref}" 2>&1 | tee -a "$logfile" || true
+    cgw_net_git fetch "${CGW_REMOTE}" "${onto_ref}" 2>&1 | tee -a "$logfile" || true
   fi
 
   # The range being rewritten: <upstream>..HEAD for the 3-argument form,

@@ -229,7 +229,7 @@ main() {
   # ref is what the force-push lease in [5/5] is built from.
   local state_known=1
   if [[ ${remote_branch_exists} -eq 1 ]]; then
-    if ! git fetch "${CGW_REMOTE}" \
+    if ! cgw_net_git fetch "${CGW_REMOTE}" \
       "+refs/heads/${target_branch}:refs/remotes/${CGW_REMOTE}/${target_branch}" \
       >>"$logfile" 2>&1; then
       echo "[!] WARNING: fetch of ${CGW_REMOTE}/${target_branch} failed -- behind-remote check may use stale data" | tee -a "$logfile"

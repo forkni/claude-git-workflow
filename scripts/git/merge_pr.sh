@@ -343,10 +343,10 @@ main() {
     fi
     local_head=$(git rev-parse --verify --quiet "refs/heads/${head_branch}^{commit}") || local_head=""
     if [[ -n "${local_head}" ]]; then
-      remote_head=$(git ls-remote "${CGW_REMOTE}" "refs/heads/${head_branch}" 2>>"${logfile}" | awk 'NR==1 {print $1}')
+      remote_head=$(cgw_net_git ls-remote "${CGW_REMOTE}" "refs/heads/${head_branch}" 2>>"${logfile}" | awk 'NR==1 {print $1}')
       if [[ -n "${remote_head}" && "${local_head}" != "${remote_head}" ]] &&
         ! git cat-file -e "${remote_head}^{commit}" 2>/dev/null; then
-        git fetch --quiet "${CGW_REMOTE}" "refs/heads/${head_branch}" >>"${logfile}" 2>&1 || true
+        cgw_net_git fetch --quiet "${CGW_REMOTE}" "refs/heads/${head_branch}" >>"${logfile}" 2>&1 || true
       fi
       if [[ -z "${remote_head}" ]]; then
         echo "[WARN] Could not read ${CGW_REMOTE}/${head_branch}; unpushed local commits not checked" | tee -a "${logfile}"
@@ -410,7 +410,7 @@ main() {
     local expected_sha="" is_cross
     is_cross=$(_pr_view "${pr_number}" isCrossRepository .isCrossRepository) || is_cross=""
     if [[ "${is_cross}" != "true" ]]; then
-      expected_sha=$(git ls-remote "${CGW_REMOTE}" "refs/heads/${head_branch}" 2>>"${logfile}" | awk 'NR==1 {print $1}')
+      expected_sha=$(cgw_net_git ls-remote "${CGW_REMOTE}" "refs/heads/${head_branch}" 2>>"${logfile}" | awk 'NR==1 {print $1}')
     fi
     local waited=0
     while [[ -n "${expected_sha}" && "${head_sha}" != "${expected_sha}" ]]; do
@@ -530,7 +530,7 @@ main() {
   log_section_start "PRE-MERGE RECOVERY POINT" "${logfile}"
   local base_tip tag_tip
   base_tip=""
-  if git fetch --quiet "${CGW_REMOTE}" "${base_branch}" >>"${logfile}" 2>&1; then
+  if cgw_net_git fetch --quiet "${CGW_REMOTE}" "${base_branch}" >>"${logfile}" 2>&1; then
     base_tip=$(git rev-parse --verify --quiet "refs/remotes/${CGW_REMOTE}/${base_branch}^{commit}") || base_tip=""
   fi
   CGW_BACKUP_TAG=""

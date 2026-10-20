@@ -401,7 +401,7 @@ main() {
   local fetch_args=(fetch "${CGW_REMOTE}")
   [[ ${prune} -eq 1 ]] && fetch_args=(fetch "${CGW_REMOTE}" --prune)
   echo "Fetching from ${CGW_REMOTE}${prune:+ (--prune)}..." | tee -a "$logfile"
-  if git "${fetch_args[@]}" >>"$logfile" 2>&1; then
+  if cgw_net_git "${fetch_args[@]}" >>"$logfile" 2>&1; then
     echo "[OK] Fetch complete" | tee -a "$logfile"
     log_section_end "[2/4] GIT FETCH" "$logfile" "0"
   else

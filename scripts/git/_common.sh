@@ -306,6 +306,12 @@ run_git_with_logging() {
   local log_path="$2"
   shift 2
 
+  # Network subcommands run through cgw_net_git (CGW_NET_TIMEOUT); the rest stay plain git.
+  local git_fn=git
+  case "${1:-}" in
+    push | pull | fetch | clone | ls-remote) git_fn=cgw_net_git ;;
+  esac
+
   log_section_start "$section_name" "$log_path"
 
   echo "Command: git $*" | tee -a "$log_path"
@@ -323,9 +329,9 @@ run_git_with_logging() {
     }
 
     if [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]]; then
-      GIT_OUTPUT=$(GIT_TERMINAL_PROMPT="${GIT_TERMINAL_PROMPT:-0}" GIT_OPTIONAL_LOCKS="${GIT_OPTIONAL_LOCKS:-0}" git "$@" 2>&1)
+      GIT_OUTPUT=$(GIT_TERMINAL_PROMPT="${GIT_TERMINAL_PROMPT:-0}" GIT_OPTIONAL_LOCKS="${GIT_OPTIONAL_LOCKS:-0}" "${git_fn}" "$@" 2>&1)
     else
-      GIT_OUTPUT=$(git "$@" 2>&1)
+      GIT_OUTPUT=$("${git_fn}" "$@" 2>&1)
     fi
     GIT_EXIT_CODE=$?
 
@@ -425,26 +431,101 @@ cgw_rev_count() {
   git rev-list --count "${1}..${2}" 2>/dev/null
 }
 
+# _cgw_gnu_timeout_available
+# Exits 0 when the `timeout` on PATH is GNU coreutils' (probed once per resolved
+# path and cached). Windows ships C:\Windows\System32\timeout.exe -- a sleep
+# command, not a wrapper -- that can shadow it, so a bare `command -v timeout`
+# is not enough: GNU's answers `--version` with "(GNU coreutils)", the Windows
+# one rejects the flag.
+_CGW_TIMEOUT_PROBED_PATH=""
+_CGW_TIMEOUT_IS_GNU=0
+_cgw_gnu_timeout_available() {
+  local tpath
+  tpath="$(command -v timeout 2>/dev/null)" || return 1
+  if [[ "${tpath}" != "${_CGW_TIMEOUT_PROBED_PATH}" ]]; then
+    local banner
+    banner="$(timeout --version 2>/dev/null | head -n 1)" || banner=""
+    _CGW_TIMEOUT_PROBED_PATH="${tpath}"
+    if [[ "${banner}" == *"GNU coreutils"* ]]; then _CGW_TIMEOUT_IS_GNU=1; else _CGW_TIMEOUT_IS_GNU=0; fi
+  fi
+  [[ "${_CGW_TIMEOUT_IS_GNU}" == "1" ]]
+}
+
+# cgw_net_git <git args...>
+# Drop-in for `git` on commands that talk to a remote (fetch, push, pull,
+# ls-remote, remote prune): runs git under `timeout ${CGW_NET_TIMEOUT}s` so an
+# unreachable or hung remote cannot block a script forever. stdin, stdout,
+# stderr and git's exit code pass through unchanged, except that a timeout
+# returns 124 (GNU timeout's code) after printing an [ERROR] naming the
+# operation, the limit and the knob.
+#   CGW_NET_TIMEOUT=0           plain git, no limit
+#   no GNU `timeout` on PATH    plain git (see _cgw_gnu_timeout_available)
+#   CGW_NON_INTERACTIVE=1       also sets GIT_TERMINAL_PROMPT=0 (unless already set),
+#                               so a credential prompt fails fast instead of waiting
+#                               for input that never comes. Interactive runs keep
+#                               their prompts, and `timeout --foreground` keeps git
+#                               attached to the terminal so those prompts still work.
+cgw_net_git() {
+  local limit="${CGW_NET_TIMEOUT:-120}"
+  [[ "${limit}" =~ ^[0-9]+$ ]] || limit=120
+  local -a wrap=()
+  if ((limit > 0)) && _cgw_gnu_timeout_available; then
+    wrap=(timeout)
+    [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] || wrap+=(--foreground)
+    wrap+=("${limit}s")
+  fi
+
+  local rc
+  if [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]]; then
+    GIT_TERMINAL_PROMPT="${GIT_TERMINAL_PROMPT:-0}" ${wrap[@]+"${wrap[@]}"} git "$@"
+  else
+    ${wrap[@]+"${wrap[@]}"} git "$@"
+  fi
+  rc=$?
+  if ((rc == 124)) && ((${#wrap[@]} > 0)); then
+    local op="${1:-command}"
+    [[ "${op}" == "remote" && -n "${2:-}" ]] && op="remote ${2}"
+    _cgw_net_timeout_err "${op}" "${limit}"
+    return 124
+  fi
+  return "${rc}"
+}
+
+# _cgw_net_timeout_err <git subcommand> <seconds>
+_cgw_net_timeout_err() {
+  err "git ${1} timed out after ${2}s (remote unreachable or hung). Raise the limit, or set 0 to disable it: CGW_NET_TIMEOUT=<seconds>"
+}
+
 # cgw_remote_reachable <remote>
-# Exits 0 when <remote> is reachable, non-zero otherwise. Silent.
+# Exits 0 when <remote> is reachable, non-zero otherwise (124 = timed out). Silent
+# apart from the one-line timeout error.
 # Uses git ls-remote with no ref pattern — exits non-zero on any connection failure.
 cgw_remote_reachable() {
-  git ls-remote "${1}" >/dev/null 2>&1
+  local rc=0
+  # Output is discarded here, so cgw_net_git's timeout error is re-issued below.
+  cgw_net_git ls-remote "${1}" >/dev/null 2>&1 || rc=$?
+  if ((rc == 124)); then _cgw_net_timeout_err ls-remote "${CGW_NET_TIMEOUT:-120}"; fi
+  return "${rc}"
 }
 
 # cgw_remote_branch_exists <remote> <branch>
-# Exits 0 when <branch> exists on <remote>, non-zero otherwise. Silent.
+# Exits 0 when <branch> exists on <remote>, non-zero otherwise. Silent apart from
+# the one-line timeout error (exit 124).
 # Accepts a plain branch name; builds refs/heads/ internally.
 #
 # Contract: the exit code is git ls-remote's raw exit code, unmodified --
 # 0 = exists, 2 = genuinely absent, anything else (128 = unreachable/auth
-# failure, etc.) = the probe itself failed and must NOT be read as absent.
+# failure, 124 = timed out, etc.) = the probe itself failed and must NOT be
+# read as absent.
 # `if cgw_remote_branch_exists ...` callers that only branch on zero/non-zero
 # are fine either way; a caller that needs to tell "absent" apart from "probe
 # failed" (e.g. before weakening a force-push guard) must capture "$?" itself
 # rather than treating this as a plain boolean.
 cgw_remote_branch_exists() {
-  git ls-remote --exit-code "${1}" "refs/heads/${2}" >/dev/null 2>&1
+  local rc=0
+  cgw_net_git ls-remote --exit-code "${1}" "refs/heads/${2}" >/dev/null 2>&1 || rc=$?
+  if ((rc == 124)); then _cgw_net_timeout_err ls-remote "${CGW_NET_TIMEOUT:-120}"; fi
+  return "${rc}"
 }
 
 # cgw_remote_owner_repo <remote>
