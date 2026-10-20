@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### New Features
+
+- **Untracked-file warning in `commit_enhanced.sh`**: a commit no longer leaves new files out silently. Once the commit's file set is final (`--only` and `--staged-only` honoured), the script prints `[WARN] N untracked file(s) are NOT included in this commit` to stderr, with the first 10 paths and `... and K more`. Files matching `CGW_LOCAL_FILES` (same `cgw_is_local_file` matcher) and CGW's own `logs/` are skipped; the exit code and behaviour are unchanged. `--strict-untracked` / `CGW_STRICT_UNTRACKED=1` turn it into a refusal before anything is committed (non-zero exit; fix with `git add`, `.gitignore` or `CGW_LOCAL_FILES`), and `--no-untracked-check` / `CGW_UNTRACKED_CHECK=0` switch the check off and win over strict. Registry rows in `_config.sh`, documented in `cgw.conf.example` and `docs/configuration.md`, with 14 tests in `tests/integration/commit_enhanced.bats`.
+
+### Documentation
+
+- **Secrets and local config**: new `skill/references/secrets-and-local-config.md` (gitignored real config plus a committed `*.example`, no hardcoded keys, rotate anything ever committed, and what `CGW_LOCAL_FILES` protects versus what it does not scan), linked from `SKILL.md` and `removing-sensitive-data.md`. The `commit_enhanced.sh` flag tables in `SKILL.md` and `script-reference.md` list the new flags.
+
 ## v0.20.0 (2026-10-18)
 
 > Changes since `v0.19.1`

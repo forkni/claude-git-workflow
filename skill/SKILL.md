@@ -21,6 +21,7 @@ For non-obvious git techniques not covered by a wrapper (pickaxe search, merge-b
 For choosing or composing a `.gitignore` — stack templates, OS/editor `Global` rules, pattern precedence and negation, and the trap where ignoring an already-tracked path does nothing — see [references/gitignore-templates.md](references/gitignore-templates.md).
 For the full promotion pipeline (commit → push → merge/PR → push, run by `/auto-git-workflow-cmd` option 1), see [references/full-promotion.md](references/full-promotion.md).
 For the mandatory post-push CI verification gate (`verify_ci.sh` after every push, fix-until-green), see [references/ci-verification.md](references/ci-verification.md).
+For keeping secrets and machine-local config out of git in the first place (sample-file pattern, what `CGW_LOCAL_FILES` does and does not catch, the untracked-file warning), see [references/secrets-and-local-config.md](references/secrets-and-local-config.md).
 For removing a secret or local-only file that was **already committed** (rotate, diagnose, strip from history if pushed), see [references/removing-sensitive-data.md](references/removing-sensitive-data.md).
 When a merge or rebase **stops on a conflict that needs manual resolution** (`UU`, `AA`, `AU`, `UD`, `AD`, `DA`), follow the step-by-step procedure in [references/resolving-merge-conflicts.md](references/resolving-merge-conflicts.md) — investigate both sides' intent, preserve both where compatible, re-run checks, then conclude through the wrapper. **Before touching a hunk:** run `git log --merge -p -- <file>` and `git log --oneline --left-right --merge` to understand which commits on each side caused the conflict. Never blindly `git checkout --ours/--theirs`; resolve by default — abort only to deliberately abandon the operation, not to dodge a difficult conflict.
 
@@ -83,7 +84,7 @@ git diff --cached --name-only | grep -E "(CLAUDE\.md|MEMORY\.md|\.claude/|logs/)
 
 This protection is **commit-scoped only** — CGW unstages local-only files before a commit, but nothing stops you from *deleting* them from disk. Never run `git rm -f` or `git clean -f` on a local-only or git-ignored path; for git-ignored files this is unrecoverable. See the split cherry-pick recipe below for the safe way to strip unwanted paths.
 
-If a local-only file or a secret has **already been committed** (this rule failed to catch it, or it predates CGW), see [removing-sensitive-data.md](references/removing-sensitive-data.md) — the fix differs depending on whether it was pushed yet.
+If a local-only file or a secret has **already been committed** (this rule failed to catch it, or it predates CGW), see [removing-sensitive-data.md](references/removing-sensitive-data.md) — the fix differs depending on whether it was pushed yet. For the preventive side (sample files, rotation, what `CGW_LOCAL_FILES` does not scan), see [secrets-and-local-config.md](references/secrets-and-local-config.md).
 
 ### Rule 4: Stale Lock Auto-Recovery
 
@@ -269,7 +270,7 @@ script with `--help` to confirm rather than inventing it.
 
 | Script | Accepted flags |
 |---|---|
-| `commit_enhanced.sh` | `--non-interactive`, `--interactive`, `--staged-only`, `--all`, `--only <path>` (repeatable), `--skip-lint`, `--skip-md-lint`, `--no-venv`, `--sign`, `--no-sign` |
+| `commit_enhanced.sh` | `--non-interactive`, `--interactive`, `--staged-only`, `--all`, `--only <path>` (repeatable), `--skip-lint`, `--skip-md-lint`, `--no-venv`, `--sign`, `--no-sign`, `--strict-untracked`, `--no-untracked-check` |
 | `check_lint.sh` | `--no-venv`, `--modified-only`, `--skip-lint`, `--skip-md-lint`, `--skip-typecheck`, `--md-only`, `--ref <rev>`, `--base <rev>`, `--unpushed` |
 | `fix_lint.sh` | `--non-interactive`, `--no-venv`, `--modified-only`, `--skip-md-lint`, `--md-only` — **no `--skip-lint`** |
 | `push_validated.sh` | `--non-interactive`, `--dry-run`, `--skip-lint`, `--skip-md-lint`, `--skip-typecheck`, `--pushed-only`, `--worktree`, `--no-venv`, `--force`, `--branch <name>` |
@@ -329,7 +330,9 @@ Did lint checks fail?
 └─ No  → Commit proceeds
 
 Optional flags: --skip-lint (skip all lint), --skip-md-lint (skip markdown lint only),
-                --sign (GPG/SSH-sign the commit), --no-sign (override CGW_SIGN_COMMITS)
+                --sign (GPG/SSH-sign the commit), --no-sign (override CGW_SIGN_COMMITS),
+                --strict-untracked (refuse when untracked files are left out),
+                --no-untracked-check (silence the untracked-file warning)
 
 Typecheck: advisory in the pre-commit hook (when CGW_TYPECHECK_CMD is set), BLOCKING in
            check_lint.sh/push_validated.sh. A failing typecheck blocks a push; --skip-typecheck
