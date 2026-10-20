@@ -88,6 +88,19 @@ Auto-detects project type (Python, TouchDesigner, GLSL, images/assets). Safe to 
 | `--full` | Run `git fsck --full` (thorough object integrity check) |
 | `--large <N>` | Report tracked files larger than N MB (default: 10) |
 
+**`repo_state.sh`** — Read-only repository state snapshot and next-step suggestion
+
+```bash
+./scripts/git/repo_state.sh [--json]
+```
+
+| Flag | Purpose |
+|------|---------|
+| *(no flags)* | Print `key=value` lines: `inside_repo`, `repo_root`, `branch`, `detached`, `head`, `upstream`, `upstream_gone`, `ahead`, `behind`, `staged`, `unstaged`, `untracked`, `conflicted`, `in_progress`, `stash`, `local_only_dirty`, `local_only_present`, `target`, `unmerged_to_target`, `upstream_overlap`, `clean`, `suggestion`, `suggestion_label` |
+| `--json` | Print the same keys as one JSON object (no `jq` needed) |
+
+Never fetches or changes anything; ahead/behind uses the remote-tracking refs already on disk. Exit `0` = report produced (even on a dirty repo), `1` = not a repository or no commits yet (stdout carries `error=not-a-repo` / `error=no-commits`), `2` = usage error. `suggestion` is the first matching row (1-11) of the table in `command/auto-git-workflow-cmd.md`.
+
 **`clean_build.sh`** — Remove generated build artifacts
 
 ```bash

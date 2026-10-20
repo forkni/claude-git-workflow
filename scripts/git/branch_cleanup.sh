@@ -170,19 +170,27 @@ main() {
 
     if [[ ${execute} -eq 1 ]]; then
       echo "  Pruning stale refs from ${CGW_REMOTE}..."
-      if git remote prune "${CGW_REMOTE}" 2>&1 | grep -E "pruned|\\[pruned\\]" | sed 's/^/  /'; then
+      local prune_out prune_rc=0
+      prune_out="$(cgw_net_git remote prune "${CGW_REMOTE}" 2>&1)" || prune_rc=$?
+      if [[ ${prune_rc} -eq 124 ]]; then
+        echo "${prune_out}" >&2 # the timeout error; the grep below would swallow it
+      elif grep -E "pruned|\\[pruned\\]" <<<"${prune_out}" | sed 's/^/  /'; then
         : # output shown inline
       else
         echo "  [OK] No stale remote-tracking refs"
       fi
     else
       # Dry-run: show what would be pruned
-      local stale_count=0
+      local stale_count=0 dry_out dry_rc=0
+      dry_out="$(cgw_net_git remote prune --dry-run "${CGW_REMOTE}" 2>&1)" || dry_rc=$?
+      if [[ ${dry_rc} -eq 124 ]]; then
+        echo "${dry_out}" >&2 # the timeout error; the grep below would swallow it
+      fi
       while IFS= read -r ref; do
         echo "  Would prune: ${ref}"
         ((stale_count++)) || true
-      done < <(git remote prune --dry-run "${CGW_REMOTE}" 2>&1 | grep "\\[would prune\\]" | awk '{print $NF}')
-      [[ ${stale_count} -eq 0 ]] && echo "  [OK] No stale remote-tracking refs"
+      done < <(grep "\\[would prune\\]" <<<"${dry_out}" | awk '{print $NF}')
+      [[ ${stale_count} -eq 0 && ${dry_rc} -ne 124 ]] && echo "  [OK] No stale remote-tracking refs"
     fi
     echo ""
   fi

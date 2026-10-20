@@ -227,7 +227,7 @@ main() {
   # Push tag if requested
   if [[ ${push_tag} -eq 1 ]]; then
     echo "Pushing tag to ${CGW_REMOTE}..."
-    if git push "${CGW_REMOTE}" "${version}"; then
+    if cgw_net_git push "${CGW_REMOTE}" "${version}"; then
       echo "[OK] Tag pushed: ${version}"
       echo ""
       if [[ "${version}" == v* ]]; then

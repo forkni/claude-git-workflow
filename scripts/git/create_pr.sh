@@ -265,7 +265,7 @@ main() {
   fi
 
   # Fetch latest remote refs so comparisons below use current state
-  if ! git fetch "${CGW_REMOTE}" "${src_branch}" "${tgt_branch}" 2>/dev/null; then
+  if ! cgw_net_git fetch "${CGW_REMOTE}" "${src_branch}" "${tgt_branch}" 2>/dev/null; then
     echo "[!] WARNING: git fetch failed -- comparisons may use stale refs" | tee -a "$logfile"
   fi
 
@@ -417,7 +417,7 @@ ${formatted_log}
     else
       err_tee "[WARN] Could not parse the PR number from gh's output -- find it with: gh pr list --repo ${pr_repo} --head ${src_branch}"
     fi
-    pushed_sha=$(git ls-remote "${CGW_REMOTE}" "refs/heads/${src_branch}" 2>>"$logfile" | awk 'NR==1 {print $1}')
+    pushed_sha=$(cgw_net_git ls-remote "${CGW_REMOTE}" "refs/heads/${src_branch}" 2>>"$logfile" | awk 'NR==1 {print $1}')
     if [[ -n "${pushed_sha}" ]]; then
       echo "Head SHA: ${pushed_sha}" | tee -a "$logfile"
     else

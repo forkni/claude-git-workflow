@@ -37,6 +37,7 @@ CGW_SCRIPTS=(
   md_toc.sh
   sync_cgw_tooling.sh
   verify_ci.sh
+  repo_state.sh
 )
 
 # One repo + one mock-bin shared across all 52 --help tests.
@@ -71,6 +72,11 @@ setup() {
 
 @test "sync_branches.sh --help exits 0" {
   run run_script sync_branches.sh --help
+  [ "${status}" -eq 0 ]
+}
+
+@test "repo_state.sh --help exits 0" {
+  run run_script repo_state.sh --help
   [ "${status}" -eq 0 ]
 }
 
