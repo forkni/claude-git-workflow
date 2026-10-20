@@ -117,6 +117,7 @@ cp cgw.conf.example .cgw.conf
 | `CGW_PR_CHECKS_APPEAR_SECONDS` | `90` | `merge_pr.sh`: max seconds to wait for checks to appear on the head; also the "recent push" window (without `--wait-checks`, a head commit younger than this with no checks is refused). After the window a head with no checks merges with a no-CI warning |
 | `CGW_LOCK_RETRY_ATTEMPTS` | `3` | Number of retry attempts when a git command encounters an in-flight index.lock race or transient collision |
 | `CGW_LOCK_RETRY_DELAY` | `1` | Base delay in seconds between lock retry attempts (uses backoff) |
+| `CGW_NET_TIMEOUT` | `120` | Seconds a network git call (fetch, push, pull, ls-remote, remote prune) may run before CGW kills it and exits `124`; `0` = no limit. Needs GNU `timeout` on PATH, else the call runs unbounded. In non-interactive mode `GIT_TERMINAL_PROMPT=0` is also set. `git pull` time includes the local merge |
 | `CGW_ICASE_PATHSPECS` | `1` | Auto-enable case-insensitive pathspecs on Windows (set to `0` to disable) |
 | `CGW_REFLOG_PREFIX` | `cgw` | Prefix prepended to `GIT_REFLOG_ACTION` for reflog auditability and recovery |
 | `CGW_NON_INTERACTIVE` | `0` | Set to `1` to suppress all prompts (CI mode) |

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### New Features
+
+- **Network timeout (`CGW_NET_TIMEOUT`)**: a hung or unreachable remote no longer hangs a script forever. New `cgw_net_git` in `scripts/git/_common.sh` runs git under GNU `timeout` (default 120 seconds, `0` disables the limit); on exit 124 it names the operation, the limit and the knob, and returns 124. GNU timeout is detected by its `--version` banner, so Windows `timeout.exe` is never mistaken for it, and the helper falls back to plain git when `timeout` is absent or not GNU. `GIT_TERMINAL_PROMPT=0` is set only in non-interactive mode, and interactive runs use `--foreground` so credential prompts keep working. The fetch, ls-remote, remote prune and tag-push sites in `create_pr.sh`, `create_release.sh`, `merge_pr.sh`, `push_validated.sh`, `rebase_safe.sh`, `sync_branches.sh`, `verify_ci.sh` and `branch_cleanup.sh` use it, and `run_git_with_logging` routes `push`, `pull`, `fetch`, `clone` and `ls-remote` through it. `cgw_remote_reachable` and `cgw_remote_branch_exists` re-emit the timeout message, since they discard git's output, and return 124 so a failed probe is not read as "absent". `branch_cleanup.sh` prints a timed-out prune instead of reporting "No stale remote-tracking refs". Registered in `_config.sh`, `cgw.conf.example` and `docs/configuration.md`. 21 unit tests in `tests/unit/net_timeout.bats` and 5 integration tests in `tests/integration/net_timeout.bats`. `verify_ci.sh --timeout` (CI polling) is unchanged.
+
 ## v0.20.0 (2026-10-18)
 
 > Changes since `v0.19.1`
