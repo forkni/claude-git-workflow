@@ -270,6 +270,15 @@ Skill and command copies are discovered from `git ls-files` (`*/auto-git-workflo
 ./scripts/git/repo_health.sh --large 5        # report files >5MB
 ```
 
+### Repository state snapshot
+
+```bash
+./scripts/git/repo_state.sh                   # key=value: branch, ahead/behind, dirty counts, in-progress op, suggestion
+./scripts/git/repo_state.sh --json            # the same as one JSON object
+```
+
+Read-only and offline: it never fetches or changes anything, so ahead/behind uses the remote-tracking refs already on disk (run `git fetch` first for fresh counts). Exit `0` whenever a report was produced (even on a dirty, conflicted or detached repo), `1` when it is not a repository or has no commits, `2` on a usage error. `suggestion=<1-11>` / `suggestion_label` is the first matching row of the suggestion table in `command/auto-git-workflow-cmd.md`; `/auto-git-workflow-cmd` runs it as its Step 1 scan.
+
 ### Undo last commit / unstage / amend
 
 ```bash

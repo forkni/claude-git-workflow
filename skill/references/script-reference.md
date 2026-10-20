@@ -88,6 +88,19 @@ Auto-detects project type (Python, TouchDesigner, GLSL, images/assets). Safe to 
 | `--full` | Run `git fsck --full` (thorough object integrity check) |
 | `--large <N>` | Report tracked files larger than N MB (default: 10) |
 
+**`repo_state.sh`** — Read-only repository state snapshot and next-step suggestion
+
+```bash
+./scripts/git/repo_state.sh [--json]
+```
+
+| Flag | Purpose |
+|------|---------|
+| *(no flags)* | Print `key=value` lines: `inside_repo`, `repo_root`, `branch`, `detached`, `head`, `upstream`, `upstream_gone`, `ahead`, `behind`, `staged`, `unstaged`, `untracked`, `conflicted`, `in_progress`, `stash`, `local_only_dirty`, `local_only_present`, `target`, `unmerged_to_target`, `upstream_overlap`, `clean`, `suggestion`, `suggestion_label` |
+| `--json` | Print the same keys as one JSON object (no `jq` needed) |
+
+Never fetches or changes anything; ahead/behind uses the remote-tracking refs already on disk. Exit `0` = report produced (even on a dirty repo), `1` = not a repository or no commits yet (stdout carries `error=not-a-repo` / `error=no-commits`), `2` = usage error. `suggestion` is the first matching row (1-11) of the table in `command/auto-git-workflow-cmd.md`.
+
 **`clean_build.sh`** — Remove generated build artifacts
 
 ```bash
@@ -140,6 +153,8 @@ Passing a message still works and overrides git's prepared one.
 | `--skip-md-lint` | Skip markdown lint only; also excludes `*.md` from the `[3.5]` congruence guard's validated scope for this run | When only markdown lint causes noise |
 | `--sign` | GPG/SSH-sign the commit (`git commit -S`); overrides `CGW_SIGN_COMMITS` | Signing this specific commit |
 | `--no-sign` | Unsigned commit even if `CGW_SIGN_COMMITS=1` | Skip signing for a single commit |
+| `--strict-untracked` | Refuse (exit `1`, nothing committed) when untracked files would be left out; mirrors `CGW_STRICT_UNTRACKED=1` | Shared repos where a forgotten new file breaks the build |
+| `--no-untracked-check` | Skip the untracked-file warning and the strict refusal; mirrors `CGW_UNTRACKED_CHECK=0` | Scratch files you know are staying out |
 
 **Auto-detection**: When no TTY (Claude Code context), script automatically enables `--non-interactive`.
 
@@ -155,6 +170,8 @@ Passing a message still works and overrides git's prepared one.
 Override with `--all` to always bulk-stage, or `--only <path>` to explicitly select files (resets index first).
 
 **Environment**: `CGW_ALL=1` mirrors `--all`. `CGW_REQUIRE_EXPLICIT_STAGING=1` (default `0`) makes the non-interactive auto-stage row exit `1` instead, so a shared checkout never commits another session's edits: stage with `--only`, pre-stage plus `--staged-only`, or pass `--all`.
+
+**Untracked files**: once the commit's file set is final (`--only` and `--staged-only` honoured), `commit_enhanced.sh` lists `git ls-files --others --exclude-standard` entries on stderr (`[WARN] N untracked file(s) are NOT included`, first 10 plus `... and K more`). Files matching `CGW_LOCAL_FILES` and CGW's own `logs/` are skipped. The warning never changes the exit code; `--strict-untracked` / `CGW_STRICT_UNTRACKED=1` turns it into a refusal, `--no-untracked-check` / `CGW_UNTRACKED_CHECK=0` turns it off (and wins over strict). See [secrets-and-local-config.md](secrets-and-local-config.md).
 
 ---
 

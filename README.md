@@ -123,7 +123,7 @@ See [Claude Code Integration](docs/claude-code-integration.md) for detailed conf
 
 ## What's Included
 
-CGW provides 30 user-facing scripts and 2 internal core modules in `scripts/git/`:
+CGW provides 31 user-facing scripts and 2 internal core modules in `scripts/git/`:
 
 | Script | Purpose |
 |--------|---------|
@@ -149,6 +149,7 @@ CGW provides 30 user-facing scripts and 2 internal core modules in `scripts/git/
 | `create_release.sh` | Create annotated version tags to trigger GitHub Release workflows (`--sign` for GPG/SSH tags, `--allow-non-semver` for archive tags) |
 | `stash_work.sh` | Safe stash wrapper with untracked file support, named stashes, non-interactive drop/clear, and logging |
 | `repo_health.sh` | Repository health inspection: integrity verification (`git fsck`), repository size report, large file discovery, git gc |
+| `repo_state.sh` | Read-only repo state snapshot for `/auto-git-workflow-cmd`: preconditions (repo, branch, commits), ahead/behind, staged/unstaged/untracked counts, in-progress merge/rebase/cherry-pick/revert/bisect, stashes, local-only files, and the suggested next step as `key=value` lines (`--json` for one JSON object); never fetches or mutates |
 | `bisect_helper.sh` | Guided git bisect with backup tag, automated good-ref detection, and test script runner |
 | `rebase_safe.sh` | Safe rebase: automatic backup tag, published-commit guards, abort/continue/skip commands, autostash |
 | `branch_cleanup.sh` | Prune merged branches, stale remote-tracking refs, and obsolete backup tags; previews by default, deletes only with `--execute` (`--remote`, `--tags`, `--older-than <N>`) |

@@ -313,7 +313,7 @@ _ci_pr_mode() {
   else
     is_cross=$(_pr_view "${pr}" isCrossRepository .isCrossRepository) || is_cross=""
     if [[ "${is_cross}" != "true" ]]; then
-      expected_sha=$(git ls-remote "${CGW_REMOTE}" "refs/heads/${head_branch}" 2>>"${logfile}" | awk 'NR==1 {print $1}')
+      expected_sha=$(cgw_net_git ls-remote "${CGW_REMOTE}" "refs/heads/${head_branch}" 2>>"${logfile}" | awk 'NR==1 {print $1}')
       [[ -z "${expected_sha}" ]] && _ci_note "Could not read ${CGW_REMOTE}/${head_branch}'s tip; judging the head GitHub reports (pass --sha to bind it)"
     fi
   fi
@@ -567,11 +567,11 @@ main() {
     # Resolve the commit the push landed: --sha, else the remote tip of the branch (or the
     # commit a tag of that name points at).
     if [[ -z "${sha}" ]]; then
-      sha=$(git ls-remote "${CGW_REMOTE}" "refs/heads/${branch}" 2>>"${logfile}" | awk 'NR==1 {print $1}')
+      sha=$(cgw_net_git ls-remote "${CGW_REMOTE}" "refs/heads/${branch}" 2>>"${logfile}" | awk 'NR==1 {print $1}')
       if [[ -z "${sha}" ]]; then
         # ls-remote lists the tag object first and its peeled ^{} commit second (annotated
         # tags only); the run is on the commit, so prefer the peeled line.
-        sha=$(git ls-remote "${CGW_REMOTE}" "refs/tags/${branch}^{}" "refs/tags/${branch}" 2>>"${logfile}" |
+        sha=$(cgw_net_git ls-remote "${CGW_REMOTE}" "refs/tags/${branch}^{}" "refs/tags/${branch}" 2>>"${logfile}" |
           awk '$2 ~ /\^\{\}$/ {p = $1} $2 !~ /\^\{\}$/ {t = $1} END {print (p != "" ? p : t)}')
       fi
       if [[ ! "${sha}" =~ ^[0-9a-f]{40}$ ]]; then

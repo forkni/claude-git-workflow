@@ -6,7 +6,8 @@ path from being committed *going forward*. Neither one helps once a secret
 or local-only file is already sitting in history: that happens when the file
 predates CGW, when `CGW_LOCAL_FILES`/`.gitignore` didn't cover it yet, or
 when someone bypassed the guard. This doc is the procedure for that
-already-happened case. Work through it in order — don't skip to step 4.
+already-happened case. Work through it in order — don't skip to step 4. To keep
+it from happening again, see [secrets-and-local-config.md](secrets-and-local-config.md).
 
 ## 1. Rotate first, always
 

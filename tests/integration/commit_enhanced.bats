@@ -1821,3 +1821,165 @@ GIT_MOCK
   [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" = "feat: add body" ]
   [[ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%b)" == *"why: the body explains it"* ]]
 }
+
+# ── untracked-file warning / --strict-untracked / --no-untracked-check ────────
+
+# Helper: commit tracked.txt, then modify it so a bulk commit has something to do.
+_make_tracked_change() {
+  echo "v1" >"${TEST_REPO_DIR}/tracked.txt"
+  git -C "${TEST_REPO_DIR}" add tracked.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add tracked"
+  echo "v2" >"${TEST_REPO_DIR}/tracked.txt"
+}
+
+@test "untracked: a new file left out is warned about on stderr and the commit still succeeds" {
+  _make_tracked_change
+  echo "new" >"${TEST_REPO_DIR}/new_module.py"
+  run --separate-stderr _run_commit "--skip-lint \"feat: change tracked\""
+  [ "${status}" -eq 0 ]
+  [[ "${stderr}" == *"[WARN] 1 untracked file(s) are NOT included in this commit"* ]]
+  [[ "${stderr}" == *"?? new_module.py"* ]]
+  [[ "${output}" != *"untracked file(s)"* ]]
+  git -C "${TEST_REPO_DIR}" show --name-only --pretty=format: HEAD | grep -q "^tracked.txt$"
+  run git -C "${TEST_REPO_DIR}" show --name-only --pretty=format: HEAD
+  [[ "${output}" != *"new_module.py"* ]]
+}
+
+@test "untracked: --only of one file warns about the other untracked file, not the selected one" {
+  echo "a" >"${TEST_REPO_DIR}/file_a.txt"
+  echo "b" >"${TEST_REPO_DIR}/file_b.txt"
+  run --separate-stderr _run_commit "--skip-lint --only file_a.txt \"feat: only a\""
+  [ "${status}" -eq 0 ]
+  [[ "${stderr}" == *"?? file_b.txt"* ]]
+  [[ "${stderr}" != *"file_a.txt"* ]]
+  git -C "${TEST_REPO_DIR}" show --name-only --pretty=format: HEAD | grep -q "^file_a.txt$"
+}
+
+@test "untracked: --staged-only does not list the staged file, only the untracked one" {
+  echo "a" >"${TEST_REPO_DIR}/file_a.txt"
+  echo "c" >"${TEST_REPO_DIR}/file_c.txt"
+  git -C "${TEST_REPO_DIR}" add file_a.txt
+  run --separate-stderr _run_commit "--skip-lint --staged-only \"feat: staged a\""
+  [ "${status}" -eq 0 ]
+  [[ "${stderr}" == *"?? file_c.txt"* ]]
+  [[ "${stderr}" != *"file_a.txt"* ]]
+}
+
+@test "untracked: gitignored and local-only files are not reported" {
+  echo "*.log" >"${TEST_REPO_DIR}/.gitignore"
+  git -C "${TEST_REPO_DIR}" add .gitignore
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: ignore logs"
+  _make_tracked_change
+  echo "x" >"${TEST_REPO_DIR}/debug.log"
+  echo "KEY=placeholder" >"${TEST_REPO_DIR}/secret.env"
+  mkdir -p "${TEST_REPO_DIR}/scratch"
+  echo "x" >"${TEST_REPO_DIR}/scratch/notes.txt"
+  export CGW_LOCAL_FILES='secret.env scratch/'
+  run --separate-stderr _run_commit "--skip-lint \"feat: change tracked\""
+  [ "${status}" -eq 0 ]
+  [[ "${stderr}" != *"untracked"* ]]
+  [[ "${stderr}" != *"debug.log"* ]]
+  [[ "${stderr}" != *"secret.env"* ]]
+  [[ "${stderr}" != *"scratch"* ]]
+}
+
+@test "untracked: lists at most 10 paths and counts the rest" {
+  _make_tracked_change
+  local i
+  for i in 01 02 03 04 05 06 07 08 09 10 11 12; do
+    echo "x" >"${TEST_REPO_DIR}/new_${i}.txt"
+  done
+  run --separate-stderr _run_commit "--skip-lint \"feat: change tracked\""
+  [ "${status}" -eq 0 ]
+  [[ "${stderr}" == *"12 untracked file(s) are NOT included"* ]]
+  [[ "${stderr}" == *"... and 2 more"* ]]
+  [ "$(printf '%s\n' "${stderr}" | grep -c '^  ?? ')" -eq 10 ]
+}
+
+@test "untracked: a clean tree prints nothing about untracked files" {
+  _make_tracked_change
+  run --separate-stderr _run_commit "--skip-lint \"feat: change tracked\""
+  [ "${status}" -eq 0 ]
+  [[ "${stderr}" != *"untracked"* ]]
+  [[ "${output}" != *"untracked"* ]]
+}
+
+@test "untracked: with no changes to commit, a lone new file is still reported" {
+  echo "new" >"${TEST_REPO_DIR}/lonely.txt"
+  run --separate-stderr _run_commit "--skip-lint \"feat: nothing\""
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"No changes to commit"* ]]
+  [[ "${stderr}" == *"?? lonely.txt"* ]]
+}
+
+@test "untracked: --strict-untracked refuses, lists the files and creates no commit" {
+  _make_tracked_change
+  echo "new" >"${TEST_REPO_DIR}/new_module.py"
+  local before
+  before=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+  run --separate-stderr _run_commit "--skip-lint --strict-untracked \"feat: change tracked\""
+  [ "${status}" -ne 0 ]
+  [[ "${stderr}" == *"?? new_module.py"* ]]
+  [[ "${stderr}" == *"git add"* ]]
+  [[ "${stderr}" == *".gitignore"* ]]
+  [[ "${stderr}" == *"CGW_LOCAL_FILES"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "${before}" ]
+}
+
+@test "untracked: CGW_STRICT_UNTRACKED=1 refuses the same way" {
+  _make_tracked_change
+  echo "new" >"${TEST_REPO_DIR}/new_module.py"
+  local before
+  before=$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)
+  export CGW_STRICT_UNTRACKED=1
+  run --separate-stderr _run_commit "--skip-lint \"feat: change tracked\""
+  [ "${status}" -ne 0 ]
+  [[ "${stderr}" == *"?? new_module.py"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "${before}" ]
+}
+
+@test "untracked: --strict-untracked still commits when nothing is left out" {
+  _make_tracked_change
+  run --separate-stderr _run_commit "--skip-lint --strict-untracked \"feat: change tracked\""
+  [ "${status}" -eq 0 ]
+  [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" = "feat: change tracked" ]
+}
+
+@test "untracked: --strict-untracked passes once the file is added to CGW_LOCAL_FILES" {
+  _make_tracked_change
+  echo "new" >"${TEST_REPO_DIR}/new_module.py"
+  export CGW_LOCAL_FILES='new_module.py'
+  run --separate-stderr _run_commit "--skip-lint --strict-untracked \"feat: change tracked\""
+  [ "${status}" -eq 0 ]
+  [[ "${stderr}" != *"untracked"* ]]
+}
+
+@test "untracked: --no-untracked-check prints nothing and commits" {
+  _make_tracked_change
+  echo "new" >"${TEST_REPO_DIR}/new_module.py"
+  run --separate-stderr _run_commit "--skip-lint --no-untracked-check \"feat: change tracked\""
+  [ "${status}" -eq 0 ]
+  [[ "${stderr}" != *"untracked"* ]]
+  [[ "${stderr}" != *"new_module.py"* ]]
+  [[ "${output}" != *"new_module.py"* ]]
+}
+
+@test "untracked: CGW_UNTRACKED_CHECK=0 silences it and overrides strict mode" {
+  _make_tracked_change
+  echo "new" >"${TEST_REPO_DIR}/new_module.py"
+  export CGW_UNTRACKED_CHECK=0
+  export CGW_STRICT_UNTRACKED=1
+  run --separate-stderr _run_commit "--skip-lint \"feat: change tracked\""
+  [ "${status}" -eq 0 ]
+  [[ "${stderr}" != *"untracked"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" = "feat: change tracked" ]
+}
+
+@test "untracked: --help documents the new flags and variables" {
+  run bash "${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh" --help
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"--strict-untracked"* ]]
+  [[ "${output}" == *"--no-untracked-check"* ]]
+  [[ "${output}" == *"CGW_STRICT_UNTRACKED"* ]]
+  [[ "${output}" == *"CGW_UNTRACKED_CHECK"* ]]
+}

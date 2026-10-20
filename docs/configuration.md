@@ -87,6 +87,8 @@ cp cgw.conf.example .cgw.conf
 | `CGW_PUSH_LINT_SCOPE` | `worktree` | What the push gate checks: `worktree` (working tree, uncommitted changes included) or `pushed` (committed snapshot of the pushed branch -- whole-snapshot typecheck, lint/format/markdown on the files the push changes). Per-run override: `push_validated.sh --pushed-only` / `--worktree` |
 | `CGW_ALLOW_STAGED_DIVERGENCE` | `0` | Set to `1` to let a genuine `--staged-only` commit record a staged blob that differs from the validated working tree (the `[3.5]` congruence guard otherwise fails closed); see [ADR-0001](adr/0001-partial-staging-fails-closed.md) |
 | `CGW_REQUIRE_EXPLICIT_STAGING` | `0` | Set to `1` so a non-interactive `commit_enhanced.sh` refuses to auto-stage all tracked changes (`git add -u`) when nothing is pre-staged; name the paths with `--only`, pre-stage and use `--staged-only`, or pass `--all`. Recommended for checkouts shared by several agents |
+| `CGW_UNTRACKED_CHECK` | `1` | Set to `0` to silence `commit_enhanced.sh`'s warning (stderr) listing untracked, non-ignored, non-`CGW_LOCAL_FILES` files that are not part of the commit; per-run `--no-untracked-check`. Overrides `CGW_STRICT_UNTRACKED` |
+| `CGW_STRICT_UNTRACKED` | `0` | Set to `1` so `commit_enhanced.sh` refuses (exit `1`, nothing committed) while such untracked files exist; `git add` them, add them to `.gitignore`, or add them to `CGW_LOCAL_FILES`. Per-run `--strict-untracked` |
 | `CGW_SKIP_TYPECHECK` | `0` | Set to `1` to skip the typecheck step at runtime -- the escape hatch when a blocking pre-push typecheck must be bypassed |
 | `CGW_STAGED_ONLY` | `0` | Set to `1` to commit only pre-staged files (`commit_enhanced.sh`) |
 | `CGW_COMMIT_SUBJECT_SOFT_LEN` | `50` | Commit subject length past which an advisory tip is printed (Pro Git recommendation) |
@@ -117,6 +119,7 @@ cp cgw.conf.example .cgw.conf
 | `CGW_PR_CHECKS_APPEAR_SECONDS` | `90` | `merge_pr.sh`: max seconds to wait for checks to appear on the head; also the "recent push" window (without `--wait-checks`, a head commit younger than this with no checks is refused). After the window a head with no checks merges with a no-CI warning |
 | `CGW_LOCK_RETRY_ATTEMPTS` | `3` | Number of retry attempts when a git command encounters an in-flight index.lock race or transient collision |
 | `CGW_LOCK_RETRY_DELAY` | `1` | Base delay in seconds between lock retry attempts (uses backoff) |
+| `CGW_NET_TIMEOUT` | `120` | Seconds a network git call (fetch, push, pull, ls-remote, remote prune) may run before CGW kills it and exits `124`; `0` = no limit. Needs GNU `timeout` on PATH, else the call runs unbounded. In non-interactive mode `GIT_TERMINAL_PROMPT=0` is also set. `git pull` time includes the local merge |
 | `CGW_ICASE_PATHSPECS` | `1` | Auto-enable case-insensitive pathspecs on Windows (set to `0` to disable) |
 | `CGW_REFLOG_PREFIX` | `cgw` | Prefix prepended to `GIT_REFLOG_ACTION` for reflog auditability and recovery |
 | `CGW_NON_INTERACTIVE` | `0` | Set to `1` to suppress all prompts (CI mode) |
