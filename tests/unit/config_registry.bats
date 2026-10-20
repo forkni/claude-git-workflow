@@ -85,6 +85,14 @@ _registry() { _in_config cgw_config_registry; }
   [ -z "${missing}" ] || { echo "missing from cgw.conf.example: ${missing}"; false; }
 }
 
+@test "every setting is named in the skill, which is what agents read" {
+  local name default kind empty scope missing=""
+  while IFS='|' read -r name default kind empty scope; do
+    grep -rqwF "${name}" "${CGW_PROJECT_ROOT}/skill" || missing+="${name} "
+  done < <(_registry)
+  [ -z "${missing}" ] || { echo "missing from skill/ (add to references/script-reference.md): ${missing}"; false; }
+}
+
 @test "every setting is in the docs options table with the registry default" {
   local doc="${CGW_PROJECT_ROOT}/docs/configuration.md"
   local name default kind empty scope row cell bad=""

@@ -682,13 +682,14 @@ when no branch matches) and wait for exit 0 before considering the release done.
 ./scripts/git/worktree_manage.sh list                          # show all worktrees
 ./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent   # add linked worktree
 ./scripts/git/worktree_manage.sh link                          # give this worktree CGW script shims
-./scripts/git/worktree_manage.sh remove --execute ../hotfix    # remove worktree
+./scripts/git/worktree_manage.sh remove --execute --non-interactive ../hotfix  # remove worktree
 ./scripts/git/worktree_manage.sh prune                         # dry-run: show stale admin files
 ./scripts/git/worktree_manage.sh prune --execute               # remove stale admin files
 ```
 
 **Never remove a worktree with raw `git worktree remove`** (the guardrail blocks it) — always use
-`worktree_manage.sh remove --execute`. On Windows, worktrees linked by older CGW versions hold NTFS
+`worktree_manage.sh remove --execute` (add `--non-interactive` from an agent: without a
+confirmation answer it prints `Cancelled` and removes nothing). On Windows, worktrees linked by older CGW versions hold NTFS
 junctions into the main checkout, and git's recursive delete follows them and empties the main
 checkout's gitignored `scripts/git` and `.githooks`.
 
