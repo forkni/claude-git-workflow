@@ -116,6 +116,8 @@ Never fetches or changes anything; ahead/behind uses the remote-tracking refs al
 | `--glsl` | Limit to GLSL/shader artifacts (`.spv`, compiled shaders) |
 | `--all` | All project types |
 
+Only untracked paths are removed: a match that git tracks is printed as `[SKIP] tracked: <path>` and kept.
+
 **`check_local_files.sh`** — Verify no local-only files are tracked *(CI helper)*
 
 ```bash

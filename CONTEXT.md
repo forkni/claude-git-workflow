@@ -274,6 +274,14 @@ The state in which the hook git actually runs (`.git/hooks/<name>`) differs from
 
 ---
 
+## build artifact
+
+An untracked path that matches one of `clean_build.sh`'s cleanup patterns (`__pycache__/`, `*.pyc`, `*.tmp`, `*.bak`, `*.toe.bak`, `*.spv`, root `dist/` / `build/`, ...). Only a build artifact is ever removed. A tracked path is source however it is named (`crash.py`, a `Backup/` or `build/` directory with tracked content, a fixture called `*.bak`): it is reported as `[SKIP] tracked` and kept. Tracked means git tracks the path itself or, for a directory, any file under it.
+
+**Implementation seam**: `_is_tracked <path>` (literal pathspec, so glob characters in a name match only themselves) and `_clean_item <execute> <file|dir> <path>` in `scripts/git/clean_build.sh`; every deletion loop goes through `_clean_item`.
+
+---
+
 ## template source
 
 The external or repository directory tree containing the canonical template assets (`hooks/`, `skill/`, `command/`, `templates/`) copied into a consumer project's runtime configuration (git hooks in `.git/hooks/` and `.githooks/`, agent skills in `.claude/skills/` and `.agents/skills/`, slash commands in `.claude/commands/` and `.agents/skills/`, markdownlint in `.markdownlint.json`). Decoupled from the target repository root to eliminate temporary in-repo staging and accidental directory pollution.

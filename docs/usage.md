@@ -254,6 +254,8 @@ The script only tags and pushes. For the checks around it (CI green on the relea
 ./scripts/git/clean_build.sh --td --execute   # TouchDesigner artifacts (plus common junk and any auto-detected categories)
 ```
 
+Only untracked paths are removed. A match that git tracks (a `crash.py`, a `Backup/` or `build/` directory with tracked content, a fixture named `*.bak`) is printed as `[SKIP] tracked: <path>` and kept.
+
 ### Keep vendored tooling copies in sync
 
 ```bash
