@@ -109,6 +109,167 @@ PYEOF
   export PYTHONPATH="${shim_n}${PYTHONPATH:+${sep}${PYTHONPATH}}"
 }
 
+# Print the usage text for --help.
+_usage() {
+  echo "Usage: ./scripts/git/check_lint.sh [OPTIONS]"
+  echo ""
+  echo "Run lint and format checks (read-only, no modifications)."
+  echo ""
+  echo "Options:"
+  echo "  --modified-only   Only check files modified vs HEAD"
+  echo "  --ref <rev>       Check the committed tree of <rev> (in a temp dir), not the"
+  echo "                    working tree; uncommitted changes are ignored. Typecheck is"
+  echo "                    whole-snapshot; incompatible with --modified-only/--md-only"
+  echo "  --base <rev>      With --ref: lint/format/markdown only files changed in"
+  echo "                    <rev-base>...<ref> (what a push would publish)"
+  echo "  --unpushed        With --ref: scope to files in commits no remote-tracking ref"
+  echo "                    has yet (new-branch push); alternative to --base"
+  echo "  --no-venv         Use system lint tool instead of .venv"
+  echo "  --skip-lint       Skip all lint checks (code, markdown, and typecheck)"
+  echo "  --skip-md-lint    Skip markdown lint only (CGW_MARKDOWNLINT_CMD step)"
+  echo "  --skip-typecheck  Skip typecheck only (CGW_TYPECHECK_CMD step)"
+  echo "  --md-only         Only check markdown (skip code lint + format + typecheck)"
+  echo "  -h, --help        Show this help"
+  echo ""
+  echo "Exit codes: 0 ok, 1 lint/markdown errors, 2 typecheck errors,"
+  echo "            3 --ref snapshot could not be prepared (checks did not run)"
+  echo ""
+  echo "Environment:"
+  echo "  CGW_NO_VENV=1          Same as --no-venv"
+  echo "  CGW_SKIP_LINT=1        Same as --skip-lint"
+  echo "  CGW_SKIP_MD_LINT=1     Same as --skip-md-lint"
+  echo "  CGW_SKIP_TYPECHECK=1   Same as --skip-typecheck"
+  echo "  CGW_LINT_CMD=<tool>    Override lint tool (default: ruff)"
+  echo "  CGW_TYPECHECK_CMD=<tool>  Override typecheck tool (empty = skip)"
+  echo "  (Also: CLAUDE_GIT_NO_VENV)"
+}
+
+# Resolve the files a push would publish, for scoped --ref checks. Prints one
+# `C:<path>` line per code file and one `M:<path>` line per markdown file.
+# Returns 3, after reporting, when either file set cannot be resolved.
+#   _scoped_files <ref_sha> <base> <ref>
+_scoped_files() {
+  local ref_sha="$1" base="$2" ref="$3"
+  local _resolved_code _resolved_md _lf
+  if ! _resolved_code="$(cgw_pushed_files_for_lint "${ref_sha}" "${base}")"; then
+    err "Failed to resolve pushed code files for ${ref}"
+    return 3
+  fi
+  # Same scope as the worktree markdown step: CGW_MARKDOWNLINT_PATHS, as git
+  # glob pathspecs (plain "**/*.md" would miss root-level files; "!x"/"#x"
+  # markdownlint-cli2 negations become excludes).
+  # Split via read (not an unquoted expansion) so bash never pathname-expands "**".
+  local _md_globs="" _mt
+  local -a _md_toks=()
+  read -r -a _md_toks <<<"${CGW_MARKDOWNLINT_PATHS:-**/*.md}"
+  for _mt in "${_md_toks[@]}"; do
+    case "${_mt}" in
+      '!'* | '#'*) _md_globs+=" :(glob,exclude)${_mt:1}" ;;
+      *) _md_globs+=" :(glob)${_mt}" ;;
+    esac
+  done
+  if ! _resolved_md="$(cgw_pushed_files_for_lint "${ref_sha}" "${base}" "${_md_globs# }")"; then
+    err "Failed to resolve pushed markdown files for ${ref}"
+    return 3
+  fi
+  while IFS= read -r _lf; do
+    if [[ -n "${_lf}" ]]; then printf 'C:%s\n' "${_lf}"; fi
+  done <<<"${_resolved_code}"
+  # A directory or "**/*" entry in CGW_MARKDOWNLINT_PATHS matches every changed
+  # file under it as a pathspec; only markdown may reach markdownlint.
+  while IFS= read -r _lf; do
+    case "${_lf}" in
+      *.md | *.markdown) printf 'M:%s\n' "${_lf}" ;;
+    esac
+  done <<<"${_resolved_md}"
+  return 0
+}
+
+# Extract the committed tree of <ref_sha> into a throwaway directory and enter it.
+# Sets the snapshot globals and EXIT/INT/TERM traps; returns 3, after reporting,
+# when the snapshot cannot be prepared (checks did not run).
+#   _step_snapshot <ref> <ref_sha>
+_step_snapshot() {
+  local ref="$1" ref_sha="$2"
+  CGW_SNAPSHOT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cgw-snap.XXXXXX")" || {
+    err "Cannot create snapshot directory"
+    return 3
+  }
+  trap _cgw_snapshot_cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  if ! cgw_snapshot_tree "${ref_sha}" "${CGW_SNAPSHOT_DIR}"; then
+    err "Cannot extract a snapshot of ${ref} (${ref_sha:0:12})"
+    return 3
+  fi
+
+  # The snapshot has no .venv (untracked); point the tools at the real one.
+  # shellcheck disable=SC2034  # read by get_python_path
+  CGW_VENV_ROOT="${PROJECT_ROOT}"
+  export CGW_VENV_ROOT
+  # Put the real venv's bin dir on PATH too, so tools the pipeline invokes by
+  # bare name (mypy, pyright, ...) resolve from it while cwd is the snapshot.
+  local _vbin=""
+  if get_python_path 2>/dev/null; then
+    _vbin="${PYTHON_BIN:-}"
+  fi
+  if [[ -n "${_vbin}" ]]; then
+    # A drive-letter path would be split on ':' inside PATH under MSYS.
+    command -v cygpath >/dev/null 2>&1 && _vbin="$(cygpath -u "${_vbin}")"
+    export VIRTUAL_ENV="${PROJECT_ROOT}/.venv"
+    export PATH="${_vbin}:${PATH}"
+  fi
+
+  CGW_SNAPSHOT_AUX_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cgw-snap.XXXXXX")" || {
+    err "Cannot create snapshot directory"
+    return 3
+  }
+  _cgw_isolate_worktree_imports "${CGW_SNAPSHOT_AUX_DIR}"
+
+  cd "${CGW_SNAPSHOT_DIR}" || {
+    err "Cannot enter snapshot directory"
+    return 3
+  }
+}
+
+# --modified-only mode: lint and format the files modified vs HEAD (console only).
+# Returns the exit code for the script; typecheck is deliberately not run here.
+#   _step_modified_only <lint_act> <format_act>
+_step_modified_only() {
+  local lint_act="$1" format_act="$2"
+  if [[ -z "${CGW_LINT_CMD:-}" ]] && [[ -z "${CGW_FORMAT_CMD:-}" ]]; then
+    echo "[OK] No code lint or format tool configured for --modified-only (CGW_LINT_CMD and CGW_FORMAT_CMD not set)"
+    return 0
+  fi
+  local modified_files
+  modified_files=$(cgw_modified_files_for_lint)
+  if [[ -z "$modified_files" ]]; then
+    echo "[OK] No modified files to check"
+    return 0
+  fi
+
+  echo "=== Modified-Only Lint Check ==="
+  echo "Files: $modified_files"
+  echo ""
+
+  local -a files=()
+  read -r -a files <<<"${modified_files}"
+  local EXIT_CODE=0
+  if [[ "$lint_act" == "run" ]]; then
+    cgw_run_lint_check "${files[@]}" || EXIT_CODE=1
+  fi
+  # Non-blocking: mirrors full-mode (overall_status gates on lint+markdown
+  # only) and CI's shfmt continue-on-error. A format diff is reported but
+  # never gates the exit code -- only the lint step above does.
+  if [[ "$format_act" == "run" ]]; then
+    if ! CGW_FORMAT_CHECK_NONBLOCKING=1 cgw_run_format_check "${files[@]}"; then
+      echo "[WARN] Format issues found (non-blocking) -- run fix_lint.sh to auto-format"
+    fi
+  fi
+
+  return $EXIT_CODE
+}
+
 main() {
   local modified_only=0
   local md_only=0
@@ -120,37 +281,7 @@ main() {
     local arg="$1"
     case "$arg" in
       --help | -h)
-        echo "Usage: ./scripts/git/check_lint.sh [OPTIONS]"
-        echo ""
-        echo "Run lint and format checks (read-only, no modifications)."
-        echo ""
-        echo "Options:"
-        echo "  --modified-only   Only check files modified vs HEAD"
-        echo "  --ref <rev>       Check the committed tree of <rev> (in a temp dir), not the"
-        echo "                    working tree; uncommitted changes are ignored. Typecheck is"
-        echo "                    whole-snapshot; incompatible with --modified-only/--md-only"
-        echo "  --base <rev>      With --ref: lint/format/markdown only files changed in"
-        echo "                    <rev-base>...<ref> (what a push would publish)"
-        echo "  --unpushed        With --ref: scope to files in commits no remote-tracking ref"
-        echo "                    has yet (new-branch push); alternative to --base"
-        echo "  --no-venv         Use system lint tool instead of .venv"
-        echo "  --skip-lint       Skip all lint checks (code, markdown, and typecheck)"
-        echo "  --skip-md-lint    Skip markdown lint only (CGW_MARKDOWNLINT_CMD step)"
-        echo "  --skip-typecheck  Skip typecheck only (CGW_TYPECHECK_CMD step)"
-        echo "  --md-only         Only check markdown (skip code lint + format + typecheck)"
-        echo "  -h, --help        Show this help"
-        echo ""
-        echo "Exit codes: 0 ok, 1 lint/markdown errors, 2 typecheck errors,"
-        echo "            3 --ref snapshot could not be prepared (checks did not run)"
-        echo ""
-        echo "Environment:"
-        echo "  CGW_NO_VENV=1          Same as --no-venv"
-        echo "  CGW_SKIP_LINT=1        Same as --skip-lint"
-        echo "  CGW_SKIP_MD_LINT=1     Same as --skip-md-lint"
-        echo "  CGW_SKIP_TYPECHECK=1   Same as --skip-typecheck"
-        echo "  CGW_LINT_CMD=<tool>    Override lint tool (default: ruff)"
-        echo "  CGW_TYPECHECK_CMD=<tool>  Override typecheck tool (empty = skip)"
-        echo "  (Also: CLAUDE_GIT_NO_VENV)"
+        _usage
         exit 0
         ;;
       --no-venv)
@@ -247,79 +378,17 @@ main() {
     fi
     if [[ -n "${base}" || ${unpushed} -eq 1 ]]; then
       scoped=1
-      local _resolved_code _resolved_md _lf
-      if ! _resolved_code="$(cgw_pushed_files_for_lint "${ref_sha}" "${base}")"; then
-        err "Failed to resolve pushed code files for ${ref}"
-        exit 3
-      fi
-      # Same scope as the worktree markdown step: CGW_MARKDOWNLINT_PATHS, as git
-      # glob pathspecs (plain "**/*.md" would miss root-level files; "!x"/"#x"
-      # markdownlint-cli2 negations become excludes).
-      # Split via read (not an unquoted expansion) so bash never pathname-expands "**".
-      local _md_globs="" _mt
-      local -a _md_toks=()
-      read -r -a _md_toks <<<"${CGW_MARKDOWNLINT_PATHS:-**/*.md}"
-      for _mt in "${_md_toks[@]}"; do
-        case "${_mt}" in
-          '!'* | '#'*) _md_globs+=" :(glob,exclude)${_mt:1}" ;;
-          *) _md_globs+=" :(glob)${_mt}" ;;
+      local _scoped _sl
+      _scoped="$(_scoped_files "${ref_sha}" "${base}" "${ref}")" || exit 3
+      while IFS= read -r _sl; do
+        case "${_sl}" in
+          C:*) lint_files+=("${_sl#C:}") ;;
+          M:*) md_files+=("${_sl#M:}") ;;
         esac
-      done
-      if ! _resolved_md="$(cgw_pushed_files_for_lint "${ref_sha}" "${base}" "${_md_globs# }")"; then
-        err "Failed to resolve pushed markdown files for ${ref}"
-        exit 3
-      fi
-      while IFS= read -r _lf; do
-        [[ -n "${_lf}" ]] && lint_files+=("${_lf}")
-      done <<<"${_resolved_code}"
-      # A directory or "**/*" entry in CGW_MARKDOWNLINT_PATHS matches every changed
-      # file under it as a pathspec; only markdown may reach markdownlint.
-      while IFS= read -r _lf; do
-        case "${_lf}" in
-          *.md | *.markdown) md_files+=("${_lf}") ;;
-        esac
-      done <<<"${_resolved_md}"
+      done <<<"${_scoped}"
     fi
 
-    CGW_SNAPSHOT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cgw-snap.XXXXXX")" || {
-      err "Cannot create snapshot directory"
-      exit 3
-    }
-    trap _cgw_snapshot_cleanup EXIT
-    trap 'exit 130' INT
-    trap 'exit 143' TERM
-    if ! cgw_snapshot_tree "${ref_sha}" "${CGW_SNAPSHOT_DIR}"; then
-      err "Cannot extract a snapshot of ${ref} (${ref_sha:0:12})"
-      exit 3
-    fi
-
-    # The snapshot has no .venv (untracked); point the tools at the real one.
-    # shellcheck disable=SC2034  # read by get_python_path
-    CGW_VENV_ROOT="${PROJECT_ROOT}"
-    export CGW_VENV_ROOT
-    # Put the real venv's bin dir on PATH too, so tools the pipeline invokes by
-    # bare name (mypy, pyright, ...) resolve from it while cwd is the snapshot.
-    local _vbin=""
-    if get_python_path 2>/dev/null; then
-      _vbin="${PYTHON_BIN:-}"
-    fi
-    if [[ -n "${_vbin}" ]]; then
-      # A drive-letter path would be split on ':' inside PATH under MSYS.
-      command -v cygpath >/dev/null 2>&1 && _vbin="$(cygpath -u "${_vbin}")"
-      export VIRTUAL_ENV="${PROJECT_ROOT}/.venv"
-      export PATH="${_vbin}:${PATH}"
-    fi
-
-    CGW_SNAPSHOT_AUX_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cgw-snap.XXXXXX")" || {
-      err "Cannot create snapshot directory"
-      exit 3
-    }
-    _cgw_isolate_worktree_imports "${CGW_SNAPSHOT_AUX_DIR}"
-
-    cd "${CGW_SNAPSHOT_DIR}" || {
-      err "Cannot enter snapshot directory"
-      exit 3
-    }
+    _step_snapshot "${ref}" "${ref_sha}" || exit $?
   fi
 
   # Handle --modified-only mode (lint pipeline scoped to the modified files; console only)
@@ -328,37 +397,8 @@ main() {
   # list (the way lint/format are scoped below) would misreport errors that
   # originate outside the modified set. Use the full mode for typecheck.
   if [[ "${modified_only}" -eq 1 ]]; then
-    if [[ -z "${CGW_LINT_CMD:-}" ]] && [[ -z "${CGW_FORMAT_CMD:-}" ]]; then
-      echo "[OK] No code lint or format tool configured for --modified-only (CGW_LINT_CMD and CGW_FORMAT_CMD not set)"
-      exit 0
-    fi
-    local modified_files
-    modified_files=$(cgw_modified_files_for_lint)
-    if [[ -z "$modified_files" ]]; then
-      echo "[OK] No modified files to check"
-      exit 0
-    fi
-
-    echo "=== Modified-Only Lint Check ==="
-    echo "Files: $modified_files"
-    echo ""
-
-    local -a files=()
-    read -r -a files <<<"${modified_files}"
-    local EXIT_CODE=0
-    if [[ "$lint_act" == "run" ]]; then
-      cgw_run_lint_check "${files[@]}" || EXIT_CODE=1
-    fi
-    # Non-blocking: mirrors full-mode (overall_status gates on lint+markdown
-    # only) and CI's shfmt continue-on-error. A format diff is reported but
-    # never gates the exit code -- only the lint step above does.
-    if [[ "$format_act" == "run" ]]; then
-      if ! CGW_FORMAT_CHECK_NONBLOCKING=1 cgw_run_format_check "${files[@]}"; then
-        echo "[WARN] Format issues found (non-blocking) -- run fix_lint.sh to auto-format"
-      fi
-    fi
-
-    exit $EXIT_CODE
+    _step_modified_only "${lint_act}" "${format_act}"
+    exit $?
   fi
 
   # Full lint check with logging
