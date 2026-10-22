@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # _guardrail_core.sh — shared dangerous-git classifier for the CGW agent guardrails
 # (cc-block-dangerous-git.sh, agy-block-dangerous-git.sh). Sourced, never executed.
 #

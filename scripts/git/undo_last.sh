@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # undo_last.sh - Safe undo wrapper for common git operations
 # Purpose: Provide safe, guided undo operations: undo last commit (keep changes
 #          staged), unstage specific files, discard file changes. Creates backup

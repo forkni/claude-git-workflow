@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # bisect_helper.sh - Guided git bisect workflow for automated bug hunting
 # Purpose: Wrap git bisect with a backup tag, auto-detect good/bad refs,
 #          support automated test commands (git bisect run), and clean up

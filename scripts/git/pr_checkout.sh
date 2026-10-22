@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # pr_checkout.sh - Check out a GitHub PR locally for review
 # Purpose: Wraps `gh pr checkout` so reviewing a PR follows the same guarded,
 #          logged pattern as other CGW scripts -- the modern replacement for

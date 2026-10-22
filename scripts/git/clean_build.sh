@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # clean_build.sh - Safe cleanup of build artifacts and temporary files
 # Purpose: Remove generated files that should not be committed. Uses --dry-run
 #          by default to prevent accidental deletion.

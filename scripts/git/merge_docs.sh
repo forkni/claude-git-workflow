@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # merge_docs.sh - Documentation-only merge from source to target branch
 # Purpose: Merge only docs/ directory changes while ignoring code changes
 # Usage: ./scripts/git/merge_docs.sh [OPTIONS]

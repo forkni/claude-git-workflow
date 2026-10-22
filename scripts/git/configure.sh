@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # configure.sh - Auto-configure claude-git-workflow for a project
 # Purpose: Scan project, generate .cgw.conf, install hooks and optional Claude skill
 # Usage: ./scripts/git/configure.sh [OPTIONS]

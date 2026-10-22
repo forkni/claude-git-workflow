@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # create_pr.sh - Create a GitHub pull request from source to target branch
 # Purpose: Open a PR to trigger GitHub Actions
 # Usage: ./scripts/git/create_pr.sh [OPTIONS]

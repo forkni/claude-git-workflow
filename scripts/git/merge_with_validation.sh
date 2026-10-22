@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # merge_with_validation.sh - Safe merge from source to target branch
 # Purpose: Merge with validation, conflict auto-resolution, and CI policy check
 # Usage: ./scripts/git/merge_with_validation.sh [OPTIONS]

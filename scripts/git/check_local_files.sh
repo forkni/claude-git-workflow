@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # check_local_files.sh — verify no local-only files are tracked in git.
 # Used by CI (branch-protection.yml) and can be run locally.
 # Reads CGW_LOCAL_FILES from .cgw.conf (if present) or built-in defaults.

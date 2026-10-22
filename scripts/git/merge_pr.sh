@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # merge_pr.sh - Merge a GitHub PR with a merge commit, optionally retargeting stacked PRs
 # Purpose: Wraps `gh pr merge` so the PR-mode promotion (CGW_MERGE_MODE="pr") has a guarded,
 #          logged merge step. Defaults to a merge commit (--merge): the merged feature stays

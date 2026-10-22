@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # sync_branches.sh - Sync local branches with remote via fetch + pull
 # Purpose: Keep branches up-to-date with origin. Protected branches
 #          (CGW_PROTECTED_BRANCHES, default: target) are fast-forwarded only; others are

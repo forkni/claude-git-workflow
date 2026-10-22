@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # cc-block-dangerous-git.sh — Claude Code PreToolUse guardrail (installed by CGW configure.sh)
 #
 # Blocks dangerous git/shell commands before they reach the shell.

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # branch_diff.sh - Diff the current branch against the repository's default branch
 # Purpose: Answer "what did I change on this branch?" without hardcoding main/master.
 #          Inspired by the brdiff/brfiles aliases in stas00/git-tools, but uses

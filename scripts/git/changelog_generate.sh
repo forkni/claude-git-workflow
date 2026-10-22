@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # changelog_generate.sh - Generate changelog from conventional commits
 # Purpose: Parse conventional commit messages (feat/fix/docs/etc.) between two
 #          refs and produce a categorized markdown or plain-text changelog.

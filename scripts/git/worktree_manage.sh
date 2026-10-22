@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # worktree_manage.sh - Git worktree management wrapper
 # Purpose: Add, list, remove, and prune git linked worktrees in a safe, consistent
 #          way that matches the CGW toolkit conventions (dry-run default for

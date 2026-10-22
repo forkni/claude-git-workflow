@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # commit_enhanced.sh - Enhanced commit workflow with validation and logging
 # Purpose: Safe commit with lint check, local-file protection, and conventional format
 # Usage: ./scripts/git/commit_enhanced.sh [OPTIONS] "commit message"

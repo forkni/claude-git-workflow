@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # Pre-commit hook — blocks local-only files from being committed.
 # Part of claude-git-workflow. Sources _common.sh at run time so changes
 # to CGW_LOCAL_FILES in .cgw.conf take effect without re-running configure.sh.

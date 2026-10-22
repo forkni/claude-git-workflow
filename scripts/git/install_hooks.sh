@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # install_hooks.sh - Install git hooks from .githooks/ to the active hooks dir
 # Purpose: Install pre-commit, pre-push, and pre-rebase hooks
 # Usage: ./scripts/git/install_hooks.sh [OPTIONS]

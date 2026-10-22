@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # rebase_safe.sh - Safe rebase wrapper with backup tag and validation
 # Purpose: Wrap common rebase workflows (rebase onto branch, squash last N commits,
 #          abort/continue in-progress rebase) with a backup tag before any

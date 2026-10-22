@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # md_toc.sh - Generate/insert a Markdown Table of Contents
 # Purpose: Offline port of stas00/git-tools' gh-md-toc. Computes GitHub-compatible
 #          heading slugs locally instead of POSTing to the GitHub markdown API,
