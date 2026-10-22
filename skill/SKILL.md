@@ -21,6 +21,7 @@ For non-obvious git techniques not covered by a wrapper (pickaxe search, merge-b
 For choosing or composing a `.gitignore` — stack templates, OS/editor `Global` rules, pattern precedence and negation, and the trap where ignoring an already-tracked path does nothing — see [references/gitignore-templates.md](references/gitignore-templates.md).
 For the full promotion pipeline (commit → push → merge/PR → push, run by `/auto-git-workflow-cmd` option 1), see [references/full-promotion.md](references/full-promotion.md).
 For the mandatory post-push CI verification gate (`verify_ci.sh` after every push, fix-until-green), see [references/ci-verification.md](references/ci-verification.md).
+For what to check before and after tagging a release (CI on the release commit, version, changelog, rollback plan, asset smoke check), see [references/release-checklist.md](references/release-checklist.md).
 For keeping secrets and machine-local config out of git in the first place (sample-file pattern, what `CGW_LOCAL_FILES` does and does not catch, the untracked-file warning), see [references/secrets-and-local-config.md](references/secrets-and-local-config.md).
 For removing a secret or local-only file that was **already committed** (rotate, diagnose, strip from history if pushed), see [references/removing-sensitive-data.md](references/removing-sensitive-data.md).
 When a merge or rebase **stops on a conflict that needs manual resolution** (`UU`, `AA`, `AU`, `UD`, `AD`, `DA`), follow the step-by-step procedure in [references/resolving-merge-conflicts.md](references/resolving-merge-conflicts.md) — investigate both sides' intent, preserve both where compatible, re-run checks, then conclude through the wrapper. **Before touching a hunk:** run `git log --merge -p -- <file>` and `git log --oneline --left-right --merge` to understand which commits on each side caused the conflict. Never blindly `git checkout --ours/--theirs`; resolve by default — abort only to deliberately abandon the operation, not to dodge a difficult conflict.
@@ -657,6 +658,10 @@ be needed.
 `--push` triggers `release.yml` (tag push matching `v*`) — Rule 6 applies: run
 `./scripts/git/verify_ci.sh --branch v1.2.3` with the tag name (the script resolves `refs/tags/<name>`
 when no branch matches) and wait for exit 0 before considering the release done.
+
+Before tagging (CI green on the release commit, version bumped, changelog generated, rollback plan
+and triggers written down) and after it (tag CI green, release assets smoke-checked), follow
+[references/release-checklist.md](references/release-checklist.md).
 
 **Recovering lost commits (reflog + fsck):**
 
