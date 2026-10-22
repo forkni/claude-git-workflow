@@ -237,6 +237,8 @@ rebasing it (see `docs/adr/0004`). All other branches use rebase.
 
 Enable signing globally in `.cgw.conf`: `CGW_SIGN_TAGS=1`. Requires a GPG or SSH signing key configured in git (`gpg.signingKey` / `gpg.format=ssh`). Verify a tag with: `git tag -v v1.2.3`.
 
+The script only tags and pushes. For the checks around it (CI green on the release commit, version bump, changelog, a rollback plan with triggers before tagging; tag CI and an asset smoke check after), see [`skill/references/release-checklist.md`](../skill/references/release-checklist.md).
+
 ### Configure .gitattributes (Python, TouchDesigner, GLSL)
 
 ```bash
