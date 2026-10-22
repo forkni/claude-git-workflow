@@ -187,3 +187,27 @@ _diverge_for_rebase() {
   # Blocked at the source line, not by a later call into the half-loaded library.
   [[ "${output}" != *"command not found"* ]]
 }
+
+@test "pre-commit: fails CLOSED when _lib_lock.sh is missing" {
+  _install_hook "pre-commit"
+  _install_cgw_tooling
+  rm "${TEST_REPO_DIR}/scripts/git/_lib_lock.sh"
+  echo "content" > "${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  run git -C "${TEST_REPO_DIR}" commit -m "feat: add feature.txt"
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"_lib_lock.sh is missing"* ]]
+  [[ "${output}" != *"command not found"* ]]
+}
+
+@test "_common.sh: sourcing returns 1 and names the lib when any _lib_*.sh is missing" {
+  _install_cgw_tooling
+  local lib
+  for lib in _lib_remote.sh _lib_lock.sh; do
+    mv "${TEST_REPO_DIR}/scripts/git/${lib}" "${TEST_REPO_DIR}/scripts/git/${lib}.off"
+    run bash -c 'source "$1/scripts/git/_common.sh"' _ "${TEST_REPO_DIR}"
+    mv "${TEST_REPO_DIR}/scripts/git/${lib}.off" "${TEST_REPO_DIR}/scripts/git/${lib}"
+    [ "${status}" -eq 1 ]
+    [[ "${output}" == *"${lib} is missing"* ]]
+  done
+}
