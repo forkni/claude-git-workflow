@@ -498,7 +498,7 @@ version bump, changelog, rollback plan before tagging; tag CI and asset smoke ch
 `scripts/git/` and `.githooks/` are commonly gitignored, so `git worktree add` doesn't check
 them out into new worktrees. `link` writes a **real** `scripts/git/` directory of small shims
 (one per public script, marked by `.cgw-worktree-shims`) that exec the main worktree's copy,
-resolved at run time; the libraries (`_common.sh`, `_config.sh`) and `.githooks` are not copied
+resolved at run time; the libraries (`_common.sh`, `_config.sh`, `_lib_*.sh`) and `.githooks` are not copied
 because hooks and `install_hooks.sh` already fall back to the main worktree. Because nothing
 links back into the main checkout, deleting the worktree any way at all cannot touch the main
 tooling. Idempotent (re-running refreshes the shims), refuses to overwrite a real directory

@@ -42,6 +42,7 @@ _install_hook() {
 _install_cgw_tooling() {
   mkdir -p "${TEST_REPO_DIR}/scripts/git"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_common.sh" "${TEST_REPO_DIR}/scripts/git/_common.sh"
+  cp "${CGW_PROJECT_ROOT}"/scripts/git/_lib_*.sh "${TEST_REPO_DIR}/scripts/git/"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_config.sh" "${TEST_REPO_DIR}/scripts/git/_config.sh"
 }
 
@@ -140,4 +141,49 @@ _diverge_for_rebase() {
   _diverge_for_rebase
   run git -C "${TEST_REPO_DIR}" rebase development
   [ "${status}" -eq 0 ]
+}
+
+# ── missing seam library ─────────────────────────────────────────────────────
+# _common.sh sources its _lib_*.sh siblings. When one is absent it returns 1, and
+# the hook must block rather than carry on with half the functions defined.
+
+@test "pre-commit: fails CLOSED when a _lib_*.sh next to _common.sh is missing" {
+  _install_hook "pre-commit"
+  _install_cgw_tooling
+  rm "${TEST_REPO_DIR}/scripts/git/_lib_remote.sh"
+  echo "content" > "${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  run git -C "${TEST_REPO_DIR}" commit -m "feat: add feature.txt"
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"_lib_remote.sh is missing"* ]]
+  # Blocked at the source line, not by a later call into the half-loaded library.
+  [[ "${output}" != *"command not found"* ]]
+}
+
+@test "pre-push: fails CLOSED when a _lib_*.sh next to _common.sh is missing" {
+  create_test_repo_with_remote
+  git -C "${TEST_REPO_DIR}" checkout development
+  _install_hook "pre-push"
+  _install_cgw_tooling
+  rm "${TEST_REPO_DIR}/scripts/git/_lib_remote.sh"
+  echo "content" > "${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet --no-verify -m "feat: add feature.txt"
+  run git -C "${TEST_REPO_DIR}" push origin development
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"_lib_remote.sh is missing"* ]]
+  # Blocked at the source line, not by a later call into the half-loaded library.
+  [[ "${output}" != *"command not found"* ]]
+}
+
+@test "pre-rebase: fails CLOSED when a _lib_*.sh next to _common.sh is missing" {
+  _install_hook "pre-rebase"
+  _install_cgw_tooling
+  rm "${TEST_REPO_DIR}/scripts/git/_lib_remote.sh"
+  _diverge_for_rebase
+  run git -C "${TEST_REPO_DIR}" rebase development
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"_lib_remote.sh is missing"* ]]
+  # Blocked at the source line, not by a later call into the half-loaded library.
+  [[ "${output}" != *"command not found"* ]]
 }

@@ -165,6 +165,7 @@ CGW provides 31 user-facing scripts and 2 internal core modules in `scripts/git/
 
 - `_common.sh`: Shared utilities, logging, platform shims, backup-tag registry, interactive confirmation prompts (`cgw_confirm`), sourced by every script.
 - `_config.sh`: Three-tier configuration loader, repository root auto-detection, and centralized settings registry.
+- `_lib_remote.sh`: Remote and network helpers (`cgw_net_git` timeout wrapper, remote reachability and branch probes, `gh` helpers), sourced by `_common.sh`. If it is missing, `_common.sh` returns 1 and the hooks block.
 
 ### Project-specific hook logic (`.githooks/<hook>.local`)
 

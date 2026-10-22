@@ -354,7 +354,7 @@ Not implemented; recorded so they are not rediscovered:
 - **Force-push is guarded.** `push_validated.sh` uses `--force-with-lease` (not `--force`) and
   requires a literal-token confirmation for protected branches.
 - **Shell strictness is consistent.** Every executable wrapper sets `set -uo pipefail`; the two
-  sourced libraries (`_common.sh`, `_config.sh`) intentionally don't (callers own strictness).
+  sourced libraries (`_common.sh`, `_config.sh`, `_lib_*.sh`) intentionally don't (callers own strictness).
   `commit_enhanced.sh` omits `-e` deliberately (it relies on `git diff` exit codes for signalling).
 - **`cgw_is_local_file` matching is correct.** `[[ "$path" == "$dir"/* ]]` is proper bash glob
   matching (an earlier audit pass misread this as fragile); exact-match for non-dir entries, prefix

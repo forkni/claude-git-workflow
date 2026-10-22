@@ -34,7 +34,8 @@ if [[ ! -f "${CGW_HOME}/scripts/git/_common.sh" ]]; then
   exit 1
 fi
 # shellcheck source=scripts/git/_common.sh
-source "${CGW_HOME}/scripts/git/_common.sh"
+# A missing _lib_*.sh makes _common.sh return 1: block rather than run with half the functions.
+source "${CGW_HOME}/scripts/git/_common.sh" || exit 1
 
 # ── Project-local pre-commit hook extension ───────────────────────────
 # .githooks/ is per-clone and git-ignored in some installs, so a linked worktree has none:

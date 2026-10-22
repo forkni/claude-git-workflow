@@ -238,7 +238,7 @@ Both adapters currently accept both payload shapes; they differ only in which sh
 
 The shared module for querying remote reachability, remote branch existence, and commit distance between two refs. Concentrates a seam previously scattered across ~10 inline `git rev-list --count` and `git ls-remote` call sites in 6+ scripts, several of which were untested (notably `repo_health.sh`).
 
-**Implementation seam** — three silent helpers in `scripts/git/_common.sh`:
+**Implementation seam** — three silent helpers in `scripts/git/_lib_remote.sh` (sourced by `_common.sh`):
 
 - `cgw_rev_count <base> <tip>` — outputs `git rev-list --count "base..tip"` to stdout; exits non-zero on error (bad refs, git failure). No fallback — callers own their own `|| count=0` or `|| exit 1`. Accepts any git ref (branch names, remote tracking refs, SHAs).
 - `cgw_remote_reachable <remote>` — exits 0 if the remote is reachable (probes via `git ls-remote HEAD`), non-zero otherwise.
