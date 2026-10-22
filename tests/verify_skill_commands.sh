@@ -19,6 +19,7 @@ DOCS=(
   "$REPO_ROOT/command/auto-git-workflow-cmd.md"
   "$REPO_ROOT/skill/references/full-promotion.md"
   "$REPO_ROOT/skill/references/ci-verification.md"
+  "$REPO_ROOT/skill/references/release-checklist.md"
   "$REPO_ROOT/skill/references/gitignore-templates.md"
   "$REPO_ROOT/skill/references/script-reference.md"
 )

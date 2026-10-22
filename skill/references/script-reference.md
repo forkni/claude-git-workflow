@@ -450,6 +450,10 @@ Always protected, regardless of `CGW_TARGET_BRANCH`: `main`, `master`, the repo'
 | `--non-interactive` | Skip confirmation prompts |
 | `--dry-run` | Show what would be tagged without creating |
 
+The script only tags and pushes. For the checks that belong around it (CI on the release commit,
+version bump, changelog, rollback plan before tagging; tag CI and asset smoke check after), see
+[release-checklist.md](release-checklist.md).
+
 **`recover.sh`** — Reflog and dangling-commit recovery
 
 ```bash
