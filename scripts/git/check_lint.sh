@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # check_lint.sh - Lint validation (read-only, no modifications)
 # Purpose: Check code quality without making changes
 # Usage: ./scripts/git/check_lint.sh [OPTIONS]

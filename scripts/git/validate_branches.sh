@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # validate_branches.sh - Pre-merge branch validation
 # Purpose: Validate branch state before a merge operation
 # Usage: ./scripts/git/validate_branches.sh [OPTIONS]

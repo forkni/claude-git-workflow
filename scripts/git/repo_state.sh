@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # repo_state.sh - Read-only repository state snapshot and next-step suggestion
 # Purpose: Check the preconditions every git action depends on (inside a repo, on a branch,
 #          has commits) and report the facts the /auto-git-workflow-cmd menu is built from:

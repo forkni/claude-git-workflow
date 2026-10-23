@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # cherry_pick_commits.sh - Cherry-pick specific commits from source to target branch
 # Purpose: Cherry-pick commits with validation and automatic backup
 # Usage: ./scripts/git/cherry_pick_commits.sh [OPTIONS]

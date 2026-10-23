@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # recover.sh - Reflog and dangling-commit recovery tool
 # Purpose: Surface git's canonical safety nets (reflog + git fsck --full) to
 #          help recover commits lost by resets, dropped rebases, or accidental

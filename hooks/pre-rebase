@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # Pre-rebase hook — refuse to rebase commits already published on the remote.
 # Part of claude-git-workflow. Sources _common.sh at run time so CGW_REMOTE
 # and CGW_ALLOW_REBASE_PUBLISHED in .cgw.conf take effect without reinstall.

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # sync_cgw_tooling.sh - Refresh this project's vendored CGW tooling from a claude-git-workflow checkout
 # Purpose: Replace the hand-copy of scripts/git/ with one reproducible step: bring the branch up to
 #          date, copy scripts/git/*.sh from the CGW source, let configure.sh refresh the hooks and

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # _common.sh - Shared utility functions for claude-git-workflow scripts
 # Usage: source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 #

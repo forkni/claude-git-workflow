@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # verify_ci.sh - Post-push CI gate: wait for the GitHub Actions runs on a pushed commit and
 #                report one verdict
 # Purpose: Replaces the manual "watch CI after every push" procedure (skill/references/

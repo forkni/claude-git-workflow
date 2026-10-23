@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # stash_work.sh - Safe stash wrapper with logging and untracked file support
 # Purpose: Wrapper around git stash that always includes untracked files (-u),
 #          supports named stashes, and logs operations for traceability.

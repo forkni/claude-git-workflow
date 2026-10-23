@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # create_release.sh - Create annotated version tags to trigger GitHub Releases
 # Purpose: Create a properly annotated semver tag on the target branch.
 #          Annotated tags store author, date, and message -- required for the
