@@ -344,6 +344,13 @@ Not implemented; recorded so they are not rediscovered:
 - `git maintenance` as an alternative to manual `gc` in `repo_health.sh`
 - an imperative-mood tip next to the 50/72 subject rule (*Pro Git*, commit guidelines)
 
+### Won't fix: long `main()` in `merge_pr.sh` and `rollback_merge.sh`
+
+`configure.sh`, `check_lint.sh` and `cherry_pick_commits.sh` had their `main()` split into `_step_*` functions
+because each had more than 10 `fix:` commits in 6 months. `merge_pr.sh` (562 lines) and `rollback_merge.sh`
+(415 lines) have fewer than 7, so they stay as they are. Trigger to revisit: more than 10 `fix:` commits
+touching either file in a 6-month window.
+
 ---
 
 ## Non-findings (checked clean — recorded so they aren't re-audited)
@@ -354,7 +361,7 @@ Not implemented; recorded so they are not rediscovered:
 - **Force-push is guarded.** `push_validated.sh` uses `--force-with-lease` (not `--force`) and
   requires a literal-token confirmation for protected branches.
 - **Shell strictness is consistent.** Every executable wrapper sets `set -uo pipefail`; the two
-  sourced libraries (`_common.sh`, `_config.sh`) intentionally don't (callers own strictness).
+  sourced libraries (`_common.sh`, `_config.sh`, `_lib_*.sh`) intentionally don't (callers own strictness).
   `commit_enhanced.sh` omits `-e` deliberately (it relies on `git diff` exit codes for signalling).
 - **`cgw_is_local_file` matching is correct.** `[[ "$path" == "$dir"/* ]]` is proper bash glob
   matching (an earlier audit pass misread this as fragile); exact-match for non-dir entries, prefix

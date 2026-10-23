@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # fix_lint.sh - Auto-fix lint issues
 # Purpose: Run lint auto-fix and formatting
 # Usage: ./scripts/git/fix_lint.sh [OPTIONS]

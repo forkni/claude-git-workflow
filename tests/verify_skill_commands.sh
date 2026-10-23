@@ -22,6 +22,7 @@ DOCS=(
   "$REPO_ROOT/skill/references/release-checklist.md"
   "$REPO_ROOT/skill/references/gitignore-templates.md"
   "$REPO_ROOT/skill/references/script-reference.md"
+  "$REPO_ROOT/skill/references/wrapper-recipes.md"
 )
 pass=0
 fail=0

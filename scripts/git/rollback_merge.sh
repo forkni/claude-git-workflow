@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # rollback_merge.sh - Emergency rollback for merge operations
 # Purpose: Revert target branch to pre-merge state safely
 # Usage: ./scripts/git/rollback_merge.sh [OPTIONS]

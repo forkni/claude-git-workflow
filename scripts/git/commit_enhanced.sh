@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # commit_enhanced.sh - Enhanced commit workflow with validation and logging
 # Purpose: Safe commit with lint check, local-file protection, and conventional format
 # Usage: ./scripts/git/commit_enhanced.sh [OPTIONS] "commit message"
@@ -284,6 +286,444 @@ _untracked_notice() {
   return 0
 }
 
+# Print the usage text for --help.
+_usage() {
+  echo "Usage: ./scripts/git/commit_enhanced.sh [OPTIONS] \"commit message\""
+  echo ""
+  echo "Enhanced commit workflow with lint validation and local-only file protection."
+  echo ""
+  echo "Options:"
+  echo "  --non-interactive   Skip all prompts (auto-fix lint; staging as below)"
+  echo "  --interactive       Force interactive mode even without TTY"
+  echo "  --only <pathspec>   Stage only listed paths (repeatable); resets index first"
+  echo "  --staged-only       Use pre-staged files only, skip auto-staging"
+  echo "  --all               Force bulk-stage all tracked changes (overrides pre-stage respect)"
+  echo "  --no-venv           Use system ruff instead of .venv ruff"
+  echo "  --skip-lint         Skip all lint checks (code + markdown)"
+  echo "  --skip-md-lint      Skip markdown lint only (CGW_MARKDOWNLINT_CMD step)"
+  echo "  --strict-untracked  Refuse to commit while untracked (non-ignored, non-local-only)"
+  echo "                      files are left out of the commit (default: warn only)"
+  echo "  --no-untracked-check  Do not warn about untracked files left out of the commit"
+  echo "  --sign              GPG/SSH-sign the commit (git commit -S)"
+  echo "  --no-sign           Disable signing even if CGW_SIGN_COMMITS=1"
+  echo "  -h, --help          Show this help"
+  echo ""
+  echo "Staging defaults (non-interactive):"
+  echo "  1. Pre-staged + unstaged present -> commits pre-staged only (warns)"
+  echo "  2. Nothing pre-staged            -> auto-stages all tracked changes"
+  echo "  3. --only <path>                 -> resets index, stages only listed paths"
+  echo "  4. --all                         -> always bulk-stage (old default)"
+  echo "  With CGW_REQUIRE_EXPLICIT_STAGING=1, case 2 refuses: use --only, --staged-only or --all"
+  echo ""
+  echo "Commit message format: <type>: <message>"
+  echo "  Standard types: feat fix docs chore test refactor style perf"
+  echo "  Configure extras via CGW_EXTRA_PREFIXES in .cgw.conf"
+  echo ""
+  echo "During a merge (MERGE_HEAD present), the message is optional:"
+  echo "  with none, uses git's prepared merge message (comments stripped)."
+  echo "  Merge-conclusion commits skip the conventional-format check and"
+  echo "  the subject-length hard cap (pre-push exempts merge commits too)."
+  echo ""
+  echo "Environment:"
+  echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
+  echo "  CGW_STAGED_ONLY=1       Same as --staged-only"
+  echo "  CGW_ALL=1               Same as --all"
+  echo "  CGW_NO_VENV=1           Same as --no-venv"
+  echo "  CGW_SKIP_LINT=1         Same as --skip-lint"
+  echo "  CGW_SKIP_MD_LINT=1      Same as --skip-md-lint"
+  echo "  CGW_SIGN_COMMITS=1      Same as --sign (sign all commits by default)"
+  echo "  CGW_STRICT_UNTRACKED=1  Same as --strict-untracked"
+  echo "  CGW_UNTRACKED_CHECK=0   Same as --no-untracked-check (wins over strict)"
+  echo "  (Also: CLAUDE_GIT_NON_INTERACTIVE, CLAUDE_GIT_STAGED_ONLY, CLAUDE_GIT_NO_VENV)"
+  echo ""
+  echo "Protected files (never committed): configured via CGW_LOCAL_FILES in .cgw.conf"
+  echo "  Default: CLAUDE.md MEMORY.md .claude/ logs/"
+}
+
+# [1] --only: reset the index and stage exactly the listed paths. Returns 1, after
+# reporting, when the reset or any stage fails; the caller aborts before a commit.
+#   _step_apply_only <pathspec>...
+_step_apply_only() {
+  local -a only_paths=("$@")
+  echo "[--only] Resetting index and staging ${#only_paths[@]} path(s)..."
+  # Show what the reset below is about to discard from the index. --only's
+  # contract is "reset, then stage exactly these paths", which silently
+  # unstages anything pre-staged outside them -- the second half of the
+  # incident this guard exists for (a prior session's staged files had to
+  # be manually reconstructed because the wipe gave no warning).
+  local -a _only_discard_pathspec=(".")
+  local _only_p
+  for _only_p in "${only_paths[@]}"; do
+    _only_discard_pathspec+=(":(exclude)${_only_p}")
+  done
+  local -a _will_unstage=()
+  local _wu_f
+  while IFS= read -r _wu_f; do
+    [[ -n "${_wu_f}" ]] && _will_unstage+=("${_wu_f}")
+  done < <(git diff --cached --name-only -- "${_only_discard_pathspec[@]}" 2>/dev/null)
+  if [[ ${#_will_unstage[@]} -gt 0 ]]; then
+    echo "[--only] Currently staged but not matched by --only (will be unstaged): ${_will_unstage[*]}"
+  fi
+  # Empty the index so only the --only paths end up staged. With a HEAD that is
+  # `git reset HEAD`; on an unborn HEAD (fresh repo, no commits) there is no HEAD to
+  # reset to, but pre-staged extras must still not ride along, so drop every index
+  # entry instead (worktree files are untouched). A real failure (e.g. stale
+  # index.lock) must abort -- swallowing it would break the --only contract of
+  # "reset, then stage exactly these paths".
+  if git rev-parse --verify -q HEAD >/dev/null; then
+    if ! git reset HEAD >/dev/null 2>&1; then
+      err "--only: failed to reset index (stale index.lock?); aborting to avoid committing unintended files"
+      return 1
+    fi
+  elif ! git rm --cached -r -q --ignore-unmatch -- . >/dev/null 2>&1; then
+    err "--only: failed to clear the index on an unborn HEAD (stale index.lock?); aborting to avoid committing unintended files"
+    return 1
+  fi
+  local only_path
+  for only_path in "${only_paths[@]}"; do
+    local staged_any=0
+    # (a) Force-stage TRACKED files matching the pathspec. These are already
+    # committed, so -f only matters when the path later became gitignored.
+    # Scoping -f to concrete tracked paths (never the raw pathspec) means an
+    # ignored *untracked* artifact under a dir/glob pathspec can never be
+    # force-added alongside it -- .gitignore still protects new files.
+    local tracked_match
+    while IFS= read -r -d '' tracked_match; do
+      if ! git add -f -- "${tracked_match}"; then
+        err "Failed to stage: ${tracked_match}"
+        return 1
+      fi
+      staged_any=1
+    done < <(git ls-files -z -- "${only_path}")
+    # (b) Stage untracked, non-ignored files matching the pathspec with a
+    # PLAIN add (no -f), so .gitignore still blocks new artifacts. Capture
+    # combined output so a genuine failure (e.g. a pathspec that matched
+    # nothing) still surfaces git's actionable message; when (a) already
+    # staged the tracked part, staged_any stays set and this output is
+    # harmlessly discarded.
+    local add_out=""
+    if add_out=$(git add -- "${only_path}" 2>&1); then
+      staged_any=1
+    fi
+    if [[ ${staged_any} -eq 0 ]]; then
+      err "Failed to stage: ${only_path}"
+      [[ -n "${add_out}" ]] && err "${add_out}"
+      return 1
+    fi
+    echo "  + ${only_path}"
+  done
+}
+
+# [2] + [2.1] Unstage local-only files, verify none slipped through, then report
+# the untracked files left out of this commit. Returns 1, after reporting, to abort.
+#   _step_validate_local_files <untracked_check 0|1> <strict_untracked 0|1>
+_step_validate_local_files() {
+  local untracked_check="$1" strict_untracked="$2"
+  echo "[2/6] Validating staged files..."
+  unstage_local_only_files
+
+  # Post-unstage check: verify nothing slipped through (add/modify only — deletions are allowed)
+  local found_local_files=0
+  local staged_files
+  staged_files=$(git diff --cached --name-only --diff-filter=AM)
+
+  local f
+  while read -r f; do
+    echo "[X] ERROR: '${f}' is staged (local-only file -- should not be committed)" >&2
+    found_local_files=1
+  done < <(echo "${staged_files}" | cgw_filter_local_files)
+
+  if [[ ${found_local_files} -eq 1 ]]; then
+    echo "Remove these files from staging: git reset HEAD <file>" >&2
+    return 1
+  fi
+
+  echo "[OK] Staged files validated"
+  echo ""
+
+  # [2.1] Untracked files left out of this commit. Staging is final here (bulk
+  # `git add -u`, pre-staged selection, or --only), and strict mode must refuse
+  # before lint auto-fix touches anything or a commit is created.
+  if [[ ${untracked_check} -eq 1 ]]; then
+    _untracked_notice "${strict_untracked}" || return 1
+    echo ""
+  fi
+}
+
+# [3] .. [3.6] Code quality: lint/format, markdown lint, congruence guard, staged checks.
+# Returns 1, after reporting, to abort the commit. Takes the staging snapshots and
+# decisions explicitly: main() locals are not visible to script-level functions.
+#   _step_code_quality <skip_lint> <skip_md_lint> <non_interactive> <effective_staged_only>
+#                      <only_count> <originally_staged_files> <partially_staged_files>
+# Deliberately no typecheck here. Every check in this block is scoped to the
+# staged files (see cgw_staged_files_for_lint / cgw_validated_path_set
+# below); a typechecker has no honest staged-scoped form -- it resolves
+# imports across the whole project. Running it whole-repo would let an
+# untouched file's pre-existing type error block an unrelated commit, and
+# would pull every repo path into cgw_validated_path_set, turning the [3.5]
+# congruence guard below into an indiscriminate re-stager. Typecheck is
+# advisory at commit time via hooks/pre-commit and BLOCKING at push time via
+# check_lint.sh / push_validated.sh.
+_step_code_quality() {
+  local skip_lint="$1" skip_md_lint="$2" non_interactive="$3" effective_staged_only="$4"
+  local only_count="$5" originally_staged_files="$6" partially_staged_files="$7"
+  echo "[3/6] Checking code quality..."
+
+  if [[ ${skip_lint} -eq 1 ]]; then
+    echo "[skip-lint] Lint gate BYPASSED for this commit -- code + markdown checks not run"
+    echo "  (the gate exists to keep CI green; prefer fixing lint over skipping it)"
+  else
+    # Scope code-quality checks to the staged files being committed. A bare call
+    # scans the whole repo, so an unrelated file's lint error blocks the commit
+    # and (worse) non-interactive auto-fix rewrites files outside the commit.
+    local -a staged_lint=()
+    local lint_f
+    while IFS= read -r lint_f; do
+      [[ -n "${lint_f}" ]] && staged_lint+=("${lint_f}")
+    done < <(cgw_staged_files_for_lint)
+
+    local lint_error=0 format_error=0
+    if [[ ${#staged_lint[@]} -eq 0 ]]; then
+      echo "  (code quality checks skipped -- no staged files matching ${CGW_LINT_EXTENSIONS:-*.py})"
+    else
+      cgw_run_lint_check "${staged_lint[@]}" || lint_error=1
+      cgw_run_format_check "${staged_lint[@]}" || format_error=1
+    fi
+
+    local python_lint_error=$((lint_error | format_error))
+
+    if [[ ${python_lint_error} -eq 1 ]]; then
+      echo "[!] Code quality errors detected"
+      if [[ ${non_interactive} -eq 1 ]]; then
+        echo "[Non-interactive] Auto-fixing code quality issues..."
+        _fix_restage_recheck lint "${originally_staged_files}" "${partially_staged_files}" "${staged_lint[@]}" || return 1
+      else
+        read -rp "Auto-fix code quality issues? (yes/no/skip): " fix_lint
+        case "${fix_lint}" in
+          yes | y)
+            _fix_restage_recheck lint "${originally_staged_files}" "${partially_staged_files}" "${staged_lint[@]}" || return 1
+            ;;
+          skip | s)
+            echo "[!] Proceeding with code quality warnings (CI may flag these)"
+            ;;
+          *)
+            echo "Commit cancelled -- fix code quality errors first"
+            return 1
+            ;;
+        esac
+      fi
+    else
+      echo "[OK] Code quality checks passed"
+    fi
+
+    # Markdown lint step (skipped if --skip-md-lint or CGW_MARKDOWNLINT_CMD not set).
+    # Scope to staged *.md only — a code-only commit must not be blocked by a
+    # markdown violation in an unrelated file elsewhere in the repo. Local-only
+    # files (CLAUDE.md/MEMORY.md) are already unstaged above, so they won't appear.
+    if [[ ${skip_md_lint} -eq 0 ]]; then
+      local -a staged_md=()
+      local md_f
+      while IFS= read -r md_f; do
+        [[ -n "${md_f}" ]] && staged_md+=("${md_f}")
+      done < <(cgw_staged_files_for_md)
+
+      if [[ ${#staged_md[@]} -eq 0 ]]; then
+        echo "  (markdown lint skipped -- no staged .md files)"
+      else
+        local md_lint_error=0
+        cgw_run_markdownlint_check "${staged_md[@]}"
+        local _md_check_status=$?
+
+        if [[ ${_md_check_status} -eq 2 ]]; then
+          echo "[!] Markdown lint tool failed to execute (environment/runtime failure, not markdown formatting errors)."
+          echo "    Log details available in: ${logfile}"
+          if [[ ${non_interactive} -eq 1 ]]; then
+            echo "    [Non-interactive] Skipping markdown check and proceeding with commit."
+            skip_md_lint=1
+          else
+            if cgw_confirm "Proceed with commit despite markdown tool failure?" --default yes; then
+              echo "[!] Proceeding with commit (markdown check bypassed)"
+              skip_md_lint=1
+            else
+              echo "Commit cancelled -- fix markdown tool runtime error first"
+              return 1
+            fi
+          fi
+        elif [[ ${_md_check_status} -eq 1 ]]; then
+          md_lint_error=1
+        fi
+
+        if [[ ${md_lint_error} -eq 1 ]]; then
+          echo "[!] Markdown lint errors detected"
+          if [[ ${non_interactive} -eq 1 ]]; then
+            echo "[Non-interactive] Auto-fixing markdown lint issues..."
+            _fix_restage_recheck md "${originally_staged_files}" "${partially_staged_files}" "${staged_md[@]}" || return 1
+          else
+            read -rp "Auto-fix markdown lint issues? (yes/no/skip): " fix_md_lint
+            case "${fix_md_lint}" in
+              yes | y)
+                _fix_restage_recheck md "${originally_staged_files}" "${partially_staged_files}" "${staged_md[@]}" || return 1
+                ;;
+              skip | s)
+                echo "[!] Proceeding with markdown lint warnings (CI may flag these)"
+                ;;
+              *)
+                echo "Commit cancelled -- fix markdown lint errors first"
+                return 1
+                ;;
+            esac
+          fi
+        elif [[ ${_md_check_status} -eq 0 ]]; then
+          echo "[OK] Markdown lint checks passed"
+        fi
+      fi
+    else
+      echo "  (markdown lint skipped -- --skip-md-lint)"
+    fi
+
+    # [3.5] Congruence guard -- the checks above validated the WORKING TREE,
+    # `git commit` records the INDEX; see _congruence_guard. Whole-file staging
+    # intent: bulk/--all (effective_staged_only==0) or --only <paths>.
+    local whole_file_intent=0
+    if [[ ${effective_staged_only} -eq 0 || ${only_count} -gt 0 ]]; then
+      whole_file_intent=1
+    fi
+    _congruence_guard "${skip_md_lint}" "${whole_file_intent}" || return 1
+
+    # [3.6] Project gates scoped by staged path (CGW_STAGED_CHECKS), run after
+    # the guard so they see the final index. A failure blocks the commit;
+    # --skip-lint is the bypass.
+    if ! cgw_run_staged_checks; then
+      echo "Commit cancelled -- fix the failing staged check (or --skip-lint to bypass)"
+      return 1
+    fi
+  fi
+}
+
+# [5] Prints git's prepared merge message (MERGE_MSG) with its comment block stripped,
+# the same way `git commit` does; prints nothing when there is none.
+# A merge in progress has a message prepared by git already (MERGE_MSG) --
+# don't force the caller to author one. Strip the "# Conflicts:" comment
+# block the same way `git commit` itself does before using it verbatim.
+# git rev-parse --git-path also resolves correctly inside a worktree.
+_merge_prepared_message() {
+  local merge_msg_path
+  merge_msg_path="$(git rev-parse --git-path MERGE_MSG 2>/dev/null)"
+  if [[ -n "${merge_msg_path}" ]] && [[ -f "${merge_msg_path}" ]]; then
+    git stripspace --strip-comments <"${merge_msg_path}"
+  fi
+}
+
+# [5] Validate the commit message: required, conventional format (merge conclusions and
+# freeform branches exempt), subject length. Returns 1 to abort (exit 1), 2 to stop
+# cleanly (exit 0: the user cancelled).
+#   _step_validate_message <commit_msg> <merge_in_progress 0|1> <current_branch>
+_step_validate_message() {
+  local commit_msg="$1" merge_in_progress="$2" current_branch="$3"
+
+  if [[ -z "${commit_msg}" ]]; then
+    err "Commit message required"
+    echo "Usage: ./scripts/git/commit_enhanced.sh \"feat: Your message\"" >&2
+    if [[ ${merge_in_progress} -eq 1 ]]; then
+      echo "During a merge you may omit it to use git's prepared merge message." >&2
+    fi
+    echo "Types: feat fix docs chore test refactor style perf (+ extras in .cgw.conf)" >&2
+    return 1
+  fi
+
+  # A merge conclusion (MERGE_HEAD present) is exempt from the conventional-
+  # format check and the freeform check, the same way hooks/pre-push already
+  # exempts merge commits by parent count. A merge commit's subject describes
+  # what was merged ("Merge X into Y"), not a change type -- there is no
+  # sensible "type:" prefix to require, whether the message came from git's
+  # prepared MERGE_MSG above or was passed explicitly to override it.
+  local _merge_conclusion=0
+  if [[ ${merge_in_progress} -eq 1 ]]; then
+    _merge_conclusion=1
+    echo "  [i] Merge commit; conventional format not enforced (pre-push exempts merge commits too)"
+  fi
+
+  # A freeform branch (CGW_FREEFORM_MESSAGE_BRANCHES) answers to another
+  # project's commit-message style -- e.g. an upstream PR branch. Skip the
+  # conventional-format check and the hard subject-length cap on it, but
+  # still run CGW_FREEFORM_MESSAGE_CHECK when configured (the target
+  # project's own gate, e.g. its commit-msg hook) so the branch is not left
+  # with no message gate at all. CGW_SOURCE_BRANCH, CGW_TARGET_BRANCH, and
+  # CGW_PROTECTED_BRANCHES are guard-proof: cgw_branch_is_freeform never
+  # exempts them even if a glob matches, so an overbroad pattern like "*"
+  # cannot silently turn off enforcement on the branches CGW protects.
+  local _freeform=0
+  if [[ ${_merge_conclusion} -eq 1 ]]; then
+    : # exempted above; skip both the freeform and conventional-format checks
+  elif cgw_branch_is_freeform "${current_branch}"; then
+    _freeform=1
+    echo "  [i] ${current_branch} matches CGW_FREEFORM_MESSAGE_BRANCHES; conventional format not enforced"
+    if ! cgw_freeform_message_check "${commit_msg}"; then
+      err "Commit message rejected by CGW_FREEFORM_MESSAGE_CHECK"
+      return 1
+    fi
+  else
+    if cgw_branch_matches_freeform_glob "${current_branch}" && cgw_branch_is_guarded "${current_branch}"; then
+      echo "  [i] ${current_branch} is a protected/source/target branch; CGW_FREEFORM_MESSAGE_BRANCHES ignored"
+    fi
+    if ! cgw_validate_commit_message "${commit_msg}"; then
+      echo "[!] WARNING: Message doesn't follow conventional format"
+      echo "  Configured types: ${CGW_ALL_PREFIXES//|/, }"
+      if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
+        echo "Commit cancelled"
+        return 2
+      fi
+    fi
+  fi
+
+  # Commit subject length (Pro Git §"Commit Guidelines" recommends ~50 chars
+  # for the summary line after the prefix; git log --oneline / GitHub UI
+  # commonly truncate around 72). Soft threshold: advisory tip, non-blocking.
+  # Hard threshold: blocks via cgw_confirm (non-interactive: abort) unless
+  # CGW_ENFORCE_SUBJECT_LENGTH=0. On a freeform branch the hard cap is
+  # advisory only (a tip, never a block) -- the target project's own style
+  # sets the real limit, and CGW_FREEFORM_MESSAGE_CHECK is the place to
+  # enforce it if desired.
+  # NOTE: measure the first line only -- commit_msg is the full multi-line
+  # message (subject + body + trailers); stripping "*: " against the whole
+  # string would swallow the body into the "summary" and false-positive on
+  # any commit with a normal-length body.
+  # NOTE: cgw_validate_commit_message only requires "type:" (colon, no
+  # mandatory space) -- strip on the bare colon, then trim one optional
+  # leading space, so "type:subject" (no space) isn't measured with the
+  # prefix still attached. On a freeform branch, or a merge conclusion, there
+  # is no "type:" prefix to strip -- a colon in freeform prose, or in "Merge
+  # X into Y", is part of the subject, so the whole subject line is measured
+  # instead.
+  local _subject_line="${commit_msg%%$'\n'*}"
+  local _summary_part
+  if [[ ${_freeform} -eq 1 ]] || [[ ${_merge_conclusion} -eq 1 ]]; then
+    _summary_part="${_subject_line}"
+  else
+    _summary_part="${_subject_line#*:}"
+    _summary_part="${_summary_part# }"
+  fi
+  local _summary_len=${#_summary_part}
+  if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_SOFT_LEN} ]]; then
+    if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_HARD_LEN} ]] && [[ ${_freeform} -eq 0 ]] && [[ ${_merge_conclusion} -eq 0 ]]; then
+      echo "[!] Subject after prefix is ${_summary_len} chars, over the ${CGW_COMMIT_SUBJECT_HARD_LEN}-char hard cap (Pro Git recommends ~${CGW_COMMIT_SUBJECT_SOFT_LEN})"
+      echo "  Move detail into the commit body instead of a long summary line."
+      if [[ "${CGW_ENFORCE_SUBJECT_LENGTH}" == "1" ]]; then
+        if ! cgw_confirm "Commit with an oversized subject line anyway?" --non-interactive abort; then
+          echo "Commit cancelled"
+          return 2
+        fi
+      fi
+    elif [[ ${_freeform} -eq 1 ]]; then
+      echo "[!] Tip: subject is ${_summary_len} chars (target project's style; not enforced here)"
+    elif [[ ${_merge_conclusion} -eq 1 ]]; then
+      echo "[!] Tip: merge subject is ${_summary_len} chars (not enforced for merge commits)"
+    else
+      echo "[!] Tip: subject after prefix is ${_summary_len} chars (Pro Git recommends ≤${CGW_COMMIT_SUBJECT_SOFT_LEN})"
+    fi
+  fi
+}
+
 main() {
   local non_interactive=0
   local skip_lint=0
@@ -316,56 +756,7 @@ main() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --help | -h)
-        echo "Usage: ./scripts/git/commit_enhanced.sh [OPTIONS] \"commit message\""
-        echo ""
-        echo "Enhanced commit workflow with lint validation and local-only file protection."
-        echo ""
-        echo "Options:"
-        echo "  --non-interactive   Skip all prompts (auto-fix lint; staging as below)"
-        echo "  --interactive       Force interactive mode even without TTY"
-        echo "  --only <pathspec>   Stage only listed paths (repeatable); resets index first"
-        echo "  --staged-only       Use pre-staged files only, skip auto-staging"
-        echo "  --all               Force bulk-stage all tracked changes (overrides pre-stage respect)"
-        echo "  --no-venv           Use system ruff instead of .venv ruff"
-        echo "  --skip-lint         Skip all lint checks (code + markdown)"
-        echo "  --skip-md-lint      Skip markdown lint only (CGW_MARKDOWNLINT_CMD step)"
-        echo "  --strict-untracked  Refuse to commit while untracked (non-ignored, non-local-only)"
-        echo "                      files are left out of the commit (default: warn only)"
-        echo "  --no-untracked-check  Do not warn about untracked files left out of the commit"
-        echo "  --sign              GPG/SSH-sign the commit (git commit -S)"
-        echo "  --no-sign           Disable signing even if CGW_SIGN_COMMITS=1"
-        echo "  -h, --help          Show this help"
-        echo ""
-        echo "Staging defaults (non-interactive):"
-        echo "  1. Pre-staged + unstaged present -> commits pre-staged only (warns)"
-        echo "  2. Nothing pre-staged            -> auto-stages all tracked changes"
-        echo "  3. --only <path>                 -> resets index, stages only listed paths"
-        echo "  4. --all                         -> always bulk-stage (old default)"
-        echo "  With CGW_REQUIRE_EXPLICIT_STAGING=1, case 2 refuses: use --only, --staged-only or --all"
-        echo ""
-        echo "Commit message format: <type>: <message>"
-        echo "  Standard types: feat fix docs chore test refactor style perf"
-        echo "  Configure extras via CGW_EXTRA_PREFIXES in .cgw.conf"
-        echo ""
-        echo "During a merge (MERGE_HEAD present), the message is optional:"
-        echo "  with none, uses git's prepared merge message (comments stripped)."
-        echo "  Merge-conclusion commits skip the conventional-format check and"
-        echo "  the subject-length hard cap (pre-push exempts merge commits too)."
-        echo ""
-        echo "Environment:"
-        echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
-        echo "  CGW_STAGED_ONLY=1       Same as --staged-only"
-        echo "  CGW_ALL=1               Same as --all"
-        echo "  CGW_NO_VENV=1           Same as --no-venv"
-        echo "  CGW_SKIP_LINT=1         Same as --skip-lint"
-        echo "  CGW_SKIP_MD_LINT=1      Same as --skip-md-lint"
-        echo "  CGW_SIGN_COMMITS=1      Same as --sign (sign all commits by default)"
-        echo "  CGW_STRICT_UNTRACKED=1  Same as --strict-untracked"
-        echo "  CGW_UNTRACKED_CHECK=0   Same as --no-untracked-check (wins over strict)"
-        echo "  (Also: CLAUDE_GIT_NON_INTERACTIVE, CLAUDE_GIT_STAGED_ONLY, CLAUDE_GIT_NO_VENV)"
-        echo ""
-        echo "Protected files (never committed): configured via CGW_LOCAL_FILES in .cgw.conf"
-        echo "  Default: CLAUDE.md MEMORY.md .claude/ logs/"
+        _usage
         exit 0
         ;;
       --non-interactive)
@@ -496,73 +887,7 @@ main() {
 
   # Apply --only: reset index and stage only the listed paths
   if [[ ${#only_paths[@]} -gt 0 ]]; then
-    echo "[--only] Resetting index and staging ${#only_paths[@]} path(s)..."
-    # Show what the reset below is about to discard from the index. --only's
-    # contract is "reset, then stage exactly these paths", which silently
-    # unstages anything pre-staged outside them -- the second half of the
-    # incident this guard exists for (a prior session's staged files had to
-    # be manually reconstructed because the wipe gave no warning).
-    local -a _only_discard_pathspec=(".")
-    local _only_p
-    for _only_p in "${only_paths[@]}"; do
-      _only_discard_pathspec+=(":(exclude)${_only_p}")
-    done
-    local -a _will_unstage=()
-    local _wu_f
-    while IFS= read -r _wu_f; do
-      [[ -n "${_wu_f}" ]] && _will_unstage+=("${_wu_f}")
-    done < <(git diff --cached --name-only -- "${_only_discard_pathspec[@]}" 2>/dev/null)
-    if [[ ${#_will_unstage[@]} -gt 0 ]]; then
-      echo "[--only] Currently staged but not matched by --only (will be unstaged): ${_will_unstage[*]}"
-    fi
-    # Empty the index so only the --only paths end up staged. With a HEAD that is
-    # `git reset HEAD`; on an unborn HEAD (fresh repo, no commits) there is no HEAD to
-    # reset to, but pre-staged extras must still not ride along, so drop every index
-    # entry instead (worktree files are untouched). A real failure (e.g. stale
-    # index.lock) must abort -- swallowing it would break the --only contract of
-    # "reset, then stage exactly these paths".
-    if git rev-parse --verify -q HEAD >/dev/null; then
-      if ! git reset HEAD >/dev/null 2>&1; then
-        err "--only: failed to reset index (stale index.lock?); aborting to avoid committing unintended files"
-        exit 1
-      fi
-    elif ! git rm --cached -r -q --ignore-unmatch -- . >/dev/null 2>&1; then
-      err "--only: failed to clear the index on an unborn HEAD (stale index.lock?); aborting to avoid committing unintended files"
-      exit 1
-    fi
-    local only_path
-    for only_path in "${only_paths[@]}"; do
-      local staged_any=0
-      # (a) Force-stage TRACKED files matching the pathspec. These are already
-      # committed, so -f only matters when the path later became gitignored.
-      # Scoping -f to concrete tracked paths (never the raw pathspec) means an
-      # ignored *untracked* artifact under a dir/glob pathspec can never be
-      # force-added alongside it -- .gitignore still protects new files.
-      local tracked_match
-      while IFS= read -r -d '' tracked_match; do
-        if ! git add -f -- "${tracked_match}"; then
-          err "Failed to stage: ${tracked_match}"
-          exit 1
-        fi
-        staged_any=1
-      done < <(git ls-files -z -- "${only_path}")
-      # (b) Stage untracked, non-ignored files matching the pathspec with a
-      # PLAIN add (no -f), so .gitignore still blocks new artifacts. Capture
-      # combined output so a genuine failure (e.g. a pathspec that matched
-      # nothing) still surfaces git's actionable message; when (a) already
-      # staged the tracked part, staged_any stays set and this output is
-      # harmlessly discarded.
-      local add_out=""
-      if add_out=$(git add -- "${only_path}" 2>&1); then
-        staged_any=1
-      fi
-      if [[ ${staged_any} -eq 0 ]]; then
-        err "Failed to stage: ${only_path}"
-        [[ -n "${add_out}" ]] && err "${add_out}"
-        exit 1
-      fi
-      echo "  + ${only_path}"
-    done
+    _step_apply_only "${only_paths[@]}" || exit 1
     # --only implies staged-only semantics
     staged_only=1
     echo ""
@@ -666,35 +991,7 @@ main() {
   partially_staged_files=$(cgw_staged_paths_diverging_from_index)
 
   # [2] Validate staged files -- unstage and verify local-only files
-  echo "[2/6] Validating staged files..."
-  unstage_local_only_files
-
-  # Post-unstage check: verify nothing slipped through (add/modify only — deletions are allowed)
-  local found_local_files=0
-  local staged_files
-  staged_files=$(git diff --cached --name-only --diff-filter=AM)
-
-  local f
-  while read -r f; do
-    echo "[X] ERROR: '${f}' is staged (local-only file -- should not be committed)" >&2
-    found_local_files=1
-  done < <(echo "${staged_files}" | cgw_filter_local_files)
-
-  if [[ ${found_local_files} -eq 1 ]]; then
-    echo "Remove these files from staging: git reset HEAD <file>" >&2
-    exit 1
-  fi
-
-  echo "[OK] Staged files validated"
-  echo ""
-
-  # [2.1] Untracked files left out of this commit. Staging is final here (bulk
-  # `git add -u`, pre-staged selection, or --only), and strict mode must refuse
-  # before lint auto-fix touches anything or a commit is created.
-  if [[ ${untracked_check} -eq 1 ]]; then
-    _untracked_notice "${strict_untracked}" || exit 1
-    echo ""
-  fi
+  _step_validate_local_files "${untracked_check}" "${strict_untracked}" || exit 1
 
   # [2.5] Whitespace check (non-blocking -- warns but does not abort)
   if git diff --cached --check >/dev/null 2>&1; then
@@ -706,147 +1003,8 @@ main() {
     echo ""
   fi
 
-  # [3] Code quality check
-  # Deliberately no typecheck here. Every check in this block is scoped to the
-  # staged files (see cgw_staged_files_for_lint / cgw_validated_path_set
-  # below); a typechecker has no honest staged-scoped form -- it resolves
-  # imports across the whole project. Running it whole-repo would let an
-  # untouched file's pre-existing type error block an unrelated commit, and
-  # would pull every repo path into cgw_validated_path_set, turning the [3.5]
-  # congruence guard below into an indiscriminate re-stager. Typecheck is
-  # advisory at commit time via hooks/pre-commit and BLOCKING at push time via
-  # check_lint.sh / push_validated.sh.
-  echo "[3/6] Checking code quality..."
-
-  if [[ ${skip_lint} -eq 1 ]]; then
-    echo "[skip-lint] Lint gate BYPASSED for this commit -- code + markdown checks not run"
-    echo "  (the gate exists to keep CI green; prefer fixing lint over skipping it)"
-  else
-    # Scope code-quality checks to the staged files being committed. A bare call
-    # scans the whole repo, so an unrelated file's lint error blocks the commit
-    # and (worse) non-interactive auto-fix rewrites files outside the commit.
-    local -a staged_lint=()
-    local lint_f
-    while IFS= read -r lint_f; do
-      [[ -n "${lint_f}" ]] && staged_lint+=("${lint_f}")
-    done < <(cgw_staged_files_for_lint)
-
-    local lint_error=0 format_error=0
-    if [[ ${#staged_lint[@]} -eq 0 ]]; then
-      echo "  (code quality checks skipped -- no staged files matching ${CGW_LINT_EXTENSIONS:-*.py})"
-    else
-      cgw_run_lint_check "${staged_lint[@]}" || lint_error=1
-      cgw_run_format_check "${staged_lint[@]}" || format_error=1
-    fi
-
-    local python_lint_error=$((lint_error | format_error))
-
-    if [[ ${python_lint_error} -eq 1 ]]; then
-      echo "[!] Code quality errors detected"
-      if [[ ${non_interactive} -eq 1 ]]; then
-        echo "[Non-interactive] Auto-fixing code quality issues..."
-        _fix_restage_recheck lint "${originally_staged_files}" "${partially_staged_files}" "${staged_lint[@]}" || exit 1
-      else
-        read -rp "Auto-fix code quality issues? (yes/no/skip): " fix_lint
-        case "${fix_lint}" in
-          yes | y)
-            _fix_restage_recheck lint "${originally_staged_files}" "${partially_staged_files}" "${staged_lint[@]}" || exit 1
-            ;;
-          skip | s)
-            echo "[!] Proceeding with code quality warnings (CI may flag these)"
-            ;;
-          *)
-            echo "Commit cancelled -- fix code quality errors first"
-            exit 1
-            ;;
-        esac
-      fi
-    else
-      echo "[OK] Code quality checks passed"
-    fi
-
-    # Markdown lint step (skipped if --skip-md-lint or CGW_MARKDOWNLINT_CMD not set).
-    # Scope to staged *.md only — a code-only commit must not be blocked by a
-    # markdown violation in an unrelated file elsewhere in the repo. Local-only
-    # files (CLAUDE.md/MEMORY.md) are already unstaged above, so they won't appear.
-    if [[ ${skip_md_lint} -eq 0 ]]; then
-      local -a staged_md=()
-      local md_f
-      while IFS= read -r md_f; do
-        [[ -n "${md_f}" ]] && staged_md+=("${md_f}")
-      done < <(cgw_staged_files_for_md)
-
-      if [[ ${#staged_md[@]} -eq 0 ]]; then
-        echo "  (markdown lint skipped -- no staged .md files)"
-      else
-        local md_lint_error=0
-        cgw_run_markdownlint_check "${staged_md[@]}"
-        local _md_check_status=$?
-
-        if [[ ${_md_check_status} -eq 2 ]]; then
-          echo "[!] Markdown lint tool failed to execute (environment/runtime failure, not markdown formatting errors)."
-          echo "    Log details available in: ${logfile}"
-          if [[ ${non_interactive} -eq 1 ]]; then
-            echo "    [Non-interactive] Skipping markdown check and proceeding with commit."
-            skip_md_lint=1
-          else
-            if cgw_confirm "Proceed with commit despite markdown tool failure?" --default yes; then
-              echo "[!] Proceeding with commit (markdown check bypassed)"
-              skip_md_lint=1
-            else
-              echo "Commit cancelled -- fix markdown tool runtime error first"
-              exit 1
-            fi
-          fi
-        elif [[ ${_md_check_status} -eq 1 ]]; then
-          md_lint_error=1
-        fi
-
-        if [[ ${md_lint_error} -eq 1 ]]; then
-          echo "[!] Markdown lint errors detected"
-          if [[ ${non_interactive} -eq 1 ]]; then
-            echo "[Non-interactive] Auto-fixing markdown lint issues..."
-            _fix_restage_recheck md "${originally_staged_files}" "${partially_staged_files}" "${staged_md[@]}" || exit 1
-          else
-            read -rp "Auto-fix markdown lint issues? (yes/no/skip): " fix_md_lint
-            case "${fix_md_lint}" in
-              yes | y)
-                _fix_restage_recheck md "${originally_staged_files}" "${partially_staged_files}" "${staged_md[@]}" || exit 1
-                ;;
-              skip | s)
-                echo "[!] Proceeding with markdown lint warnings (CI may flag these)"
-                ;;
-              *)
-                echo "Commit cancelled -- fix markdown lint errors first"
-                exit 1
-                ;;
-            esac
-          fi
-        elif [[ ${_md_check_status} -eq 0 ]]; then
-          echo "[OK] Markdown lint checks passed"
-        fi
-      fi
-    else
-      echo "  (markdown lint skipped -- --skip-md-lint)"
-    fi
-
-    # [3.5] Congruence guard -- the checks above validated the WORKING TREE,
-    # `git commit` records the INDEX; see _congruence_guard. Whole-file staging
-    # intent: bulk/--all (effective_staged_only==0) or --only <paths>.
-    local whole_file_intent=0
-    if [[ ${effective_staged_only} -eq 0 || ${#only_paths[@]} -gt 0 ]]; then
-      whole_file_intent=1
-    fi
-    _congruence_guard "${skip_md_lint}" "${whole_file_intent}" || exit 1
-
-    # [3.6] Project gates scoped by staged path (CGW_STAGED_CHECKS), run after
-    # the guard so they see the final index. A failure blocks the commit;
-    # --skip-lint is the bypass.
-    if ! cgw_run_staged_checks; then
-      echo "Commit cancelled -- fix the failing staged check (or --skip-lint to bypass)"
-      exit 1
-    fi
-  fi
+  _step_code_quality "${skip_lint}" "${skip_md_lint}" "${non_interactive}" "${effective_staged_only}" \
+    "${#only_paths[@]}" "${originally_staged_files}" "${partially_staged_files}" || exit 1
   echo ""
 
   # [4] Show staged changes
@@ -866,123 +1024,14 @@ main() {
 
   local commit_msg="${commit_msg_param}"
 
-  # A merge in progress has a message prepared by git already (MERGE_MSG) --
-  # don't force the caller to author one. Strip the "# Conflicts:" comment
-  # block the same way `git commit` itself does before using it verbatim.
-  # git rev-parse --git-path also resolves correctly inside a worktree.
   if [[ -z "${commit_msg}" ]] && [[ ${merge_in_progress} -eq 1 ]]; then
-    local merge_msg_path
-    merge_msg_path="$(git rev-parse --git-path MERGE_MSG 2>/dev/null)"
-    if [[ -n "${merge_msg_path}" ]] && [[ -f "${merge_msg_path}" ]]; then
-      commit_msg="$(git stripspace --strip-comments <"${merge_msg_path}")"
-    fi
+    commit_msg="$(_merge_prepared_message)"
     if [[ -n "${commit_msg}" ]]; then
       echo "  [i] Merge in progress; using git's prepared merge message"
     fi
   fi
 
-  if [[ -z "${commit_msg}" ]]; then
-    err "Commit message required"
-    echo "Usage: ./scripts/git/commit_enhanced.sh \"feat: Your message\"" >&2
-    if [[ ${merge_in_progress} -eq 1 ]]; then
-      echo "During a merge you may omit it to use git's prepared merge message." >&2
-    fi
-    echo "Types: feat fix docs chore test refactor style perf (+ extras in .cgw.conf)" >&2
-    exit 1
-  fi
-
-  # A merge conclusion (MERGE_HEAD present) is exempt from the conventional-
-  # format check and the freeform check, the same way hooks/pre-push already
-  # exempts merge commits by parent count. A merge commit's subject describes
-  # what was merged ("Merge X into Y"), not a change type -- there is no
-  # sensible "type:" prefix to require, whether the message came from git's
-  # prepared MERGE_MSG above or was passed explicitly to override it.
-  local _merge_conclusion=0
-  if [[ ${merge_in_progress} -eq 1 ]]; then
-    _merge_conclusion=1
-    echo "  [i] Merge commit; conventional format not enforced (pre-push exempts merge commits too)"
-  fi
-
-  # A freeform branch (CGW_FREEFORM_MESSAGE_BRANCHES) answers to another
-  # project's commit-message style -- e.g. an upstream PR branch. Skip the
-  # conventional-format check and the hard subject-length cap on it, but
-  # still run CGW_FREEFORM_MESSAGE_CHECK when configured (the target
-  # project's own gate, e.g. its commit-msg hook) so the branch is not left
-  # with no message gate at all. CGW_SOURCE_BRANCH, CGW_TARGET_BRANCH, and
-  # CGW_PROTECTED_BRANCHES are guard-proof: cgw_branch_is_freeform never
-  # exempts them even if a glob matches, so an overbroad pattern like "*"
-  # cannot silently turn off enforcement on the branches CGW protects.
-  local _freeform=0
-  if [[ ${_merge_conclusion} -eq 1 ]]; then
-    : # exempted above; skip both the freeform and conventional-format checks
-  elif cgw_branch_is_freeform "${current_branch}"; then
-    _freeform=1
-    echo "  [i] ${current_branch} matches CGW_FREEFORM_MESSAGE_BRANCHES; conventional format not enforced"
-    if ! cgw_freeform_message_check "${commit_msg}"; then
-      err "Commit message rejected by CGW_FREEFORM_MESSAGE_CHECK"
-      exit 1
-    fi
-  else
-    if cgw_branch_matches_freeform_glob "${current_branch}" && cgw_branch_is_guarded "${current_branch}"; then
-      echo "  [i] ${current_branch} is a protected/source/target branch; CGW_FREEFORM_MESSAGE_BRANCHES ignored"
-    fi
-    if ! cgw_validate_commit_message "${commit_msg}"; then
-      echo "[!] WARNING: Message doesn't follow conventional format"
-      echo "  Configured types: ${CGW_ALL_PREFIXES//|/, }"
-      if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
-        echo "Commit cancelled"
-        exit 0
-      fi
-    fi
-  fi
-
-  # Commit subject length (Pro Git §"Commit Guidelines" recommends ~50 chars
-  # for the summary line after the prefix; git log --oneline / GitHub UI
-  # commonly truncate around 72). Soft threshold: advisory tip, non-blocking.
-  # Hard threshold: blocks via cgw_confirm (non-interactive: abort) unless
-  # CGW_ENFORCE_SUBJECT_LENGTH=0. On a freeform branch the hard cap is
-  # advisory only (a tip, never a block) -- the target project's own style
-  # sets the real limit, and CGW_FREEFORM_MESSAGE_CHECK is the place to
-  # enforce it if desired.
-  # NOTE: measure the first line only -- commit_msg is the full multi-line
-  # message (subject + body + trailers); stripping "*: " against the whole
-  # string would swallow the body into the "summary" and false-positive on
-  # any commit with a normal-length body.
-  # NOTE: cgw_validate_commit_message only requires "type:" (colon, no
-  # mandatory space) -- strip on the bare colon, then trim one optional
-  # leading space, so "type:subject" (no space) isn't measured with the
-  # prefix still attached. On a freeform branch, or a merge conclusion, there
-  # is no "type:" prefix to strip -- a colon in freeform prose, or in "Merge
-  # X into Y", is part of the subject, so the whole subject line is measured
-  # instead.
-  local _subject_line="${commit_msg%%$'\n'*}"
-  local _summary_part
-  if [[ ${_freeform} -eq 1 ]] || [[ ${_merge_conclusion} -eq 1 ]]; then
-    _summary_part="${_subject_line}"
-  else
-    _summary_part="${_subject_line#*:}"
-    _summary_part="${_summary_part# }"
-  fi
-  local _summary_len=${#_summary_part}
-  if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_SOFT_LEN} ]]; then
-    if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_HARD_LEN} ]] && [[ ${_freeform} -eq 0 ]] && [[ ${_merge_conclusion} -eq 0 ]]; then
-      echo "[!] Subject after prefix is ${_summary_len} chars, over the ${CGW_COMMIT_SUBJECT_HARD_LEN}-char hard cap (Pro Git recommends ~${CGW_COMMIT_SUBJECT_SOFT_LEN})"
-      echo "  Move detail into the commit body instead of a long summary line."
-      if [[ "${CGW_ENFORCE_SUBJECT_LENGTH}" == "1" ]]; then
-        if ! cgw_confirm "Commit with an oversized subject line anyway?" --non-interactive abort; then
-          echo "Commit cancelled"
-          exit 0
-        fi
-      fi
-    elif [[ ${_freeform} -eq 1 ]]; then
-      echo "[!] Tip: subject is ${_summary_len} chars (target project's style; not enforced here)"
-    elif [[ ${_merge_conclusion} -eq 1 ]]; then
-      echo "[!] Tip: merge subject is ${_summary_len} chars (not enforced for merge commits)"
-    else
-      echo "[!] Tip: subject after prefix is ${_summary_len} chars (Pro Git recommends ≤${CGW_COMMIT_SUBJECT_SOFT_LEN})"
-    fi
-  fi
-  unset _subject_line _summary_part _summary_len _freeform _merge_conclusion
+  _step_validate_message "${commit_msg}" "${merge_in_progress}" "${current_branch}" || exit $((${?} == 2 ? 0 : 1))
 
   echo "Commit message: ${commit_msg}"
   echo ""

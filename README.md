@@ -165,6 +165,7 @@ CGW provides 31 user-facing scripts and 2 internal core modules in `scripts/git/
 
 - `_common.sh`: Shared utilities, logging, platform shims, backup-tag registry, interactive confirmation prompts (`cgw_confirm`), sourced by every script.
 - `_config.sh`: Three-tier configuration loader, repository root auto-detection, and centralized settings registry.
+- `_lib_remote.sh`: Remote and network helpers (`cgw_net_git` timeout wrapper, remote reachability and branch probes, `gh` helpers), sourced by `_common.sh`. If it is missing, `_common.sh` returns 1 and the hooks block.
 
 ### Project-specific hook logic (`.githooks/<hook>.local`)
 
@@ -267,6 +268,24 @@ shfmt -d -i 2 -ci scripts/ hooks/
 
 See [CONTRIBUTORS.md](CONTRIBUTORS.md) for contributor guidelines and project credits.
 
-## License
+## License, provenance and trademarks
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+**License.** claude-git-workflow is released under the [MIT License](LICENSE).
+Copyright (c) 2026 Alexander Korneev.
+
+**AI-assisted authorship.** Parts of this project's code and documentation were drafted
+with the help of Claude Code, an AI coding assistant. The author reviewed, edited,
+tested, selected and arranged that material and is responsible for it. No copyright is
+claimed over raw, unedited AI output.
+
+**Contributions.** Under
+[GitHub's Terms of Service, section D.6](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service#6-contributions-under-repository-license),
+anything you contribute to this repository is licensed to the project and its users
+under the repository's MIT License ("inbound = outbound"). No separate contributor
+agreement or sign-off is required.
+
+**Trademarks.** Claude and Claude Code are trademarks of Anthropic, PBC. Google
+Antigravity and Gemini are trademarks of Google LLC. These names are used only to
+identify the software claude-git-workflow works with. claude-git-workflow is an
+independent project and is not affiliated with, sponsored by or endorsed by Anthropic or
+Google.

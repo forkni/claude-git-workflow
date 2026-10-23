@@ -632,7 +632,7 @@ _make_du_repo() {
   printf "${content}" > "${file}"
   git commit --quiet -am theirs
   git checkout --quiet main
-  git rm --quiet "${file}" && git commit --quiet -m ours
+  git rm --quiet -- "${file}" && git commit --quiet -m ours
   git merge theirs >/dev/null 2>&1 || true
 }
 
@@ -680,6 +680,32 @@ _make_du_repo() {
   run cgw_resolve_safe_conflicts merge main
   [ "${status}" -eq 0 ]
   [[ "${output}" == *"both-deleted"* ]]
+}
+
+@test "cgw_resolve_safe_conflicts: DD path that looks like a flag is removed as a path" {
+  git init --quiet -b main "${BATS_TEST_TMPDIR}/dd-flag"
+  cd "${BATS_TEST_TMPDIR}/dd-flag" || return 1
+  git config user.email t@t && git config user.name t
+  printf 'x\n' > ./-f
+  git add -- ./-f && git commit --quiet -m base
+  local blob
+  blob=$(git rev-parse HEAD:-f)
+  git rm --quiet --cached -- -f
+  printf '100644 %s 1\t-f\n' "${blob}" | git update-index --index-info
+  unset CGW_AUTO_RESOLVE_MODIFY_DELETE
+  run cgw_resolve_safe_conflicts merge main
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Removed (both deleted): -f"* ]]
+  [ -z "$(git ls-files -- -f)" ]
+}
+
+@test "cgw_resolve_safe_conflicts: opt-in DU path that looks like a flag is removed as a path" {
+  _make_du_repo -f.txt 'hello\n'
+  export CGW_AUTO_RESOLVE_MODIFY_DELETE=1
+  run cgw_resolve_safe_conflicts merge main
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Removed: -f.txt"* ]]
+  [ -z "$(git diff --name-only --diff-filter=U)" ]
 }
 
 @test "cgw_classify_conflicts: mixed DU+UU assigns to correct arrays" {

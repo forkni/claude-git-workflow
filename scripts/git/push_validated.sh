@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # push_validated.sh - Validated git push with safety checks
 # Purpose: Push with remote reachability check, behind-remote warning, and force-push protection
 # Usage: ./scripts/git/push_validated.sh [OPTIONS]

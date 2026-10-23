@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # repo_health.sh - Repository health check and maintenance
 # Purpose: Run integrity checks (git fsck), trigger garbage collection (git gc),
 #          report repository size, detect large files, and check ref consistency.

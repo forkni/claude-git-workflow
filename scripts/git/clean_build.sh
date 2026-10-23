@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # clean_build.sh - Safe cleanup of build artifacts and temporary files
 # Purpose: Remove generated files that should not be committed. Uses --dry-run
 #          by default to prevent accidental deletion.
@@ -22,6 +24,35 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"
+
+# _is_tracked <path>
+# Returns 0 when git tracks the path: the file itself, or any file under a directory.
+# The pathspec is literal, so glob characters in a file name match only themselves.
+_is_tracked() {
+  [[ -n "$(git ls-files -- ":(literal)${1#./}" 2>/dev/null)" ]]
+}
+
+# _clean_item <execute> <file|dir> <path>
+# Prints one artifact and removes it when execute=1. A tracked path is source, not an
+# artifact: it is reported as [SKIP] and kept. Returns 0 when the item counts as cleaned.
+_clean_item() {
+  local execute="$1" kind="$2" path="$3"
+  local suffix=""
+  [[ "${kind}" == "dir" ]] && suffix="/"
+  if _is_tracked "${path}"; then
+    echo "  [SKIP] tracked: ${path}${suffix}"
+    return 1
+  fi
+  echo "  ${path}${suffix}"
+  if [[ ${execute} -eq 1 ]]; then
+    if [[ "${kind}" == "dir" ]]; then
+      rm -rf "${path}"
+    else
+      rm -f "${path}"
+    fi
+  fi
+  return 0
+}
 
 main() {
   local execute=0
@@ -104,9 +135,7 @@ main() {
   )
   for pattern in "${common_patterns[@]}"; do
     while IFS= read -r f; do
-      echo "  ${f}"
-      [[ ${execute} -eq 1 ]] && rm -f "${f}"
-      ((total_cleaned++)) || true
+      _clean_item "${execute}" file "${f}" && ((total_cleaned++)) || true
     done < <(find . -name "${pattern}" -not -path "./.git/*" 2>/dev/null)
   done
 
@@ -116,32 +145,24 @@ main() {
     echo "--- Python ---"
     # __pycache__ directories
     while IFS= read -r d; do
-      echo "  ${d}/"
-      [[ ${execute} -eq 1 ]] && rm -rf "${d}"
-      ((total_cleaned++)) || true
+      _clean_item "${execute}" dir "${d}" && ((total_cleaned++)) || true
     done < <(find . -type d -name "__pycache__" -not -path "./.git/*" 2>/dev/null)
 
     # .pyc / .pyo files
     while IFS= read -r f; do
-      echo "  ${f}"
-      [[ ${execute} -eq 1 ]] && rm -f "${f}"
-      ((total_cleaned++)) || true
+      _clean_item "${execute}" file "${f}" && ((total_cleaned++)) || true
     done < <(find . \( -name "*.pyc" -o -name "*.pyo" \) -not -path "./.git/*" 2>/dev/null)
 
     # Build directories at project root
     for d in dist build .eggs .pytest_cache .mypy_cache .ruff_cache; do
       if [[ -d "${d}" ]]; then
-        echo "  ${d}/"
-        [[ ${execute} -eq 1 ]] && rm -rf "${d}"
-        ((total_cleaned++)) || true
+        _clean_item "${execute}" dir "${d}" && ((total_cleaned++)) || true
       fi
     done
 
     # .egg-info directories
     while IFS= read -r d; do
-      echo "  ${d}/"
-      [[ ${execute} -eq 1 ]] && rm -rf "${d}"
-      ((total_cleaned++)) || true
+      _clean_item "${execute}" dir "${d}" && ((total_cleaned++)) || true
     done < <(find . -maxdepth 3 -type d -name "*.egg-info" -not -path "./.git/*" 2>/dev/null)
   fi
 
@@ -151,23 +172,17 @@ main() {
     echo "--- TouchDesigner ---"
     # Auto-backup .toe.bak files
     while IFS= read -r f; do
-      echo "  ${f}"
-      [[ ${execute} -eq 1 ]] && rm -f "${f}"
-      ((total_cleaned++)) || true
+      _clean_item "${execute}" file "${f}" && ((total_cleaned++)) || true
     done < <(find . -name "*.toe.bak" -not -path "./.git/*" 2>/dev/null)
 
     # Backup/ directories created by TD
     while IFS= read -r d; do
-      echo "  ${d}/"
-      [[ ${execute} -eq 1 ]] && rm -rf "${d}"
-      ((total_cleaned++)) || true
+      _clean_item "${execute}" dir "${d}" && ((total_cleaned++)) || true
     done < <(find . -maxdepth 3 -type d -name "Backup" -not -path "./.git/*" 2>/dev/null)
 
     # TD crash logs
     while IFS= read -r f; do
-      echo "  ${f}"
-      [[ ${execute} -eq 1 ]] && rm -f "${f}"
-      ((total_cleaned++)) || true
+      _clean_item "${execute}" file "${f}" && ((total_cleaned++)) || true
     done < <(find . -maxdepth 2 -name "crash.*" -not -path "./.git/*" 2>/dev/null)
   fi
 
@@ -176,9 +191,7 @@ main() {
     echo ""
     echo "--- GLSL / Compiled Shaders ---"
     while IFS= read -r f; do
-      echo "  ${f}"
-      [[ ${execute} -eq 1 ]] && rm -f "${f}"
-      ((total_cleaned++)) || true
+      _clean_item "${execute}" file "${f}" && ((total_cleaned++)) || true
     done < <(find . -name "*.spv" -not -path "./.git/*" 2>/dev/null)
   fi
 

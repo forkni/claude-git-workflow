@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # Pre-push hook — validates commits before they leave local repo.
 # Part of claude-git-workflow. Sources _common.sh at run time so changes
 # to CGW_LOCAL_FILES and CGW_EXTRA_PREFIXES in .cgw.conf take effect
@@ -45,7 +47,8 @@ if [[ ! -f "${CGW_HOME}/scripts/git/_common.sh" ]]; then
   exit 1
 fi
 # shellcheck source=scripts/git/_common.sh
-source "${CGW_HOME}/scripts/git/_common.sh"
+# A missing _lib_*.sh makes _common.sh return 1: block rather than run with half the functions.
+source "${CGW_HOME}/scripts/git/_common.sh" || exit 1
 
 # CGW_ALL_PREFIXES is computed by _config.sh (sourced via _common.sh above)
 # and includes CGW_EXTRA_PREFIXES from .cgw.conf automatically.

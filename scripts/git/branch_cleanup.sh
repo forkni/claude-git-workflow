@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # branch_cleanup.sh - Prune stale local and remote branches
 # Purpose: Delete local branches already merged into the target branch,
 #          prune stale remote-tracking refs, and optionally clean up old

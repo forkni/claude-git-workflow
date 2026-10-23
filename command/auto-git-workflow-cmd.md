@@ -13,8 +13,9 @@ snippets defined in
 (installed alongside this command). Read SKILL.md first if not already loaded —
 its Core Rules (no raw `git commit`, no committing local-only files, lint-on-commit,
 selective-staging intent) govern every action below. This file is the *router*,
-not the rule book — do not duplicate SKILL.md's command snippets here; look them up
-by section name when executing.
+not the rule book — do not duplicate the command snippets here; look them up by section
+name in `references/wrapper-recipes.md` (indexed by SKILL.md's Quick Decision Tree) when
+executing.
 
 **Push gate.** Every push this command performs — direct push, a merge's target push, or a
 PR's checks — is followed by the CI verification gate in
@@ -33,8 +34,8 @@ of whatever action was taken.
 
 If the user invoked this command with free-text after it (e.g.
 `/auto-git-workflow-cmd rebase onto main`), skip the scan and menu entirely — treat the
-text as the git intent and route it directly through SKILL.md (find the matching operation
-section, run its command). Only run Steps 1-2 when invoked bare.
+text as the git intent and route it directly through SKILL.md's Quick Decision Tree (find the
+matching operation, then run the command from its `wrapper-recipes.md` section). Only run Steps 1-2 when invoked bare.
 
 ---
 
@@ -135,7 +136,8 @@ push source → merge or PR → push target) with each phase as a separate Bash 
 
 For any of options 2-6, present that category's specific actions via `AskUserQuestion`
 (≤4 options, the built-in "Other" free-text catches anything not listed), then execute
-the chosen action using the **exact command** from the matching SKILL.md section (do not
+the chosen action using the **exact command** from the matching section of
+[wrapper-recipes.md](../skills/auto-git-workflow/references/wrapper-recipes.md) (do not
 improvise flags — look them up). After the action completes, report its result in 1-3 lines.
 
 When the Step 1 scan already answers a category's obvious question, use it — e.g. if
@@ -148,16 +150,16 @@ done until `verify_ci.sh` exits `0` (`CI: green`) or `3` (not applicable), per
 
 ### 2. Commit & Stash
 
-| Action | SKILL.md section | Primary script |
+| Action | wrapper-recipes.md section | Primary script |
 |---|---|---|
-| Commit changes | "Committing code" / Quick Decision Tree | `commit_enhanced.sh` |
+| Commit changes | "Committing code" | `commit_enhanced.sh` |
 | Amend last commit message (before push) | "Undoing something" | `undo_last.sh amend-message` |
 | Stash work in progress | "Stashing work in progress" | `stash_work.sh push` |
 | Restore stashed work | "Stashing work in progress" | `stash_work.sh pop` / `list` |
 
 ### 3. Push, Pull & Sync
 
-| Action | SKILL.md section | Primary script |
+| Action | wrapper-recipes.md section | Primary script |
 |---|---|---|
 | Push to remote (also publishes a new branch) ⏱ | "Pushing to remote" | `push_validated.sh` |
 | Sync current branch with remote | "Syncing with remote" | `sync_branches.sh` |
@@ -166,7 +168,7 @@ done until `verify_ci.sh` exits `0` (`CI: green`) or `3` (not applicable), per
 
 ### 4. Branch, Merge & PR
 
-| Action | SKILL.md section | Primary script |
+| Action | wrapper-recipes.md section | Primary script |
 |---|---|---|
 | Merge to target branch ⏱ | "Merging to target branch" | `merge_with_validation.sh` |
 | Create a PR ⏱ | "Creating a PR" | `create_pr.sh` |
@@ -179,7 +181,7 @@ branch diff (`branch_diff.sh`), merge docs only (`merge_docs.sh`), branch cleanu
 
 ### 5. Undo & Recover
 
-| Action | SKILL.md section | Primary script |
+| Action | wrapper-recipes.md section | Primary script |
 |---|---|---|
 | Undo last commit (keep changes) | "Undoing something" | `undo_last.sh commit` |
 | Unstage / discard a file | "Undoing something" | `undo_last.sh unstage` / `discard` |
@@ -188,7 +190,7 @@ branch diff (`branch_diff.sh`), merge docs only (`merge_docs.sh`), branch cleanu
 
 ### 6. Release & Maintain
 
-| Action | SKILL.md section | Primary script |
+| Action | wrapper-recipes.md section | Primary script |
 |---|---|---|
 | Create a release (tag + push) ⏱ | "Creating a release" | `create_release.sh` |
 | Generate a changelog | "Generating a changelog" | `changelog_generate.sh` |

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # setup_attributes.sh - Generate .gitattributes for binary and project-specific files
 # Purpose: Configure git to handle binary files correctly (no diff, no merge conflicts)
 #          and set text file line-ending normalization. Supports Python, TouchDesigner,

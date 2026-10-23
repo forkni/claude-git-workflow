@@ -1,4 +1,6 @@
 @echo off
+rem SPDX-FileCopyrightText: 2026 Alexander Korneev
+rem SPDX-License-Identifier: MIT
 setlocal
 
 rem ==============================================================================

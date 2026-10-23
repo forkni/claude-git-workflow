@@ -127,6 +127,7 @@ EOF
   # Install CGW tooling and pre-push hook template
   mkdir -p "${TEST_REPO_DIR}/scripts/git" "${TEST_REPO_DIR}/scripts/test"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_common.sh" "${TEST_REPO_DIR}/scripts/git/_common.sh"
+  cp "${CGW_PROJECT_ROOT}"/scripts/git/_lib_*.sh "${TEST_REPO_DIR}/scripts/git/"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_config.sh" "${TEST_REPO_DIR}/scripts/git/_config.sh"
   cp "${CGW_PROJECT_ROOT}/hooks/pre-push" "${TEST_REPO_DIR}/.git/hooks/pre-push"
   chmod +x "${TEST_REPO_DIR}/.git/hooks/pre-push"
@@ -154,6 +155,7 @@ EOF
 
   mkdir -p "${TEST_REPO_DIR}/scripts/git" "${TEST_REPO_DIR}/scripts/test"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_common.sh" "${TEST_REPO_DIR}/scripts/git/_common.sh"
+  cp "${CGW_PROJECT_ROOT}"/scripts/git/_lib_*.sh "${TEST_REPO_DIR}/scripts/git/"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_config.sh" "${TEST_REPO_DIR}/scripts/git/_config.sh"
   cp "${CGW_PROJECT_ROOT}/hooks/pre-push" "${TEST_REPO_DIR}/.git/hooks/pre-push"
   chmod +x "${TEST_REPO_DIR}/.git/hooks/pre-push"
@@ -179,6 +181,7 @@ EOF
 
   mkdir -p "${TEST_REPO_DIR}/scripts/git" "${TEST_REPO_DIR}/.githooks"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_common.sh" "${TEST_REPO_DIR}/scripts/git/_common.sh"
+  cp "${CGW_PROJECT_ROOT}"/scripts/git/_lib_*.sh "${TEST_REPO_DIR}/scripts/git/"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_config.sh" "${TEST_REPO_DIR}/scripts/git/_config.sh"
   cp "${CGW_PROJECT_ROOT}/hooks/pre-push" "${TEST_REPO_DIR}/.git/hooks/pre-push"
   chmod +x "${TEST_REPO_DIR}/.git/hooks/pre-push"
@@ -203,6 +206,7 @@ EOF
   create_test_repo
   mkdir -p "${TEST_REPO_DIR}/scripts/git" "${TEST_REPO_DIR}/.githooks"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_common.sh" "${TEST_REPO_DIR}/scripts/git/_common.sh"
+  cp "${CGW_PROJECT_ROOT}"/scripts/git/_lib_*.sh "${TEST_REPO_DIR}/scripts/git/"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_config.sh" "${TEST_REPO_DIR}/scripts/git/_config.sh"
   cp "${CGW_PROJECT_ROOT}/hooks/pre-commit" "${TEST_REPO_DIR}/.git/hooks/pre-commit"
   chmod +x "${TEST_REPO_DIR}/.git/hooks/pre-commit"
@@ -225,6 +229,7 @@ EOF
   create_test_repo
   mkdir -p "${TEST_REPO_DIR}/scripts/git" "${TEST_REPO_DIR}/.githooks"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_common.sh" "${TEST_REPO_DIR}/scripts/git/_common.sh"
+  cp "${CGW_PROJECT_ROOT}"/scripts/git/_lib_*.sh "${TEST_REPO_DIR}/scripts/git/"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_config.sh" "${TEST_REPO_DIR}/scripts/git/_config.sh"
   cp "${CGW_PROJECT_ROOT}/hooks/pre-commit" "${TEST_REPO_DIR}/.git/hooks/pre-commit"
   chmod +x "${TEST_REPO_DIR}/.git/hooks/pre-commit"
@@ -251,6 +256,7 @@ EOF
   create_test_repo
   mkdir -p "${TEST_REPO_DIR}/scripts/git" "${TEST_REPO_DIR}/.githooks"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_common.sh" "${TEST_REPO_DIR}/scripts/git/_common.sh"
+  cp "${CGW_PROJECT_ROOT}"/scripts/git/_lib_*.sh "${TEST_REPO_DIR}/scripts/git/"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_config.sh" "${TEST_REPO_DIR}/scripts/git/_config.sh"
   cp "${CGW_PROJECT_ROOT}/hooks/pre-commit" "${TEST_REPO_DIR}/.git/hooks/pre-commit"
   chmod +x "${TEST_REPO_DIR}/.git/hooks/pre-commit"
@@ -272,6 +278,7 @@ EOF
 
   mkdir -p "${TEST_REPO_DIR}/scripts/git" "${TEST_REPO_DIR}/.githooks"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_common.sh" "${TEST_REPO_DIR}/scripts/git/_common.sh"
+  cp "${CGW_PROJECT_ROOT}"/scripts/git/_lib_*.sh "${TEST_REPO_DIR}/scripts/git/"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_config.sh" "${TEST_REPO_DIR}/scripts/git/_config.sh"
   cp "${CGW_PROJECT_ROOT}/hooks/pre-push" "${TEST_REPO_DIR}/.git/hooks/pre-push"
   chmod +x "${TEST_REPO_DIR}/.git/hooks/pre-push"
@@ -300,6 +307,7 @@ EOF
   create_test_repo
   mkdir -p "${TEST_REPO_DIR}/scripts/git" "${TEST_REPO_DIR}/.githooks"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_common.sh" "${TEST_REPO_DIR}/scripts/git/_common.sh"
+  cp "${CGW_PROJECT_ROOT}"/scripts/git/_lib_*.sh "${TEST_REPO_DIR}/scripts/git/"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_config.sh" "${TEST_REPO_DIR}/scripts/git/_config.sh"
   cp "${CGW_PROJECT_ROOT}/hooks/pre-rebase" "${TEST_REPO_DIR}/.git/hooks/pre-rebase"
   chmod +x "${TEST_REPO_DIR}/.git/hooks/pre-rebase"
@@ -329,6 +337,7 @@ EOF
   create_test_repo
   mkdir -p "${TEST_REPO_DIR}/scripts/git" "${TEST_REPO_DIR}/.githooks"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_common.sh" "${TEST_REPO_DIR}/scripts/git/_common.sh"
+  cp "${CGW_PROJECT_ROOT}"/scripts/git/_lib_*.sh "${TEST_REPO_DIR}/scripts/git/"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_config.sh" "${TEST_REPO_DIR}/scripts/git/_config.sh"
   cp "${CGW_PROJECT_ROOT}/hooks/pre-rebase" "${TEST_REPO_DIR}/.git/hooks/pre-rebase"
   chmod +x "${TEST_REPO_DIR}/.git/hooks/pre-rebase"
@@ -452,6 +461,7 @@ _gate_repo() {
   git -C "${TEST_REPO_DIR}" checkout development
   mkdir -p "${TEST_REPO_DIR}/scripts/git" "${TEST_REPO_DIR}/scripts/test"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_common.sh" "${TEST_REPO_DIR}/scripts/git/_common.sh"
+  cp "${CGW_PROJECT_ROOT}"/scripts/git/_lib_*.sh "${TEST_REPO_DIR}/scripts/git/"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_config.sh" "${TEST_REPO_DIR}/scripts/git/_config.sh"
   cp "${CGW_PROJECT_ROOT}/hooks/pre-push" "${TEST_REPO_DIR}/.git/hooks/pre-push"
   chmod +x "${TEST_REPO_DIR}/.git/hooks/pre-push"
