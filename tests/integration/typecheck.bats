@@ -15,6 +15,7 @@ setup() {
   create_test_repo
   mkdir -p "${TEST_REPO_DIR}/scripts/git"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_common.sh" "${TEST_REPO_DIR}/scripts/git/_common.sh"
+  cp "${CGW_PROJECT_ROOT}"/scripts/git/_lib_*.sh "${TEST_REPO_DIR}/scripts/git/"
   cp "${CGW_PROJECT_ROOT}/scripts/git/_config.sh" "${TEST_REPO_DIR}/scripts/git/_config.sh"
   cp "${CGW_PROJECT_ROOT}/hooks/pre-commit" "${TEST_REPO_DIR}/.git/hooks/pre-commit"
   chmod +x "${TEST_REPO_DIR}/.git/hooks/pre-commit"
