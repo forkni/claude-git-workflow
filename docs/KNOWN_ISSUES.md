@@ -344,6 +344,13 @@ Not implemented; recorded so they are not rediscovered:
 - `git maintenance` as an alternative to manual `gc` in `repo_health.sh`
 - an imperative-mood tip next to the 50/72 subject rule (*Pro Git*, commit guidelines)
 
+### Won't fix: long `main()` in `merge_pr.sh` and `rollback_merge.sh`
+
+`configure.sh`, `check_lint.sh` and `cherry_pick_commits.sh` had their `main()` split into `_step_*` functions
+because each had more than 10 `fix:` commits in 6 months. `merge_pr.sh` (562 lines) and `rollback_merge.sh`
+(415 lines) have fewer than 7, so they stay as they are. Trigger to revisit: more than 10 `fix:` commits
+touching either file in a 6-month window.
+
 ---
 
 ## Non-findings (checked clean — recorded so they aren't re-audited)
