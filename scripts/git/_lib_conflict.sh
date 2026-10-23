@@ -153,7 +153,7 @@ cgw_resolve_safe_conflicts() {
         echo "  [SKIP] Binary file -- needs a manual decision: ${f}"
         continue
       fi
-      if git rm "${f}" >/dev/null 2>&1; then
+      if git rm -- "${f}" >/dev/null 2>&1; then
         echo "  [OK] Removed: ${f}"
         auto_resolved=$((auto_resolved + 1))
       else
@@ -166,7 +166,7 @@ cgw_resolve_safe_conflicts() {
   # Auto-resolve DD (both deleted): nothing to lose — propagate failure.
   for f in "${CGW_CONFLICT_DD_FILES[@]}"; do
     echo "  Found both-deleted conflict: ${f}"
-    if git rm "${f}" >/dev/null 2>&1; then
+    if git rm -- "${f}" >/dev/null 2>&1; then
       echo "  [OK] Removed (both deleted): ${f}"
       auto_resolved=$((auto_resolved + 1))
     else
