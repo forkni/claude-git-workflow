@@ -203,7 +203,7 @@ _diverge_for_rebase() {
 @test "_common.sh: sourcing returns 1 and names the lib when any _lib_*.sh is missing" {
   _install_cgw_tooling
   local lib
-  for lib in _lib_remote.sh _lib_lock.sh; do
+  for lib in _lib_remote.sh _lib_lock.sh _lib_conflict.sh; do
     mv "${TEST_REPO_DIR}/scripts/git/${lib}" "${TEST_REPO_DIR}/scripts/git/${lib}.off"
     run bash -c 'source "$1/scripts/git/_common.sh"' _ "${TEST_REPO_DIR}"
     mv "${TEST_REPO_DIR}/scripts/git/${lib}.off" "${TEST_REPO_DIR}/scripts/git/${lib}"
