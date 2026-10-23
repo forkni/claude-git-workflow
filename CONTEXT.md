@@ -43,7 +43,7 @@ A file or directory that must never be committed to the remote repository. Confi
 
 ## lint pipeline
 
-The shared module responsible for running lint, format, and markdownlint tool binaries against staged or modified files. Lives in `_common.sh` and is reused by `commit_enhanced.sh`, `check_lint.sh`, `fix_lint.sh`, and the pre-commit hook. Typecheck (`cgw_run_typecheck` below) is a sibling seam in the same file but is deliberately whole-project, not staged/modified-scoped — see its bullet for why.
+The shared module responsible for running lint, format, and markdownlint tool binaries against staged or modified files. Lives in `scripts/git/_lib_lint.sh` (sourced by `_common.sh`) and is reused by `commit_enhanced.sh`, `check_lint.sh`, `fix_lint.sh`, and the pre-commit hook. Typecheck (`cgw_run_typecheck` below) is a sibling seam in the same file but is deliberately whole-project, not staged/modified-scoped — see its bullet for why.
 
 - `cgw_lint_plan <check|fix> [flags…]` — pure query planning which lint pipeline steps run and why. Returns a line-delimited stream of `step:action:reason` entries (`lint`, `format`, `markdown`, `typecheck`). Unifies skip-folding across all callers: `CGW_SKIP_LINT=1` (or `--skip-lint`) acts as an umbrella skip for all steps, while individual skips (`CGW_SKIP_MD_LINT=1`, `CGW_SKIP_TYPECHECK=1`) gate specific stages.
 - `cgw_resolve_lint_binary <cmd>` — pure venv-aware path resolver. Given a binary name (e.g., `ruff`), returns the absolute venv path when it exists, or the bare name for system PATH lookup. Reads `PYTHON_BIN` / `PYTHON_EXT` (pre-populated by `get_python_path`). No side effects.
@@ -72,7 +72,7 @@ Backs the `[3.5]` congruence guard in `commit_enhanced.sh`, which runs once afte
 
 A staged file whose index blob deliberately differs from its working-tree content — the moral equivalent of `git add --patch` picking one hunk and leaving the rest unstaged. CGW must never collapse one whole onto the working tree: doing so would silently absorb unstaged content (including another process's concurrent, deliberately-unstaged edits) into the commit.
 
-**Implementation seam**: detected via `cgw_staged_paths_diverging_from_index` in `scripts/git/_common.sh`. `commit_enhanced.sh` snapshots the result once staging is final for the run (`partially_staged_files`), alongside the full staged-file snapshot (`originally_staged_files`), so a later auto-fix re-stage can skip exactly those paths instead of promoting them whole.
+**Implementation seam**: detected via `cgw_staged_paths_diverging_from_index` in `scripts/git/_lib_lint.sh`. `commit_enhanced.sh` snapshots the result once staging is final for the run (`partially_staged_files`), alongside the full staged-file snapshot (`originally_staged_files`), so a later auto-fix re-stage can skip exactly those paths instead of promoting them whole.
 
 **Callers**: `commit_enhanced.sh`'s `_restage_after_fix` (skips every path in the snapshot, printing which ones it left alone).
 
@@ -82,7 +82,7 @@ A staged file whose index blob deliberately differs from its working-tree conten
 
 The exact staged paths a `commit_enhanced.sh` run's code-quality gate actually validated this run: staged `CGW_LINT_EXTENSIONS` files, but only when a code checker is actually configured (`CGW_LINT_CMD` or `CGW_FORMAT_CMD` non-empty), plus staged `*.md` files when markdownlint genuinely ran. Markdown is excluded when any of: the caller's `md_skipped` argument is `1`, `CGW_SKIP_MD_LINT` is `1`, or `CGW_MARKDOWNLINT_CMD` is empty. Divergence in a staged file *outside* this set is ordinary partial staging CGW never inspected, not a validation gap — it must not be re-staged or reported.
 
-**Implementation seam**: `cgw_validated_path_set [md_skipped]` in `scripts/git/_common.sh`. `md_skipped` defaults to `0` ("markdown ran") when omitted — the conservative direction, since over-reporting divergence fails a commit closed while under-reporting would commit unvalidated content silently.
+**Implementation seam**: `cgw_validated_path_set [md_skipped]` in `scripts/git/_lib_lint.sh`. `md_skipped` defaults to `0` ("markdown ran") when omitted — the conservative direction, since over-reporting divergence fails a commit closed while under-reporting would commit unvalidated content silently.
 
 **Callers**: the `[3.5]` congruence guard in `commit_enhanced.sh`, run once after both the lint/format and markdown auto-fix blocks so one check covers both paths. `commit_enhanced.sh` passes its `skip_md_lint` local explicitly (`main()` into `_step_code_quality`, which hosts the guard) into `_congruence_guard <md_skipped> <whole_file_intent>`, which uses that one argument for both detection and re-verify, rather than writing it back into `CGW_SKIP_MD_LINT` — the local is invisible to this script-level function otherwise, and a writeback risks leaking into `git commit`'s subprocess/hooks if the caller's environment already exported the var.
 
