@@ -21,7 +21,7 @@ The deterministic mapping from a `git status --short` two-letter porcelain pair 
 | `AD` | added by us, deleted by theirs | Halt: keep-ours vs keep-theirs |
 | `DA` | deleted by us, added by theirs | Halt: keep-ours vs keep-theirs |
 
-**Implementation seam**: `cgw_classify_conflicts` (pure classifier, injectable fixture) and `cgw_resolve_safe_conflicts` (impure resolver, owns halt messages and op-specific recovery footers) in `scripts/git/_common.sh`.
+**Implementation seam**: `cgw_classify_conflicts` (pure classifier, injectable fixture) and `cgw_resolve_safe_conflicts` (impure resolver, owns halt messages and op-specific recovery footers) in `scripts/git/_lib_conflict.sh` (sourced by `_common.sh`).
 
 **Callers**: `merge_with_validation.sh`, `cherry_pick_commits.sh` (both use `cgw_resolve_safe_conflicts`); `rebase_safe.sh` (read-only — uses `cgw_classify_conflicts` + `cgw_print_conflict_summary` for display only, never auto-resolves mid-rebase).
 
