@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Alexander Korneev
+# SPDX-License-Identifier: MIT
 # _lib_conflict.sh - Conflict classification and safe auto-resolution for claude-git-workflow scripts
 # Usage: sourced automatically by _common.sh -- do not source directly
 #
