@@ -532,7 +532,7 @@ _cmd_remove() {
   done
 
   if [[ -z "${path}" ]]; then
-    echo "[ERROR] Usage: worktree_manage.sh remove [--execute] <path>" >&2
+    echo "[ERROR] Usage: worktree_manage.sh remove [--execute [--non-interactive]] <path>" >&2
     exit 1
   fi
 
@@ -548,6 +548,15 @@ _cmd_remove() {
     echo "Note: the worktree directory at '${path}' is deleted; its branch is preserved."
     echo "      (git refuses if it has uncommitted changes.)"
     exit 0
+  fi
+
+  # With no terminal to answer, the prompt below would read EOF and report
+  # "Cancelled" with exit 0, which a caller (an agent, a script) takes for a
+  # successful remove. Refuse loudly instead.
+  if [[ "${CGW_NON_INTERACTIVE:-0}" != "1" ]] && [[ ! -t 0 ]]; then
+    err_tee "[ERROR] worktree_manage.sh remove: needs confirmation and stdin is not a terminal; rerun with --non-interactive"
+    err_tee "  ./scripts/git/worktree_manage.sh remove --execute --non-interactive '${path}'"
+    exit 1
   fi
 
   if ! cgw_confirm "Remove worktree '${path}'?" --non-interactive accept; then
@@ -584,7 +593,7 @@ _cmd_remove() {
     err_tee "  git worktree remove's recursive delete could otherwise follow a stray junction"
     err_tee "  into the MAIN worktree's scripts/git or .githooks and delete it."
     err_tee "  Resolve manually (remove the offending link/directory), then retry:"
-    err_tee "    ./scripts/git/worktree_manage.sh remove --execute '${path}'"
+    err_tee "    ./scripts/git/worktree_manage.sh remove --execute --non-interactive '${path}'"
     exit 1
   fi
 
@@ -700,6 +709,7 @@ _show_help() {
   echo "  ./scripts/git/worktree_manage.sh link          # link the current worktree"
   echo "  ./scripts/git/worktree_manage.sh link ../hotfix"
   echo "  ./scripts/git/worktree_manage.sh remove --execute ../hotfix"
+  echo "  ./scripts/git/worktree_manage.sh remove --execute --non-interactive ../hotfix   # no terminal (agent, CI)"
   echo "  ./scripts/git/worktree_manage.sh prune --execute"
 }
 

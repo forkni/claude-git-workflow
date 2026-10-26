@@ -216,6 +216,22 @@ _install_hook_direct() {
   [[ "${output}" == *"CLAUDE.md"* ]] || [[ "${output}" == *"local-only"* ]]
 }
 
+# ── remove with no terminal ────────────────────────────────────────────────
+
+@test "remove: no terminal and no --non-interactive exits 1 and keeps the worktree" {
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove --execute "${TEST_WORKTREE_DIR}" </dev/null
+  [ "${status}" -eq 1 ]
+  [ -d "${TEST_WORKTREE_DIR}" ]
+  [[ "${output}" == *"--non-interactive"* ]]
+  [[ "${output}" != *"Cancelled"* ]]
+}
+
+@test "remove: no terminal with --non-interactive removes the worktree" {
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove --execute --non-interactive "${TEST_WORKTREE_DIR}" </dev/null
+  [ "${status}" -eq 0 ]
+  [ ! -d "${TEST_WORKTREE_DIR}" ]
+}
+
 # ── remove (A3: cannot delete the main worktree's tooling) ─────────────────
 
 @test "remove: unlinks scripts/git and .githooks before removing; main worktree survives" {

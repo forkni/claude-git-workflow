@@ -372,12 +372,15 @@ Linked worktrees let you check out multiple branches simultaneously in separate 
 ./scripts/git/worktree_manage.sh add ../part2 feat/part-2 feat/part-1  # new branch starting at <base> (no upstream until first push)
 ./scripts/git/worktree_manage.sh add ../pr feat/from-origin             # branch only on the remote: tracks origin/feat/from-origin
 ./scripts/git/worktree_manage.sh link                            # link CGW tooling into the current worktree
-./scripts/git/worktree_manage.sh remove --execute ../hotfix      # remove worktree link
+./scripts/git/worktree_manage.sh remove --execute ../hotfix      # remove worktree link (asks to confirm)
+./scripts/git/worktree_manage.sh remove --execute --non-interactive ../hotfix  # no terminal (agent, CI): skip the prompt
 ./scripts/git/worktree_manage.sh prune                           # dry-run: show stale admin files
 ./scripts/git/worktree_manage.sh prune --execute                 # remove stale admin files
 ```
 
-`remove` and `prune` default to dry-run; pass `--execute` to apply.
+`remove` and `prune` default to dry-run; pass `--execute` to apply. `remove --execute` asks
+for confirmation; with no terminal on stdin it exits 1 and asks for `--non-interactive`
+instead of reporting `Cancelled`.
 
 `scripts/git/` and `.githooks/` are commonly gitignored, so `git worktree add` — which only
 checks out tracked content — leaves a linked worktree without CGW's scripts or hooks. Any
@@ -403,7 +406,7 @@ shims) and refuses to overwrite a real directory that isn't its own shim directo
 Earlier CGW versions linked `scripts/git` and `.githooks` with a symlink / NTFS junction instead.
 `link` replaces those on sight. Such a link is dangerous on Windows: a raw `git worktree remove`
 follows it and deletes the **main** worktree's gitignored tooling. Shims have no such link, but
-still remove worktrees with `worktree_manage.sh remove --execute` — it also clears any legacy
+still remove worktrees with `worktree_manage.sh remove --execute --non-interactive` — it also clears any legacy
 link first, and the agent guardrail blocks raw `git worktree remove`. To recover an emptied
 main checkout, re-run `cgw-install.cmd` / `cgw-batch-install.cmd` from the CGW source repo (they
 leave `.cgw.conf` alone).
