@@ -3456,6 +3456,33 @@ _scratch_commit() {
   [ "${status}" -eq 1 ]
 }
 
+# ── cgw_rm_tmpdir() ───────────────────────────────────────────────────────────
+
+@test "cgw_rm_tmpdir: removes a cgw- prefixed directory" {
+  local d="${BATS_TEST_TMPDIR}/cgw-snap.abc123"
+  mkdir -p "${d}/sub" && echo x >"${d}/sub/f"
+  run cgw_rm_tmpdir "${d}"
+  [ "${status}" -eq 0 ]
+  [ ! -e "${d}" ]
+}
+
+@test "cgw_rm_tmpdir: refuses a directory without the cgw- prefix" {
+  local d="${BATS_TEST_TMPDIR}/keepme"
+  mkdir -p "${d}" && echo x >"${d}/f"
+  run cgw_rm_tmpdir "${d}"
+  [ "${status}" -eq 0 ]
+  [ -f "${d}/f" ]
+}
+
+@test "cgw_rm_tmpdir: is a no-op for an empty argument or a file" {
+  run cgw_rm_tmpdir ""
+  [ "${status}" -eq 0 ]
+  echo x >"${BATS_TEST_TMPDIR}/cgw-file"
+  run cgw_rm_tmpdir "${BATS_TEST_TMPDIR}/cgw-file"
+  [ "${status}" -eq 0 ]
+  [ -f "${BATS_TEST_TMPDIR}/cgw-file" ]
+}
+
 # ── Reflog action provenance ──────────────────────────────────────────────────
 
 # ── cgw_backup_file pruning ───────────────────────────────────────────────────

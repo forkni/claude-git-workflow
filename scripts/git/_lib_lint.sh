@@ -4,7 +4,7 @@
 # _lib_lint.sh - Lint, format, markdownlint and typecheck pipeline for claude-git-workflow scripts
 # Usage: sourced automatically by _common.sh -- do not source directly
 #
-# Functions: cgw_resolve_lint_binary, cgw_strip_path_arg, cgw_fill_path_placeholder, cgw_modified_files_for_lint, cgw_snapshot_tree, cgw_pushed_files_for_lint, cgw_lint_plan, _cgw_run_pipeline_tool, cgw_run_lint_check, cgw_run_format_check, cgw_run_lint_fix, cgw_run_markdownlint_check, cgw_run_markdownlint_fix, cgw_staged_files_for_md, cgw_modified_files_for_md, cgw_staged_files_for_lint, cgw_path_is_diff_blind, cgw_paths_diverging_from_index, cgw_lint_files_diverging_from_index, cgw_staged_paths_diverging_from_index, cgw_validated_path_set, cgw_crlf_in_index_files, cgw_run_typecheck.
+# Functions: cgw_resolve_lint_binary, cgw_strip_path_arg, cgw_fill_path_placeholder, cgw_modified_files_for_lint, cgw_rm_tmpdir, cgw_snapshot_tree, cgw_pushed_files_for_lint, cgw_lint_plan, _cgw_run_pipeline_tool, cgw_run_lint_check, cgw_run_format_check, cgw_run_lint_fix, cgw_run_markdownlint_check, cgw_run_markdownlint_fix, cgw_staged_files_for_md, cgw_modified_files_for_md, cgw_staged_files_for_lint, cgw_path_is_diff_blind, cgw_paths_diverging_from_index, cgw_lint_files_diverging_from_index, cgw_staged_paths_diverging_from_index, cgw_validated_path_set, cgw_crlf_in_index_files, cgw_run_typecheck.
 #
 # Uses run_tool_with_logging(), get_python_path(), log_section_end() and the CGW_* settings
 # from _common.sh / _config.sh at call time.
@@ -84,6 +84,18 @@ cgw_modified_files_for_lint() {
   git diff --name-only --diff-filter=ACMR HEAD -- "${lint_exts[@]}"
 }
 
+# cgw_rm_tmpdir <dir>
+#   Remove a temporary directory CGW created with mktemp. The single recursive
+#   delete in the lint pipeline: refuses (returns 0, deletes nothing) unless
+#   <dir> is non-empty, an existing directory, and its basename starts with
+#   "cgw-" (every CGW mktemp template does), so an empty or wrong variable can
+#   never widen the delete to an arbitrary path.
+cgw_rm_tmpdir() {
+  local d="${1:-}"
+  [[ -n "${d}" && "${d##*/}" == cgw-* && -d "${d}" ]] || return 0
+  rm -rf -- "${d}"
+}
+
 # cgw_snapshot_tree <rev> <dest-dir>
 #   Materialize the COMMITTED tree of <rev> into the existing directory
 #   <dest-dir> (checkout-index through a throwaway index file, so the real
@@ -103,7 +115,7 @@ cgw_snapshot_tree() {
   GIT_INDEX_FILE="${idx_dir}/index" git -C "${PROJECT_ROOT:-.}" read-tree "${rev}" &&
     GIT_INDEX_FILE="${idx_dir}/index" git -C "${PROJECT_ROOT:-.}" checkout-index -a -f --prefix="${dest%/}/" ||
     rc=1
-  rm -rf "${idx_dir}"
+  cgw_rm_tmpdir "${idx_dir}"
   return "${rc}"
 }
 
