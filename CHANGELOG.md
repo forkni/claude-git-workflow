@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### New Features
+
+- **Standalone Agent Skills for Agensi**: `scripts/dev/build_agensi.sh` builds three portable skill zips from the repo into `dist/agensi/`: `gitignore-and-local-config` and `git-merge-conflict-resolution` (knowledge only, no scripts) and `safe-git-workflow` (the core wrappers: commit, push, merge, rollback, rebase, cherry-pick, stash, undo, recover, sync, branch cleanup, bisect, plus the shared libraries). Each is one `SKILL.md` folder with only `name`/`description` frontmatter and no hooks, slash command or `.claude/` paths, so the same zip works across agents. Sources live in `agensi/` (see `agensi/README.md`). The build rewrites `./scripts/git/` to `<skill-dir>/scripts/`, drops sections for scripts a zip doesn't ship, points other reference links at GitHub, defaults `CGW_MARKDOWNLINT_NPX_FALLBACK` to `0` in the packaged config, and fails on a frontmatter, portability, link, missing-script or syntax problem. 7 tests in `tests/integration/build_agensi.bats`.
+- **`cgw_rm_tmpdir`**: the lint pipeline's two recursive deletes (`cgw_snapshot_tree`'s throwaway index dir in `_lib_lint.sh`, and `check_lint.sh`'s snapshot cleanup) now go through one helper that refuses anything but an existing directory whose name starts with `cgw-`, so an empty or wrong variable can never widen the delete. 3 tests in `tests/unit/common.bats`.
+
 ### Bug Fixes
 
 - **`worktree_manage.sh remove --execute` fails loudly with no terminal**: without `--non-interactive`, the confirmation prompt read EOF, printed `Cancelled` and exited 0, so an agent or script took a worktree that was still there for a removed one. With stdin not a terminal and `CGW_NON_INTERACTIVE` unset, it now exits 1 before prompting, names `--non-interactive` and prints the command to rerun. An interactive "no" still prints `Cancelled` and exits 0. The usage error, the post-failure retry hint, the usage examples, the Guardrail's `git worktree remove` deny message and `docs/usage.md` now show `--non-interactive`. Two tests in `tests/integration/worktree.bats`.
