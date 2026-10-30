@@ -39,7 +39,7 @@ _cgw_snapshot_cleanup() {
   # Windows cannot delete a directory that is the process cwd.
   cd "${PROJECT_ROOT:-/}" 2>/dev/null || cd / || true
   for d in "${CGW_SNAPSHOT_DIR:-}" "${CGW_SNAPSHOT_AUX_DIR:-}"; do
-    [[ -n "${d}" && "${d##*/}" == cgw-snap.* && -d "${d}" ]] && rm -rf "${d}"
+    [[ "${d##*/}" == cgw-snap.* ]] && cgw_rm_tmpdir "${d}"
   done
   return 0
 }
