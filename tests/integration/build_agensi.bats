@@ -6,9 +6,7 @@ bats_require_minimum_version 1.5.0
 
 setup_file() {
   # Git for Windows ships neither; the build is a release-time step run on Linux or macOS.
-  if ! command -v zip >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then
-    skip "zip/unzip not installed"
-  fi
+  command -v zip >/dev/null 2>&1 && command -v unzip >/dev/null 2>&1 || skip "zip/unzip not installed"
   export CGW_ROOT="${BATS_TEST_DIRNAME}/../.."
   export AGENSI_OUT="${BATS_FILE_TMPDIR}/agensi"
   # One build shared by every test: the checks inside the script are what most tests assert.
