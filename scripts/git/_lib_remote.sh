@@ -269,7 +269,9 @@ cgw_active_workflows() {
 # unknown counts as "may run", so a gate built on this fails closed.
 cgw_workflow_may_run_on_pr() {
   local yaml
-  yaml=$(gh workflow view "${2}" --repo "${1}" --yaml 2>>"${3:-/dev/null}" | tr -d '\r') || return 0
+  # The name is repo-controlled (the workflow's `name:`), so flags go first and `--` ends
+  # option parsing: a name such as "--web" stays a positional argument.
+  yaml=$(gh workflow view --repo "${1}" --yaml -- "${2}" 2>>"${3:-/dev/null}" | tr -d '\r') || return 0
   [[ -n "${yaml}" ]] || return 0
   grep -v '^[[:space:]]*#' <<<"${yaml}" | grep -q 'pull_request'
 }

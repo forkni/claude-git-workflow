@@ -522,6 +522,17 @@ _push_feature_head() {
   [[ "${output}" == *"treating as no CI"* ]]
 }
 
+@test "a flag-looking workflow name is passed to gh after --" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=1
+  export MOCK_GH_CHECKS_OUTPUT="no checks reported on the 'feature' branch"
+  export MOCK_GH_WORKFLOWS="--web"
+  export MOCK_GH_WORKFLOW_YAML___web="on:\n  push:"
+  run _run_merge_pr 42
+  [ "${status}" -eq 0 ]
+  grep -q -- "workflow view --repo .* --yaml -- --web" "${GH_LOG}"
+}
+
 @test "no checks refuse when a workflow's YAML cannot be read" {
   install_mock_gh
   export MOCK_GH_CHECKS_EXIT=1
