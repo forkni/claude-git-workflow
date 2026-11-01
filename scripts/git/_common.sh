@@ -34,6 +34,7 @@
 #   cgw_default_branch()        - Echo the repo's default branch (origin/HEAD, falls back to CGW_TARGET_BRANCH) [_lib_remote.sh]
 #   cgw_require_gh()            - Verify gh CLI is installed and authenticated; prints [ERROR] and returns 1 on failure [_lib_remote.sh]
 #   cgw_pr_view()               - Echo one field of a PR via gh pr view --jq, CR-stripped [_lib_remote.sh]
+#   cgw_active_workflows()      - Echo the repo's active workflow names, one per line; non-zero = gh failed [_lib_remote.sh]
 
 # Seam libraries sourced from this file (same directory): _lib_remote.sh, _lib_lock.sh, _lib_conflict.sh,
 # _lib_lint.sh.
@@ -429,7 +430,7 @@ cgw_run_pre_op_validation() {
 }
 
 # Remote/network helpers (cgw_rev_count, cgw_net_git, cgw_remote_*, cgw_default_branch,
-# cgw_require_gh, cgw_pr_view) live in _lib_remote.sh. A missing lib returns 1 from this
+# cgw_require_gh, cgw_pr_view, cgw_active_workflows) live in _lib_remote.sh. A missing lib returns 1 from this
 # file, so the hooks (`source _common.sh || exit 1`) fail closed.
 # shellcheck source=scripts/git/_lib_remote.sh
 source "$(dirname "${BASH_SOURCE[0]}")/_lib_remote.sh" || {

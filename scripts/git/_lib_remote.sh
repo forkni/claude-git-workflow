@@ -250,3 +250,13 @@ cgw_require_gh() {
 cgw_pr_view() {
   gh pr view "${2}" --repo "${1}" --json "${3}" --jq "${4}" 2>/dev/null | tr -d '\r'
 }
+
+# cgw_active_workflows <owner/repo> [logfile]
+# Echoes the names of the repo's active GitHub Actions workflows, one per line, with
+# CRs stripped. Empty output with status 0 means "no CI in this repo"; a non-zero
+# status (gh failed) means "unknown" -- gh's exit status reaches the caller through
+# pipefail, so a fail-closed caller must test it. gh's stderr goes to [logfile]
+# (default: discarded).
+cgw_active_workflows() {
+  gh workflow list --repo "${1}" --json name,state --jq '.[] | select(.state == "active") | .name' 2>>"${2:-/dev/null}" | tr -d '\r'
+}

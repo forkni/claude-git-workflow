@@ -54,8 +54,6 @@ source "${SCRIPT_DIR}/_common.sh"
 readonly _CI_RUNS_JQ='group_by([.workflowName, .event]) | map(max_by(.databaseId)) | sort_by(.databaseId) | .[] | "\(.databaseId)\t\(.workflowName)\t\(.event)\t\(.status)\t\(.conclusion)\t\(.url)"'
 # PR checks: one row per check with gh's own bucket (pass|fail|pending|skipping|cancel).
 readonly _CI_CHECKS_JQ='.[] | "\(.bucket)\t\(.workflow)\t\(.name)\t\(.link)"'
-# Active workflows of the repo (used to tell "no CI here" from "CI did not register").
-readonly _CI_WORKFLOWS_JQ='.[] | select(.state == "active") | .name'
 
 # Virtual clock: every wait advances it by the requested seconds, deadlines compare against
 # it, and the real sleep can be shortened (CGW_CI_TEST_SLEEP=0 in tests) without changing
@@ -100,7 +98,7 @@ _ci_list_checks() {
 
 # _ci_active_workflows -- names of the repo's active workflows, one per line
 _ci_active_workflows() {
-  gh workflow list --repo "${ci_repo}" --json name,state --jq "${_CI_WORKFLOWS_JQ}" 2>>"${logfile}" | tr -d '\r'
+  cgw_active_workflows "${ci_repo}" "${logfile}"
 }
 
 # _ci_no_runs <what> -- nothing registered: exit 3 when the repo has no active workflow,
