@@ -460,6 +460,42 @@ _push_feature_head() {
   grep -q -- "pr merge 42" "${GH_LOG}"
 }
 
+@test "no checks on an old head refuse when the repo has an active workflow" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=1
+  export MOCK_GH_CHECKS_OUTPUT="no checks reported on the 'feature' branch"
+  export MOCK_GH_WORKFLOWS="CI\nDocs"
+  run _run_merge_pr 42
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"has active workflows (CI,Docs)"* ]]
+  [[ "${output}" != *"treating as no CI"* ]]
+  run ! grep -q -- "pr merge" "${GH_LOG}"
+}
+
+@test "--wait-checks refuses after the appear window when the repo has an active workflow" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=1
+  export MOCK_GH_CHECKS_OUTPUT="no checks reported on the 'feature' branch"
+  export MOCK_GH_PR_42_COMMITS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  export MOCK_GH_WORKFLOWS="CI"
+  export CGW_PR_CHECKS_APPEAR_SECONDS=0
+  run _run_merge_pr 42 --wait-checks
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"CI did not register for this head"* ]]
+  run ! grep -q -- "pr merge" "${GH_LOG}"
+}
+
+@test "no checks refuse when the workflow list cannot be read" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=1
+  export MOCK_GH_CHECKS_OUTPUT="no checks reported on the 'feature' branch"
+  export MOCK_GH_WORKFLOWS_EXIT=1
+  run _run_merge_pr 42
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"workflow list could not be read"* ]]
+  run ! grep -q -- "pr merge" "${GH_LOG}"
+}
+
 # ── stacked-PR guard: --delete-branch / --retarget-all ────────────────────────
 
 @test "--delete-branch is refused while an open PR is stacked on the head and not retargeted" {
