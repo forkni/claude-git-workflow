@@ -232,6 +232,59 @@ _install_hook_direct() {
   [ ! -d "${TEST_WORKTREE_DIR}" ]
 }
 
+# Regression: git can delete every file of a linked worktree and still exit
+# non-zero when it cannot remove the directory itself (on Windows a process
+# holding it as its cwd does this). The failure report then ran
+# `git -C <path> status` in the leftover EMPTY directory, which is no longer a
+# worktree, so git walked up to the main checkout and listed ITS untracked
+# files as if they were left in the worktree.
+_install_git_leaving_empty_dir() {
+  local real_git
+  real_git="$(command -v git)"
+  setup_mock_bin
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'if [[ "$1" == worktree && "$2" == remove ]]; then' \
+    "  \"${real_git}\" \"\$@\"" \
+    '  mkdir -p "$3"' \
+    '  exit 1' \
+    'fi' \
+    "exec \"${real_git}\" \"\$@\"" >"${MOCK_BIN_DIR}/git"
+  chmod +x "${MOCK_BIN_DIR}/git"
+}
+
+@test "remove: git fails but leaves an empty directory -> no files of the main checkout are reported" {
+  load '../helpers/mocks'
+  echo "belongs to the main checkout" >"${TEST_REPO_DIR}/stray-main-file.txt"
+  # The worktree lives INSIDE the main checkout (e.g. .claude/worktrees/x), so
+  # once its files are gone git walks up from the empty directory into the
+  # main checkout. A sibling directory would hide the bug.
+  local nested="${TEST_REPO_DIR}/nested-wt"
+  git -C "${TEST_REPO_DIR}" worktree add --quiet -b nested-branch "${nested}"
+  _install_git_leaving_empty_dir
+
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove --execute --non-interactive "${nested}" </dev/null
+  [ "${status}" -eq 1 ]
+  [[ "${output}" != *"stray-main-file.txt"* ]]
+  [[ "${output}" != *"Left in it"* ]]
+  [[ "${output}" == *"could not delete the"* ]]
+  [[ "${output}" == *"${nested}"* ]]
+}
+
+@test "remove: git refuses over an untracked file -> that file, and only that file, is listed" {
+  echo "belongs to the main checkout" >"${TEST_REPO_DIR}/stray-main-file.txt"
+  local nested="${TEST_REPO_DIR}/nested-wt"
+  git -C "${TEST_REPO_DIR}" worktree add --quiet -b nested-branch "${nested}"
+  echo "left behind" >"${nested}/mine.txt"
+
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove --execute --non-interactive "${nested}" </dev/null
+  [ "${status}" -eq 1 ]
+  [ -d "${nested}" ]
+  [[ "${output}" == *"Left in it"* ]]
+  [[ "${output}" == *"?? mine.txt"* ]]
+  [[ "${output}" != *"stray-main-file.txt"* ]]
+}
+
 # ── remove (A3: cannot delete the main worktree's tooling) ─────────────────
 
 @test "remove: unlinks scripts/git and .githooks before removing; main worktree survives" {

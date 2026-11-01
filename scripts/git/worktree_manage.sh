@@ -500,6 +500,18 @@ _cmd_add() {
   fi
 }
 
+# _cgw_is_own_worktree_root <dir>
+#   0 when <dir> is itself the root of a git working tree. A directory that
+#   git has emptied (or never populated) sits inside an enclosing checkout
+#   when the worktree was created under it: `git -C <dir>` then answers for
+#   that checkout, with a non-empty --show-prefix. A directory outside any
+#   checkout makes rev-parse fail. Both mean "not a worktree root".
+_cgw_is_own_worktree_root() {
+  local prefix
+  prefix="$(git -C "$1" rev-parse --show-prefix 2>/dev/null)" || return 1
+  [[ -z "${prefix}" ]]
+}
+
 # ---------------------------------------------------------------------------
 # Subcommand: remove
 # ---------------------------------------------------------------------------
@@ -602,11 +614,21 @@ _cmd_remove() {
     echo "[OK] Worktree removed: ${path}"
   else
     err_tee "[ERROR] Failed to remove worktree: ${path}"
-    if [[ -d "${path}" ]]; then
+    if [[ ! -d "${path}" ]]; then
+      :
+    elif _cgw_is_own_worktree_root "${path}"; then
       err_tee "  git refuses while the worktree holds modified or untracked files. Left in it:"
       git -C "${path}" status --porcelain --untracked-files=all 2>/dev/null | sed 's/^/    /' | tee -a "${logfile}" >&2
       err_tee "  Commit, move or delete them by name (an untracked file is often a copy of the main"
       err_tee "  worktree's: compare with git diff --no-index), then retry. --force would discard them."
+    else
+      # git deleted the worktree's files and its registration, then could not
+      # remove the directory itself (on Windows usually a process holding it
+      # open). `git -C` here would resolve to an enclosing checkout and list
+      # ITS files, so report only what is true.
+      err_tee "  git already removed the worktree's files and registration, but could not delete the"
+      err_tee "  now-empty directory. Close any shell, editor or process that has it open, then delete"
+      err_tee "  the folder by hand (it holds nothing of value): ${path}"
     fi
     exit 1
   fi
