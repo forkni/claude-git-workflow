@@ -471,13 +471,22 @@ main() {
           log_section_end "PR CHECKS" "${logfile}" "1"
           exit 1
         fi
-        if [[ -n "${active_wf}" ]]; then
-          err_tee "[ERROR] No checks on ${head_sha:0:7}, but ${pr_repo} has active workflows ($(echo "${active_wf}" | paste -sd ',' -)) -- CI did not register for this head"
+        # Only a workflow that can run on a pull request counts: a tag-only, scheduled or
+        # push-only workflow never reports PR checks, so it does not make "no checks" suspect.
+        local pr_wf="" wf_name
+        while IFS= read -r wf_name; do
+          [[ -n "${wf_name}" ]] || continue
+          if cgw_workflow_may_run_on_pr "${pr_repo}" "${wf_name}" "${logfile}"; then
+            pr_wf+="${pr_wf:+,}${wf_name}"
+          fi
+        done <<<"${active_wf}"
+        if [[ -n "${pr_wf}" ]]; then
+          err_tee "[ERROR] No checks on ${head_sha:0:7}, but ${pr_repo} has workflows that run on pull requests (${pr_wf}) -- CI did not register for this head"
           err_tee "[ERROR] Check the Actions tab, re-run the workflows, then retry"
           log_section_end "PR CHECKS" "${logfile}" "1"
           exit 1
         fi
-        echo "[WARN] No checks on ${head_sha:0:7} after ${waited}s -- treating as no CI" | tee -a "${logfile}"
+        echo "[WARN] No checks on ${head_sha:0:7} after ${waited}s -- treating as no CI (no active workflow runs on pull requests)" | tee -a "${logfile}"
         checks_rc=0
         no_ci=1
       fi
