@@ -191,7 +191,7 @@ _cgw_guardrail_check_invocation() {
   # dequoted by now (`-C "/my repo"` becomes `-C /my<US>repo`, one token).
   if [[ ${padded} =~ git[[:space:]]+(-[^[:space:]]*[[:space:]]+(.*[[:space:]])?)?worktree[[:space:]]+remove[[:space:]] ]]; then
     _cgw_guardrail_verdict 'git worktree remove' \
-      'Use ./scripts/git/worktree_manage.sh remove --execute <path> instead — it unlinks CGW tooling first. A raw remove can follow a legacy junction and delete the main checkout'"'"'s scripts/git and .githooks.'
+      'Use ./scripts/git/worktree_manage.sh remove --execute --non-interactive <path> instead — it unlinks CGW tooling first. A raw remove can follow a legacy junction and delete the main checkout'"'"'s scripts/git and .githooks.'
     return 1
   fi
 

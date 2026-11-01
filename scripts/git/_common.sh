@@ -788,6 +788,74 @@ cgw_freeform_message_check() {
   return ${status}
 }
 
+# cgw_commit_message_mode <branch>
+#   Decides which commit-message policy applies to <branch> and records it in
+#   two globals (no output):
+#     CGW_MSG_MODE          "freeform" (branch answers to another project's
+#                           style, see cgw_branch_is_freeform) or
+#                           "conventional" (the default)
+#     CGW_MSG_GLOB_IGNORED  1 when CGW_FREEFORM_MESSAGE_BRANCHES matched but a
+#                           guarded branch refused the exemption, else 0.
+#                           Callers print their own "pattern ignored" notice.
+#   The mode is a property of the branch, so a gate that checks many commits
+#   (pre-push) calls this once per pushed ref.
+cgw_commit_message_mode() {
+  local branch="$1"
+  CGW_MSG_GLOB_IGNORED=0
+  if cgw_branch_is_freeform "${branch}"; then
+    CGW_MSG_MODE="freeform"
+    return 0
+  fi
+  CGW_MSG_MODE="conventional"
+  if cgw_branch_matches_freeform_glob "${branch}" && cgw_branch_is_guarded "${branch}"; then
+    CGW_MSG_GLOB_IGNORED=1
+  fi
+  return 0
+}
+
+# cgw_check_commit_message <msg>
+#   Verdict for <msg> under the mode last set by cgw_commit_message_mode.
+#   Returns:
+#     0  acceptable (conventional format, or a freeform message that passed
+#        CGW_FREEFORM_MESSAGE_CHECK)
+#     1  freeform branch and CGW_FREEFORM_MESSAGE_CHECK rejected it
+#     2  conventional branch and the message has no valid "type:" prefix
+#   Prints nothing itself (the delegated check's own output passes through).
+#   Each gate owns its wording and its response to 1 and 2: commit_enhanced.sh
+#   and undo_last.sh ask the user, pre-push blocks. Merge-commit skipping stays
+#   with the caller, which knows whether it is concluding a merge.
+cgw_check_commit_message() {
+  local msg="$1"
+  if [[ "${CGW_MSG_MODE:-conventional}" == "freeform" ]]; then
+    cgw_freeform_message_check "${msg}" || return 1
+    return 0
+  fi
+  cgw_validate_commit_message "${msg}" || return 2
+  return 0
+}
+
+# cgw_commit_subject_length <msg> <prefixed|whole>
+#   Prints the length the subject-length caps (CGW_COMMIT_SUBJECT_SOFT_LEN /
+#   CGW_COMMIT_SUBJECT_HARD_LEN) are measured against. Only the first line of
+#   <msg> counts: the full message holds a body and trailers, and measuring
+#   past the first newline would false-positive on any commit with a normal
+#   body.
+#     prefixed  the conventional grammar: drop everything up to the first
+#               colon plus one optional space ("type:subject" with no space
+#               is valid, so strip on the bare colon).
+#     whole     the whole subject line. For a freeform message or a merge
+#               conclusion, where a colon is part of the prose ("Merge X into
+#               Y") and there is no "type:" prefix to strip.
+cgw_commit_subject_length() {
+  local msg="$1" scope="$2"
+  local subject="${msg%%$'\n'*}"
+  if [[ "${scope}" == "prefixed" ]]; then
+    subject="${subject#*:}"
+    subject="${subject# }"
+  fi
+  printf '%s\n' "${#subject}"
+}
+
 # cgw_run_staged_checks
 #   Project-specific commit gates scoped by path. CGW_STAGED_CHECKS holds one
 #   entry per line: `<glob> [<glob>...] :: <command>`. An entry runs when any

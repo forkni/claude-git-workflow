@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Bug Fixes
+
+- **The subject hard cap now applies at all three commit-message gates**: `CGW_COMMIT_SUBJECT_HARD_LEN` (default 72, gated by `CGW_ENFORCE_SUBJECT_LENGTH`) was enforced only by `commit_enhanced.sh`, so `undo_last.sh amend-message` and a direct `git commit` could produce a subject that went out unchecked. `undo_last.sh amend-message` now asks (non-interactive: aborts, commit unchanged) and `hooks/pre-push` refuses to push a commit past the cap, with the fix command in the message. Freeform branches and merge commits stay exempt. With `CGW_ENFORCE_SUBJECT_LENGTH=0` both only warn. The measurement moved to `cgw_commit_subject_length` in `_common.sh`. **A branch that already holds a conventional commit with a subject over the cap now fails its next push** until the commit is reworded (`./scripts/git/undo_last.sh amend-message` for the last one, or `rebase_safe.sh`).
+- **`worktree_manage.sh remove` no longer lists the main checkout's untracked files as left in a removed worktree**: when `git worktree remove` deleted a worktree's files but could not delete the directory itself (on Windows, a process holding it open), the wrapper reported a failure and then ran `git -C <path> status` in the empty folder. For a worktree created inside the main checkout, git resolved that to the main checkout and printed its untracked files, which looked like blockers. The wrapper now checks `git worktree list --porcelain` first: when the worktree is no longer registered it prints `[OK] Worktree removed`, names the leftover empty folder for the user to delete, and exits 0. Files are listed only when the path is still a worktree root. Two tests added in `tests/integration/worktree.bats`.
+
+- **`undo_last.sh amend-message` refuses a non-conventional message when non-interactive**: it used to accept one silently, while `commit_enhanced.sh` aborted on the same message, so an agent could amend a commit into a message that `hooks/pre-push` then blocked. It now uses the same `abort` policy: exit 1 with the `non-interactive: ... requires confirmation` message, and the commit is left unchanged. An interactive "no" still prints `Cancelled` and exits 0. One test updated and one added in `tests/integration/undo_last.bats`.
+
+- **`worktree_manage.sh remove --execute` fails loudly with no terminal**: without `--non-interactive`, the confirmation prompt read EOF, printed `Cancelled` and exited 0, so an agent or script took a worktree that was still there for a removed one. With stdin not a terminal and `CGW_NON_INTERACTIVE` unset, it now exits 1 before prompting, names `--non-interactive` and prints the command to rerun. An interactive "no" still prints `Cancelled` and exits 0. The usage error, the post-failure retry hint, the usage examples, the Guardrail's `git worktree remove` deny message and `docs/usage.md` now show `--non-interactive`. Two tests in `tests/integration/worktree.bats`.
+
 ## v0.21.0 (2026-10-21)
 
 > Changes since `v0.20.0`

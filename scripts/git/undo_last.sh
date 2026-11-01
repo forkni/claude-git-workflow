@@ -366,22 +366,46 @@ _cmd_amend_message() {
   # Validate conventional format, unless this branch answers to another
   # project's commit-message style (CGW_FREEFORM_MESSAGE_BRANCHES). Run the
   # delegated gate instead when one is configured.
-  if cgw_branch_is_freeform "${current_branch}"; then
+  cgw_commit_message_mode "${current_branch}"
+  if [[ "${CGW_MSG_MODE}" == "freeform" ]]; then
     echo "  [i] ${current_branch} matches CGW_FREEFORM_MESSAGE_BRANCHES; conventional format not enforced"
-    if ! cgw_freeform_message_check "${new_msg}"; then
+  elif [[ ${CGW_MSG_GLOB_IGNORED} -eq 1 ]]; then
+    echo "  [i] ${current_branch} is a protected/source/target branch; CGW_FREEFORM_MESSAGE_BRANCHES ignored"
+  fi
+  local _msg_rc=0
+  cgw_check_commit_message "${new_msg}" || _msg_rc=$?
+  case ${_msg_rc} in
+    0) ;;
+    1)
       err "Commit message rejected by CGW_FREEFORM_MESSAGE_CHECK"
       exit 1
-    fi
-  else
-    if cgw_branch_matches_freeform_glob "${current_branch}" && cgw_branch_is_guarded "${current_branch}"; then
-      echo "  [i] ${current_branch} is a protected/source/target branch; CGW_FREEFORM_MESSAGE_BRANCHES ignored"
-    fi
-    if ! cgw_validate_commit_message "${new_msg}"; then
+      ;;
+    *)
       echo "  [!] Message does not follow conventional format: ${new_msg}"
       echo "  Expected: <type>: <description> (types: ${CGW_ALL_PREFIXES//|/, })"
-      if ! cgw_confirm "Continue anyway?" --non-interactive accept; then
+      if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
         echo "Cancelled"
         exit 0
+      fi
+      ;;
+  esac
+
+  # Subject hard cap, as in commit_enhanced.sh: conventional messages only
+  # (a freeform branch answers to the target project's style), and not a merge
+  # conclusion. A message already accepted as non-conventional has no prefix
+  # to measure from, so it is skipped too.
+  if [[ "${CGW_MSG_MODE}" == "conventional" && ${_msg_rc} -eq 0 ]] &&
+    ! git rev-parse --verify --quiet HEAD^2 >/dev/null 2>&1; then
+    local _summary_len
+    _summary_len=$(cgw_commit_subject_length "${new_msg}" prefixed)
+    if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_HARD_LEN} ]]; then
+      echo "  [!] Subject after prefix is ${_summary_len} chars, over the ${CGW_COMMIT_SUBJECT_HARD_LEN}-char hard cap (Pro Git recommends ~${CGW_COMMIT_SUBJECT_SOFT_LEN})"
+      echo "  Move detail into the commit body instead of a long summary line."
+      if [[ "${CGW_ENFORCE_SUBJECT_LENGTH}" == "1" ]]; then
+        if ! cgw_confirm "Amend with an oversized subject line anyway?" --non-interactive abort; then
+          echo "Cancelled"
+          exit 0
+        fi
       fi
     fi
   fi

@@ -285,7 +285,7 @@ CGW_UNTRACKED_CHECK="1"
 CGW_STRICT_UNTRACKED="0"
 
 # ============================================================================
-# COMMIT SUBJECT LENGTH (commit_enhanced.sh)
+# COMMIT SUBJECT LENGTH (commit_enhanced.sh, undo_last.sh amend-message, pre-push)
 # ============================================================================
 # Pro Git's "Commit Guidelines" recommend keeping the subject line (the part
 # after the "type:" prefix) to ~50 chars; git log --oneline and the GitHub UI
@@ -295,6 +295,9 @@ CGW_STRICT_UNTRACKED="0"
 # Between soft and hard length: non-blocking advisory tip.
 # Past CGW_COMMIT_SUBJECT_HARD_LEN: blocks the commit via a confirmation
 # prompt (non-interactive mode aborts) when CGW_ENFORCE_SUBJECT_LENGTH=1.
+# `undo_last.sh amend-message` applies the same cap, and the pre-push hook
+# refuses to push a commit past it. Freeform branches and merge commits are
+# exempt.
 #
 # Set CGW_ENFORCE_SUBJECT_LENGTH="0" to make the hard cap advisory-only too.
 CGW_COMMIT_SUBJECT_SOFT_LEN="50"

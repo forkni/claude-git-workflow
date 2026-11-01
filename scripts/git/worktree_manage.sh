@@ -500,6 +500,25 @@ _cmd_add() {
   fi
 }
 
+# _cgw_is_own_worktree_root <dir>
+#   0 when <dir> is itself the root of a git working tree. A directory that
+#   git has emptied (or never populated) sits inside an enclosing checkout
+#   when the worktree was created under it: `git -C <dir>` then answers for
+#   that checkout, with a non-empty --show-prefix. A directory outside any
+#   checkout makes rev-parse fail. Both mean "not a worktree root".
+_cgw_is_own_worktree_root() {
+  local prefix
+  prefix="$(git -C "$1" rev-parse --show-prefix 2>/dev/null)" || return 1
+  [[ -z "${prefix}" ]]
+}
+
+# _cgw_worktree_registered <toplevel>
+#   0 when `git worktree list` still has <toplevel> (git-format path, as
+#   rev-parse --show-toplevel printed it while the worktree existed).
+_cgw_worktree_registered() {
+  git worktree list --porcelain 2>/dev/null | grep -Fxq "worktree $1"
+}
+
 # ---------------------------------------------------------------------------
 # Subcommand: remove
 # ---------------------------------------------------------------------------
@@ -532,7 +551,7 @@ _cmd_remove() {
   done
 
   if [[ -z "${path}" ]]; then
-    echo "[ERROR] Usage: worktree_manage.sh remove [--execute] <path>" >&2
+    echo "[ERROR] Usage: worktree_manage.sh remove [--execute [--non-interactive]] <path>" >&2
     exit 1
   fi
 
@@ -548,6 +567,15 @@ _cmd_remove() {
     echo "Note: the worktree directory at '${path}' is deleted; its branch is preserved."
     echo "      (git refuses if it has uncommitted changes.)"
     exit 0
+  fi
+
+  # With no terminal to answer, the prompt below would read EOF and report
+  # "Cancelled" with exit 0, which a caller (an agent, a script) takes for a
+  # successful remove. Refuse loudly instead.
+  if [[ "${CGW_NON_INTERACTIVE:-0}" != "1" ]] && [[ ! -t 0 ]]; then
+    err_tee "[ERROR] worktree_manage.sh remove: needs confirmation and stdin is not a terminal; rerun with --non-interactive"
+    err_tee "  ./scripts/git/worktree_manage.sh remove --execute --non-interactive '${path}'"
+    exit 1
   fi
 
   if ! cgw_confirm "Remove worktree '${path}'?" --non-interactive accept; then
@@ -584,20 +612,46 @@ _cmd_remove() {
     err_tee "  git worktree remove's recursive delete could otherwise follow a stray junction"
     err_tee "  into the MAIN worktree's scripts/git or .githooks and delete it."
     err_tee "  Resolve manually (remove the offending link/directory), then retry:"
-    err_tee "    ./scripts/git/worktree_manage.sh remove --execute '${path}'"
+    err_tee "    ./scripts/git/worktree_manage.sh remove --execute --non-interactive '${path}'"
     exit 1
   fi
+
+  # The worktree root as git spells it, taken now while it still is one: after
+  # a partial removal the directory can no longer be asked, and `git worktree
+  # list` writes git-format paths that `cd && pwd` does not match on Windows.
+  local wt_toplevel
+  wt_toplevel="$(git -C "${abs_path}" rev-parse --show-toplevel 2>/dev/null)"
 
   if git worktree remove "${path}" 2>&1 | tee -a "${logfile}"; then
     echo ""
     echo "[OK] Worktree removed: ${path}"
+  elif [[ -n "${wt_toplevel}" ]] && ! _cgw_worktree_registered "${wt_toplevel}"; then
+    # git deleted the worktree's files and its registration, then failed on
+    # the directory itself (on Windows usually a process holding it open). The
+    # worktree IS removed, so this is success with a leftover to clean up.
+    # Reporting a failure here sent callers after files that were never in
+    # the worktree.
+    echo ""
+    echo "[OK] Worktree removed: ${path}"
+    if [[ -d "${path}" ]]; then
+      echo "  git could not delete the now-empty directory. Close any shell, editor or process that"
+      echo "  has it open, then delete the folder by hand (it holds nothing of value): ${path}"
+    fi
   else
     err_tee "[ERROR] Failed to remove worktree: ${path}"
-    if [[ -d "${path}" ]]; then
+    if [[ ! -d "${path}" ]]; then
+      :
+    elif _cgw_is_own_worktree_root "${path}"; then
       err_tee "  git refuses while the worktree holds modified or untracked files. Left in it:"
       git -C "${path}" status --porcelain --untracked-files=all 2>/dev/null | sed 's/^/    /' | tee -a "${logfile}" >&2
       err_tee "  Commit, move or delete them by name (an untracked file is often a copy of the main"
       err_tee "  worktree's: compare with git diff --no-index), then retry. --force would discard them."
+    else
+      # Still registered, but no longer a worktree root: `git -C` here would
+      # resolve to an enclosing checkout and list ITS files. Say only what is
+      # known.
+      err_tee "  The directory is no longer a git worktree root, so its contents are not listed."
+      err_tee "  Check: git worktree list, then git worktree prune --dry-run."
     fi
     exit 1
   fi
@@ -700,6 +754,7 @@ _show_help() {
   echo "  ./scripts/git/worktree_manage.sh link          # link the current worktree"
   echo "  ./scripts/git/worktree_manage.sh link ../hotfix"
   echo "  ./scripts/git/worktree_manage.sh remove --execute ../hotfix"
+  echo "  ./scripts/git/worktree_manage.sh remove --execute --non-interactive ../hotfix   # no terminal (agent, CI)"
   echo "  ./scripts/git/worktree_manage.sh prune --execute"
 }
 
