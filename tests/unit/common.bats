@@ -1242,6 +1242,34 @@ UU b.py
   cgw_check_commit_message "Correct typo"
 }
 
+# ── cgw_commit_subject_length() ───────────────────────────────────────────────
+
+@test "cgw_commit_subject_length: prefixed drops the type and one space" {
+  run cgw_commit_subject_length "fix: abcde" prefixed
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "5" ]
+}
+
+@test "cgw_commit_subject_length: prefixed handles a type with no space after the colon" {
+  run cgw_commit_subject_length "fix:abcde" prefixed
+  [ "${output}" = "5" ]
+}
+
+@test "cgw_commit_subject_length: prefixed measures the first line only" {
+  run cgw_commit_subject_length $'fix: abcde\n\nA long body line that must not count.' prefixed
+  [ "${output}" = "5" ]
+}
+
+@test "cgw_commit_subject_length: whole keeps the prefix and any colon in the prose" {
+  run cgw_commit_subject_length "Merge a: b into c" whole
+  [ "${output}" = "17" ]
+}
+
+@test "cgw_commit_subject_length: whole measures the first line only" {
+  run cgw_commit_subject_length $'abcde\nsecond line' whole
+  [ "${output}" = "5" ]
+}
+
 # ── cgw_resolve_lint_binary() ─────────────────────────────────────────────────
 
 @test "cgw_resolve_lint_binary: returns venv path when binary exists in PYTHON_BIN" {

@@ -690,26 +690,15 @@ _step_validate_message() {
   # advisory only (a tip, never a block) -- the target project's own style
   # sets the real limit, and CGW_FREEFORM_MESSAGE_CHECK is the place to
   # enforce it if desired.
-  # NOTE: measure the first line only -- commit_msg is the full multi-line
-  # message (subject + body + trailers); stripping "*: " against the whole
-  # string would swallow the body into the "summary" and false-positive on
-  # any commit with a normal-length body.
-  # NOTE: cgw_validate_commit_message only requires "type:" (colon, no
-  # mandatory space) -- strip on the bare colon, then trim one optional
-  # leading space, so "type:subject" (no space) isn't measured with the
-  # prefix still attached. On a freeform branch, or a merge conclusion, there
-  # is no "type:" prefix to strip -- a colon in freeform prose, or in "Merge
-  # X into Y", is part of the subject, so the whole subject line is measured
-  # instead.
-  local _subject_line="${commit_msg%%$'\n'*}"
-  local _summary_part
+  # NOTE: how the length is measured (first line only, prefix stripped or
+  # not) is owned by cgw_commit_subject_length in _common.sh. A freeform
+  # branch or a merge conclusion has no "type:" prefix, so it measures whole.
+  local _summary_scope="prefixed"
   if [[ ${_freeform} -eq 1 ]] || [[ ${_merge_conclusion} -eq 1 ]]; then
-    _summary_part="${_subject_line}"
-  else
-    _summary_part="${_subject_line#*:}"
-    _summary_part="${_summary_part# }"
+    _summary_scope="whole"
   fi
-  local _summary_len=${#_summary_part}
+  local _summary_len
+  _summary_len=$(cgw_commit_subject_length "${commit_msg}" "${_summary_scope}")
   if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_SOFT_LEN} ]]; then
     if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_HARD_LEN} ]] && [[ ${_freeform} -eq 0 ]] && [[ ${_merge_conclusion} -eq 0 ]]; then
       echo "[!] Subject after prefix is ${_summary_len} chars, over the ${CGW_COMMIT_SUBJECT_HARD_LEN}-char hard cap (Pro Git recommends ~${CGW_COMMIT_SUBJECT_SOFT_LEN})"
