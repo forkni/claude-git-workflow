@@ -4,6 +4,8 @@
 
 ### Bug Fixes
 
+- **`undo_last.sh amend-message` refuses a non-conventional message when non-interactive**: it used to accept one silently, while `commit_enhanced.sh` aborted on the same message, so an agent could amend a commit into a message that `hooks/pre-push` then blocked. It now uses the same `abort` policy: exit 1 with the `non-interactive: ... requires confirmation` message, and the commit is left unchanged. An interactive "no" still prints `Cancelled` and exits 0. One test updated and one added in `tests/integration/undo_last.bats`.
+
 - **`worktree_manage.sh remove --execute` fails loudly with no terminal**: without `--non-interactive`, the confirmation prompt read EOF, printed `Cancelled` and exited 0, so an agent or script took a worktree that was still there for a removed one. With stdin not a terminal and `CGW_NON_INTERACTIVE` unset, it now exits 1 before prompting, names `--non-interactive` and prints the command to rerun. An interactive "no" still prints `Cancelled` and exits 0. The usage error, the post-failure retry hint, the usage examples, the Guardrail's `git worktree remove` deny message and `docs/usage.md` now show `--non-interactive`. Two tests in `tests/integration/worktree.bats`.
 
 ## v0.21.0 (2026-10-21)

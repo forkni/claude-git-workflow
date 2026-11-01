@@ -383,7 +383,7 @@ _cmd_amend_message() {
     *)
       echo "  [!] Message does not follow conventional format: ${new_msg}"
       echo "  Expected: <type>: <description> (types: ${CGW_ALL_PREFIXES//|/, })"
-      if ! cgw_confirm "Continue anyway?" --non-interactive accept; then
+      if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
         echo "Cancelled"
         exit 0
       fi

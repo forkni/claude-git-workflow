@@ -200,10 +200,24 @@ teardown() {
   git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: original message"
 
   run run_script undo_last.sh amend-message "invalid_prefix: new message" --non-interactive
-  # Non-interactive with invalid prefix aborts confirmation (exit 0)
-  [ "${status}" -eq 0 ]
+  # Non-interactive with invalid prefix aborts the confirmation (exit 1)
+  [ "${status}" -eq 1 ]
   [[ "${output}" == *"feat, fix, docs, chore, test, refactor, style, perf"* ]]
   [[ "${output}" != *"fix|docs"* ]]
+}
+
+@test "amend-message: non-interactive refuses a non-conventional message and leaves the commit unchanged" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  echo "new" > "${TEST_REPO_DIR}/new.txt"
+  git -C "${TEST_REPO_DIR}" add new.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: original message"
+
+  run run_script undo_last.sh amend-message "no type prefix here" --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"non-interactive"* ]]
+  [[ "${output}" == *"aborting"* ]]
+
+  [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" = "feat: original message" ]
 }
 
 @test "amend-message: hard refuses when local-only file is staged in index (C1)" {

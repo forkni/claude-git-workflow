@@ -13,7 +13,7 @@ Enforcement of the `type(scope)!: subject` grammar lives in one predicate,
 | Site | Behaviour on a non-conventional message |
 |---|---|
 | `scripts/git/commit_enhanced.sh:692` | `cgw_confirm "Continue anyway?" --non-interactive abort`: non-interactive runs exit, interactive runs prompt |
-| `scripts/git/undo_last.sh:351` (amend-message) | `cgw_confirm ... --non-interactive accept`: passes non-interactively |
+| `scripts/git/undo_last.sh:351` (amend-message) | `cgw_confirm ... --non-interactive accept`: passed non-interactively when this was written; it now uses `abort`, like `commit_enhanced.sh` |
 | `hooks/pre-push` check [2] | hard `exit 1`, suggests `git push --no-verify` |
 
 The only bypasses are `--no-verify` and `SKIP_CGW_GUARDRAIL=1`, and the Claude Code
