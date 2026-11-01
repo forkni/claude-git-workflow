@@ -117,7 +117,7 @@ EOF
   [ -f "${PROJ_DIR}/.githooks/pre-push.bak" ]
   grep -qF "CUSTOM UNIQUE CONTENT" "${PROJ_DIR}/.githooks/pre-push.bak"
   # Target must have been updated to upstream template
-  grep -qF "cgw_validate_commit_message" "${PROJ_DIR}/.githooks/pre-push"
+  grep -qF "cgw_check_commit_message" "${PROJ_DIR}/.githooks/pre-push"
 }
 
 @test "hooks/pre-push natively executes scripts/test/run_tests.sh when present" {
