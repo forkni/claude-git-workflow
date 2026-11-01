@@ -193,7 +193,29 @@ if [[ -n "${PUSH_INPUT}" ]]; then
         _MSG_RC=0
         cgw_check_commit_message "${MSG}" || _MSG_RC=$?
         case "${_MSG_RC}" in
-          0) ;;
+          0)
+            # Subject hard cap, same measure as commit_enhanced.sh. Conventional
+            # messages only: a freeform branch answers to the target project's
+            # style. Advisory when CGW_ENFORCE_SUBJECT_LENGTH is not 1.
+            if [[ "${CGW_MSG_MODE}" == "conventional" ]]; then
+              _SUBJ_LEN=$(cgw_commit_subject_length "${MSG}" prefixed)
+              if [[ "${_SUBJ_LEN}" -gt "${CGW_COMMIT_SUBJECT_HARD_LEN:-72}" ]]; then
+                if [[ "${CGW_ENFORCE_SUBJECT_LENGTH:-1}" == "1" ]]; then
+                  {
+                    echo ""
+                    echo "ERROR [pre-push]: Commit ${COMMIT} subject after prefix is ${_SUBJ_LEN} chars, over the ${CGW_COMMIT_SUBJECT_HARD_LEN:-72}-char hard cap:"
+                    echo "  ${MSG}"
+                    echo ""
+                    echo "Fix with: ./scripts/git/undo_last.sh amend-message '<type>: <shorter subject>'"
+                    echo "Or set CGW_ENFORCE_SUBJECT_LENGTH=0 in .cgw.conf to make the cap advisory."
+                    echo ""
+                  } >&2
+                  exit 1
+                fi
+                echo "pre-push: [!] ${COMMIT} subject after prefix is ${_SUBJ_LEN} chars (hard cap ${CGW_COMMIT_SUBJECT_HARD_LEN:-72}, not enforced)"
+              fi
+            fi
+            ;;
           1)
             {
               echo ""

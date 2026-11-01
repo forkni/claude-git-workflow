@@ -220,6 +220,55 @@ teardown() {
   [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" = "feat: original message" ]
 }
 
+# ── amend-message subject hard cap ────────────────────────────────────────────
+
+_commit_for_amend() {
+  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  echo "new" > "${TEST_REPO_DIR}/new.txt"
+  git -C "${TEST_REPO_DIR}" add new.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: original message"
+}
+
+@test "amend-message: non-interactive refuses a subject over the hard cap and leaves the commit unchanged" {
+  _commit_for_amend
+
+  run run_script undo_last.sh amend-message "fix: $(printf 'a%.0s' $(seq 1 73))" --non-interactive
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"hard cap"* ]]
+  [[ "${output}" == *"73 chars"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" = "feat: original message" ]
+}
+
+@test "amend-message: a subject exactly at the hard cap is accepted" {
+  _commit_for_amend
+
+  run run_script undo_last.sh amend-message "fix: $(printf 'a%.0s' $(seq 1 72))" --non-interactive
+  [ "${status}" -eq 0 ]
+  [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" = "fix: $(printf 'a%.0s' $(seq 1 72))" ]
+}
+
+@test "amend-message: CGW_ENFORCE_SUBJECT_LENGTH=0 warns about an oversized subject but amends" {
+  _commit_for_amend
+
+  export CGW_ENFORCE_SUBJECT_LENGTH=0
+  run run_script undo_last.sh amend-message "fix: $(printf 'a%.0s' $(seq 1 80))" --non-interactive
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"hard cap"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" = "fix: $(printf 'a%.0s' $(seq 1 80))" ]
+}
+
+@test "amend-message: the subject cap does not apply on a freeform branch" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b up/x
+  echo "new" > "${TEST_REPO_DIR}/new.txt"
+  git -C "${TEST_REPO_DIR}" add new.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: original message"
+
+  export CGW_FREEFORM_MESSAGE_BRANCHES='up/*'
+  run run_script undo_last.sh amend-message "Present $(printf 'a%.0s' $(seq 1 90))" --non-interactive
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"hard cap"* ]]
+}
+
 @test "amend-message: hard refuses when local-only file is staged in index (C1)" {
   git -C "${TEST_REPO_DIR}" checkout --quiet development
   echo "new" > "${TEST_REPO_DIR}/new.txt"

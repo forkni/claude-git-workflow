@@ -82,6 +82,61 @@ _bypass_commit() {
   [[ "${output}" == *"non-conventional"* ]] || [[ "${output}" == *"format"* ]]
 }
 
+# ── subject hard cap (CGW_COMMIT_SUBJECT_HARD_LEN / CGW_ENFORCE_SUBJECT_LENGTH) ─
+
+# _long_word N: N copies of "a" (the subject text after the "feat: " prefix).
+_long_word() {
+  printf 'a%.0s' $(seq 1 "$1")
+}
+
+@test "pre-push blocks a conventional subject over the hard cap" {
+  echo "feature" > "${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  _bypass_commit "feat: $(_long_word 73)"
+
+  run git -C "${TEST_REPO_DIR}" push origin development
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"hard cap"* ]]
+  [[ "${output}" == *"73 chars"* ]]
+}
+
+@test "pre-push allows a conventional subject exactly at the hard cap" {
+  echo "feature" > "${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  _bypass_commit "feat: $(_long_word 72)"
+
+  run git -C "${TEST_REPO_DIR}" push origin development
+  [ "${status}" -eq 0 ]
+}
+
+@test "pre-push with CGW_ENFORCE_SUBJECT_LENGTH=0 warns about an oversized subject but pushes" {
+  echo 'CGW_ENFORCE_SUBJECT_LENGTH="0"' > "${TEST_REPO_DIR}/.cgw.conf"
+  git -C "${TEST_REPO_DIR}" add .cgw.conf
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: advisory subject cap"
+  echo "feature" > "${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  _bypass_commit "feat: $(_long_word 80)"
+
+  run git -C "${TEST_REPO_DIR}" push origin development
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"not enforced"* ]]
+}
+
+@test "pre-push does not apply the subject cap on a freeform branch" {
+  echo 'CGW_FREEFORM_MESSAGE_BRANCHES="up/*"' > "${TEST_REPO_DIR}/.cgw.conf"
+  git -C "${TEST_REPO_DIR}" add .cgw.conf
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: configure freeform branches"
+  git -C "${TEST_REPO_DIR}" push --quiet origin development
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b up/x
+  echo "feature" > "${TEST_REPO_DIR}/feature.txt"
+  git -C "${TEST_REPO_DIR}" add feature.txt
+  _bypass_commit "Present $(_long_word 90)"
+
+  run git -C "${TEST_REPO_DIR}" push origin up/x
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"hard cap"* ]]
+}
+
 @test "pre-push allows pushing a commit that only deletes a tracked local-only file (bug #7 regression)" {
   # Reproduce: user adds file to CGW_LOCAL_FILES, git rm --cached, commits via core.hooksPath=/dev/null,
   # then pushes. pre-push was using git diff-tree --name-only with no --diff-filter, so it saw the

@@ -390,6 +390,26 @@ _cmd_amend_message() {
       ;;
   esac
 
+  # Subject hard cap, as in commit_enhanced.sh: conventional messages only
+  # (a freeform branch answers to the target project's style), and not a merge
+  # conclusion. A message already accepted as non-conventional has no prefix
+  # to measure from, so it is skipped too.
+  if [[ "${CGW_MSG_MODE}" == "conventional" && ${_msg_rc} -eq 0 ]] &&
+    ! git rev-parse --verify --quiet HEAD^2 >/dev/null 2>&1; then
+    local _summary_len
+    _summary_len=$(cgw_commit_subject_length "${new_msg}" prefixed)
+    if [[ ${_summary_len} -gt ${CGW_COMMIT_SUBJECT_HARD_LEN} ]]; then
+      echo "  [!] Subject after prefix is ${_summary_len} chars, over the ${CGW_COMMIT_SUBJECT_HARD_LEN}-char hard cap (Pro Git recommends ~${CGW_COMMIT_SUBJECT_SOFT_LEN})"
+      echo "  Move detail into the commit body instead of a long summary line."
+      if [[ "${CGW_ENFORCE_SUBJECT_LENGTH}" == "1" ]]; then
+        if ! cgw_confirm "Amend with an oversized subject line anyway?" --non-interactive abort; then
+          echo "Cancelled"
+          exit 0
+        fi
+      fi
+    fi
+  fi
+
   # Guard against accidentally bundling staged changes into the amended commit (C1)
   local -a staged_local_files=()
   local _clf
