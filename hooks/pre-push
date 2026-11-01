@@ -207,7 +207,7 @@ if [[ -n "${PUSH_INPUT}" ]]; then
                     echo "  ${MSG}"
                     echo ""
                     echo "Fix with: ./scripts/git/undo_last.sh amend-message '<type>: <shorter subject>'"
-                    echo "If it is not the latest commit: ./scripts/git/rebase_safe.sh --squash-last <N> (mark it reword)"
+                    echo "If it is not the latest commit: ./scripts/git/rebase_safe.sh --squash-last <N> (interactive; opens an editor, mark it reword)"
                     echo "Or set CGW_ENFORCE_SUBJECT_LENGTH=0 in .cgw.conf to make the cap advisory."
                     echo ""
                   } >&2
@@ -234,7 +234,7 @@ if [[ -n "${PUSH_INPUT}" ]]; then
             echo "Types: ${CGW_ALL_PREFIXES}"
             echo ""
             echo "Push blocked. Fix with: ./scripts/git/undo_last.sh amend-message '<type>: <msg>'"
-            echo "If it is not the latest commit: ./scripts/git/rebase_safe.sh --squash-last <N> (mark it reword)"
+            echo "If it is not the latest commit: ./scripts/git/rebase_safe.sh --squash-last <N> (interactive; opens an editor, mark it reword)"
             echo "Or bypass (not recommended): git push --no-verify"
             echo ""
             exit 1
