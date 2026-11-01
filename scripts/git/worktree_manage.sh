@@ -512,6 +512,13 @@ _cgw_is_own_worktree_root() {
   [[ -z "${prefix}" ]]
 }
 
+# _cgw_worktree_registered <toplevel>
+#   0 when `git worktree list` still has <toplevel> (git-format path, as
+#   rev-parse --show-toplevel printed it while the worktree existed).
+_cgw_worktree_registered() {
+  git worktree list --porcelain 2>/dev/null | grep -Fxq "worktree $1"
+}
+
 # ---------------------------------------------------------------------------
 # Subcommand: remove
 # ---------------------------------------------------------------------------
@@ -609,9 +616,27 @@ _cmd_remove() {
     exit 1
   fi
 
+  # The worktree root as git spells it, taken now while it still is one: after
+  # a partial removal the directory can no longer be asked, and `git worktree
+  # list` writes git-format paths that `cd && pwd` does not match on Windows.
+  local wt_toplevel
+  wt_toplevel="$(git -C "${abs_path}" rev-parse --show-toplevel 2>/dev/null)"
+
   if git worktree remove "${path}" 2>&1 | tee -a "${logfile}"; then
     echo ""
     echo "[OK] Worktree removed: ${path}"
+  elif [[ -n "${wt_toplevel}" ]] && ! _cgw_worktree_registered "${wt_toplevel}"; then
+    # git deleted the worktree's files and its registration, then failed on
+    # the directory itself (on Windows usually a process holding it open). The
+    # worktree IS removed, so this is success with a leftover to clean up.
+    # Reporting a failure here sent callers after files that were never in
+    # the worktree.
+    echo ""
+    echo "[OK] Worktree removed: ${path}"
+    if [[ -d "${path}" ]]; then
+      echo "  git could not delete the now-empty directory. Close any shell, editor or process that"
+      echo "  has it open, then delete the folder by hand (it holds nothing of value): ${path}"
+    fi
   else
     err_tee "[ERROR] Failed to remove worktree: ${path}"
     if [[ ! -d "${path}" ]]; then
@@ -622,13 +647,11 @@ _cmd_remove() {
       err_tee "  Commit, move or delete them by name (an untracked file is often a copy of the main"
       err_tee "  worktree's: compare with git diff --no-index), then retry. --force would discard them."
     else
-      # git deleted the worktree's files and its registration, then could not
-      # remove the directory itself (on Windows usually a process holding it
-      # open). `git -C` here would resolve to an enclosing checkout and list
-      # ITS files, so report only what is true.
-      err_tee "  git already removed the worktree's files and registration, but could not delete the"
-      err_tee "  now-empty directory. Close any shell, editor or process that has it open, then delete"
-      err_tee "  the folder by hand (it holds nothing of value): ${path}"
+      # Still registered, but no longer a worktree root: `git -C` here would
+      # resolve to an enclosing checkout and list ITS files. Say only what is
+      # known.
+      err_tee "  The directory is no longer a git worktree root, so its contents are not listed."
+      err_tee "  Check: git worktree list, then git worktree prune --dry-run."
     fi
     exit 1
   fi

@@ -253,7 +253,7 @@ _install_git_leaving_empty_dir() {
   chmod +x "${MOCK_BIN_DIR}/git"
 }
 
-@test "remove: git fails but leaves an empty directory -> no files of the main checkout are reported" {
+@test "remove: git removes the worktree but fails on the directory -> [OK], exit 0, no files of the main checkout reported" {
   load '../helpers/mocks'
   echo "belongs to the main checkout" >"${TEST_REPO_DIR}/stray-main-file.txt"
   # The worktree lives INSIDE the main checkout (e.g. .claude/worktrees/x), so
@@ -264,11 +264,18 @@ _install_git_leaving_empty_dir() {
   _install_git_leaving_empty_dir
 
   run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove --execute --non-interactive "${nested}" </dev/null
-  [ "${status}" -eq 1 ]
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"[OK] Worktree removed"* ]]
+  [[ "${output}" != *"[ERROR]"* ]]
   [[ "${output}" != *"stray-main-file.txt"* ]]
   [[ "${output}" != *"Left in it"* ]]
-  [[ "${output}" == *"could not delete the"* ]]
+  # The leftover empty directory is named so the caller can delete it.
+  [[ "${output}" == *"could not delete the now-empty directory"* ]]
   [[ "${output}" == *"${nested}"* ]]
+  # git no longer lists it as a worktree.
+  local listed
+  listed="$(git -C "${TEST_REPO_DIR}" worktree list --porcelain)"
+  [[ "${listed}" != *"nested-wt"* ]]
 }
 
 @test "remove: git refuses over an untracked file -> that file, and only that file, is listed" {
