@@ -165,47 +165,57 @@ if [[ -n "${PUSH_INPUT}" ]]; then
     # ── [2] Conventional commit format check ──────────────────────────────
     # _BRANCH was already derived above (refs/heads/* destinations only) so
     # the tag-fallback bug can't reappear here.
-    if cgw_branch_is_freeform "${_BRANCH}"; then
+    # The mode is a property of the pushed branch, so decide it once per ref and
+    # let cgw_check_commit_message give the verdict for each commit.
+    cgw_commit_message_mode "${_BRANCH}"
+    _CHECK_MSGS=1
+    if [[ "${CGW_MSG_MODE}" == "freeform" ]]; then
       echo "pre-push: ${_BRANCH} matches CGW_FREEFORM_MESSAGE_BRANCHES, commit-format check skipped"
+    elif [[ -z "${CGW_ALL_PREFIXES}" ]]; then
+      _CHECK_MSGS=0
+    elif [[ "${CGW_MSG_GLOB_IGNORED}" -eq 1 ]]; then
+      echo "pre-push: ${_BRANCH} is a protected/source/target branch; CGW_FREEFORM_MESSAGE_BRANCHES ignored"
+    fi
+    if [[ "${_CHECK_MSGS}" -eq 1 ]]; then
       for COMMIT in ${COMMITS}; do
         # Skip merge commits (they often have non-conventional messages)
         PARENT_COUNT=$(git cat-file -p "${COMMIT}" 2>/dev/null | grep -c "^parent " || true)
         [[ "${PARENT_COUNT}" -ge 2 ]] && continue
 
-        MSG_FULL=$(git log -1 --format="%B" "${COMMIT}" 2>/dev/null || true)
-        if ! cgw_freeform_message_check "${MSG_FULL}"; then
-          {
-            echo ""
-            echo "ERROR [pre-push]: Commit ${COMMIT} rejected by CGW_FREEFORM_MESSAGE_CHECK"
-            echo ""
-          } >&2
-          exit 1
+        # A freeform message goes whole to the delegated check; the
+        # conventional grammar is checked on the subject line only.
+        if [[ "${CGW_MSG_MODE}" == "freeform" ]]; then
+          MSG=$(git log -1 --format="%B" "${COMMIT}" 2>/dev/null || true)
+        else
+          MSG=$(git log -1 --format="%s" "${COMMIT}" 2>/dev/null || true)
         fi
-      done
-    elif [[ -n "${CGW_ALL_PREFIXES}" ]]; then
-      if cgw_branch_matches_freeform_glob "${_BRANCH}" && cgw_branch_is_guarded "${_BRANCH}"; then
-        echo "pre-push: ${_BRANCH} is a protected/source/target branch; CGW_FREEFORM_MESSAGE_BRANCHES ignored"
-      fi
-      for COMMIT in ${COMMITS}; do
-        MSG=$(git log -1 --format="%s" "${COMMIT}" 2>/dev/null || true)
 
-        # Skip merge commits (they often have non-conventional messages)
-        PARENT_COUNT=$(git cat-file -p "${COMMIT}" 2>/dev/null | grep -c "^parent " || true)
-        [[ "${PARENT_COUNT}" -ge 2 ]] && continue
-
-        if ! cgw_validate_commit_message "${MSG}"; then
-          echo ""
-          echo "WARNING [pre-push]: Commit ${COMMIT} has non-conventional message:"
-          echo "  ${MSG}"
-          echo ""
-          echo "Expected format: <type>: <description>"
-          echo "Types: ${CGW_ALL_PREFIXES}"
-          echo ""
-          echo "Push blocked. Fix with: ./scripts/git/undo_last.sh amend-message '<type>: <msg>'"
-          echo "Or bypass (not recommended): git push --no-verify"
-          echo ""
-          exit 1
-        fi
+        _MSG_RC=0
+        cgw_check_commit_message "${MSG}" || _MSG_RC=$?
+        case "${_MSG_RC}" in
+          0) ;;
+          1)
+            {
+              echo ""
+              echo "ERROR [pre-push]: Commit ${COMMIT} rejected by CGW_FREEFORM_MESSAGE_CHECK"
+              echo ""
+            } >&2
+            exit 1
+            ;;
+          *)
+            echo ""
+            echo "WARNING [pre-push]: Commit ${COMMIT} has non-conventional message:"
+            echo "  ${MSG}"
+            echo ""
+            echo "Expected format: <type>: <description>"
+            echo "Types: ${CGW_ALL_PREFIXES}"
+            echo ""
+            echo "Push blocked. Fix with: ./scripts/git/undo_last.sh amend-message '<type>: <msg>'"
+            echo "Or bypass (not recommended): git push --no-verify"
+            echo ""
+            exit 1
+            ;;
+        esac
       done
     fi
   done <<<"${PUSH_INPUT}"

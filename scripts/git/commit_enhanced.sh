@@ -655,25 +655,31 @@ _step_validate_message() {
   local _freeform=0
   if [[ ${_merge_conclusion} -eq 1 ]]; then
     : # exempted above; skip both the freeform and conventional-format checks
-  elif cgw_branch_is_freeform "${current_branch}"; then
-    _freeform=1
-    echo "  [i] ${current_branch} matches CGW_FREEFORM_MESSAGE_BRANCHES; conventional format not enforced"
-    if ! cgw_freeform_message_check "${commit_msg}"; then
-      err "Commit message rejected by CGW_FREEFORM_MESSAGE_CHECK"
-      return 1
-    fi
   else
-    if cgw_branch_matches_freeform_glob "${current_branch}" && cgw_branch_is_guarded "${current_branch}"; then
+    cgw_commit_message_mode "${current_branch}"
+    if [[ "${CGW_MSG_MODE}" == "freeform" ]]; then
+      _freeform=1
+      echo "  [i] ${current_branch} matches CGW_FREEFORM_MESSAGE_BRANCHES; conventional format not enforced"
+    elif [[ ${CGW_MSG_GLOB_IGNORED} -eq 1 ]]; then
       echo "  [i] ${current_branch} is a protected/source/target branch; CGW_FREEFORM_MESSAGE_BRANCHES ignored"
     fi
-    if ! cgw_validate_commit_message "${commit_msg}"; then
-      echo "[!] WARNING: Message doesn't follow conventional format"
-      echo "  Configured types: ${CGW_ALL_PREFIXES//|/, }"
-      if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
-        echo "Commit cancelled"
-        return 2
-      fi
-    fi
+    local _msg_rc=0
+    cgw_check_commit_message "${commit_msg}" || _msg_rc=$?
+    case ${_msg_rc} in
+      0) ;;
+      1)
+        err "Commit message rejected by CGW_FREEFORM_MESSAGE_CHECK"
+        return 1
+        ;;
+      *)
+        echo "[!] WARNING: Message doesn't follow conventional format"
+        echo "  Configured types: ${CGW_ALL_PREFIXES//|/, }"
+        if ! cgw_confirm "Continue anyway?" --non-interactive abort; then
+          echo "Commit cancelled"
+          return 2
+        fi
+        ;;
+    esac
   fi
 
   # Commit subject length (Pro Git §"Commit Guidelines" recommends ~50 chars

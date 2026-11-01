@@ -102,7 +102,12 @@ The assumption that a path is meant to be staged in full, not by hunk — true o
 
 The conventional-commit grammar enforced on every `commit_enhanced.sh` invocation and every commit in the pre-push hook range, with two exemptions: commits on a [[freeform-message branch]] (and even there, never on the source, target, or a protected branch), and merge-conclusion commits — with `MERGE_HEAD` set, `commit_enhanced.sh` uses git's prepared merge message (or an explicit override) verbatim, since a merge subject describes *what was merged* and has no change type; `hooks/pre-push` exempts merge commits by parent count for the same reason. Format: `<type>: <description>` where `<type>` is drawn from the built-in set (`feat|fix|docs|chore|test|refactor|style|perf`) plus any `CGW_EXTRA_PREFIXES` configured in `.cgw.conf`.
 
-**Implementation seam**: `cgw_validate_commit_message <msg>` in `scripts/git/_common.sh`. Pure predicate — returns 0 on match, 1 otherwise. No output: each caller owns its own user-facing message and merge-commit skipping logic. Skipped on [[freeform-message branch|#freeform-message-branch]]es — see below.
+**Implementation seam**: the gates call two functions in `scripts/git/_common.sh`, which together are the commit-message policy:
+
+- `cgw_commit_message_mode <branch>` decides which policy applies and sets `CGW_MSG_MODE` (`freeform` or `conventional`) and `CGW_MSG_GLOB_IGNORED` (`1` when a freeform glob matched but a guarded branch refused it). No output.
+- `cgw_check_commit_message <msg>` gives the **verdict** under that mode: `0` acceptable, `1` the delegated `CGW_FREEFORM_MESSAGE_CHECK` rejected it, `2` the conventional grammar is not met. No output of its own.
+
+Both build on `cgw_validate_commit_message <msg>`, the pure grammar predicate (returns 0 on match, 1 otherwise). Each gate owns its wording and its response to a verdict, and the merge-commit skip (`commit_enhanced.sh` by `MERGE_HEAD`, `hooks/pre-push` by parent count). Skipped on [[freeform-message branch|#freeform-message-branch]]es — see below.
 
 **Callers**: `commit_enhanced.sh` (step [5]), `undo_last.sh` (amend-message path), `hooks/pre-push` (all commits in push range).
 
@@ -139,10 +144,10 @@ guard) and `cgw_branch_is_guarded <branch>` (exact match against `CGW_SOURCE_BRA
 directly. `cgw_freeform_message_check <msg>` runs the optional delegated check. Settings in
 `scripts/git/_config.sh`.
 
-**Callers**: same call sites as [[commit-message format]] above — each checks
-`cgw_branch_is_freeform` first and branches to `cgw_freeform_message_check` instead of
-`cgw_validate_commit_message` when it matches (falling through to the guard notice above when
-the glob matched but the branch is guarded). `hooks/pre-push` derives
+**Callers**: same call sites as [[commit-message format]] above — each calls
+`cgw_commit_message_mode` first, then `cgw_check_commit_message`, which runs
+`cgw_freeform_message_check` instead of `cgw_validate_commit_message` in `freeform` mode (the
+caller prints the guard notice above when `CGW_MSG_GLOB_IGNORED` is `1`). `hooks/pre-push` derives
 the branch from the remote ref alone (`refs/heads/*` only) — a tag or other non-branch push
 target is never exempt, since falling back to the local ref would let a branch's exemption leak
 onto an unrelated tag push. The hook also narrows its "already pushed ⇒ already vetted"
