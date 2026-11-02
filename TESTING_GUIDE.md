@@ -270,7 +270,7 @@ flowchart LR
   - `commit_enhanced_staged_guard.bats`: 20 tests (staged-blob guard [3.5], partial staging).
   - `commit_enhanced_gates.bats`: 27 tests (lint and markdown gate scoping, subject length, freeform branches).
   - `commit_enhanced_modes.bats`: 36 tests (merge conclusion, interactive prompts, `index.lock`, `--only` reset, untracked warnings).
-  - All four files are in `CGW_SLOW_FILES`, so the batch split is unchanged.
+  - All four files were put in `CGW_SLOW_FILES` here, so the batch split was unchanged. Phase 10 replaced that list.
 - **Outcome**: 109 tests before and after, all passing. The four files run in parallel in 116 s (88, 88, 94 and 116 s each, with only these four running).
 
 #### Phase 9 Before/After Table
@@ -281,3 +281,22 @@ flowchart LR
 | Longest single file | 960 s under load (about 8.8 s per test) | **about 320 s under load (estimate from test count)** | Floor lowered |
 | Wall time of the four files, run alone | one file, serial | **116 s** | Measured |
 | Slow-list entries | 11 | **14** | Same set of tests |
+
+### Phase 10: Retune the Slow List from CI Timings — [COMPLETED]
+
+- **Objective**: PR #86 showed that the Phase 8 list (built from a local Windows run) did not balance the CI legs. Fast took 5m05s and slow took 3m14s, and both were slower than before.
+- **Measurement**: A throwaway draft PR (#87, closed unmerged) ran `CGW_TEST_TIMINGS=1 tests/run.sh --all` on both CI legs (`ubuntu-latest`, 4 jobs). The two legs agree within 1% (763 and 771 file-seconds).
+- **Finding 1**: Local and CI rank the files very differently. On CI the whole suite is 767 file-seconds, against 12896 locally. Only two files matter: `dogfood.bats` (171 s) and `common.bats` (113 s). The next file takes 31 s.
+- **Finding 2**: `dogfood.bats` has 8 tests and takes 13 s locally. In a CI checkout there is no upstream, so its `run_tests.sh` test checks the whole tree (~170 s). The `Shell Script Quality` job already runs the same ShellCheck passes. The test is not changed here; whether to skip it on CI is a separate decision.
+- **Implementation**: `CGW_SLOW_FILES` is now 6 files: `dogfood`, `common`, `merge_pr`, `configure`, `cc_guardrail`, `repo_state`. They hold 386 of 767 CI file-seconds, so the two legs should be about equal.
+- **Cost**: Local fast runs get heavier. The four `commit_enhanced*` files, `merge_validation`, `create_pr`, `push_validated`, `cherry_pick` and `hook_preservation` move back to the fast batch. Their local file time under load is about 9742 s, against 9167 s before Phase 8. The old 7-file list had 3729 s in the slow batch.
+
+#### Phase 10 Before/After Table
+
+| Metric | Before Phase 10 (Phase 8 list) | After Phase 10 | Status |
+|--------|--------------------------------|----------------|--------|
+| Slow-list entries | 14 files | **6 files** | Retuned |
+| Slow list share of CI file time | 326 of 767 s (43%) | **386 of 767 s (50%)** | Balanced |
+| Slow batch tests (`@test` count) | 789 | **541** | Retuned |
+| Fast batch tests (`@test` count) | 728 | **976** | Retuned |
+| CI leg times (fast / slow) | 5m05s / 3m14s | See PR #86 CI after this commit | To verify |

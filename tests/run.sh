@@ -60,25 +60,20 @@ jobs="${CGW_TEST_JOBS:-$((_cores / 2))}"
 # parallelization to avoid a bats --jobs index.lock race, so its ~126 tests
 # run serially and become the parallel wall-clock floor). Skipped on a default
 # full-suite run unless CI is set or CGW_RUN_SLOW=1; always run on CI.
-# Measured wall time per file under parallel load (CGW_TEST_TIMINGS=1): the 11 heaviest files,
-# about half the suite's total file time (2026-11-01 run: 6491 of 12896 file-seconds).
-# commit_enhanced is one of the 11; it is now four files (commit_enhanced*.bats).
-# Retune from a fresh timing run when files grow.
+# Tuned for CI, where the two batches run as parallel matrix legs, so the aim is two equal
+# legs. Measured per-file time on the ubuntu-latest runner (CGW_TEST_TIMINGS=1, 4 jobs,
+# mean of two legs, 2026-11-01): the 6 files below hold about half of the 767 file-seconds
+# (386). dogfood.bats leads because, with no upstream in a CI checkout, run_tests.sh checks
+# the whole tree there (~170 s; locally it is 13 s). Local file times rank differently
+# (Windows: commit_enhanced*, merge_validation, create_pr, push_validated are heavy).
+# Retune from a CI timing run, not a local one, when files grow.
 CGW_SLOW_FILES=(
+  "tests/integration/dogfood.bats"
   "tests/unit/common.bats"
-  "tests/integration/commit_enhanced.bats"
-  "tests/integration/commit_enhanced_staged_guard.bats"
-  "tests/integration/commit_enhanced_gates.bats"
-  "tests/integration/commit_enhanced_modes.bats"
-  "tests/integration/configure.bats"
   "tests/integration/merge_pr.bats"
+  "tests/integration/configure.bats"
   "tests/integration/cc_guardrail.bats"
-  "tests/integration/merge_validation.bats"
-  "tests/integration/create_pr.bats"
-  "tests/integration/push_validated.bats"
-  "tests/integration/cherry_pick.bats"
   "tests/integration/repo_state.bats"
-  "tests/integration/hook_preservation.bats"
 )
 
 # Batch selection: --slow = only the slow files, --all = everything, default = fast batch.
