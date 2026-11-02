@@ -260,4 +260,24 @@ flowchart LR
 | Slow-list share of file time | 29% (7 files) | **50% (11 files)** | Re-balanced |
 | Slow batch tests (`@test` count) | 501 | **789** | Retuned |
 | Fast batch tests (`@test` count) | 706 | **728** | Retuned |
-| Floor file (`commit_enhanced.bats`) | 960 s | 960 s | Split planned (next phase) |
+| Floor file (`commit_enhanced.bats`) | 960 s | 960 s | Split in Phase 9 |
+
+### Phase 9: Split the `commit_enhanced.bats` Wall-Clock Floor — [COMPLETED]
+
+- **Objective**: `tests/run.sh` runs one process per file, so the biggest file sets the wall-clock floor of a batch. `commit_enhanced.bats` (109 tests, 960 s under load) was that floor.
+- **Implementation**: Cut the file at its section boundaries into four files. Each has the same `setup`, `teardown` and `_run_commit` preamble. Test bodies are unchanged. `_setup_uu_conflict` moved to the one file that uses it.
+  - `commit_enhanced.bats`: 26 tests (message rules, staging modes, local-only files, `--only`, lint and format).
+  - `commit_enhanced_staged_guard.bats`: 20 tests (staged-blob guard [3.5], partial staging).
+  - `commit_enhanced_gates.bats`: 27 tests (lint and markdown gate scoping, subject length, freeform branches).
+  - `commit_enhanced_modes.bats`: 36 tests (merge conclusion, interactive prompts, `index.lock`, `--only` reset, untracked warnings).
+  - All four files are in `CGW_SLOW_FILES`, so the batch split is unchanged.
+- **Outcome**: 109 tests before and after, all passing. The four files run in parallel in 116 s (88, 88, 94 and 116 s each, with only these four running).
+
+#### Phase 9 Before/After Table
+
+| Metric | Before Phase 9 | After Phase 9 | Status |
+|--------|----------------|---------------|--------|
+| `commit_enhanced` tests | 109 in 1 file | **109 in 4 files** | None lost |
+| Longest single file | 960 s under load (about 8.8 s per test) | **about 320 s under load (estimate from test count)** | Floor lowered |
+| Wall time of the four files, run alone | one file, serial | **116 s** | Measured |
+| Slow-list entries | 11 | **14** | Same set of tests |

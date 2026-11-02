@@ -96,7 +96,7 @@ amend-out. Design before implementing — **do not quick-fix.**
 
 ### D1 · `--only` reset failure is swallowed 🟢 — FIXED (2026-09-29)
 
-> **Status (2026-09-29):** FIXED. `commit_enhanced.sh` checks exit code of `git reset HEAD`; if it fails and HEAD is not unborn (`git rev-parse --verify HEAD`), it aborts cleanly. Verified by `tests/integration/commit_enhanced.bats`.
+> **Status (2026-09-29):** FIXED. `commit_enhanced.sh` checks exit code of `git reset HEAD`; if it fails and HEAD is not unborn (`git rev-parse --verify HEAD`), it aborts cleanly. Verified by `tests/integration/commit_enhanced_modes.bats`.
 
 **Where:** `commit_enhanced.sh:265` — `git reset HEAD >/dev/null 2>&1 || true`.
 **Problem:** `--only` promises "reset the index, then stage exactly these paths." If the reset fails
@@ -174,9 +174,9 @@ would error). Maintainability/consistency risk, not a live bug.
 ## Observations from the F1 test work (2026-09-29) — ALL FIXED (2026-09-29)
 
 - **Obs 1 (`commit_enhanced.sh` & `undo_last.sh`)**: The "Configured types" line prints `feat, fix, docs, chore, ...` using `${CGW_ALL_PREFIXES//|/, }` (all `|` separators replaced by commas).
-  - *Verified by*: `tests/integration/commit_enhanced.bats`, `tests/integration/undo_last.bats`.
+  - *Verified by*: `tests/integration/commit_enhanced_modes.bats`, `tests/integration/undo_last.bats`.
 - **Obs 2 (`commit_enhanced.sh`)**: Committing when *only* local-only files were modified exits 0 cleanly with explanatory message (`[!] No changes to commit (tracked changes were in local-only files and were excluded)`).
-  - *Verified by*: `tests/integration/commit_enhanced.bats`.
+  - *Verified by*: `tests/integration/commit_enhanced_modes.bats`.
 - **Obs 3 (`merge_with_validation.sh`)**: Clean merges untrap cleanly and remain on target branch without spurious `[!] Interrupted` output.
   - *Verified by*: `tests/integration/merge_validation.bats`.
 - **Obs 4 (`merge_with_validation.sh`)**: Trap `_cleanup_merge` detects `MERGE_HEAD` and reports paused conflict resolution state instead of claiming false return to source.
