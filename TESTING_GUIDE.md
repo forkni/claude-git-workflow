@@ -242,3 +242,22 @@ flowchart LR
 | Redundant CI Commit Runs | Allowed (queue backlog) | **Cancelled via `concurrency`** | **Resource-efficient** |
 | Cross-Platform CI (Windows) | None (Ubuntu-only) | **Nightly Windows matrix** | **Verified** |
 | Automated Actions Maintenance | None | **Dependabot (monthly)** | **Automated** |
+
+### Phase 8: Lock-Test Determinism & Second Runner Retune — [COMPLETED]
+
+- **Objective**: Remove a timing-dependent test and re-balance the fast and slow batches after the suite grew.
+- **Implementation**:
+  - `commit_enhanced.bats`: replaced the racy "survives transient index.lock collision" test (the lock was created on a 0.2 s timer) with two deterministic tests. One waits for a fresh lock to clear. The other retries after a collision made by a shadow `git`. Mutation checks: `max_attempts=1` fails the retry test, and `age < 0` in place of `age < max_age` fails the wait test.
+  - `tests/run.sh`: `CGW_SLOW_FILES` now lists the 11 heaviest files from a full timing run (2026-11-01, 14 jobs). The old 7-file list held 29% of the file time (3729 of 12896 file-seconds). The new list holds 50% (6491).
+  - `docs/ci-setup.md`: batch description updated. CI runs the same split as two matrix legs, so this also re-balances CI.
+- **Outcome**: The slow batch now holds 789 tests and the fast batch 728. CI leg times are the check for the wall-clock effect.
+
+#### Phase 8 Before/After Table
+
+| Metric | Before Phase 8 | After Phase 8 | Status |
+|--------|----------------|---------------|--------|
+| Lock tests that depend on a timer | 1 | **0** | Deterministic |
+| Slow-list share of file time | 29% (7 files) | **50% (11 files)** | Re-balanced |
+| Slow batch tests (`@test` count) | 501 | **789** | Retuned |
+| Fast batch tests (`@test` count) | 706 | **728** | Retuned |
+| Floor file (`commit_enhanced.bats`) | 960 s | 960 s | Split planned (next phase) |

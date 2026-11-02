@@ -104,8 +104,8 @@ tests/run.sh --slow                           # slow batch only
 
 Test prerequisites: `bats-core` v1.13.0, `bats-support` v0.3.0, `bats-assert` v2.2.4. A git identity must be configured (`git config user.email` / `user.name`).
 
-The suite is 1148 Bats tests across `tests/unit/` and `tests/integration/`. `tests/run.sh`'s
-default run is the **fast batch**: it skips the six heaviest files (`CGW_SLOW_FILES` in
+The suite is about 1,500 Bats tests across `tests/unit/` and `tests/integration/`. `tests/run.sh`'s
+default run is the **fast batch**: it skips the eleven heaviest files (`CGW_SLOW_FILES` in
 `tests/run.sh`) so local runs stay quick. Use `--all` (or `CGW_RUN_SLOW=1`) for everything, and
 `--slow` for the slow batch only. CI always runs the full set (`CI` is set by GitHub Actions).
 `CGW_TEST_TIMINGS=1` prints the slowest files (to retune `CGW_SLOW_FILES`) and `CGW_TEST_JOBS=N`

@@ -60,16 +60,21 @@ jobs="${CGW_TEST_JOBS:-$((_cores / 2))}"
 # parallelization to avoid a bats --jobs index.lock race, so its ~126 tests
 # run serially and become the parallel wall-clock floor). Skipped on a default
 # full-suite run unless CI is set or CGW_RUN_SLOW=1; always run on CI.
-# Measured wall time per file under parallel load (CGW_TEST_TIMINGS=1): the heaviest files, roughly
-# half the suite's total runtime. Retune from a fresh timing run when files grow.
+# Measured wall time per file under parallel load (CGW_TEST_TIMINGS=1): the 11 heaviest files,
+# about half the suite's total file time (2026-11-01 run: 6491 of 12896 file-seconds).
+# Retune from a fresh timing run when files grow.
 CGW_SLOW_FILES=(
   "tests/unit/common.bats"
-  "tests/integration/check_lint_snapshot.bats"
-  "tests/integration/merge_pr.bats"
   "tests/integration/commit_enhanced.bats"
-  "tests/integration/hook_preservation.bats"
+  "tests/integration/configure.bats"
+  "tests/integration/merge_pr.bats"
+  "tests/integration/cc_guardrail.bats"
+  "tests/integration/merge_validation.bats"
+  "tests/integration/create_pr.bats"
   "tests/integration/push_validated.bats"
-  "tests/integration/agy_guardrail.bats"
+  "tests/integration/cherry_pick.bats"
+  "tests/integration/repo_state.bats"
+  "tests/integration/hook_preservation.bats"
 )
 
 # Batch selection: --slow = only the slow files, --all = everything, default = fast batch.
