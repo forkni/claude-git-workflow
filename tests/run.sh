@@ -13,7 +13,7 @@
 #   tests/run.sh tests/unit/              # unit tests only  (~25s)
 #   tests/run.sh tests/unit/config.bats   # single file
 #   CGW_TEST_JOBS=N tests/run.sh          # override parallelism (default: half logical cores)
-#   CGW_RUN_SLOW=1 tests/run.sh           # include slow files locally (always run on CI)
+#   CGW_RUN_SLOW=1 tests/run.sh           # a bare run includes the slow files (same as --all; an explicit mode flag wins)
 #   tests/run.sh --help                   # print this usage
 #   tests/run.sh --version                # print the bats version and CGW revision this run would use
 set -uo pipefail
@@ -75,24 +75,35 @@ CGW_SLOW_FILES=(
   "tests/integration/repo_state.bats"
 )
 
-# Does a change in CGW_CHANGED_FILES select the slow file $1? Prefix match on repo paths (a
-# trailing / names a directory). The file itself and the runner or helpers always select it.
-# Shared libraries (_common.sh, _config.sh, _lib_*.sh) are not triggers: core covers them on
-# every push and the monthly run covers the rest.
+# Does a change in CGW_CHANGED_FILES select the slow file $1? A trigger ending in / names a
+# directory (prefix match); any other trigger must equal the changed path exactly, so
+# scripts/git/configure.sh does not match configure.sh.bak. The file itself and the runner or
+# helpers always select it. The per-file triggers are the scripts and hooks that the .bats file
+# runs; re-check them with a grep of the file when it starts to use another script. Shared
+# libraries (_common.sh, _config.sh, _lib_*.sh) are not triggers: core covers them on every push
+# and the monthly run covers the rest.
 _slow_file_changed() {
   local file="${1#./}" changed trigger
   local -a triggers=("${file}" "tests/run.sh" "tests/helpers/")
   case "${file}" in
     *dogfood.bats) triggers+=("scripts/test/run_tests.sh" "scripts/git/configure.sh" "hooks/") ;;
-    *merge_pr.bats) triggers+=("scripts/git/merge_pr.sh") ;;
-    *configure.bats) triggers+=("scripts/git/configure.sh" "hooks/") ;;
-    *cc_guardrail.bats) triggers+=("hooks/cc-block-dangerous-git.sh" "hooks/_guardrail_core.sh") ;;
+    *merge_pr.bats) triggers+=("scripts/git/merge_pr.sh" "scripts/git/rollback_merge.sh") ;;
+    *configure.bats) triggers+=("scripts/git/configure.sh" "scripts/git/setup_attributes.sh" "hooks/") ;;
+    *cc_guardrail.bats)
+      triggers+=("hooks/cc-block-dangerous-git.sh" "hooks/_guardrail_core.sh" "hooks/agy-block-dangerous-git.sh"
+        "scripts/git/commit_enhanced.sh" "scripts/git/configure.sh" "scripts/git/worktree_manage.sh"
+        "scripts/git/push_validated.sh" "scripts/git/branch_cleanup.sh")
+      ;;
     *repo_state.bats) triggers+=("scripts/git/repo_state.sh") ;;
   esac
   while IFS= read -r changed; do
     [[ -z "${changed}" ]] && continue
     for trigger in "${triggers[@]}"; do
-      [[ "${changed}" == "${trigger}"* ]] && return 0
+      if [[ "${trigger}" == */ ]]; then
+        [[ "${changed}" == "${trigger}"* ]] && return 0
+      else
+        [[ "${changed}" == "${trigger}" ]] && return 0
+      fi
     done
   done <<<"${CGW_CHANGED_FILES}"
   return 1

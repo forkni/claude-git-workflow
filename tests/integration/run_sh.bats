@@ -130,6 +130,33 @@ _slow_listing="^tests/integration/(${_slow_names})\.bats\$"
   [[ "${output}" != *"tests/integration/merge_pr.bats"* ]]
 }
 
+@test "run.sh --slow-changed maps every script a slow file runs to that file" {
+  local pair path file
+  for pair in \
+    "hooks/agy-block-dangerous-git.sh:cc_guardrail" \
+    "scripts/git/commit_enhanced.sh:cc_guardrail" \
+    "scripts/git/worktree_manage.sh:cc_guardrail" \
+    "scripts/git/push_validated.sh:cc_guardrail" \
+    "scripts/git/branch_cleanup.sh:cc_guardrail" \
+    "scripts/git/rollback_merge.sh:merge_pr" \
+    "scripts/git/setup_attributes.sh:configure"; do
+    path="${pair%%:*}"
+    file="${pair##*:}"
+    run env CGW_TEST_LIST=1 CGW_CHANGED_FILES="${path}" bash "${CGW_PROJECT_ROOT}/tests/run.sh" --slow-changed
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *"tests/integration/${file}.bats"* ]] || {
+      echo "${path} did not select ${file}.bats: ${output}"
+      return 1
+    }
+  done
+}
+
+@test "run.sh --slow-changed matches a file trigger exactly, not as a name prefix" {
+  run env CGW_TEST_LIST=1 CGW_CHANGED_FILES=$'scripts/git/configure.sh.bak\nscripts/git/merge_pr.shim' bash "${CGW_PROJECT_ROOT}/tests/run.sh" --slow-changed
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"no changed slow files"* ]]
+}
+
 @test "run.sh --slow-changed selects all slow files when the runner or helpers change" {
   run env CGW_TEST_LIST=1 CGW_CHANGED_FILES=$'README.md\ntests/helpers/setup.bash' bash "${CGW_PROJECT_ROOT}/tests/run.sh" --slow-changed
   run grep -cE "${_slow_listing}" <<<"${output}"

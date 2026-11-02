@@ -109,7 +109,10 @@ default run is **core + fast**: all of `tests/unit/` and `tests/integration/` ex
 `CGW_SLOW_FILES` (in `tests/run.sh`; 257 tests). Every push and PR runs core and fast, as the `core`
 and `fast` matrix legs. The slow files run in two places: the monthly `nightly.yml` (`--slow`), and the
 `slow-changed` leg, which runs a slow file only when the file itself, `tests/run.sh`, `tests/helpers/`,
-or a script it covers is in the diff (`--slow-changed`, with the paths in `CGW_CHANGED_FILES`). Use
+or a script it covers is in the diff (`--slow-changed`, with the paths in `CGW_CHANGED_FILES`). The
+diff base is the PR base on `pull_request` and the previous head on `push`; when no usable base exists
+(a new branch, a force-push whose old head is gone, `workflow_dispatch`), the leg runs every slow file.
+A file trigger must equal the changed path, and a trigger ending in `/` matches a directory. Use
 `--all` (or `CGW_RUN_SLOW=1` on a bare run) for everything, and `--slow` for the slow batch only. A mode
 flag always wins: `CI` no longer widens the run. `CGW_TEST_LIST=1` prints the selected files and exits.
 `CGW_TEST_TIMINGS=1` prints the slowest files and `CGW_TEST_JOBS=N` overrides the core count. CI runs
