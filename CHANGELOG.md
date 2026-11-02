@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.22.2 (2026-11-02)
+
+> Changes since `v0.22.1`. No behaviour change in the shipped scripts: the only edits there are comments and `shfmt` layout. The rest is the test suite and CI.
+
+### Bug Fixes
+
+- **A slow Bats file now runs on a pull request when any script it runs changes**: `cc_guardrail.bats` runs `commit_enhanced.sh`, `configure.sh`, `worktree_manage.sh`, `push_validated.sh`, `branch_cleanup.sh` and the agy hook, but none of them selected it, so a PR that broke one skipped the guardrail tests until the monthly run. All five slow files were audited the same way (`merge_pr.bats` also runs `rollback_merge.sh`, `configure.bats` also runs `setup_attributes.sh`). A file trigger must now equal the changed path (a trailing `/` still names a directory), so `configure.sh.bak` selects nothing.
+
+### Maintenance
+
+- **CI runs the core and fast Bats batches on every push; five slow files run monthly**: `tests/run.sh` used to promote `--fast` to the whole suite whenever `CI` was set, so the fast leg ran 1515 tests and the slow leg repeated 541. An explicit mode flag now wins. New `--slow-changed` mode (reads `CGW_CHANGED_FILES`) and `CGW_TEST_LIST=1` (print the selected files). `branch-protection.yml` has `core` / `fast` / `slow-changed` legs; `nightly.yml` is monthly, with `--slow` on Ubuntu and `--all` on Windows. The slow list (`dogfood`, `merge_pr`, `configure`, `cc_guardrail`, `repo_state`) was retuned from CI timings. Ten selection tests in `tests/integration/run_sh.bats`.
+- **`commit_enhanced.bats` is split into four files that share one harness**: `commit_enhanced.bats`, `_gates`, `_modes` and `_staged_guard` replace the single file, and the two `index.lock` tests are now deterministic instead of racy. The copies of `setup`, `teardown` and `_run_commit` moved to `tests/integration/_commit_common.bash`, which `staged_checks.bats` also loads (118 tests, none lost or weakened). ShellCheck of the test pass, in CI and in the pre-push gate, now covers `tests/integration/*.bash`.
+- **CI pins `shfmt` 3.14.1 to match a current local install**: 3.14.0 changed how a heredoc-bearing `if` line is laid out (mvdan/sh#1047), so the old 3.13.0 pin and a local install disagreed on three hunks in `configure.sh` and `worktree_manage.sh`. Those hunks use the new layout. Two `check_lint.sh` comments now say that the CI shfmt step fails the job through the "Aggregate lint verdict" step.
+
+### Documentation
+
+- **`docs/KNOWN_ISSUES.md` lists the shell style-guide deviations itself** instead of pointing at the git-ignored `CLAUDE.md`. `docs/ci-setup.md` documents the no-base fallback that runs every slow file, and `TESTING_GUIDE.md` records Phases 10 to 12.
+
 ## v0.22.1 (2026-11-01)
 
 ### Bug Fixes
