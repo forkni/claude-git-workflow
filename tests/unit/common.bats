@@ -1689,7 +1689,7 @@ extend-exclude = ["gen"]
 # Exercises the stdin contract directly: mixed input, multi-path input, and
 # the fail-closed "staged path missing from disk" branch that the lint-only
 # wrapper's tests never reach (a lint-eligible file being deleted is covered
-# end-to-end by commit_enhanced.bats' Mode 3 instead).
+# end-to-end by commit_enhanced_staged_guard.bats' Mode 3 instead).
 
 @test "cgw_paths_diverging_from_index: with mixed input, emits only the diverging path" {
   run bash -c "

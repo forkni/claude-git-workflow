@@ -249,10 +249,10 @@ Contributions, bug reports, and suggestions are welcome!
 - Run the test suite:
 
 ```bash
-# Run unit and integration tests in parallel
+# Run core and fast tests in parallel (what every push runs in CI)
 tests/run.sh
 
-# Run everything, including the slowest files (what CI runs)
+# Run everything, including the slow files (CI runs those monthly, and on a PR that changes them)
 tests/run.sh --all
 ```
 

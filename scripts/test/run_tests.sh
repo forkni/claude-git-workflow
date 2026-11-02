@@ -49,7 +49,7 @@ fi
 # Every file CI checks, grouped by the flags CI uses for that group.
 scripts_all=(scripts/git/*.sh)
 hooks_all=(hooks/pre-commit hooks/pre-push hooks/*.sh)
-tests_all=(tests/unit/*.bats tests/integration/*.bats)
+tests_all=(tests/unit/*.bats tests/integration/*.bats tests/integration/*.bash)
 
 base=""
 if [[ "${scope}" == "changed" ]]; then

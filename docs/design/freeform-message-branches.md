@@ -169,7 +169,7 @@ exercised by hand today (`sh hooks/commit-msg <file>`).
 - linked worktree (`create_test_worktree`, `.cgw.conf` only in main): exempt from the
   worktree, proving the config fallback.
 
-`tests/integration/commit_enhanced.bats` (mirror line 1053)
+`tests/integration/commit_enhanced_gates.bats` (the freeform-branch tests)
 
 - non-interactive freeform message on a matching branch exits 0 and commits.
 - same message on `development` still exits 1 with "conventional format".
