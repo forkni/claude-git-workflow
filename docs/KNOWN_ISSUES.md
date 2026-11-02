@@ -313,7 +313,11 @@ now write errors to stderr.
   non-interactive mode. `--onto` is documented as a plain target branch, not git's three-argument form.
 - **Tests added** for D1, D2 and the Obs 1 "Configured types" line, which had none.
 - **Documented, not changed:** `merge_docs.sh` makes a one-parent commit and records no merge
-  ancestry; the shell scripts' deliberate style-guide deviations are listed in `CLAUDE.md`.
+  ancestry. The shell scripts deviate from the Google shell style guide on purpose in four places:
+  the `#!/usr/bin/env bash` shebang, no 80-column limit, `set -uo pipefail` without `-e` (git
+  signals through exit codes), and intentional word splitting of string-valued config flags
+  (`CGW_*_ARGS`, with `SC2086` disables). Everything else follows the guide; CI runs
+  `shfmt -d -i 2 -ci` over `scripts/` and `hooks/`.
 
 ### Follow-up from the books audit (2026-10, branch `fix/git-books-audit`)
 
