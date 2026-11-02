@@ -1708,24 +1708,56 @@ TABLE
 
 # ── Transient index.lock collision resilience ─────────────────────────────────
 
-@test "commit_enhanced.sh survives transient index.lock collision and succeeds" {
+@test "commit_enhanced.sh waits for a fresh index.lock to clear and then commits" {
   echo "content" > "${TEST_REPO_DIR}/retry_test.txt"
   git -C "${TEST_REPO_DIR}" add retry_test.txt
 
-  # Inject a transient lock that disappears after 0.5s
+  # The lock exists BEFORE the script starts, so the wait path must run: a lock created
+  # on a timer could land after the commit and leave that path untested.
+  touch "${TEST_REPO_DIR}/.git/index.lock"
   (
-    sleep 0.2
-    touch "${TEST_REPO_DIR}/.git/index.lock" 2>/dev/null || true
-    sleep 0.5
-    rm -f "${TEST_REPO_DIR}/.git/index.lock" 2>/dev/null || true
-  ) &
+    sleep 1
+    rm -f "${TEST_REPO_DIR}/.git/index.lock"
+  ) 3>&- &
   local bg_pid=$!
 
-  run _run_commit "\"feat: commit under transient lock\""
-  wait "${bg_pid}" 2>/dev/null || true
+  run _run_commit "--staged-only \"feat: commit under transient lock\""
+  wait "${bg_pid}"
 
   [ "${status}" -eq 0 ]
+  [[ "${output}" == *"[cgw-lock] index.lock is"* ]]
   [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+  [ ! -e "${TEST_REPO_DIR}/.git/index.lock" ]
+  [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" = "feat: commit under transient lock" ]
+}
+
+@test "commit_enhanced.sh retries git commit after an index.lock collision" {
+  echo "content" > "${TEST_REPO_DIR}/retry_test.txt"
+  git -C "${TEST_REPO_DIR}" add retry_test.txt
+
+  # Shadow `git` so the FIRST `git commit` fails the way a lost lock race does and every
+  # later call reaches the real git. The failure is a mock, so it cannot depend on timing.
+  local real_git
+  real_git=$(command -v git)
+  cat >"${MOCK_BIN_DIR}/git" <<GIT_MOCK
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "commit" && ! -f "${MOCK_BIN_DIR}/commit_failed_once" ]]; then
+  touch "${MOCK_BIN_DIR}/commit_failed_once"
+  echo "fatal: Unable to create '.git/index.lock': File exists." >&2
+  exit 128
+fi
+exec "${real_git}" "\$@"
+GIT_MOCK
+  chmod +x "${MOCK_BIN_DIR}/git"
+
+  export CGW_LOCK_RETRY_DELAY=0
+  run _run_commit "--staged-only \"feat: commit after a lock collision\""
+
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Index lock collision during 'git commit' (attempt 1/3)"* ]]
+  [[ "${output}" == *"COMMIT SUCCESSFUL"* ]]
+  [ -f "${MOCK_BIN_DIR}/commit_failed_once" ]
+  [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" = "feat: commit after a lock collision" ]
 }
 
 
