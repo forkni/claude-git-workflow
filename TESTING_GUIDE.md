@@ -316,15 +316,15 @@ parallelises inside a file.
   - `branch-protection.yml`: the test matrix is `core`, `fast` and `slow-changed`. The `slow-changed` leg diffs against the PR base or the push `before` SHA, and runs every slow file when there is no usable base.
   - `nightly.yml`: monthly (1st, 03:00 UTC). Ubuntu runs `--slow`; Windows runs `--all`.
   - `tests/integration/run_sh.bats`: 10 selection tests. Mutation checks: restoring the `-n CI` upgrade fails the two CI tests, and deleting the `merge_pr` mapping fails the `--slow-changed` script test.
-- **Outcome**: The `1..N` plan numbers below are counted from the `@test` lines. Leg wall-clock times are filled in from the first CI run of this commit.
+- **Outcome**: The `1..N` plan numbers and leg times below are read from CI run 41462670902 (commit `387e008`).
 
 #### Phase 11 Before/After Table
 
 | Metric | Before Phase 11 | After Phase 11 | Status |
 |--------|-----------------|----------------|--------|
-| Tests in the CI `fast` leg | 1,515 (whole suite) | core 388 + fast 882 (two legs) | Split |
+| Tests in the CI `fast` leg | 1,515 (whole suite) | core 388 + fast 880 (two legs, measured `1..N`) | Split |
 | Tests in the CI `slow` leg | 541 (repeated) | 0 to 257 (`slow-changed`) | Only when touched |
 | Slow tests run per push | 2 × 541 | 0 unless a covered file changed | Monthly + on change |
 | Slow list | 6 files (incl. `common.bats`, 284 tests) | 5 files (257 tests) | `common.bats` is core |
 | `nightly.yml` schedule | weekly (Sundays) | monthly (1st) | Windows `--all` kept |
-| CI leg times | 4m31s-5m11s / 1m40s-3m00s | See the CI run for this commit | To verify |
+| CI leg times | 4m31s-5m11s (fast) / 1m40s-3m00s (slow) | 2m54s (fast), 1m46s (core), 58s (slow-changed, all 5 files: this push changes `tests/run.sh`) | Run 41462670902 at `387e008`; the 3 legs run in parallel, so the wall clock is the fast leg |
