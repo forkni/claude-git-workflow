@@ -467,7 +467,7 @@ _push_feature_head() {
   export MOCK_GH_WORKFLOWS="CI\nDocs"
   run _run_merge_pr 42
   [ "${status}" -eq 1 ]
-  [[ "${output}" == *"has active workflows (CI,Docs)"* ]]
+  [[ "${output}" == *"run on pull requests (CI,Docs)"* ]]
   [[ "${output}" != *"treating as no CI"* ]]
   run ! grep -q -- "pr merge" "${GH_LOG}"
 }
@@ -482,6 +482,66 @@ _push_feature_head() {
   run _run_merge_pr 42 --wait-checks
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"CI did not register for this head"* ]]
+  run ! grep -q -- "pr merge" "${GH_LOG}"
+}
+
+@test "no checks merge when no active workflow runs on pull requests" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=1
+  export MOCK_GH_CHECKS_OUTPUT="no checks reported on the 'feature' branch"
+  export MOCK_GH_WORKFLOWS="Release\nNightly"
+  export MOCK_GH_WORKFLOW_YAML_Release="on:\n  push:\n    tags: ['v*']"
+  export MOCK_GH_WORKFLOW_YAML_Nightly="on:\n  schedule:\n    - cron: '0 3 * * 0'\n  workflow_dispatch:"
+  run _run_merge_pr 42
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"treating as no CI"* ]]
+  grep -q -- "pr merge 42" "${GH_LOG}"
+}
+
+@test "no checks refuse when one of several active workflows runs on pull requests" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=1
+  export MOCK_GH_CHECKS_OUTPUT="no checks reported on the 'feature' branch"
+  export MOCK_GH_WORKFLOWS="Release\nCI"
+  export MOCK_GH_WORKFLOW_YAML_Release="on:\n  push:\n    tags: ['v*']"
+  export MOCK_GH_WORKFLOW_YAML_CI="on:\n  pull_request:\n    branches: [main]"
+  run _run_merge_pr 42
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"run on pull requests (CI)"* ]]
+  run ! grep -q -- "pr merge" "${GH_LOG}"
+}
+
+@test "a pull_request mention in a comment does not count as a trigger" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=1
+  export MOCK_GH_CHECKS_OUTPUT="no checks reported on the 'feature' branch"
+  export MOCK_GH_WORKFLOWS="Release"
+  export MOCK_GH_WORKFLOW_YAML_Release="# not on pull_request\non:\n  push:\n    tags: ['v*']"
+  run _run_merge_pr 42
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"treating as no CI"* ]]
+}
+
+@test "a flag-looking workflow name is passed to gh after --" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=1
+  export MOCK_GH_CHECKS_OUTPUT="no checks reported on the 'feature' branch"
+  export MOCK_GH_WORKFLOWS="--web"
+  export MOCK_GH_WORKFLOW_YAML___web="on:\n  push:"
+  run _run_merge_pr 42
+  [ "${status}" -eq 0 ]
+  grep -q -- "workflow view --repo .* --yaml -- --web" "${GH_LOG}"
+}
+
+@test "no checks refuse when a workflow's YAML cannot be read" {
+  install_mock_gh
+  export MOCK_GH_CHECKS_EXIT=1
+  export MOCK_GH_CHECKS_OUTPUT="no checks reported on the 'feature' branch"
+  export MOCK_GH_WORKFLOWS="Release"
+  export MOCK_GH_WORKFLOW_VIEW_EXIT=1
+  run _run_merge_pr 42
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"run on pull requests (Release)"* ]]
   run ! grep -q -- "pr merge" "${GH_LOG}"
 }
 

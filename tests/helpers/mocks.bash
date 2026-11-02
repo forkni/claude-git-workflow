@@ -165,6 +165,9 @@ EOF
 #                         MOCK_GH_RUNS_LATER; exits $MOCK_GH_RUN_LIST_EXIT (default 0)
 #   - `gh workflow list` → prints MOCK_GH_WORKFLOWS (post-jq active workflow names, one per line);
 #                         exits $MOCK_GH_WORKFLOWS_EXIT (default 0)
+#   - `gh workflow view ... -- <name>` (name = last argument) → prints MOCK_GH_WORKFLOW_YAML_<name, non-alphanumerics as _>,
+#                         else MOCK_GH_WORKFLOW_YAML (printf '%b'; default "on:\n  pull_request:");
+#                         exits $MOCK_GH_WORKFLOW_VIEW_EXIT (default 0)
 #   - `gh pr checks --json` → prints MOCK_GH_CHECKS_JSON (post-jq TSV rows) with the same
 #                         MOCK_GH_CHECKS_JSON_AFTER / MOCK_GH_CHECKS_JSON_LATER switch
 #   - `gh pr view --json headRepository,headRepositoryOwner` → MOCK_GH_PR_HEADREPOSITORY_HEADREPOSITORYOWNER
@@ -233,6 +236,13 @@ fi
 if [[ "\$1" == "workflow" && "\$2" == "list" ]]; then
   [[ -n "\${MOCK_GH_WORKFLOWS:-}" ]] && printf '%b\n' "\$MOCK_GH_WORKFLOWS"
   exit \${MOCK_GH_WORKFLOWS_EXIT:-0}
+fi
+if [[ "\$1" == "workflow" && "\$2" == "view" ]]; then
+  [[ \${MOCK_GH_WORKFLOW_VIEW_EXIT:-0} -ne 0 ]] && exit \$MOCK_GH_WORKFLOW_VIEW_EXIT
+  wf="\${@: -1}"
+  v="MOCK_GH_WORKFLOW_YAML_\${wf//[^A-Za-z0-9]/_}"
+  printf '%b\n' "\${!v:-\${MOCK_GH_WORKFLOW_YAML:-on:\n  pull_request:}}"
+  exit 0
 fi
 if [[ "\$1" == "pr" && "\$2" == "checks" ]]; then
   case " \$* " in

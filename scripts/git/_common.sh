@@ -35,6 +35,7 @@
 #   cgw_require_gh()            - Verify gh CLI is installed and authenticated; prints [ERROR] and returns 1 on failure [_lib_remote.sh]
 #   cgw_pr_view()               - Echo one field of a PR via gh pr view --jq, CR-stripped [_lib_remote.sh]
 #   cgw_active_workflows()      - Echo the repo's active workflow names, one per line; non-zero = gh failed [_lib_remote.sh]
+#   cgw_workflow_may_run_on_pr() - 0 unless the workflow's YAML was read and has no pull_request trigger [_lib_remote.sh]
 
 # Seam libraries sourced from this file (same directory): _lib_remote.sh, _lib_lock.sh, _lib_conflict.sh,
 # _lib_lint.sh.

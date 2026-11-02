@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.22.1 (2026-11-01)
+
+### Bug Fixes
+
+- **`merge_pr.sh` no longer refuses every PR in a repo whose workflows never run on pull requests**: v0.22.0 refused a PR with no checks whenever the repo had any active workflow, so a repo with only a tag-push release workflow or a scheduled job could merge only with `--skip-checks`. The gate now reads each active workflow's YAML (`gh workflow view --yaml`, new `cgw_workflow_may_run_on_pr` in `_lib_remote.sh`) and refuses only when one mentions `pull_request`. A YAML that cannot be read counts as a pull-request workflow, so the gate still fails closed. When none runs on pull requests, the PR merges with the `treating as no CI` warning. `verify_ci.sh --pr` is unchanged and still reports exit 2 in such a repo.
+
 ## v0.22.0 (2026-11-01)
 
 > Changes since `v0.21.0`
