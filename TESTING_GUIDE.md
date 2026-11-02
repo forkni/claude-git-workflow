@@ -328,3 +328,24 @@ parallelises inside a file.
 | Slow list | 6 files (incl. `common.bats`, 284 tests) | 5 files (257 tests) | `common.bats` is core |
 | `nightly.yml` schedule | weekly (Sundays) | monthly (1st) | Windows `--all` kept |
 | CI leg times | 4m31s-5m11s (fast) / 1m40s-3m00s (slow) | 2m54s (fast), 1m46s (core), 58s (slow-changed, all 5 files: this push changes `tests/run.sh`) | Run 41462670902 at `387e008`; the 3 legs run in parallel, so the wall clock is the fast leg |
+
+### Phase 12: One Shared Harness for the `commit_enhanced` Test Files — [COMPLETED]
+
+- **Objective**: Phase 9 split `commit_enhanced.bats` into four files and copied the same `setup`, `teardown` and `_run_commit` into each. `staged_checks.bats` held a fifth `_run_commit`. A fix to the call contract in one copy would not reach the others.
+- **Diagnosis**: A differential script compared origin/main with the split files. The 107 test bodies that exist on both sides are identical (read as UTF-8). The count moved from 108 to 109 only because commit `085958f` replaced one racy `index.lock` test with two deterministic ones. No test was lost, weakened or duplicated. The five copies of `_run_commit` and the four of `setup` and `teardown` were byte-identical, so nothing had drifted yet.
+- **Implementation**:
+  - `tests/integration/_commit_common.bash` (new, 43 lines): `_commit_setup`, default `setup`/`teardown`, and `_run_commit`. Each of the five files loads it with one line. `staged_checks.bats` defines its own `setup()` that calls `_commit_setup` first.
+  - The file is in `tests/integration/`, not `tests/helpers/`. `tests/run.sh` treats the whole `tests/helpers/` directory as a trigger for every slow file, even for a new file there. Probe: `CGW_CHANGED_FILES=tests/integration/_commit_common.bash tests/run.sh --slow-changed` selects no file.
+  - `branch-protection.yml` and `scripts/test/run_tests.sh` add `tests/integration/*.bash` to the ShellCheck test pass, so the shared file is linted in CI and by the pre-push gate.
+- **Outcome**: Net -72 lines (121 removed, 49 added). The five files run 118 tests, 0 skipped, all passing. No test body changed.
+
+#### Phase 12 Before/After Table
+
+| Metric | Before Phase 12 | After Phase 12 | Status |
+|--------|-----------------|----------------|--------|
+| Copies of `_run_commit` | 5 | 1 | Shared |
+| Copies of `setup` / `teardown` | 4 + 1 variant | 1 default + 1 override | Shared |
+| Harness lines in the 5 test files | 121 | 6 (`load` and `_commit_common` calls) | -115 |
+| Tests in the 5 files | 118 | 118 | Unchanged |
+| Slow files selected by the change | n/a | 0 | Outside `tests/helpers/` |
+| Files ShellCheck covers in `tests/integration/` | `*.bats` | `*.bats` and `*.bash` | Extended |
