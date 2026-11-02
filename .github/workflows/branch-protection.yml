@@ -183,7 +183,7 @@ jobs:
       - name: Run ${{ matrix.batch }} test batch
         env:
           BATCH: ${{ matrix.batch }}
-        run: CGW_TEST_JOBS=4 bash tests/run.sh --"${BATCH}"
+        run: CGW_TEST_TIMINGS=1 CGW_TEST_JOBS=4 bash tests/run.sh --all  # TEMP probe: ${BATCH} unused
 
   all-gates-green:
     name: all-gates-green
