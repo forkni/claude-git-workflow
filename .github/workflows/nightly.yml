@@ -2,8 +2,8 @@ name: Nightly Maintenance & Cross-Platform Regression
 
 on:
   schedule:
-    # Run every Sunday at 03:00 UTC
-    - cron: '0 3 * * 0'
+    # Run on the 1st of each month at 03:00 UTC
+    - cron: '0 3 1 * *'
   workflow_dispatch:
 
 permissions:
@@ -16,14 +16,18 @@ concurrency:
 
 jobs:
   full-suite:
-    name: Full Test Suite (${{ matrix.os }})
+    name: Test Suite (${{ matrix.os }}, ${{ matrix.args }})
     runs-on: ${{ matrix.os }}
     # The Windows leg is the slow one: its fast batch alone took 20+ minutes on a PR runner.
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # Ubuntu runs only the slow list: core and fast already run on every push
+        # (branch-protection.yml). Windows has no other coverage, so it runs everything.
+        include:
+          - { os: ubuntu-latest, args: '--slow' }
+          - { os: windows-latest, args: '--all' }
 
     defaults:
       run:
@@ -47,8 +51,12 @@ jobs:
           git config --global user.email "nightly-ci@example.com"
           git config --global user.name "Nightly CI"
 
-      - name: Run complete test suite (--all)
-        run: CGW_TEST_JOBS=4 bash tests/run.sh --all
+      - name: Run test suite (${{ matrix.args }})
+        env:
+          RUN_ARGS: ${{ matrix.args }}
+        run: |
+          read -r -a args <<<"${RUN_ARGS}"
+          CGW_TEST_JOBS=4 bash tests/run.sh "${args[@]}"
 
   doc-link-audit:
     name: Full Documentation Link Audit

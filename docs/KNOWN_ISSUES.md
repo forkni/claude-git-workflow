@@ -17,7 +17,7 @@ against real failure scenarios, not worst-case. Line numbers verified 2026-07; r
 ### F1 · No automated tests for the bash safety layer 🔴 — ADDRESSED (2026-09-29)
 
 > **Status:** FIXED. This repo ships a Bats suite (1148 tests across `tests/unit/` and
-> `tests/integration/`, run with `tests/run.sh --all`; CI always runs everything) that covers the
+> `tests/integration/`, run with `tests/run.sh --all`; CI runs the slow files monthly and on PRs that change them) that covers the
 > shared helpers and every wrapper script, including the staging matrix, the local-file matcher,
 > the commit-message grammar, backup tags, stale-`index.lock` handling, merge/cherry-pick guards,
 > and the `--pushed-only` snapshot gate. The original finding is kept below for the record.

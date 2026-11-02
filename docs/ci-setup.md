@@ -6,9 +6,9 @@ Four workflows are included in `.github/workflows/` (configured with immutable c
 
 | Workflow | Trigger | Checks |
 |----------|---------|--------|
-| `branch-protection.yml` | Push/PR to `development`, `main` | Parallel gates: local-only file detection & `.gitattributes` & Bats skip-count ratchet (`validate`); ShellCheck, shfmt format (blocking), `actionlint` & `zizmor` workflow lint, snippet lint & command verification (`lint`); 2-leg test matrix (`fast` + `slow` on `ubuntu-latest`); aggregate required status check (`all-gates-green`). |
+| `branch-protection.yml` | Push/PR to `development`, `main` | Parallel gates: local-only file detection & `.gitattributes` & Bats skip-count ratchet (`validate`); ShellCheck, shfmt format (blocking), `actionlint` & `zizmor` workflow lint, snippet lint & command verification (`lint`); 3-leg test matrix on `ubuntu-latest` (`core` = `tests/unit/`, `fast` = the other integration files, `slow-changed` = a slow file only when it or the script it covers changed); aggregate required status check (`all-gates-green`). |
 | `docs-validation.yml` | Push to `development`/`main` or a PR that changes `*.md` files (except `CLAUDE.md`, `MEMORY.md`) | Markdown linting (`markdownlint-cli2`, blocking), spelling of `README.md`, `skill/`, `command/` (`typos`, blocking), broken link validation (`lychee`, advisory). |
-| `nightly.yml` | Scheduled (weekly Sundays 03:00 UTC) / manual dispatch | Cross-platform full test suite (`ubuntu-latest` + `windows-latest`), complete documentation link audit, and tooling/snippet drift canary. |
+| `nightly.yml` | Scheduled (monthly, 1st at 03:00 UTC) / manual dispatch | Slow test files on `ubuntu-latest` (`--slow`) and the full suite on `windows-latest` (`--all`), complete documentation link audit, and tooling/snippet drift canary. |
 | `release.yml` | Tag push matching `v*` | Creates GitHub Release with auto-generated notes and source archives with scoped `contents: write`. |
 | `.github/dependabot.yml` | Scheduled monthly | Automated dependency and commit-SHA updates for GitHub Actions. |
 
@@ -26,7 +26,7 @@ Four workflows are included in `.github/workflows/` (configured with immutable c
   *pull-request* runs only, so every push to `development`/`main` gets a verdict. `release.yml`
   and `nightly.yml` never cancel an in-flight run.
 - **Credentials.** Every `actions/checkout` sets `persist-credentials: false`; no job pushes.
-- **Windows.** Windows is tested only by the weekly nightly (`--all`, 120-minute timeout). A
+- **Windows.** Windows is tested only by the monthly nightly (`--all`, 120-minute timeout). A
   trial Windows `fast` leg on PRs ran 20+ minutes (budget: 5) and exposed Windows-only failures
   in `run_tests_gate.bats` and `typecheck.bats`, so it was kept out of the PR gate.
 
@@ -97,18 +97,22 @@ bats tests/integration/
 bats tests/unit/ && bats tests/integration/   # full suite
 
 # Or via the parallel runner (recommended locally):
-tests/run.sh                                  # fast batch, parallel (skips the slow files)
-tests/run.sh --all                            # full suite (fast + slow); what CI runs
-tests/run.sh --slow                           # slow batch only
+tests/run.sh                                  # core + fast, parallel (skips the slow files); what every push runs
+tests/run.sh --all                            # full suite (core + fast + slow)
+tests/run.sh --slow                           # slow batch only; what the monthly nightly runs on Ubuntu
 ```
 
 Test prerequisites: `bats-core` v1.13.0, `bats-support` v0.3.0, `bats-assert` v2.2.4. A git identity must be configured (`git config user.email` / `user.name`).
 
 The suite is about 1,500 Bats tests across `tests/unit/` and `tests/integration/`. `tests/run.sh`'s
-default run is the **fast batch**: it skips the six files in `CGW_SLOW_FILES` (in
-`tests/run.sh`). That list is tuned from CI timings so the two matrix legs take about equal time;
-retune it from a CI run with `CGW_TEST_TIMINGS=1`, not from a local run. Use `--all` (or `CGW_RUN_SLOW=1`) for everything, and
-`--slow` for the slow batch only. CI always runs the full set (`CI` is set by GitHub Actions).
-`CGW_TEST_TIMINGS=1` prints the slowest files (to retune `CGW_SLOW_FILES`) and `CGW_TEST_JOBS=N`
-overrides the core count. Naming a file or directory explicitly (e.g.
-`tests/run.sh tests/unit/common.bats`) bypasses the gate.
+default run is **core + fast**: all of `tests/unit/` and `tests/integration/` except the five files in
+`CGW_SLOW_FILES` (in `tests/run.sh`; 257 tests). Every push and PR runs core and fast, as the `core`
+and `fast` matrix legs. The slow files run in two places: the monthly `nightly.yml` (`--slow`), and the
+`slow-changed` leg, which runs a slow file only when the file itself, `tests/run.sh`, `tests/helpers/`,
+or a script it covers is in the diff (`--slow-changed`, with the paths in `CGW_CHANGED_FILES`). Use
+`--all` (or `CGW_RUN_SLOW=1` on a bare run) for everything, and `--slow` for the slow batch only. A mode
+flag always wins: `CI` no longer widens the run. `CGW_TEST_LIST=1` prints the selected files and exits.
+`CGW_TEST_TIMINGS=1` prints the slowest files and `CGW_TEST_JOBS=N` overrides the core count. CI runs
+native `bats --jobs`, which parallelises inside a file, so the `CGW_TEST_TIMINGS=1` file-seconds (one
+process per file) do not predict a CI leg: retune from the test count and a CI leg time. Naming a file
+or directory explicitly, with no mode flag (e.g. `tests/run.sh tests/unit/common.bats`), bypasses the gate.

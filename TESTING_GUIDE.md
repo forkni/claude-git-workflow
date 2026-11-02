@@ -299,4 +299,32 @@ flowchart LR
 | Slow list share of CI file time | 326 of 767 s (43%) | **386 of 767 s (50%)** | Balanced |
 | Slow batch tests (`@test` count) | 789 | **541** | Retuned |
 | Fast batch tests (`@test` count) | 728 | **976** | Retuned |
-| CI leg times (fast / slow) | 5m05s / 3m14s | See PR #86 CI after this commit | To verify |
+| CI leg times (fast / slow) | 5m05s / 3m14s | 4m31s-5m11s / 1m40s-3m00s (run step, PR #86 at `1258e33`) | **Not balanced**: see Phase 11 |
+
+**Correction (Phase 11).** The CI `fast` leg did not run the fast batch. `tests/run.sh` widened `fast`
+to `all` whenever `CI` was set, so the leg ran the whole suite (TAP plan `1..1515`) and the `slow` leg
+(`1..541`) repeated 541 of those tests. No slow-list retune could change the wall clock of the `fast`
+leg. Phase 10 also ranked files by xargs file-seconds, but CI runs native `bats --jobs`, which
+parallelises inside a file.
+
+### Phase 11: Core and Fast on Every Push, Slow Files Monthly — [COMPLETED]
+
+- **Objective**: Every push and PR runs the core suite (`tests/unit/`) and the fast integration files. The five slowest files run monthly, and on a PR only when they, or a script they cover, changed.
+- **Implementation**:
+  - `tests/run.sh`: an explicit mode flag (`--fast`, `--slow`, `--slow-changed`, `--all`) now wins; `CI` no longer widens a run to `all`. The slow-file filter also applies to `--fast <paths>`, so CI legs can pass a directory. `CGW_SLOW_FILES` is now `dogfood`, `merge_pr`, `configure`, `cc_guardrail` and `repo_state` (257 tests); `common.bats` is core.
+  - `tests/run.sh --slow-changed`: reads `CGW_CHANGED_FILES` and selects each slow file whose own path, `tests/run.sh`, `tests/helpers/`, or a mapped script (`_slow_file_changed`) is in it. Nothing selected exits 0; a missing variable exits 2. `CGW_TEST_LIST=1` prints the selection without running bats.
+  - `branch-protection.yml`: the test matrix is `core`, `fast` and `slow-changed`. The `slow-changed` leg diffs against the PR base or the push `before` SHA, and runs every slow file when there is no usable base.
+  - `nightly.yml`: monthly (1st, 03:00 UTC). Ubuntu runs `--slow`; Windows runs `--all`.
+  - `tests/integration/run_sh.bats`: 10 selection tests. Mutation checks: restoring the `-n CI` upgrade fails the two CI tests, and deleting the `merge_pr` mapping fails the `--slow-changed` script test.
+- **Outcome**: The `1..N` plan numbers below are counted from the `@test` lines. Leg wall-clock times are filled in from the first CI run of this commit.
+
+#### Phase 11 Before/After Table
+
+| Metric | Before Phase 11 | After Phase 11 | Status |
+|--------|-----------------|----------------|--------|
+| Tests in the CI `fast` leg | 1,515 (whole suite) | core 388 + fast 882 (two legs) | Split |
+| Tests in the CI `slow` leg | 541 (repeated) | 0 to 257 (`slow-changed`) | Only when touched |
+| Slow tests run per push | 2 × 541 | 0 unless a covered file changed | Monthly + on change |
+| Slow list | 6 files (incl. `common.bats`, 284 tests) | 5 files (257 tests) | `common.bats` is core |
+| `nightly.yml` schedule | weekly (Sundays) | monthly (1st) | Windows `--all` kept |
+| CI leg times | 4m31s-5m11s / 1m40s-3m00s | See the CI run for this commit | To verify |

@@ -71,6 +71,83 @@ FIXTURE
   [[ "${output}" == *"failed: notests (bats exit 1, no not-ok line)"* ]]
 }
 
+# Batch selection, observed through CGW_TEST_LIST=1 (prints the chosen files and exits before bats).
+_list() {
+  run env CGW_TEST_LIST=1 "$@" bash "${CGW_PROJECT_ROOT}/tests/run.sh"
+}
+_slow_names='dogfood|merge_pr|configure|cc_guardrail|repo_state'
+_slow_listing="^tests/integration/(${_slow_names})\.bats\$"
+
+@test "run.sh bare run selects core and fast files and none of the slow files" {
+  _list
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"tests/unit/common.bats"* ]]
+  [[ "${output}" == *"tests/integration/push_validated.bats"* ]]
+  run grep -cE "${_slow_names}" <<<"${output}"
+  [ "${output}" = "0" ]
+}
+
+@test "run.sh on CI keeps an explicit --fast to the fast files" {
+  run env CGW_TEST_LIST=1 CI=true bash "${CGW_PROJECT_ROOT}/tests/run.sh" --fast tests/integration/
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"tests/integration/push_validated.bats"* ]]
+  [[ "${output}" != *"tests/unit/"* ]]
+  [[ "${output}" != *"tests/integration/merge_pr.bats"* ]]
+}
+
+@test "run.sh on CI with no mode flag still selects only core and fast" {
+  _list CI=true
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"tests/integration/configure.bats"* ]]
+}
+
+@test "run.sh --slow selects exactly the five slow files" {
+  run env CGW_TEST_LIST=1 bash "${CGW_PROJECT_ROOT}/tests/run.sh" --slow
+  [ "${status}" -eq 0 ]
+  run grep -cE "${_slow_listing}" <<<"${output}"
+  [ "${output}" = "5" ]
+}
+
+@test "run.sh --all and a bare run with CGW_RUN_SLOW=1 select the slow files too" {
+  run env CGW_TEST_LIST=1 bash "${CGW_PROJECT_ROOT}/tests/run.sh" --all
+  [[ "${output}" == *"tests/integration/merge_pr.bats"* ]]
+  [[ "${output}" == *"tests/unit/common.bats"* ]]
+  _list CGW_RUN_SLOW=1
+  [[ "${output}" == *"tests/integration/merge_pr.bats"* ]]
+}
+
+@test "run.sh --slow-changed selects the slow file whose script changed" {
+  run env CGW_TEST_LIST=1 CGW_CHANGED_FILES=scripts/git/merge_pr.sh bash "${CGW_PROJECT_ROOT}/tests/run.sh" --slow-changed
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"tests/integration/merge_pr.bats"* ]]
+  [[ "${output}" != *"tests/integration/repo_state.bats"* ]]
+}
+
+@test "run.sh --slow-changed maps a hook change to dogfood and configure" {
+  run env CGW_TEST_LIST=1 CGW_CHANGED_FILES=hooks/pre-push bash "${CGW_PROJECT_ROOT}/tests/run.sh" --slow-changed
+  [[ "${output}" == *"tests/integration/dogfood.bats"* ]]
+  [[ "${output}" == *"tests/integration/configure.bats"* ]]
+  [[ "${output}" != *"tests/integration/merge_pr.bats"* ]]
+}
+
+@test "run.sh --slow-changed selects all slow files when the runner or helpers change" {
+  run env CGW_TEST_LIST=1 CGW_CHANGED_FILES=$'README.md\ntests/helpers/setup.bash' bash "${CGW_PROJECT_ROOT}/tests/run.sh" --slow-changed
+  run grep -cE "${_slow_listing}" <<<"${output}"
+  [ "${output}" = "5" ]
+}
+
+@test "run.sh --slow-changed with an unrelated change runs nothing and exits 0" {
+  run env CGW_TEST_LIST=1 CGW_CHANGED_FILES=README.md bash "${CGW_PROJECT_ROOT}/tests/run.sh" --slow-changed
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"no changed slow files"* ]]
+}
+
+@test "run.sh --slow-changed without CGW_CHANGED_FILES exits 2" {
+  run env -u CGW_CHANGED_FILES bash "${CGW_PROJECT_ROOT}/tests/run.sh" --slow-changed
+  [ "${status}" -eq 2 ]
+  [[ "${output}" == *"needs CGW_CHANGED_FILES"* ]]
+}
+
 @test "run.sh prints the full TAP of a failed file with CGW_TEST_VERBOSE=1" {
   _write_failing_fixture
   run env CGW_TEST_TIMINGS=1 CGW_TEST_VERBOSE=1 bash "${CGW_PROJECT_ROOT}/tests/run.sh" "${BATS_TEST_TMPDIR}/suite"
