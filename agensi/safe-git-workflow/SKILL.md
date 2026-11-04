@@ -123,7 +123,8 @@ Conventional Commits, enforced by `commit_enhanced.sh`: `feat:`, `fix:`, `docs:`
 detail in a `BREAKING CHANGE:` paragraph in the body. Extra prefix words for a project go in
 `CGW_EXTRA_PREFIXES`.
 
-- Keep the subject after the prefix to about 50 characters. Past 72 the commit is blocked.
+- Keep the subject after the prefix to about 50 characters. Past 72 the commit is blocked, and
+  `undo_last.sh amend-message` applies the same cap.
 - The whole message is the one positional argument (there is no `-m`). For a body, build it with
   `"$(cat <<'EOF' ... EOF)"` and explain **why**, the approach, and side effects.
 - One commit, one concern: no unrelated fixes bundled in.
@@ -154,7 +155,7 @@ only. Typecheck runs in `check_lint.sh` and `push_validated.sh`, never in the co
 | [Roll back a merge](references/wrapper-recipes.md#rollback-a-merge) | `rollback_merge.sh` | `--revert` keeps history; revert the revert before merging again |
 | [Cherry-pick](references/wrapper-recipes.md#cherry-picking-a-commit) | `cherry_pick_commits.sh` | A paused pick concludes with `git cherry-pick --continue` |
 | [Cherry-pick some files](references/wrapper-recipes.md#cherry-picking-only-some-files-from-a-commit) | `cherry_pick_commits.sh --only` | Never strip paths with `git rm -f` |
-| [Undo](references/wrapper-recipes.md#undoing-something) | `undo_last.sh` | `discard` is irreversible; `amend-message` is for unpushed commits |
+| [Undo](references/wrapper-recipes.md#undoing-something) | `undo_last.sh` | `discard` is irreversible; `amend-message` is for unpushed commits and, with `--non-interactive`, refuses a non-conventional message |
 | [Rebase](references/wrapper-recipes.md#safe-rebase) | `rebase_safe.sh` | Tags a backup first; stops when commits are already pushed (rewriting them needs a force-push, so ask first) |
 | [Stash](references/wrapper-recipes.md#stashing-work-in-progress) | `stash_work.sh` | `drop` and `clear` need `--yes` (Rule 7) |
 | [Recover lost commits](references/wrapper-recipes.md#recovering-lost-commits) | `recover.sh` | Read-only except `restore`, which tags a backup first |
