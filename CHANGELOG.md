@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.22.2 (2026-11-02)
+
+> Changes since `v0.22.1`. No behaviour change in the shipped scripts: the only edits there are comments and `shfmt` layout. The rest is the test suite and CI.
 
 ### New Features
 
@@ -8,6 +10,37 @@
 - **`cgw_rm_tmpdir`**: the lint pipeline's two recursive deletes (`cgw_snapshot_tree`'s throwaway index dir in `_lib_lint.sh`, and `check_lint.sh`'s snapshot cleanup) now go through one helper that refuses anything but an existing directory whose name starts with `cgw-`, so an empty or wrong variable can never widen the delete. 3 tests in `tests/unit/common.bats`.
 
 ### Bug Fixes
+
+- **A slow Bats file now runs on a pull request when any script it runs changes**: `cc_guardrail.bats` runs `commit_enhanced.sh`, `configure.sh`, `worktree_manage.sh`, `push_validated.sh`, `branch_cleanup.sh` and the agy hook, but none of them selected it, so a PR that broke one skipped the guardrail tests until the monthly run. All five slow files were audited the same way (`merge_pr.bats` also runs `rollback_merge.sh`, `configure.bats` also runs `setup_attributes.sh`). A file trigger must now equal the changed path (a trailing `/` still names a directory), so `configure.sh.bak` selects nothing.
+
+### Maintenance
+
+- **CI runs the core and fast Bats batches on every push; five slow files run monthly**: `tests/run.sh` used to promote `--fast` to the whole suite whenever `CI` was set, so the fast leg ran 1515 tests and the slow leg repeated 541. An explicit mode flag now wins. New `--slow-changed` mode (reads `CGW_CHANGED_FILES`) and `CGW_TEST_LIST=1` (print the selected files). `branch-protection.yml` has `core` / `fast` / `slow-changed` legs; `nightly.yml` is monthly, with `--slow` on Ubuntu and `--all` on Windows. The slow list (`dogfood`, `merge_pr`, `configure`, `cc_guardrail`, `repo_state`) was retuned from CI timings. Ten selection tests in `tests/integration/run_sh.bats`.
+- **`commit_enhanced.bats` is split into four files that share one harness**: `commit_enhanced.bats`, `_gates`, `_modes` and `_staged_guard` replace the single file, and the two `index.lock` tests are now deterministic instead of racy. The copies of `setup`, `teardown` and `_run_commit` moved to `tests/integration/_commit_common.bash`, which `staged_checks.bats` also loads (118 tests, none lost or weakened). ShellCheck of the test pass, in CI and in the pre-push gate, now covers `tests/integration/*.bash`.
+- **CI pins `shfmt` 3.14.1 to match a current local install**: 3.14.0 changed how a heredoc-bearing `if` line is laid out (mvdan/sh#1047), so the old 3.13.0 pin and a local install disagreed on three hunks in `configure.sh` and `worktree_manage.sh`. Those hunks use the new layout. Two `check_lint.sh` comments now say that the CI shfmt step fails the job through the "Aggregate lint verdict" step.
+
+### Documentation
+
+- **`docs/KNOWN_ISSUES.md` lists the shell style-guide deviations itself** instead of pointing at the git-ignored `CLAUDE.md`. `docs/ci-setup.md` documents the no-base fallback that runs every slow file, and `TESTING_GUIDE.md` records Phases 10 to 12.
+
+## v0.22.1 (2026-11-01)
+
+### Bug Fixes
+
+- **`merge_pr.sh` no longer refuses every PR in a repo whose workflows never run on pull requests**: v0.22.0 refused a PR with no checks whenever the repo had any active workflow, so a repo with only a tag-push release workflow or a scheduled job could merge only with `--skip-checks`. The gate now reads each active workflow's YAML (`gh workflow view --yaml`, new `cgw_workflow_may_run_on_pr` in `_lib_remote.sh`) and refuses only when one mentions `pull_request`. A YAML that cannot be read counts as a pull-request workflow, so the gate still fails closed. When none runs on pull requests, the PR merges with the `treating as no CI` warning. `verify_ci.sh --pr` is unchanged and still reports exit 2 in such a repo.
+
+## v0.22.0 (2026-11-01)
+
+> Changes since `v0.21.0`
+
+### Bug Fixes
+
+- **The pre-push message errors now cover an older bad commit**: `undo_last.sh amend-message` only rewrites the latest commit, so the over-cap and non-conventional errors also name `rebase_safe.sh --squash-last <N>` (interactive; mark the commit `reword`).
+- **`merge_pr.sh` no longer merges a PR with no checks when the repo has CI**: after the appear window, "no checks reported" was treated as "no CI" and the PR merged, even if the repo had active workflows that had not registered for the head (or were skipped by path filters). It now asks `gh workflow list` (new `cgw_active_workflows` in `_lib_remote.sh`, shared with `verify_ci.sh`) and refuses with exit 1 when any workflow is active, or when the list cannot be read. A repo with no active workflow still merges with the `treating as no CI` warning.
+- **The subject hard cap now applies at all three commit-message gates**: `CGW_COMMIT_SUBJECT_HARD_LEN` (default 72, gated by `CGW_ENFORCE_SUBJECT_LENGTH`) was enforced only by `commit_enhanced.sh`, so `undo_last.sh amend-message` and a direct `git commit` could produce a subject that went out unchecked. `undo_last.sh amend-message` now asks (non-interactive: aborts, commit unchanged) and `hooks/pre-push` refuses to push a commit past the cap, with the fix command in the message. Freeform branches and merge commits stay exempt. With `CGW_ENFORCE_SUBJECT_LENGTH=0` both only warn. The measurement moved to `cgw_commit_subject_length` in `_common.sh`. **A branch that already holds a conventional commit with a subject over the cap now fails its next push** until the commit is reworded (`./scripts/git/undo_last.sh amend-message` for the last one, or `rebase_safe.sh`).
+- **`worktree_manage.sh remove` no longer lists the main checkout's untracked files as left in a removed worktree**: when `git worktree remove` deleted a worktree's files but could not delete the directory itself (on Windows, a process holding it open), the wrapper reported a failure and then ran `git -C <path> status` in the empty folder. For a worktree created inside the main checkout, git resolved that to the main checkout and printed its untracked files, which looked like blockers. The wrapper now checks `git worktree list --porcelain` first: when the worktree is no longer registered it prints `[OK] Worktree removed`, names the leftover empty folder for the user to delete, and exits 0. Files are listed only when the path is still a worktree root. Two tests added in `tests/integration/worktree.bats`.
+
+- **`undo_last.sh amend-message` refuses a non-conventional message when non-interactive**: it used to accept one silently, while `commit_enhanced.sh` aborted on the same message, so an agent could amend a commit into a message that `hooks/pre-push` then blocked. It now uses the same `abort` policy: exit 1 with the `non-interactive: ... requires confirmation` message, and the commit is left unchanged. An interactive "no" still prints `Cancelled` and exits 0. One test updated and one added in `tests/integration/undo_last.bats`.
 
 - **`worktree_manage.sh remove --execute` fails loudly with no terminal**: without `--non-interactive`, the confirmation prompt read EOF, printed `Cancelled` and exited 0, so an agent or script took a worktree that was still there for a removed one. With stdin not a terminal and `CGW_NON_INTERACTIVE` unset, it now exits 1 before prompting, names `--non-interactive` and prints the command to rerun. An interactive "no" still prints `Cancelled` and exits 0. The usage error, the post-failure retry hint, the usage examples, the Guardrail's `git worktree remove` deny message and `docs/usage.md` now show `--non-interactive`. Two tests in `tests/integration/worktree.bats`.
 

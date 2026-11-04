@@ -34,6 +34,8 @@
 #   cgw_default_branch()        - Echo the repo's default branch (origin/HEAD, falls back to CGW_TARGET_BRANCH) [_lib_remote.sh]
 #   cgw_require_gh()            - Verify gh CLI is installed and authenticated; prints [ERROR] and returns 1 on failure [_lib_remote.sh]
 #   cgw_pr_view()               - Echo one field of a PR via gh pr view --jq, CR-stripped [_lib_remote.sh]
+#   cgw_active_workflows()      - Echo the repo's active workflow names, one per line; non-zero = gh failed [_lib_remote.sh]
+#   cgw_workflow_may_run_on_pr() - 0 unless the workflow's YAML was read and has no pull_request trigger [_lib_remote.sh]
 
 # Seam libraries sourced from this file (same directory): _lib_remote.sh, _lib_lock.sh, _lib_conflict.sh,
 # _lib_lint.sh.
@@ -429,7 +431,7 @@ cgw_run_pre_op_validation() {
 }
 
 # Remote/network helpers (cgw_rev_count, cgw_net_git, cgw_remote_*, cgw_default_branch,
-# cgw_require_gh, cgw_pr_view) live in _lib_remote.sh. A missing lib returns 1 from this
+# cgw_require_gh, cgw_pr_view, cgw_active_workflows) live in _lib_remote.sh. A missing lib returns 1 from this
 # file, so the hooks (`source _common.sh || exit 1`) fail closed.
 # shellcheck source=scripts/git/_lib_remote.sh
 source "$(dirname "${BASH_SOURCE[0]}")/_lib_remote.sh" || {
@@ -786,6 +788,74 @@ cgw_freeform_message_check() {
   local status=$?
   rm -f "${msgfile}"
   return ${status}
+}
+
+# cgw_commit_message_mode <branch>
+#   Decides which commit-message policy applies to <branch> and records it in
+#   two globals (no output):
+#     CGW_MSG_MODE          "freeform" (branch answers to another project's
+#                           style, see cgw_branch_is_freeform) or
+#                           "conventional" (the default)
+#     CGW_MSG_GLOB_IGNORED  1 when CGW_FREEFORM_MESSAGE_BRANCHES matched but a
+#                           guarded branch refused the exemption, else 0.
+#                           Callers print their own "pattern ignored" notice.
+#   The mode is a property of the branch, so a gate that checks many commits
+#   (pre-push) calls this once per pushed ref.
+cgw_commit_message_mode() {
+  local branch="$1"
+  CGW_MSG_GLOB_IGNORED=0
+  if cgw_branch_is_freeform "${branch}"; then
+    CGW_MSG_MODE="freeform"
+    return 0
+  fi
+  CGW_MSG_MODE="conventional"
+  if cgw_branch_matches_freeform_glob "${branch}" && cgw_branch_is_guarded "${branch}"; then
+    CGW_MSG_GLOB_IGNORED=1
+  fi
+  return 0
+}
+
+# cgw_check_commit_message <msg>
+#   Verdict for <msg> under the mode last set by cgw_commit_message_mode.
+#   Returns:
+#     0  acceptable (conventional format, or a freeform message that passed
+#        CGW_FREEFORM_MESSAGE_CHECK)
+#     1  freeform branch and CGW_FREEFORM_MESSAGE_CHECK rejected it
+#     2  conventional branch and the message has no valid "type:" prefix
+#   Prints nothing itself (the delegated check's own output passes through).
+#   Each gate owns its wording and its response to 1 and 2: commit_enhanced.sh
+#   and undo_last.sh ask the user, pre-push blocks. Merge-commit skipping stays
+#   with the caller, which knows whether it is concluding a merge.
+cgw_check_commit_message() {
+  local msg="$1"
+  if [[ "${CGW_MSG_MODE:-conventional}" == "freeform" ]]; then
+    cgw_freeform_message_check "${msg}" || return 1
+    return 0
+  fi
+  cgw_validate_commit_message "${msg}" || return 2
+  return 0
+}
+
+# cgw_commit_subject_length <msg> <prefixed|whole>
+#   Prints the length the subject-length caps (CGW_COMMIT_SUBJECT_SOFT_LEN /
+#   CGW_COMMIT_SUBJECT_HARD_LEN) are measured against. Only the first line of
+#   <msg> counts: the full message holds a body and trailers, and measuring
+#   past the first newline would false-positive on any commit with a normal
+#   body.
+#     prefixed  the conventional grammar: drop everything up to the first
+#               colon plus one optional space ("type:subject" with no space
+#               is valid, so strip on the bare colon).
+#     whole     the whole subject line. For a freeform message or a merge
+#               conclusion, where a colon is part of the prose ("Merge X into
+#               Y") and there is no "type:" prefix to strip.
+cgw_commit_subject_length() {
+  local msg="$1" scope="$2"
+  local subject="${msg%%$'\n'*}"
+  if [[ "${scope}" == "prefixed" ]]; then
+    subject="${subject#*:}"
+    subject="${subject# }"
+  fi
+  printf '%s\n' "${#subject}"
 }
 
 # cgw_run_staged_checks

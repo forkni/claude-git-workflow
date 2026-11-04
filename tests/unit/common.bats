@@ -1168,6 +1168,108 @@ UU b.py
   [ "${status}" -eq 1 ]
 }
 
+# ── cgw_commit_message_mode() / cgw_check_commit_message() ────────────────────
+# The mode functions set globals, so these tests call them directly (not via
+# `run`, which would hide the globals in a subshell).
+
+@test "cgw_commit_message_mode: ordinary branch is conventional, glob not ignored" {
+  CGW_FREEFORM_MESSAGE_BRANCHES=""
+  cgw_commit_message_mode "feature/x"
+  [ "${CGW_MSG_MODE}" = "conventional" ]
+  [ "${CGW_MSG_GLOB_IGNORED}" -eq 0 ]
+}
+
+@test "cgw_commit_message_mode: branch matching the glob is freeform" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="up/*"
+  cgw_commit_message_mode "up/x"
+  [ "${CGW_MSG_MODE}" = "freeform" ]
+  [ "${CGW_MSG_GLOB_IGNORED}" -eq 0 ]
+}
+
+@test "cgw_commit_message_mode: guarded branch matching the glob stays conventional and flags the ignored glob" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="*"
+  cgw_commit_message_mode "${CGW_TARGET_BRANCH}"
+  [ "${CGW_MSG_MODE}" = "conventional" ]
+  [ "${CGW_MSG_GLOB_IGNORED}" -eq 1 ]
+}
+
+@test "cgw_commit_message_mode: a second call resets the ignored-glob flag" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="*"
+  cgw_commit_message_mode "${CGW_TARGET_BRANCH}"
+  [ "${CGW_MSG_GLOB_IGNORED}" -eq 1 ]
+  cgw_commit_message_mode "up/x"
+  [ "${CGW_MSG_MODE}" = "freeform" ]
+  [ "${CGW_MSG_GLOB_IGNORED}" -eq 0 ]
+}
+
+@test "cgw_check_commit_message: conventional mode accepts a prefixed message" {
+  CGW_FREEFORM_MESSAGE_BRANCHES=""
+  cgw_commit_message_mode "feature/x"
+  cgw_check_commit_message "fix: correct typo"
+}
+
+@test "cgw_check_commit_message: conventional mode returns 2 for a message without a type prefix" {
+  CGW_FREEFORM_MESSAGE_BRANCHES=""
+  cgw_commit_message_mode "feature/x"
+  run cgw_check_commit_message "Correct typo"
+  [ "${status}" -eq 2 ]
+}
+
+@test "cgw_check_commit_message: freeform mode accepts any message when no delegated check is set" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="up/*"
+  CGW_FREEFORM_MESSAGE_CHECK=""
+  cgw_commit_message_mode "up/x"
+  cgw_check_commit_message "Present track_anything count as a one-channel CHOP"
+}
+
+@test "cgw_check_commit_message: freeform mode returns 1 when the delegated check rejects" {
+  local check_script
+  check_script="$(mktemp)"
+  printf '#!/usr/bin/env bash\nexit 1\n' >"${check_script}"
+  chmod +x "${check_script}"
+  CGW_FREEFORM_MESSAGE_BRANCHES="up/*"
+  CGW_FREEFORM_MESSAGE_CHECK="${check_script}"
+  cgw_commit_message_mode "up/x"
+  run cgw_check_commit_message "bad message"
+  [ "${status}" -eq 1 ]
+}
+
+@test "cgw_check_commit_message: freeform mode does not apply the conventional-format rule" {
+  CGW_FREEFORM_MESSAGE_BRANCHES="up/*"
+  CGW_FREEFORM_MESSAGE_CHECK=""
+  cgw_commit_message_mode "up/x"
+  # Same message the conventional-mode test above rejects with 2.
+  cgw_check_commit_message "Correct typo"
+}
+
+# ── cgw_commit_subject_length() ───────────────────────────────────────────────
+
+@test "cgw_commit_subject_length: prefixed drops the type and one space" {
+  run cgw_commit_subject_length "fix: abcde" prefixed
+  [ "${status}" -eq 0 ]
+  [ "${output}" = "5" ]
+}
+
+@test "cgw_commit_subject_length: prefixed handles a type with no space after the colon" {
+  run cgw_commit_subject_length "fix:abcde" prefixed
+  [ "${output}" = "5" ]
+}
+
+@test "cgw_commit_subject_length: prefixed measures the first line only" {
+  run cgw_commit_subject_length $'fix: abcde\n\nA long body line that must not count.' prefixed
+  [ "${output}" = "5" ]
+}
+
+@test "cgw_commit_subject_length: whole keeps the prefix and any colon in the prose" {
+  run cgw_commit_subject_length "Merge a: b into c" whole
+  [ "${output}" = "17" ]
+}
+
+@test "cgw_commit_subject_length: whole measures the first line only" {
+  run cgw_commit_subject_length $'abcde\nsecond line' whole
+  [ "${output}" = "5" ]
+}
+
 # ── cgw_resolve_lint_binary() ─────────────────────────────────────────────────
 
 @test "cgw_resolve_lint_binary: returns venv path when binary exists in PYTHON_BIN" {
@@ -1587,7 +1689,7 @@ extend-exclude = ["gen"]
 # Exercises the stdin contract directly: mixed input, multi-path input, and
 # the fail-closed "staged path missing from disk" branch that the lint-only
 # wrapper's tests never reach (a lint-eligible file being deleted is covered
-# end-to-end by commit_enhanced.bats' Mode 3 instead).
+# end-to-end by commit_enhanced_staged_guard.bats' Mode 3 instead).
 
 @test "cgw_paths_diverging_from_index: with mixed input, emits only the diverging path" {
   run bash -c "

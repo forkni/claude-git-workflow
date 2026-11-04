@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 # tests/run.sh — run the CGW bats suite in parallel
 # Usage:
-#   tests/run.sh                          # fast batch: the full suite minus the slow files (local default)
-#   tests/run.sh --slow                   # slow batch only (the files in CGW_SLOW_FILES)
-#   tests/run.sh --all                    # fast + slow (what CI runs); same as CGW_RUN_SLOW=1
+#   tests/run.sh                          # core + fast: tests/unit/ and tests/integration/ minus the slow files (default)
+#   tests/run.sh --fast [paths]           # same, for the given paths; the slow files are dropped even on CI
+#   tests/run.sh --slow                   # slow batch only (the files in CGW_SLOW_FILES; the monthly workflow)
+#   tests/run.sh --slow-changed           # slow files whose file or covered script is in CGW_CHANGED_FILES (PR gate)
+#   tests/run.sh --all                    # core + fast + slow; same as a bare run with CGW_RUN_SLOW=1
+#   CGW_CHANGED_FILES=<paths> ...         # newline-separated repo paths for --slow-changed (empty = nothing changed)
+#   CGW_TEST_LIST=1 tests/run.sh ...      # print the selected files, one per line, and exit without running bats
 #   CGW_TEST_TIMINGS=1 tests/run.sh ...   # print the slowest files afterwards (to retune CGW_SLOW_FILES)
 #   CGW_TEST_VERBOSE=1 tests/run.sh ...   # print the full TAP of each failed file (default: failures only)
 #   tests/run.sh tests/unit/              # unit tests only  (~25s)
 #   tests/run.sh tests/unit/config.bats   # single file
 #   CGW_TEST_JOBS=N tests/run.sh          # override parallelism (default: half logical cores)
-#   CGW_RUN_SLOW=1 tests/run.sh           # include slow files locally (always run on CI)
+#   CGW_RUN_SLOW=1 tests/run.sh           # a bare run includes the slow files (same as --all; an explicit mode flag wins)
 #   tests/run.sh --help                   # print this usage
 #   tests/run.sh --version                # print the bats version and CGW revision this run would use
 set -uo pipefail
@@ -39,7 +43,7 @@ _pos=0
 for _arg in "$@"; do
   _pos=$((_pos + 1))
   case "${_arg}" in
-    --slow | --all | --fast)
+    --slow | --slow-changed | --all | --fast)
       if ((_pos > 1)); then
         echo "[run.sh] ${_arg} must be the first argument (see --help)" >&2
         exit 2
@@ -56,31 +60,74 @@ _cores="$(nproc 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-4}")"
 jobs="${CGW_TEST_JOBS:-$((_cores / 2))}"
 ((jobs < 1)) && jobs=1
 
-# Files that dominate local wall-clock (e.g. common.bats disables within-file
-# parallelization to avoid a bats --jobs index.lock race, so its ~126 tests
-# run serially and become the parallel wall-clock floor). Skipped on a default
-# full-suite run unless CI is set or CGW_RUN_SLOW=1; always run on CI.
-# Measured wall time per file under parallel load (CGW_TEST_TIMINGS=1): the heaviest files, roughly
-# half the suite's total runtime. Retune from a fresh timing run when files grow.
+# Core (tests/unit/) and fast (the other integration files) run on every push and PR. The slow
+# files below run monthly (nightly.yml --slow) and, on a PR, only when the file or a script it
+# covers changed (--slow-changed). These are the files with the most tests that each build their
+# own git repos: 257 of the ~1500 tests. dogfood.bats also checks the whole tree on CI (no
+# upstream there, ~170 s) and repeats the ShellCheck job. CI runs native `bats --jobs`, which
+# parallelises inside a file; the xargs path (CGW_TEST_TIMINGS=1, Windows) does not, so its
+# file-seconds do not predict a CI leg. Retune from the test count and a CI leg time.
 CGW_SLOW_FILES=(
-  "tests/unit/common.bats"
-  "tests/integration/check_lint_snapshot.bats"
+  "tests/integration/dogfood.bats"
   "tests/integration/merge_pr.bats"
-  "tests/integration/commit_enhanced.bats"
-  "tests/integration/hook_preservation.bats"
-  "tests/integration/push_validated.bats"
-  "tests/integration/agy_guardrail.bats"
+  "tests/integration/configure.bats"
+  "tests/integration/cc_guardrail.bats"
+  "tests/integration/repo_state.bats"
 )
 
-# Batch selection: --slow = only the slow files, --all = everything, default = fast batch.
-_mode=fast
-if [[ "${1:-}" == "--slow" || "${1:-}" == "--all" || "${1:-}" == "--fast" ]]; then
-  _mode="${1#--}"
-  shift
-fi
-[[ "${CGW_RUN_SLOW:-0}" == "1" || -n "${CI:-}" ]] && [[ "${_mode}" == "fast" ]] && _mode=all
+# Does a change in CGW_CHANGED_FILES select the slow file $1? A trigger ending in / names a
+# directory (prefix match); any other trigger must equal the changed path exactly, so
+# scripts/git/configure.sh does not match configure.sh.bak. The file itself and the runner or
+# helpers always select it. The per-file triggers are the scripts and hooks that the .bats file
+# runs; re-check them with a grep of the file when it starts to use another script. Shared
+# libraries (_common.sh, _config.sh, _lib_*.sh) are not triggers: core covers them on every push
+# and the monthly run covers the rest.
+_slow_file_changed() {
+  local file="${1#./}" changed trigger
+  local -a triggers=("${file}" "tests/run.sh" "tests/helpers/")
+  case "${file}" in
+    *dogfood.bats) triggers+=("scripts/test/run_tests.sh" "scripts/git/configure.sh" "hooks/") ;;
+    *merge_pr.bats) triggers+=("scripts/git/merge_pr.sh" "scripts/git/rollback_merge.sh") ;;
+    *configure.bats) triggers+=("scripts/git/configure.sh" "scripts/git/setup_attributes.sh" "hooks/") ;;
+    *cc_guardrail.bats)
+      triggers+=("hooks/cc-block-dangerous-git.sh" "hooks/_guardrail_core.sh" "hooks/agy-block-dangerous-git.sh"
+        "scripts/git/commit_enhanced.sh" "scripts/git/configure.sh" "scripts/git/worktree_manage.sh"
+        "scripts/git/push_validated.sh" "scripts/git/branch_cleanup.sh")
+      ;;
+    *repo_state.bats) triggers+=("scripts/git/repo_state.sh") ;;
+  esac
+  while IFS= read -r changed; do
+    [[ -z "${changed}" ]] && continue
+    for trigger in "${triggers[@]}"; do
+      if [[ "${trigger}" == */ ]]; then
+        [[ "${changed}" == "${trigger}"* ]] && return 0
+      else
+        [[ "${changed}" == "${trigger}" ]] && return 0
+      fi
+    done
+  done <<<"${CGW_CHANGED_FILES}"
+  return 1
+}
 
-# Default target: full suite. Callers can pass specific paths to narrow the run.
+# Batch selection: --fast = core + fast, --slow = only the slow files, --slow-changed = the
+# slow files a change touches, --all = everything. A bare run is --fast; CGW_RUN_SLOW=1 makes a
+# bare run --all. An explicit mode flag always wins, and CI is no longer a reason to widen it.
+_mode=fast
+_explicit_mode=0
+case "${1:-}" in
+  --slow | --slow-changed | --all | --fast)
+    _mode="${1#--}"
+    _explicit_mode=1
+    shift
+    ;;
+esac
+[[ "${CGW_RUN_SLOW:-0}" == "1" && "${_explicit_mode}" -eq 0 ]] && _mode=all
+if [[ "${_mode}" == "slow-changed" && -z "${CGW_CHANGED_FILES+x}" ]]; then
+  echo "[run.sh] --slow-changed needs CGW_CHANGED_FILES (newline-separated repo paths; empty = none)" >&2
+  exit 2
+fi
+
+# Default target: core + fast. Callers can pass specific paths to narrow the run.
 # Note: "${@:-fallback}" produces a single string when $@ is empty and fallback
 # contains spaces — use an explicit branch so each path is a separate array element.
 _default_run=0
@@ -93,8 +140,8 @@ fi
 
 mapfile -t _files < <(find "${_targets[@]}" -name "*.bats" | sort)
 
-# Slow-file gate only applies to the default full-suite run — an explicitly
-# named target (file or dir) always runs regardless. _filtered tracks whether
+# The slow-file gate applies to a bare run and to any run with an explicit mode flag. A named
+# target without a mode flag (file or dir) always runs regardless. _filtered tracks whether
 # anything was actually dropped: when nothing is filtered we hand bats its
 # original directory targets unchanged (see native-jobs branch below) rather
 # than an expanded flat file list, since bats schedules a flat list of files
@@ -102,7 +149,7 @@ mapfile -t _files < <(find "${_targets[@]}" -name "*.bats" | sort)
 # observed to change concurrent-file timing enough to trip an unrelated race
 # in merge_docs.bats on CI.
 _filtered=0
-if [[ "${_default_run}" -eq 1 && "${_mode}" != "all" ]]; then
+if [[ ("${_default_run}" -eq 1 || "${_explicit_mode}" -eq 1) && "${_mode}" != "all" ]]; then
   _kept=() _skipped_files=()
   for f in "${_files[@]}"; do
     _is_slow=0
@@ -114,6 +161,8 @@ if [[ "${_default_run}" -eq 1 && "${_mode}" != "all" ]]; then
     done
     if [[ "${_mode}" == "slow" ]]; then
       ((_is_slow == 1)) && _kept+=("${f}") || _skipped_files+=("${f}")
+    elif [[ "${_mode}" == "slow-changed" ]]; then
+      if ((_is_slow == 1)) && _slow_file_changed "${f}"; then _kept+=("${f}"); else _skipped_files+=("${f}"); fi
     else
       ((_is_slow == 1)) && _skipped_files+=("${f}") || _kept+=("${f}")
     fi
@@ -121,14 +170,23 @@ if [[ "${_default_run}" -eq 1 && "${_mode}" != "all" ]]; then
   _files=("${_kept[@]}")
   if [[ ${#_skipped_files[@]} -gt 0 ]]; then
     _filtered=1
-    printf '[run.sh] %s batch: skipping %d file(s); use --all (or CGW_RUN_SLOW=1) for everything, --slow for the other batch.
-' "${_mode}" "${#_skipped_files[@]}" >&2
+    printf '[run.sh] %s batch: skipping %d file(s); use --all (or CGW_RUN_SLOW=1) for everything, --slow for the other batch.\n' "${_mode}" "${#_skipped_files[@]}" >&2
   fi
+fi
+
+if [[ "${_mode}" == "slow-changed" && ${#_files[@]} -eq 0 ]]; then
+  echo "[run.sh] no changed slow files — nothing to run."
+  exit 0
 fi
 
 if [[ ${#_files[@]} -eq 0 ]]; then
   echo "[run.sh] No test files matched — nothing to run." >&2
   exit 1
+fi
+
+if [[ "${CGW_TEST_LIST:-0}" == "1" ]]; then
+  printf '%s\n' "${_files[@]}"
+  exit 0
 fi
 
 # bats --jobs requires flock/shlock, which Git Bash on Windows does not provide.

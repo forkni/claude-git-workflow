@@ -5,35 +5,16 @@
 bats_require_minimum_version 1.5.0
 load '../helpers/setup'
 load '../helpers/mocks'
+load '_commit_common'
 
 setup() {
-  create_test_repo
-  setup_mock_bin
-  install_mock_lint
-  git -C "${TEST_REPO_DIR}" checkout --quiet development
+  _commit_setup
   mkdir -p "${TEST_REPO_DIR}/src" "${TEST_REPO_DIR}/docs"
   # Real projects gitignore .cgw.conf; without this the untracked-files notice
   # ([WARN]) fires on the config these tests write and trips the no-WARN asserts.
   echo ".cgw.conf" >>"${TEST_REPO_DIR}/.git/info/exclude"
   CHECK_LOG="${BATS_TEST_TMPDIR}/check.log"
   export CHECK_LOG
-}
-
-teardown() {
-  cleanup_test_repo
-}
-
-# Run commit_enhanced.sh with CGW_STAGED_CHECKS taken from the caller's env.
-_run_commit() {
-  bash -c "
-    cd '${TEST_REPO_DIR}'
-    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
-    export PROJECT_ROOT='${TEST_REPO_DIR}'
-    export CGW_LINT_CMD=ruff
-    export CGW_FORMAT_CMD=''
-    export CGW_NON_INTERACTIVE=1
-    bash '${CGW_PROJECT_ROOT}/scripts/git/commit_enhanced.sh' $*
-  "
 }
 
 _stage() {

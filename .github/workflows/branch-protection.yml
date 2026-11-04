@@ -72,7 +72,7 @@ jobs:
 
       - name: ShellCheck Bats test files
         id: sc_tests
-        run: shellcheck --shell=bash --severity=error tests/unit/*.bats tests/integration/*.bats
+        run: shellcheck --shell=bash --severity=error tests/unit/*.bats tests/integration/*.bats tests/integration/*.bash
         continue-on-error: true
 
       - name: Check shell formatting (shfmt)
@@ -153,11 +153,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Windows is covered by the weekly nightly only: its fast batch needs 20+ minutes, far
+        # core = tests/unit/, fast = the other integration files minus the slow list in
+        # tests/run.sh; both run on every push. slow-changed runs a slow file only when it, or
+        # the script it covers, changed. The whole slow list runs monthly (nightly.yml).
+        # Windows is covered by the monthly nightly only: its fast batch needs 20+ minutes, far
         # outside the commit-stage budget (measured on PR #48).
         include:
-          - { os: ubuntu-latest, batch: fast }
-          - { os: ubuntu-latest, batch: slow }
+          - { os: ubuntu-latest, batch: core, args: '--fast tests/unit/' }
+          - { os: ubuntu-latest, batch: fast, args: '--fast tests/integration/' }
+          - { os: ubuntu-latest, batch: slow-changed, args: '--slow-changed' }
 
     defaults:
       run:
@@ -167,6 +171,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          # slow-changed diffs against the base commit, so it needs the history.
+          fetch-depth: ${{ matrix.batch == 'slow-changed' && '0' || '1' }}
           persist-credentials: false
 
       - name: Install ShellCheck and bats-core
@@ -183,7 +189,26 @@ jobs:
       - name: Run ${{ matrix.batch }} test batch
         env:
           BATCH: ${{ matrix.batch }}
-        run: CGW_TEST_JOBS=4 bash tests/run.sh --"${BATCH}"
+          RUN_ARGS: ${{ matrix.args }}
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          if [[ "${BATCH}" == "slow-changed" ]]; then
+            base="${PUSH_BEFORE}"
+            [[ "${EVENT}" == "pull_request" ]] && base="${PR_BASE}"
+            if [[ -n "${base}" ]] && git cat-file -e "${base}^{commit}" 2>/dev/null &&
+              merge_base="$(git merge-base "${base}" HEAD)"; then
+              CGW_CHANGED_FILES="$(git diff --name-only "${merge_base}" HEAD)"
+            else
+              # New branch, force push or shallow history: no usable base, so run every slow file.
+              CGW_CHANGED_FILES="tests/run.sh"
+            fi
+            export CGW_CHANGED_FILES
+            printf 'Changed files:\n%s\n' "${CGW_CHANGED_FILES}"
+          fi
+          read -r -a args <<<"${RUN_ARGS}"
+          CGW_TEST_JOBS=4 bash tests/run.sh "${args[@]}"
 
   all-gates-green:
     name: all-gates-green

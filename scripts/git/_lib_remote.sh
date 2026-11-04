@@ -250,3 +250,28 @@ cgw_require_gh() {
 cgw_pr_view() {
   gh pr view "${2}" --repo "${1}" --json "${3}" --jq "${4}" 2>/dev/null | tr -d '\r'
 }
+
+# cgw_active_workflows <owner/repo> [logfile]
+# Echoes the names of the repo's active GitHub Actions workflows, one per line, with
+# CRs stripped. Empty output with status 0 means "no CI in this repo"; a non-zero
+# status (gh failed) means "unknown" -- gh's exit status reaches the caller through
+# pipefail, so a fail-closed caller must test it. gh's stderr goes to [logfile]
+# (default: discarded).
+cgw_active_workflows() {
+  gh workflow list --repo "${1}" --json name,state --jq '.[] | select(.state == "active") | .name' 2>>"${2:-/dev/null}" | tr -d '\r'
+}
+
+# cgw_workflow_may_run_on_pr <owner/repo> <workflow-name> [logfile]
+# Returns 0 when the workflow can report checks on a pull request: its YAML (default
+# branch) mentions pull_request, which also matches pull_request_target, outside comment
+# lines. Returns 1 only when the YAML was read and has no such trigger (tag-only,
+# schedule, push-only or workflow_dispatch workflows). An unreadable YAML returns 0:
+# unknown counts as "may run", so a gate built on this fails closed.
+cgw_workflow_may_run_on_pr() {
+  local yaml
+  # The name is repo-controlled (the workflow's `name:`), so flags go first and `--` ends
+  # option parsing: a name such as "--web" stays a positional argument.
+  yaml=$(gh workflow view --repo "${1}" --yaml -- "${2}" 2>>"${3:-/dev/null}" | tr -d '\r') || return 0
+  [[ -n "${yaml}" ]] || return 0
+  grep -v '^[[:space:]]*#' <<<"${yaml}" | grep -q 'pull_request'
+}

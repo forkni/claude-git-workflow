@@ -685,7 +685,7 @@ Wraps `gh pr checkout`. Requires `gh` CLI authenticated (`gh auth login`). Refus
 | `--dry-run` | Validate and print the `gh` commands without merging |
 | `--non-interactive` | Accept all defaults, no prompts |
 
-Wraps `gh pr merge --merge`. Requires `gh` CLI authenticated. Passes an explicit `--repo` resolved from `CGW_REMOTE`'s URL (like `create_pr.sh`) and aborts if it can't. Refuses a PR that isn't OPEN. `gh pr checks` carries no commit SHA, so right after a push it can report the *previous* head's green checks or "no checks reported": the gate therefore refuses a PR head that lags the pushed branch, refuses a recent head with no checks unless `--wait-checks`, and pins the merge to the verified commit (`gh pr merge --match-head-commit`). After pushing, use `--wait-checks`. On success prints the merge SHA and the undo command `rollback_merge.sh --revert --target <sha>`.
+Wraps `gh pr merge --merge`. Requires `gh` CLI authenticated. Passes an explicit `--repo` resolved from `CGW_REMOTE`'s URL (like `create_pr.sh`) and aborts if it can't. Refuses a PR that isn't OPEN. `gh pr checks` carries no commit SHA, so right after a push it can report the *previous* head's green checks or "no checks reported": the gate therefore refuses a PR head that lags the pushed branch, refuses a recent head with no checks unless `--wait-checks`, refuses any head that still has no checks when the repo has an active workflow that runs on pull requests (its YAML mentions `pull_request`; an unreadable YAML or workflow list also refuses), merging "as no CI" only when none does, and pins the merge to the verified commit (`gh pr merge --match-head-commit`). After pushing, use `--wait-checks`. On success prints the merge SHA and the undo command `rollback_merge.sh --revert --target <sha>`.
 
 **`verify_ci.sh`** â€” Post-push CI gate: wait for the runs a push triggered and print one verdict
 
@@ -766,7 +766,7 @@ Computes GitHub-compatible heading slugs locally (offline port of `gh-md-toc` â€
 | `CGW_DEV_ONLY_FILES=<paths>` | Space-separated dev-only paths; cherry-pick warns if these are included |
 | `CGW_SIGN_COMMITS=1` | GPG/SSH-sign all commits (`commit_enhanced.sh`); overridable per-call with `--sign`/`--no-sign` |
 | `CGW_COMMIT_SUBJECT_SOFT_LEN=<n>` | Subject length past which an advisory tip is printed (default: `50`, Pro Git recommendation) |
-| `CGW_COMMIT_SUBJECT_HARD_LEN=<n>` | Subject length past which the commit is blocked (default: `72`, `git log --oneline`/GitHub truncation point) |
+| `CGW_COMMIT_SUBJECT_HARD_LEN=<n>` | Subject length past which the commit, `undo_last.sh amend-message` and the pre-push hook are blocked (default: `72`, `git log --oneline`/GitHub truncation point) |
 | `CGW_ENFORCE_SUBJECT_LENGTH=0` | Make the hard cap advisory-only instead of blocking (default: `1` = blocking) |
 | `CGW_SIGN_TAGS=1` | Create signed annotated tags (`create_release.sh`); overridable per-call with `--sign`/`--no-sign` |
 | `CGW_ALLOW_REBASE_PUBLISHED=1` | Allow rebasing commits already pushed to remote; disables `pre-rebase` hook guard |

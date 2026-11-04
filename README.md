@@ -205,7 +205,7 @@ Priority 3: Built-in defaults                ← Safe defaults; works without an
 | `CGW_MARKDOWNLINT_CMD` | *(auto-detected)* | Markdown linter (`markdownlint-cli2` → `markdownlint` → `npx` fallback → disabled) |
 | `CGW_ALLOW_STAGED_DIVERGENCE` | `0` | `0` = fail commit closed if staged blob differs from validated working tree; `1` = allow staged-only divergence |
 | `CGW_COMMIT_SUBJECT_SOFT_LEN` | `50` | Soft subject line length limit (displays advisory guidance if exceeded) |
-| `CGW_COMMIT_SUBJECT_HARD_LEN` | `72` | Hard subject line length limit (blocks commit when `CGW_ENFORCE_SUBJECT_LENGTH=1`) |
+| `CGW_COMMIT_SUBJECT_HARD_LEN` | `72` | Hard subject line length limit (blocks the commit, the `undo_last.sh amend-message` and the push when `CGW_ENFORCE_SUBJECT_LENGTH=1`) |
 | `CGW_FREEFORM_MESSAGE_BRANCHES` | `""` | Space-separated branch globs exempt from commit format checks (e.g. `up/*` for upstream PRs) |
 | `CGW_MERGE_MODE` | `direct` | Promotion strategy: `direct` (merge locally via `merge_with_validation.sh`) or `pr` (create PR via `create_pr.sh`) |
 | `CGW_SIGN_COMMITS` | `0` | `1` to sign commits with GPG/SSH (`git commit -S`) |
@@ -249,10 +249,10 @@ Contributions, bug reports, and suggestions are welcome!
 - Run the test suite:
 
 ```bash
-# Run unit and integration tests in parallel
+# Run core and fast tests in parallel (what every push runs in CI)
 tests/run.sh
 
-# Run everything, including the slowest files (what CI runs)
+# Run everything, including the slow files (CI runs those monthly, and on a PR that changes them)
 tests/run.sh --all
 ```
 

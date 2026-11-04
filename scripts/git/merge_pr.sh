@@ -462,7 +462,31 @@ main() {
         echo "${checks_out}" >>"${logfile}"
       done
       if [[ ${checks_rc} -ne 0 && ${checks_rc} -ne 8 && "${checks_out}" == *"no checks reported"* ]]; then
-        echo "[WARN] No checks on ${head_sha:0:7} after ${waited}s -- treating as no CI" | tee -a "${logfile}"
+        # "No CI" is true only when the repo has no active workflow. If one is active, CI did not
+        # register for this head (or its path filters skipped it): that is unverified, not green.
+        # A failed workflow query is unknown, so it refuses too.
+        local active_wf
+        if ! active_wf=$(cgw_active_workflows "${pr_repo}" "${logfile}"); then
+          err_tee "[ERROR] No checks on ${head_sha:0:7}, and the repo's workflow list could not be read (token without Actions read access, or a network error; see ${logfile}) -- cannot tell whether CI exists"
+          log_section_end "PR CHECKS" "${logfile}" "1"
+          exit 1
+        fi
+        # Only a workflow that can run on a pull request counts: a tag-only, scheduled or
+        # push-only workflow never reports PR checks, so it does not make "no checks" suspect.
+        local pr_wf="" wf_name
+        while IFS= read -r wf_name; do
+          [[ -n "${wf_name}" ]] || continue
+          if cgw_workflow_may_run_on_pr "${pr_repo}" "${wf_name}" "${logfile}"; then
+            pr_wf+="${pr_wf:+,}${wf_name}"
+          fi
+        done <<<"${active_wf}"
+        if [[ -n "${pr_wf}" ]]; then
+          err_tee "[ERROR] No checks on ${head_sha:0:7}, but ${pr_repo} has workflows that run on pull requests (${pr_wf}) -- CI did not register for this head"
+          err_tee "[ERROR] Check the Actions tab, re-run the workflows, then retry"
+          log_section_end "PR CHECKS" "${logfile}" "1"
+          exit 1
+        fi
+        echo "[WARN] No checks on ${head_sha:0:7} after ${waited}s -- treating as no CI (no active workflow runs on pull requests)" | tee -a "${logfile}"
         checks_rc=0
         no_ci=1
       fi

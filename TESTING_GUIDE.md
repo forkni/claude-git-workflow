@@ -242,3 +242,110 @@ flowchart LR
 | Redundant CI Commit Runs | Allowed (queue backlog) | **Cancelled via `concurrency`** | **Resource-efficient** |
 | Cross-Platform CI (Windows) | None (Ubuntu-only) | **Nightly Windows matrix** | **Verified** |
 | Automated Actions Maintenance | None | **Dependabot (monthly)** | **Automated** |
+
+### Phase 8: Lock-Test Determinism & Second Runner Retune — [COMPLETED]
+
+- **Objective**: Remove a timing-dependent test and re-balance the fast and slow batches after the suite grew.
+- **Implementation**:
+  - `commit_enhanced.bats`: replaced the racy "survives transient index.lock collision" test (the lock was created on a 0.2 s timer) with two deterministic tests. One waits for a fresh lock to clear. The other retries after a collision made by a shadow `git`. Mutation checks: `max_attempts=1` fails the retry test, and `age < 0` in place of `age < max_age` fails the wait test.
+  - `tests/run.sh`: `CGW_SLOW_FILES` now lists the 11 heaviest files from a full timing run (2026-11-01, 14 jobs). The old 7-file list held 29% of the file time (3729 of 12896 file-seconds). The new list holds 50% (6491).
+  - `docs/ci-setup.md`: batch description updated. CI runs the same split as two matrix legs, so this also re-balances CI.
+- **Outcome**: The slow batch now holds 789 tests and the fast batch 728. CI leg times are the check for the wall-clock effect.
+
+#### Phase 8 Before/After Table
+
+| Metric | Before Phase 8 | After Phase 8 | Status |
+|--------|----------------|---------------|--------|
+| Lock tests that depend on a timer | 1 | **0** | Deterministic |
+| Slow-list share of file time | 29% (7 files) | **50% (11 files)** | Re-balanced |
+| Slow batch tests (`@test` count) | 501 | **789** | Retuned |
+| Fast batch tests (`@test` count) | 706 | **728** | Retuned |
+| Floor file (`commit_enhanced.bats`) | 960 s | 960 s | Split in Phase 9 |
+
+### Phase 9: Split the `commit_enhanced.bats` Wall-Clock Floor — [COMPLETED]
+
+- **Objective**: `tests/run.sh` runs one process per file, so the biggest file sets the wall-clock floor of a batch. `commit_enhanced.bats` (109 tests, 960 s under load) was that floor.
+- **Implementation**: Cut the file at its section boundaries into four files. Each has the same `setup`, `teardown` and `_run_commit` preamble. Test bodies are unchanged. `_setup_uu_conflict` moved to the one file that uses it.
+  - `commit_enhanced.bats`: 26 tests (message rules, staging modes, local-only files, `--only`, lint and format).
+  - `commit_enhanced_staged_guard.bats`: 20 tests (staged-blob guard [3.5], partial staging).
+  - `commit_enhanced_gates.bats`: 27 tests (lint and markdown gate scoping, subject length, freeform branches).
+  - `commit_enhanced_modes.bats`: 36 tests (merge conclusion, interactive prompts, `index.lock`, `--only` reset, untracked warnings).
+  - All four files were put in `CGW_SLOW_FILES` here, so the batch split was unchanged. Phase 10 replaced that list.
+- **Outcome**: 109 tests before and after, all passing. The four files run in parallel in 116 s (88, 88, 94 and 116 s each, with only these four running).
+
+#### Phase 9 Before/After Table
+
+| Metric | Before Phase 9 | After Phase 9 | Status |
+|--------|----------------|---------------|--------|
+| `commit_enhanced` tests | 109 in 1 file | **109 in 4 files** | None lost |
+| Longest single file | 960 s under load (about 8.8 s per test) | **about 320 s under load (estimate from test count)** | Floor lowered |
+| Wall time of the four files, run alone | one file, serial | **116 s** | Measured |
+| Slow-list entries | 11 | **14** | Same set of tests |
+
+### Phase 10: Retune the Slow List from CI Timings — [COMPLETED]
+
+- **Objective**: PR #86 showed that the Phase 8 list (built from a local Windows run) did not balance the CI legs. Fast took 5m05s and slow took 3m14s, and both were slower than before.
+- **Measurement**: A throwaway draft PR (#87, closed unmerged) ran `CGW_TEST_TIMINGS=1 tests/run.sh --all` on both CI legs (`ubuntu-latest`, 4 jobs). The two legs agree within 1% (763 and 771 file-seconds).
+- **Finding 1**: Local and CI rank the files very differently. On CI the whole suite is 767 file-seconds, against 12896 locally. Only two files matter: `dogfood.bats` (171 s) and `common.bats` (113 s). The next file takes 31 s.
+- **Finding 2**: `dogfood.bats` has 8 tests and takes 13 s locally. In a CI checkout there is no upstream, so its `run_tests.sh` test checks the whole tree (~170 s). The `Shell Script Quality` job already runs the same ShellCheck passes. The test is not changed here; whether to skip it on CI is a separate decision.
+- **Implementation**: `CGW_SLOW_FILES` is now 6 files: `dogfood`, `common`, `merge_pr`, `configure`, `cc_guardrail`, `repo_state`. They hold 386 of 767 CI file-seconds, so the two legs should be about equal.
+- **Cost**: Local fast runs get heavier. The four `commit_enhanced*` files, `merge_validation`, `create_pr`, `push_validated`, `cherry_pick` and `hook_preservation` move back to the fast batch. Their local file time under load is about 9742 s, against 9167 s before Phase 8. The old 7-file list had 3729 s in the slow batch.
+
+#### Phase 10 Before/After Table
+
+| Metric | Before Phase 10 (Phase 8 list) | After Phase 10 | Status |
+|--------|--------------------------------|----------------|--------|
+| Slow-list entries | 14 files | **6 files** | Retuned |
+| Slow list share of CI file time | 326 of 767 s (43%) | **386 of 767 s (50%)** | Balanced |
+| Slow batch tests (`@test` count) | 789 | **541** | Retuned |
+| Fast batch tests (`@test` count) | 728 | **976** | Retuned |
+| CI leg times (fast / slow) | 5m05s / 3m14s | 4m31s-5m11s / 1m40s-3m00s (run step, PR #86 at `1258e33`) | **Not balanced**: see Phase 11 |
+
+**Correction (Phase 11).** The CI `fast` leg did not run the fast batch. `tests/run.sh` widened `fast`
+to `all` whenever `CI` was set, so the leg ran the whole suite (TAP plan `1..1515`) and the `slow` leg
+(`1..541`) repeated 541 of those tests. No slow-list retune could change the wall clock of the `fast`
+leg. Phase 10 also ranked files by xargs file-seconds, but CI runs native `bats --jobs`, which
+parallelises inside a file.
+
+### Phase 11: Core and Fast on Every Push, Slow Files Monthly — [COMPLETED]
+
+- **Objective**: Every push and PR runs the core suite (`tests/unit/`) and the fast integration files. The five slowest files run monthly, and on a PR only when they, or a script they cover, changed.
+- **Implementation**:
+  - `tests/run.sh`: an explicit mode flag (`--fast`, `--slow`, `--slow-changed`, `--all`) now wins; `CI` no longer widens a run to `all`. The slow-file filter also applies to `--fast <paths>`, so CI legs can pass a directory. `CGW_SLOW_FILES` is now `dogfood`, `merge_pr`, `configure`, `cc_guardrail` and `repo_state` (257 tests); `common.bats` is core.
+  - `tests/run.sh --slow-changed`: reads `CGW_CHANGED_FILES` and selects each slow file whose own path, `tests/run.sh`, `tests/helpers/`, or a mapped script (`_slow_file_changed`) is in it. Nothing selected exits 0; a missing variable exits 2. `CGW_TEST_LIST=1` prints the selection without running bats.
+  - `branch-protection.yml`: the test matrix is `core`, `fast` and `slow-changed`. The `slow-changed` leg diffs against the PR base or the push `before` SHA, and runs every slow file when there is no usable base.
+  - `nightly.yml`: monthly (1st, 03:00 UTC). Ubuntu runs `--slow`; Windows runs `--all`.
+  - `tests/integration/run_sh.bats`: 10 selection tests. Mutation checks: restoring the `-n CI` upgrade fails the two CI tests, and deleting the `merge_pr` mapping fails the `--slow-changed` script test.
+- **Outcome**: The `1..N` plan numbers and leg times below are read from CI run 41462670902 (commit `387e008`).
+
+#### Phase 11 Before/After Table
+
+| Metric | Before Phase 11 | After Phase 11 | Status |
+|--------|-----------------|----------------|--------|
+| Tests in the CI `fast` leg | 1,515 (whole suite) | core 388 + fast 880 (two legs, measured `1..N`) | Split |
+| Tests in the CI `slow` leg | 541 (repeated) | 0 to 257 (`slow-changed`) | Only when touched |
+| Slow tests run per push | 2 × 541 | 0 unless a covered file changed | Monthly + on change |
+| Slow list | 6 files (incl. `common.bats`, 284 tests) | 5 files (257 tests) | `common.bats` is core |
+| `nightly.yml` schedule | weekly (Sundays) | monthly (1st) | Windows `--all` kept |
+| CI leg times | 4m31s-5m11s (fast) / 1m40s-3m00s (slow) | 2m54s (fast), 1m46s (core), 58s (slow-changed, all 5 files: this push changes `tests/run.sh`) | Run 41462670902 at `387e008`; the 3 legs run in parallel, so the wall clock is the fast leg |
+
+### Phase 12: One Shared Harness for the `commit_enhanced` Test Files — [COMPLETED]
+
+- **Objective**: Phase 9 split `commit_enhanced.bats` into four files and copied the same `setup`, `teardown` and `_run_commit` into each. `staged_checks.bats` held a fifth `_run_commit`. A fix to the call contract in one copy would not reach the others.
+- **Diagnosis**: A differential script compared origin/main with the split files. The 107 test bodies that exist on both sides are identical (read as UTF-8). The count moved from 108 to 109 only because commit `085958f` replaced one racy `index.lock` test with two deterministic ones. No test was lost, weakened or duplicated. The five copies of `_run_commit` and the four of `setup` and `teardown` were byte-identical, so nothing had drifted yet.
+- **Implementation**:
+  - `tests/integration/_commit_common.bash` (new, 43 lines): `_commit_setup`, default `setup`/`teardown`, and `_run_commit`. Each of the five files loads it with one line. `staged_checks.bats` defines its own `setup()` that calls `_commit_setup` first.
+  - The file is in `tests/integration/`, not `tests/helpers/`. `tests/run.sh` treats the whole `tests/helpers/` directory as a trigger for every slow file, even for a new file there. Probe: `CGW_CHANGED_FILES=tests/integration/_commit_common.bash tests/run.sh --slow-changed` selects no file.
+  - `branch-protection.yml` and `scripts/test/run_tests.sh` add `tests/integration/*.bash` to the ShellCheck test pass, so the shared file is linted in CI and by the pre-push gate.
+- **Outcome**: Net -72 lines (121 removed, 49 added). The five files run 118 tests, 0 skipped, all passing. No test body changed.
+
+#### Phase 12 Before/After Table
+
+| Metric | Before Phase 12 | After Phase 12 | Status |
+|--------|-----------------|----------------|--------|
+| Copies of `_run_commit` | 5 | 1 | Shared |
+| Copies of `setup` / `teardown` | 4 + 1 variant | 1 default + 1 override | Shared |
+| Harness lines in the 5 test files | 121 | 6 (`load` and `_commit_common` calls) | -115 |
+| Tests in the 5 files | 118 | 118 | Unchanged |
+| Slow files selected by the change | n/a | 0 | Outside `tests/helpers/` |
+| Files ShellCheck covers in `tests/integration/` | `*.bats` | `*.bats` and `*.bash` | Extended |

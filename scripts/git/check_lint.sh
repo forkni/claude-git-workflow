@@ -260,9 +260,10 @@ _step_modified_only() {
   if [[ "$lint_act" == "run" ]]; then
     cgw_run_lint_check "${files[@]}" || EXIT_CODE=1
   fi
-  # Non-blocking: mirrors full-mode (overall_status gates on lint+markdown
-  # only) and CI's shfmt continue-on-error. A format diff is reported but
-  # never gates the exit code -- only the lint step above does.
+  # Non-blocking locally: mirrors full-mode (overall_status gates on lint+markdown
+  # only). A format diff is reported but never gates the exit code -- only the
+  # lint step above does. CI is stricter: its shfmt step is continue-on-error, but
+  # the "Aggregate lint verdict" step fails the job on it, so run fix_lint.sh first.
   if [[ "$format_act" == "run" ]]; then
     if ! CGW_FORMAT_CHECK_NONBLOCKING=1 cgw_run_format_check "${files[@]}"; then
       echo "[WARN] Format issues found (non-blocking) -- run fix_lint.sh to auto-format"
@@ -442,10 +443,10 @@ main() {
     fi
 
     # FORMAT CHECK
-    # Non-blocking: mirrors the CI workflow's `continue-on-error: true` on the
-    # shfmt step (.github/workflows/branch-protection.yml), present since that
-    # workflow's introduction. A format diff is reported but never gates
-    # overall_status or the exit code -- only lint and markdown-lint do.
+    # Non-blocking locally. A format diff is reported but never gates
+    # overall_status or the exit code -- only lint and markdown-lint do. CI is
+    # stricter: the shfmt step in .github/workflows/branch-protection.yml is
+    # continue-on-error, but its "Aggregate lint verdict" step fails the job on it.
     if [[ "$format_act" == "run" ]] && [[ ${scoped} -eq 1 && ${#lint_files[@]} -eq 0 ]]; then
       echo "  (format check skipped -- no pushed files match ${CGW_LINT_EXTENSIONS:-*.py})" | tee -a "$logfile"
     elif [[ "$format_act" == "run" ]]; then
