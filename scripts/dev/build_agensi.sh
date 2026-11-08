@@ -85,6 +85,25 @@ while [[ $# -gt 0 ]]; do
 done
 [[ ${#selected[@]} -gt 0 ]] || selected=("${ALL_SKILLS[@]}")
 
+# _is_known_skill <name> — exact match against ALL_SKILLS. A name is later joined into the paths
+# that _build_one deletes, so it must never be checked by existence alone: ".." or "../scripts"
+# exist under agensi/, and "" resolves to the output directory itself.
+_is_known_skill() {
+  local known
+  for known in "${ALL_SKILLS[@]}"; do
+    [[ "$1" == "${known}" ]] && return 0
+  done
+  return 1
+}
+
+# Refuse every bad name before anything is created or deleted.
+for skill in "${selected[@]}"; do
+  _is_known_skill "${skill}" || {
+    echo "[ERROR] unknown skill: '${skill}' (see --list)" >&2
+    exit 1
+  }
+done
+
 for tool in zip awk sed; do
   command -v "${tool}" >/dev/null 2>&1 || {
     echo "[ERROR] ${tool} is required" >&2
@@ -235,7 +254,8 @@ _report_scan_patterns() {
 _build_one() {
   local name="$1" stage s
   stage="${out_dir}/${name}"
-  [[ -d "${REPO_ROOT}/agensi/${name}" ]] || {
+  # Defence in depth: the rm below must only ever see an allow-listed name.
+  _is_known_skill "${name}" && [[ -d "${REPO_ROOT}/agensi/${name}" ]] || {
     _fail "unknown skill: ${name}"
     return
   }

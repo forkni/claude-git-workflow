@@ -22,7 +22,9 @@ bash scripts/dev/build_agensi.sh safe-git-workflow --out /tmp/agensi
 ```
 
 Each skill comes out as `dist/agensi/<name>/` (the unpacked tree, for review) and
-`dist/agensi/<name>.zip` (the upload). The build fails when a check fails:
+`dist/agensi/<name>.zip` (the upload). The build deletes and recreates those two paths, so a
+name that is not in `--list` (`..`, `../scripts`, an empty string) is refused before the output
+directory is created or anything is deleted. The build fails when a check fails:
 
 - frontmatter `name` matches the folder, `description` is present and under 1024 characters, and
   no agent-specific frontmatter (`allowed-tools`, `user-invocable`, `hooks`, ...) is used;
