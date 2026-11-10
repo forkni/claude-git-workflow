@@ -173,6 +173,23 @@ CGW_FORMAT_EXCLUDES="--exclude logs --exclude .venv"
 # CGW_TYPECHECK_CHECK_ARGS="check"
 # CGW_TYPECHECK_EXCLUDES=""
 #
+# pyrefly baselines: cgw_run_typecheck (_lib_lint.sh) auto-passes
+# --baseline=.pyrefly-baseline.json when that file exists at the repo root
+# (override the path with CGW_TYPECHECK_BASELINE), and pyproject.toml's own
+# [tool.pyrefly] `baseline = "..."` key picks it up too -- the two are
+# redundant on purpose (belt-and-suspenders). Errors already recorded in the
+# baseline are suppressed; only newly-introduced ones are reported. If
+# CGW_TYPECHECK_CHECK_ARGS or CGW_TYPECHECK_EXCLUDES already contains
+# --baseline, the auto-argument is skipped (pyrefly rejects a repeated flag).
+# CGW_TYPECHECK_BASELINE=".pyrefly-baseline.json"
+#
+# Regenerate the baseline after intentionally accepting new findings:
+#   pyrefly check --baseline=.pyrefly-baseline.json --update-baseline
+#   printf '\n' >> .pyrefly-baseline.json   # or: pre-commit run end-of-file-fixer
+# The second line is NOT optional -- pyrefly serialises the baseline JSON
+# without a trailing newline on every regeneration, and the repo's
+# end-of-file-fixer hook will otherwise fail the next CI run on this file.
+#
 # ── Python / pyright ─────────────────────────────────────────────────────────
 # CGW_TYPECHECK_CMD="pyright"
 # CGW_TYPECHECK_CHECK_ARGS=""
@@ -190,6 +207,15 @@ CGW_FORMAT_EXCLUDES="--exclude logs --exclude .venv"
 #
 # Skip at runtime with CGW_SKIP_TYPECHECK=1, or --skip-typecheck on
 # check_lint.sh / push_validated.sh.
+#
+# A configured-but-missing checker (typo in CGW_TYPECHECK_CMD, or a tool not
+# installed in this environment) is treated by default as a soft skip, not a
+# failure -- exiting 127 with no diagnostics would otherwise read as "FAILED,
+# 0 errors" and block a push for an environment gap, not a type error. Set
+# CGW_TYPECHECK_REQUIRED=1 to opt into strict mode instead, where a missing
+# checker becomes a hard, blocking failure (use this once every dev/CI
+# environment is expected to have the checker installed).
+# CGW_TYPECHECK_REQUIRED="1"
 #
 # uv projects: when CGW_TYPECHECK_CMD is set, uv.lock exists and uv is on PATH,
 # check_lint.sh first runs `uv sync --check <CGW_UV_SYNC_ARGS>` and fails with a
@@ -537,4 +563,3 @@ CGW_CI_REQUIRED_WORKFLOWS=""
 #
 # Prefix prepended to GIT_REFLOG_ACTION for reflog auditability and disaster recovery.
 # CGW_REFLOG_PREFIX="cgw"
-
