@@ -555,6 +555,74 @@ MOCK
   [[ "${output}" == *"configured but not found on PATH or in .venv"* ]]
 }
 
+@test "CGW_TYPECHECK_REQUIRED=1 makes a configured-but-missing typechecker a blocking failure" {
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=definitely-not-installed-typechecker
+    export CGW_TYPECHECK_REQUIRED=1
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [ "${status}" -eq 2 ]
+  [[ "${output}" == *"Typecheck FAILED"* ]]
+  [[ "${output}" == *"CGW_TYPECHECK_REQUIRED=1"* ]]
+}
+
+@test "pyrefly gets --baseline=.pyrefly-baseline.json automatically when the file exists" {
+  install_mock_typecheck pyrefly
+  echo '{"errors":[]}' >"${TEST_REPO_DIR}/.pyrefly-baseline.json"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=pyrefly
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [ "${status}" -eq 0 ]
+  grep -q -- '--baseline=.pyrefly-baseline.json' "${MOCK_BIN_DIR}/typecheck.log"
+}
+
+@test "pyrefly gets no --baseline argument when the baseline file is absent" {
+  install_mock_typecheck pyrefly
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=pyrefly
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [ "${status}" -eq 0 ]
+  ! grep -q -- '--baseline' "${MOCK_BIN_DIR}/typecheck.log"
+}
+
+@test "pyrefly baseline is not passed twice when CGW_TYPECHECK_EXCLUDES already has --baseline" {
+  install_mock_typecheck pyrefly
+  echo '{"errors":[]}' >"${TEST_REPO_DIR}/.pyrefly-baseline.json"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    export PROJECT_ROOT='${TEST_REPO_DIR}'
+    export CGW_LINT_CMD=''
+    export CGW_FORMAT_CMD=''
+    export CGW_MARKDOWNLINT_CMD=''
+    export CGW_TYPECHECK_CMD=pyrefly
+    export CGW_TYPECHECK_EXCLUDES='--baseline .pyrefly-baseline.json'
+    bash '${CGW_PROJECT_ROOT}/scripts/git/check_lint.sh'
+  "
+  [ "${status}" -eq 0 ]
+  [ "$(grep -o -- '--baseline' "${MOCK_BIN_DIR}/typecheck.log" | wc -l)" -eq 1 ]
+}
+
 @test "typecheck diagnostics in mypy shape are counted in the error summary" {
   install_mock_typecheck_with_errors mypy
   run bash -c "

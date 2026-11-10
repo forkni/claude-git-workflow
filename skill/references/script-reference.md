@@ -801,6 +801,8 @@ Computes GitHub-compatible heading slugs locally (offline port of `gh-md-toc` �
 | `CGW_TYPECHECK_CMD=<tool>` | Typecheck tool (`pyrefly`, `pyright`, `mypy`, `tsc`; default: `""` = disabled) |
 | `CGW_TYPECHECK_CHECK_ARGS=<args>` | Arguments for typecheck command (default: `check`) |
 | `CGW_TYPECHECK_EXCLUDES=<flags>` | Exclusion flags appended to typecheck command |
+| `CGW_TYPECHECK_REQUIRED=1` | A configured-but-missing typechecker fails `check_lint.sh` (default: warn and skip) |
+| `CGW_TYPECHECK_BASELINE=<file>` | pyrefly baseline passed as `--baseline=` when the file exists (default `.pyrefly-baseline.json`; skipped if `--baseline` is already in the args/excludes) |
 | `CGW_PUSH_LINT_SCOPE=worktree\|pushed` | What the push gate checks (default `worktree`); `pushed` = committed snapshot, see `--pushed-only` |
 | `CGW_SKIP_TYPECHECK=1` | Skip typecheck step even when `CGW_TYPECHECK_CMD` is set — the runtime equivalent of `--skip-typecheck` on `check_lint.sh` / `push_validated.sh`; this is the escape hatch for the push-blocking gate below |
 
@@ -809,9 +811,10 @@ hook** (failures print a `[WARN]` but never block the commit) and **blocking in 
 (a `Typecheck:FAILED` row fails the overall exit code, same as lint and markdown lint) — which in
 turn makes it blocking for `push_validated.sh`, since that script delegates its pre-push lint
 check to `check_lint.sh`. It does not run under `check_lint.sh --md-only` or `--modified-only`,
-and it does not run at all in `commit_enhanced.sh` (see `docs/configuration.md` for why). A
-typechecker is configured automatically by `configure.sh` based on detected project type (pyrefly
-for Python, tsc for TypeScript).
+and it does not run at all in `commit_enhanced.sh`, which only ever invokes `cgw_run_lint_check`
+and `cgw_run_format_check` against the staged-file list -- a whole-project typecheck has no
+staged-file-scoped equivalent to run per commit. A typechecker is configured automatically by
+`configure.sh` based on detected project type (pyrefly for Python, tsc for TypeScript).
 
 ### CLAUDE_GIT_* (legacy, still supported)
 
