@@ -181,6 +181,7 @@ CGW_FORMAT_EXCLUDES="--exclude logs --exclude .venv"
 # baseline are suppressed; only newly-introduced ones are reported. If
 # CGW_TYPECHECK_CHECK_ARGS or CGW_TYPECHECK_EXCLUDES already contains
 # --baseline, the auto-argument is skipped (pyrefly rejects a repeated flag).
+# CGW_TYPECHECK_BASELINE=".pyrefly-baseline.json"
 #
 # Regenerate the baseline after intentionally accepting new findings:
 #   pyrefly check --baseline=.pyrefly-baseline.json --update-baseline
@@ -562,4 +563,3 @@ CGW_CI_REQUIRED_WORKFLOWS=""
 #
 # Prefix prepended to GIT_REFLOG_ACTION for reflog auditability and disaster recovery.
 # CGW_REFLOG_PREFIX="cgw"
-
