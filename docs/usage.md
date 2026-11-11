@@ -397,6 +397,9 @@ worktree whose folder a process names on its command line (on Windows, for examp
 Claude session started with `--add-dir=<folder>`). A worktree with no commits of its own counts
 as merged. With `--execute` it removes each one through the `remove` code path, then deletes
 its branch with `git branch -d` (never `-D`: a refusal prints `[WARN] branch <b> kept`). It
+never deletes a protected branch (the source, target and default branch, `main`, `master` and
+`CGW_PROTECTED_BRANCHES`). A changed file includes a skip-worktree or assume-unchanged file
+whose content differs from HEAD, because `git worktree remove` would delete it silently. It
 prints one line per worktree and exits 1 when any selected removal failed.
 
 On Windows, `git worktree remove` can delete a worktree's files and its registration but leave

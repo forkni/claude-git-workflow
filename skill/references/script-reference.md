@@ -497,7 +497,7 @@ version bump, changelog, rollback plan before tagging; tag CI and asset smoke ch
 | `add <path> [<branch> [<base>]]` | Add linked worktree; creates branch with `-b` if new (from `<base>`, default HEAD, with no upstream until first push; it tracks `<remote>/<branch>` instead when only the remote has the branch or `<base>` is that ref; `--base <ref>` is the flag form; a base for an existing branch is refused); auto-links CGW tooling |
 | `link [<path>]` | Write `scripts/git` shims that forward to the main worktree's scripts (default: current dir); migrates legacy links |
 | `remove [--execute] <path>` | Unlink any legacy CGW tooling link, then remove worktree (dry-run default); exits 1 when the folder stays after git unregistered the worktree, and names the holding process on Windows when its command line names the folder |
-| `remove-merged [--execute] [--non-interactive]` | Remove every linked worktree that is merged with 0 changed, 0 untracked and 0 ahead (never the main, current or a locked worktree, nor one a process holds), then `git branch -d` its branch (never `-D`); dry-run default, one line per worktree, exit 1 if any selected removal failed |
+| `remove-merged [--execute] [--non-interactive]` | Remove every linked worktree that is merged with 0 changed, 0 untracked and 0 ahead (never the main, current or a locked worktree, nor one a process holds), then `git branch -d` its branch (never `-D`, never a protected branch); dry-run default, one line per worktree, exit 1 if any selected removal failed |
 | `prune [--execute]` | Remove stale admin files for missing paths (dry-run default) |
 
 `scripts/git/` and `.githooks/` are commonly gitignored, so `git worktree add` doesn't check

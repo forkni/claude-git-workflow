@@ -747,6 +747,39 @@ _assert_row() {
   git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/feat-x
 }
 
+@test "remove-merged removes a worktree on a protected branch but never deletes that branch" {
+  load '../helpers/mocks'
+  _status_fixture
+  _install_no_powershell
+  # development is CGW_SOURCE_BRANCH (protected). Bring origin/main up to it so
+  # the worktree that has it checked out is merged and clean.
+  git -C "${TEST_REPO_DIR}" push --quiet origin development:main
+  git -C "${TEST_REPO_DIR}" fetch --quiet origin
+  git -C "${TEST_REPO_DIR}" worktree add --quiet "${TEST_TMPDIR}/wt-dev" development
+
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove-merged --execute --non-interactive </dev/null
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"removed  "*"/wt-dev  (branch development kept: protected)"* ]]
+  [ ! -e "${TEST_TMPDIR}/wt-dev" ]
+  git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/development
+}
+
+@test "list --status counts a diverged skip-worktree file as changed, so remove-merged keeps it" {
+  load '../helpers/mocks'
+  _status_fixture
+  _install_no_powershell
+  git -C "${TEST_TMPDIR}/wt-merged" update-index --skip-worktree README.md
+  echo "local only" >>"${TEST_TMPDIR}/wt-merged/README.md"
+
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh list --status
+  [ "${status}" -eq 0 ]
+  _assert_row wt-merged merged-br yes 1 0 0 "1 changed"
+
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove-merged --execute --non-interactive </dev/null
+  [ "${status}" -eq 0 ]
+  grep -q "local only" "${TEST_TMPDIR}/wt-merged/README.md"
+}
+
 @test "remove-merged: no terminal and no --non-interactive exits 1 and removes nothing" {
   load '../helpers/mocks'
   _status_fixture

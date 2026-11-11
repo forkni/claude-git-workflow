@@ -400,23 +400,18 @@ _cmd_list_status() {
     [[ "${#_WT_BRANCH[i]}" -gt "${w_branch}" ]] && w_branch="${#_WT_BRANCH[i]}"
   done
 
-  local show_pr="${_WT_PR_OK}"
-  if [[ "${show_pr}" -eq 1 ]]; then
-    printf "  %-*s  %-*s  %-6s  %7s  %9s  %5s  %-12s  %s\n" "${w_path}" "PATH" "${w_branch}" "BRANCH" \
-      "MERGED" "CHANGED" "UNTRACKED" "AHEAD" "PR" "REMOVE-MERGED"
-  else
-    printf "  %-*s  %-*s  %-6s  %7s  %9s  %5s  %s\n" "${w_path}" "PATH" "${w_branch}" "BRANCH" \
-      "MERGED" "CHANGED" "UNTRACKED" "AHEAD" "REMOVE-MERGED"
-  fi
+  # The PR cell (with its gap) is empty when gh gave no data.
+  local fmt="  %-*s  %-*s  %-6s  %7s  %9s  %5s  %s%s\n" pr_cell=""
+  [[ "${_WT_PR_OK}" -eq 1 ]] && pr_cell="$(printf '%-12s  ' "PR")"
+  # shellcheck disable=SC2059  # fmt is a fixed format string
+  printf "${fmt}" "${w_path}" "PATH" "${w_branch}" "BRANCH" \
+    "MERGED" "CHANGED" "UNTRACKED" "AHEAD" "${pr_cell}" "REMOVE-MERGED"
   for ((i = 0; i < _WT_N; i++)); do
     [[ "${_WT_SAFE[i]}" -eq 1 ]] && safe=$((safe + 1))
-    if [[ "${show_pr}" -eq 1 ]]; then
-      printf "  %-*s  %-*s  %-6s  %7s  %9s  %5s  %-12s  %s\n" "${w_path}" "${_WT_PATH[i]}" "${w_branch}" "${_WT_BRANCH[i]}" \
-        "${_WT_MERGED[i]}" "${_WT_CHANGED[i]}" "${_WT_UNTRACKED[i]}" "${_WT_AHEAD[i]}" "${_WT_PR[i]}" "${_WT_REASON[i]}"
-    else
-      printf "  %-*s  %-*s  %-6s  %7s  %9s  %5s  %s\n" "${w_path}" "${_WT_PATH[i]}" "${w_branch}" "${_WT_BRANCH[i]}" \
-        "${_WT_MERGED[i]}" "${_WT_CHANGED[i]}" "${_WT_UNTRACKED[i]}" "${_WT_AHEAD[i]}" "${_WT_REASON[i]}"
-    fi
+    [[ "${_WT_PR_OK}" -eq 1 ]] && pr_cell="$(printf '%-12s  ' "${_WT_PR[i]}")"
+    # shellcheck disable=SC2059  # fmt is a fixed format string
+    printf "${fmt}" "${w_path}" "${_WT_PATH[i]}" "${w_branch}" "${_WT_BRANCH[i]}" \
+      "${_WT_MERGED[i]}" "${_WT_CHANGED[i]}" "${_WT_UNTRACKED[i]}" "${_WT_AHEAD[i]}" "${pr_cell}" "${_WT_REASON[i]}"
   done
   echo ""
   echo "Safe to remove: ${safe} of ${_WT_N} linked worktrees (./scripts/git/worktree_manage.sh remove-merged)."
@@ -598,8 +593,10 @@ _cgw_worktree_registered() {
 # but leaves the folder. The usual holder is an idle Claude desktop session
 # (`claude.exe ... --add-dir=<folder>`) or an editor. Win32_Process gives no
 # working folder, only the command line, so a holder is found only when the
-# folder is on its command line. One powershell.exe call per run (cached);
-# no powershell.exe (Linux, macOS) means no lookup.
+# folder is on its command line. One powershell.exe call per run (cached;
+# callers that look up holders inside $(...) load the list first, because a
+# subshell's cache dies with it). No powershell.exe (Linux, macOS) means no
+# lookup.
 _CGW_PROC_LIST=""
 _CGW_PROC_LIST_LOADED=0
 
@@ -610,7 +607,7 @@ _cgw_load_proc_list() {
   # shellcheck disable=SC2016  # PowerShell code: its $ must reach powershell.exe unexpanded
   local ps_cmd='Get-CimInstance Win32_Process | Where-Object { $_.CommandLine } | ForEach-Object { "$($_.ProcessId)`t$($_.Name)`t$($_.CommandLine)" }'
   local -a runner=()
-  command -v timeout >/dev/null 2>&1 && runner=(timeout 30)
+  _cgw_gnu_timeout_available && runner=(timeout 30)
   _CGW_PROC_LIST="$(${runner[@]+"${runner[@]}"} powershell.exe -NoProfile -NonInteractive -Command "${ps_cmd}" 2>/dev/null | tr -d '\r')" || _CGW_PROC_LIST=""
 }
 
@@ -682,7 +679,7 @@ _cgw_wt_load_prs() {
   slug="$(cgw_remote_owner_repo "${CGW_REMOTE}" 2>/dev/null)" || return 0
   [[ -z "${slug}" ]] && return 0
   local -a runner=()
-  command -v timeout >/dev/null 2>&1 && runner=(timeout 60)
+  _cgw_gnu_timeout_available && runner=(timeout 60)
   local data
   if data="$(${runner[@]+"${runner[@]}"} gh pr list -R "${slug}" --state all --limit 1000 \
     --json number,state,headRefName \
@@ -765,10 +762,13 @@ _cgw_wt_add_row() {
     else
       merged="no"
     fi
-    ahead="$(git rev-list --count "${_WT_DEFAULT_REF}..${head}" 2>/dev/null)" || ahead="?"
+    ahead="$(cgw_rev_count "${_WT_DEFAULT_REF}" "${head}")" || ahead="?"
     if st="$(git -C "${path}" status --porcelain --untracked-files=all 2>/dev/null)"; then
       untracked="$(printf '%s' "${st}" | grep -c '^??' || true)"
-      changed="$(printf '%s' "${st}" | grep -vc '^??' || true)"
+      # cgw_tree_dirty_paths also reports skip-worktree / assume-unchanged files
+      # whose disk content diverged: git status (and git worktree remove's own
+      # check) cannot see those, so a removal would delete them silently.
+      changed="$( (cd "${path}" && cgw_tree_dirty_paths) | sort -u | grep -c . || true)"
     else
       changed="?" untracked="?"
       reasons+=("git status failed")
@@ -1006,6 +1006,8 @@ _cmd_remove_merged() {
 
   local i holders kept=0
   local -a sel=()
+  # Load once here: the lookups below run in $(...) subshells.
+  _cgw_load_proc_list
   for ((i = 0; i < _WT_N; i++)); do
     if [[ "${_WT_SAFE[i]}" -ne 1 ]]; then
       printf "  kept     %s  (%s)\n" "${_WT_PATH[i]}" "${_WT_REASON[i]}"
@@ -1067,7 +1069,9 @@ _cmd_remove_merged() {
     # free to delete.
     local note=""
     if [[ "${b}" != "detached" ]]; then
-      if bout="$(git branch -d "${b}" 2>&1)"; then
+      if cgw_branch_is_protected "${b}" --policy cleanup; then
+        note="branch ${b} kept: protected"
+      elif bout="$(git branch -d "${b}" 2>&1)"; then
         note="branch ${b} deleted"
       else
         note="[WARN] branch ${b} kept: $(printf '%s' "${bout}" | head -1)"
