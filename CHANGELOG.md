@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.23.0 (2026-11-11)
+
+> Changes since `v0.22.2`
+
+### Behaviour changes
+
+- **`worktree_manage.sh remove --execute` exits 1 when the folder stays**: when git deletes a worktree's files and its registration but cannot delete the folder (on Windows, a process uses it as its working folder), v0.22.0 printed `[OK] Worktree removed` and exited 0. It now prints `[ERROR] Folder still exists: <path>`, says that git no longer registers the worktree and that a process holds the folder, and exits 1. This also applies when git itself exits 0. On Windows the error names the holding process when its command line names the folder (one `Get-CimInstance Win32_Process` call through `powershell.exe`).
+
+### New Features
+
+- **`worktree_manage.sh list --status [--no-pr]`**: one row per linked worktree with the branch (or `detached`), merged into `<remote>/<default branch>` (yes/no), changed files, untracked files, commits ahead and, when `gh` reaches the GitHub remote, the newest PR state (one `gh pr list` call; `--no-pr` skips it). The last column says why `remove-merged` would keep the worktree, and a summary line counts the safe ones. A diverged skip-worktree or assume-unchanged file counts as changed.
+- **`worktree_manage.sh remove-merged [--execute] [--non-interactive]`**: dry-run by default. It selects the worktrees that are merged, with 0 changed, 0 untracked and 0 ahead (a detached one when its HEAD is in the default branch). It never selects the main, current or a locked worktree, or a worktree whose folder a process names on its command line. With `--execute` it removes each one through the `remove` code path and deletes its branch with `git branch -d` (never `-D`, never a protected branch). One line per worktree; exit 1 if any selected removal failed. Gitignored files in a selected worktree are deleted without a count, like `remove` (see `docs/usage.md`). 14 new tests in `tests/integration/worktree.bats` (PR #89).
+- **pyrefly baseline and a strict typecheck mode**: `cgw_run_typecheck` passes `--baseline=<CGW_TYPECHECK_BASELINE>` (default `.pyrefly-baseline.json`) to pyrefly when the file exists, unless `--baseline` is already in `CGW_TYPECHECK_CHECK_ARGS` or `CGW_TYPECHECK_EXCLUDES`. `CGW_TYPECHECK_REQUIRED=1` makes a configured but missing typechecker a blocking failure instead of a warning. Both keys are in `cgw.conf.example` and `docs/configuration.md`. 4 tests in `tests/integration/check_lint.bats`.
+
+### Documentation
+
+- `docs/usage.md`, `README.md`, `skill/references/script-reference.md` and `skill/references/wrapper-recipes.md` list the new worktree subcommands and their limits.
+
 ## v0.22.2 (2026-11-02)
 
 > Changes since `v0.22.1`. No behaviour change in the shipped scripts: the only edits there are comments and `shfmt` layout. The rest is the test suite and CI.
