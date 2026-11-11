@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.23.1 (2026-11-11)
+
+> Changes since `v0.23.0`
+
+### Bug Fixes
+
+- **The installer no longer reports a CRLF checkout of the current hook as customised**: in a project with `core.autocrlf=true` and no line-ending rule for `.githooks/`, git checks the LF hook templates out with CRLF, and every `configure.sh` / `cgw-batch-install.cmd` run printed `[!] It differs from the current CGW template` and kept the hook. `configure.sh` now compares hooks with the new `cgw_same_text_ignoring_cr` in `_common.sh`, reports such a hook `already up to date` and leaves the file as git wrote it. The `.git/hooks` backup checks in `configure.sh` and `install_hooks.sh` use the same compare, so a line-ending difference makes no `.bak`.
+- **The stale-stock hook lookup finds versions made by a merge commit**: `_hook_stock_version` ran `git log --find-object` without `-m`, which skips merge diffs. The current `hooks/pre-commit` exists only as the merge result of PR #76, so the lookup did not know it, and any stock version that only a merge produced was kept as a customisation. The lookup now passes `-m`. Two tests in `tests/integration/hook_preservation.bats` (PR #91).
+
 ## v0.23.0 (2026-11-11)
 
 > Changes since `v0.22.2`
