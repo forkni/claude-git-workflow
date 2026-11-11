@@ -247,13 +247,13 @@ _install_git_leaving_empty_dir() {
     'if [[ "$1" == worktree && "$2" == remove ]]; then' \
     "  \"${real_git}\" \"\$@\"" \
     '  mkdir -p "$3"' \
-    '  exit 1' \
+    '  exit "${MOCK_WT_REMOVE_EXIT:-1}"' \
     'fi' \
     "exec \"${real_git}\" \"\$@\"" >"${MOCK_BIN_DIR}/git"
   chmod +x "${MOCK_BIN_DIR}/git"
 }
 
-@test "remove: git removes the worktree but fails on the directory -> [OK], exit 0, no files of the main checkout reported" {
+@test "remove: git removes the worktree but fails on the directory -> exit 1, folder named, no files of the main checkout reported" {
   load '../helpers/mocks'
   echo "belongs to the main checkout" >"${TEST_REPO_DIR}/stray-main-file.txt"
   # The worktree lives INSIDE the main checkout (e.g. .claude/worktrees/x), so
@@ -263,15 +263,18 @@ _install_git_leaving_empty_dir() {
   git -C "${TEST_REPO_DIR}" worktree add --quiet -b nested-branch "${nested}"
   _install_git_leaving_empty_dir
 
+  _install_no_powershell
   run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove --execute --non-interactive "${nested}" </dev/null
-  [ "${status}" -eq 0 ]
-  [[ "${output}" == *"[OK] Worktree removed"* ]]
-  [[ "${output}" != *"[ERROR]"* ]]
+  # A folder left behind is not a clean removal: exit 1, not [OK].
+  [ "${status}" -eq 1 ]
+  [[ "${output}" != *"[OK] Worktree removed"* ]]
+  [[ "${output}" != *"Failed to remove worktree"* ]]
   [[ "${output}" != *"stray-main-file.txt"* ]]
   [[ "${output}" != *"Left in it"* ]]
-  # The leftover empty directory is named so the caller can delete it.
-  [[ "${output}" == *"could not delete the now-empty directory"* ]]
-  [[ "${output}" == *"${nested}"* ]]
+  # The leftover folder is named, with why it stays and that git let go of it.
+  [[ "${output}" == *"[ERROR] Folder still exists: ${nested}"* ]]
+  [[ "${output}" == *"git no longer registers it as a worktree"* ]]
+  [[ "${output}" == *"a process holds it"* ]]
   # git no longer lists it as a worktree.
   local listed
   listed="$(git -C "${TEST_REPO_DIR}" worktree list --porcelain)"
@@ -472,4 +475,317 @@ _skip_unless_windows() {
   [ "${status}" -eq 0 ]
   [[ "${output}" == *"tracking origin/feat-x"* ]]
   [ "$(git -C "${TEST_TMPDIR}/wt-own" rev-parse --abbrev-ref '@{upstream}')" = "origin/feat-x" ]
+}
+
+# -- remove: folder left although git exits 0 -------------------------------
+
+# A fake powershell.exe for the Win32_Process lookup: prints MOCK_PS_OUTPUT
+# (tab-separated "<pid>\t<name>\t<command line>" lines), or nothing.
+_install_mock_powershell() {
+  setup_mock_bin
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'printf "%b" "${MOCK_PS_OUTPUT:-}"' >"${MOCK_BIN_DIR}/powershell.exe"
+  chmod +x "${MOCK_BIN_DIR}/powershell.exe"
+}
+
+# No holders, and no slow real powershell.exe call on a Windows host.
+_install_no_powershell() {
+  MOCK_PS_OUTPUT="" _install_mock_powershell
+}
+
+# The command line an idle Claude desktop session has, naming <dir> with
+# backslashes (the Windows form).
+_claude_holding() {
+  local dir="$1" win
+  win="$(printf '%s' "${dir}" | tr '/' '\\')"
+  printf '4242\\tclaude.exe\\t"C:\\\\Claude\\\\claude.exe" --add-dir=%s --resume\\n' "${win//\\/\\\\}"
+}
+
+@test "remove: git exits 0 but the folder stays -> exit 1 and the folder is named" {
+  load '../helpers/mocks'
+  local nested="${TEST_REPO_DIR}/nested-wt"
+  git -C "${TEST_REPO_DIR}" worktree add --quiet -b nested-branch "${nested}"
+  _install_git_leaving_empty_dir
+  _install_no_powershell
+  export MOCK_WT_REMOVE_EXIT=0
+
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove --execute --non-interactive "${nested}" </dev/null
+  [ "${status}" -eq 1 ]
+  [ -d "${nested}" ]
+  [[ "${output}" == *"[ERROR] Folder still exists: ${nested}"* ]]
+  [[ "${output}" == *"git no longer registers it as a worktree"* ]]
+  [[ "${output}" != *"[OK] Worktree removed"* ]]
+  [[ "${output}" != *"Held by"* ]]
+}
+
+@test "remove: a leftover folder names the process whose command line holds it" {
+  load '../helpers/mocks'
+  local nested="${TEST_REPO_DIR}/nested-wt" top
+  git -C "${TEST_REPO_DIR}" worktree add --quiet -b nested-branch "${nested}"
+  top="$(git -C "${nested}" rev-parse --show-toplevel)"
+  _install_git_leaving_empty_dir
+  export MOCK_WT_REMOVE_EXIT=0
+  # A sibling folder with a longer name must not count as a holder.
+  MOCK_PS_OUTPUT="$(_claude_holding "${top}")7\tcode.exe\tcode --folder ${top}-2\n"
+  export MOCK_PS_OUTPUT
+  _install_mock_powershell
+
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove --execute --non-interactive "${nested}" </dev/null
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Held by"* ]]
+  [[ "${output}" == *"claude.exe (PID 4242)"* ]]
+  [[ "${output}" != *"code.exe"* ]]
+}
+
+# -- list --status / remove-merged --------------------------------------------
+
+# Adds an origin with main pushed, then one linked worktree per case under
+# TEST_TMPDIR. setup() already made TEST_WORKTREE_DIR (worktree-topic, off
+# development, so not merged into origin/main).
+#   wt-merged     merged-br, clean, no commits of its own        -> safe
+#   wt-dirty      dirty-br, a tracked file modified               -> kept
+#   wt-untracked  untracked-br, one untracked file                -> kept
+#   wt-ahead      ahead-br, one commit not on origin/main         -> kept
+#   wt-detached   detached at main                                -> safe
+#   wt-det-ahead  detached, one commit not on origin/main         -> kept
+#   wt-locked     locked-br, clean but `git worktree lock`-ed     -> kept
+_status_fixture() {
+  create_bare_remote "${TEST_TMPDIR}/remote.git"
+  git -C "${TEST_REPO_DIR}" remote add origin "${TEST_TMPDIR}/remote.git"
+  git -C "${TEST_REPO_DIR}" push --quiet -u origin main
+  local r="${TEST_REPO_DIR}" t="${TEST_TMPDIR}"
+  git -C "${r}" worktree add --quiet -b merged-br "${t}/wt-merged" main
+  git -C "${r}" worktree add --quiet -b dirty-br "${t}/wt-dirty" main
+  echo "changed" >>"${t}/wt-dirty/README.md"
+  git -C "${r}" worktree add --quiet -b untracked-br "${t}/wt-untracked" main
+  echo "new" >"${t}/wt-untracked/new.txt"
+  git -C "${r}" worktree add --quiet -b ahead-br "${t}/wt-ahead" main
+  echo "ahead" >"${t}/wt-ahead/ahead.txt"
+  git -C "${t}/wt-ahead" add ahead.txt
+  git -C "${t}/wt-ahead" commit --quiet --no-verify -m "feat: ahead"
+  git -C "${r}" worktree add --quiet --detach "${t}/wt-detached" main
+  git -C "${r}" worktree add --quiet --detach "${t}/wt-det-ahead" main
+  echo "det" >"${t}/wt-det-ahead/det.txt"
+  git -C "${t}/wt-det-ahead" add det.txt
+  git -C "${t}/wt-det-ahead" commit --quiet --no-verify -m "feat: detached ahead"
+  git -C "${r}" worktree add --quiet -b locked-br "${t}/wt-locked" main
+  git -C "${r}" worktree lock "${t}/wt-locked"
+}
+
+# Prints the status row of worktree <name> from $output.
+_row() {
+  printf '%s\n' "${output}" | grep -E "/$1 " | head -1
+}
+
+# Asserts the columns of row <name>: <branch> <merged> <changed> <untracked> <ahead> <reason glob>.
+_assert_row() {
+  local p b m c u a rest
+  read -r p b m c u a rest <<<"$(_row "$1")"
+  [ -n "${p}" ] || { echo "no row for $1" >&2; return 1; }
+  [ "${b}" = "$2" ] && [ "${m}" = "$3" ] && [ "${c}" = "$4" ] && [ "${u}" = "$5" ] && [ "${a}" = "$6" ] ||
+    { echo "row $1: ${b} ${m} ${c} ${u} ${a} ${rest}" >&2; return 1; }
+  # shellcheck disable=SC2053  # $7 is a glob on purpose
+  [[ "${rest}" == $7 ]] || { echo "row $1 reason: ${rest}" >&2; return 1; }
+}
+
+@test "list --status: one row per linked worktree with merged, changed, untracked and ahead" {
+  _status_fixture
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh list --status
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"compared with origin/main"* ]]
+  _assert_row wt-merged merged-br yes 0 0 0 "safe"
+  _assert_row wt-dirty dirty-br yes 1 0 0 "1 changed"
+  _assert_row wt-untracked untracked-br yes 0 1 0 "1 untracked"
+  _assert_row wt-ahead ahead-br no 0 0 1 "not merged, 1 ahead"
+  _assert_row wt-detached detached yes 0 0 0 "safe"
+  _assert_row wt-det-ahead detached no 0 0 1 "not merged, 1 ahead"
+  _assert_row wt-locked locked-br yes 0 0 0 "locked"
+  # development's two commits (DEV.md, .gitignore) are not on main.
+  _assert_row wt worktree-topic no 0 0 2 "not merged, 2 ahead"
+  [[ "${output}" == *"Safe to remove: 2 of 8 linked worktrees"* ]]
+  # The main worktree has no row.
+  run ! grep -qE '/repo ' <<<"${output}"
+}
+
+@test "list --status: no PR column when gh cannot reach a GitHub remote" {
+  load '../helpers/mocks'
+  _status_fixture
+  setup_mock_bin
+  hide_gh
+  git -C "${TEST_REPO_DIR}" config remote.origin.pushurl "https://github.com/owner/repo.git"
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh list --status
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *" PR "* ]]
+  _assert_row wt-merged merged-br yes 0 0 0 "safe"
+}
+
+@test "list --status: shows the newest PR state per branch when gh answers" {
+  load '../helpers/mocks'
+  _status_fixture
+  setup_mock_bin
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'echo "gh $*" >>"${MOCK_BIN_DIR}/gh.log"' \
+    'if [[ "$1" == pr && "$2" == list ]]; then' \
+    '  printf "merged-br\tMERGED\t12\nmerged-br\tCLOSED\t9\nahead-br\tOPEN\t15\n"' \
+    '  exit 0' \
+    'fi' \
+    'exit 1' >"${MOCK_BIN_DIR}/gh"
+  chmod +x "${MOCK_BIN_DIR}/gh"
+  git -C "${TEST_REPO_DIR}" config remote.origin.pushurl "https://github.com/owner/repo.git"
+
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh list --status
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *" PR "* ]]
+  [[ "$(_row wt-merged)" == *"MERGED #12"* ]]
+  [[ "$(_row wt-ahead)" == *"OPEN #15"* ]]
+  grep -q -- "-R owner/repo" "${MOCK_BIN_DIR}/gh.log"
+
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh list --status --no-pr
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"MERGED #12"* ]]
+}
+
+@test "remove-merged: dry-run by default lists what it would remove and removes nothing" {
+  load '../helpers/mocks'
+  _status_fixture
+  _install_no_powershell
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove-merged
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"would remove  "*"/wt-merged  (branch merged-br)"* ]]
+  [[ "${output}" == *"would remove  "*"/wt-detached  (detached HEAD)"* ]]
+  [[ "${output}" == *"kept     "*"/wt-dirty  (1 changed)"* ]]
+  [[ "${output}" == *"kept     "*"/wt-untracked  (1 untracked)"* ]]
+  [[ "${output}" == *"kept     "*"/wt-ahead  (not merged, 1 ahead)"* ]]
+  [[ "${output}" == *"kept     "*"/wt-locked  (locked)"* ]]
+  [[ "${output}" == *"Dry run"* ]]
+  [ -d "${TEST_TMPDIR}/wt-merged" ]
+  [ -d "${TEST_TMPDIR}/wt-detached" ]
+  git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/merged-br
+}
+
+@test "remove-merged --execute removes only the safe worktrees and deletes their branches with -d" {
+  load '../helpers/mocks'
+  _status_fixture
+  _install_no_powershell
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove-merged --execute --non-interactive </dev/null
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"removed  "*"/wt-merged  (branch merged-br deleted)"* ]]
+  [[ "${output}" == *"removed  "*"/wt-detached"* ]]
+  [[ "${output}" == *"Removed: 2  Kept: 6  Failed: 0"* ]]
+  [ ! -e "${TEST_TMPDIR}/wt-merged" ]
+  [ ! -e "${TEST_TMPDIR}/wt-detached" ]
+  run ! git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/merged-br
+  local d
+  for d in wt-dirty wt-untracked wt-ahead wt-det-ahead wt-locked wt; do
+    [ -d "${TEST_TMPDIR}/${d}" ]
+  done
+  [ -f "${TEST_TMPDIR}/wt-untracked/new.txt" ]
+  for d in dirty-br untracked-br ahead-br locked-br worktree-topic; do
+    git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet "refs/heads/${d}"
+  done
+}
+
+@test "remove-merged never selects the current worktree" {
+  load '../helpers/mocks'
+  _status_fixture
+  _install_no_powershell
+  run run_script_at "${TEST_TMPDIR}/wt-merged" worktree_manage.sh remove-merged --execute --non-interactive </dev/null
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"kept     "*"/wt-merged  (current worktree)"* ]]
+  [ -d "${TEST_TMPDIR}/wt-merged" ]
+  [ ! -e "${TEST_TMPDIR}/wt-detached" ]
+}
+
+@test "remove-merged keeps a worktree whose folder a process names on its command line" {
+  load '../helpers/mocks'
+  _status_fixture
+  local top
+  top="$(git -C "${TEST_TMPDIR}/wt-merged" rev-parse --show-toplevel)"
+  MOCK_PS_OUTPUT="$(_claude_holding "${top}")"
+  export MOCK_PS_OUTPUT
+  _install_mock_powershell
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove-merged --execute --non-interactive </dev/null
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"kept     "*"/wt-merged  (in use by claude.exe (PID 4242))"* ]]
+  [ -d "${TEST_TMPDIR}/wt-merged" ]
+  git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/merged-br
+  [ ! -e "${TEST_TMPDIR}/wt-detached" ]
+}
+
+@test "remove-merged exits 1 when a selected folder stays after removal" {
+  load '../helpers/mocks'
+  _status_fixture
+  _install_git_leaving_empty_dir
+  _install_no_powershell
+  export MOCK_WT_REMOVE_EXIT=0
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove-merged --execute --non-interactive </dev/null
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"FAILED   "*"/wt-merged  (folder left: a process holds it; branch merged-br deleted)"* ]]
+  [[ "${output}" == *"Failed: 2"* ]]
+}
+
+@test "remove-merged keeps a branch that git branch -d refuses and never forces it" {
+  load '../helpers/mocks'
+  _status_fixture
+  _install_no_powershell
+  # feat-x is on origin/main but not on the local main that HEAD points at,
+  # so `git branch -d` (which checks HEAD) refuses it.
+  local t="${TEST_TMPDIR}"
+  git -C "${TEST_REPO_DIR}" worktree add --quiet -b feat-x "${t}/wt-feat" main
+  echo "x" >"${t}/wt-feat/x.txt"
+  git -C "${t}/wt-feat" add x.txt
+  git -C "${t}/wt-feat" commit --quiet --no-verify -m "feat: x"
+  git -C "${TEST_REPO_DIR}" push --quiet origin feat-x:main
+  git -C "${TEST_REPO_DIR}" fetch --quiet origin
+
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove-merged --execute --non-interactive </dev/null
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"removed  "*"/wt-feat  ([WARN] branch feat-x kept:"* ]]
+  [ ! -e "${t}/wt-feat" ]
+  git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/feat-x
+}
+
+@test "remove-merged removes a worktree on a protected branch but never deletes that branch" {
+  load '../helpers/mocks'
+  _status_fixture
+  _install_no_powershell
+  # development is CGW_SOURCE_BRANCH (protected). Bring origin/main up to it so
+  # the worktree that has it checked out is merged and clean.
+  git -C "${TEST_REPO_DIR}" push --quiet origin development:main
+  git -C "${TEST_REPO_DIR}" fetch --quiet origin
+  git -C "${TEST_REPO_DIR}" worktree add --quiet "${TEST_TMPDIR}/wt-dev" development
+
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove-merged --execute --non-interactive </dev/null
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"removed  "*"/wt-dev  (branch development kept: protected)"* ]]
+  [ ! -e "${TEST_TMPDIR}/wt-dev" ]
+  git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/development
+}
+
+@test "list --status counts a diverged skip-worktree file as changed, so remove-merged keeps it" {
+  load '../helpers/mocks'
+  _status_fixture
+  _install_no_powershell
+  git -C "${TEST_TMPDIR}/wt-merged" update-index --skip-worktree README.md
+  echo "local only" >>"${TEST_TMPDIR}/wt-merged/README.md"
+
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh list --status
+  [ "${status}" -eq 0 ]
+  _assert_row wt-merged merged-br yes 1 0 0 "1 changed"
+
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove-merged --execute --non-interactive </dev/null
+  [ "${status}" -eq 0 ]
+  grep -q "local only" "${TEST_TMPDIR}/wt-merged/README.md"
+}
+
+@test "remove-merged: no terminal and no --non-interactive exits 1 and removes nothing" {
+  load '../helpers/mocks'
+  _status_fixture
+  _install_no_powershell
+  run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove-merged --execute </dev/null
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"--non-interactive"* ]]
+  [ -d "${TEST_TMPDIR}/wt-merged" ]
 }
