@@ -477,12 +477,15 @@ version bump, changelog, rollback plan before tagging; tag CI and asset smoke ch
 
 ```bash
 ./scripts/git/worktree_manage.sh list                            # list all worktrees
+./scripts/git/worktree_manage.sh list --status                   # merged / changed / untracked / ahead / PR per linked worktree
 ./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent     # add with new branch
 ./scripts/git/worktree_manage.sh add ../review review-feature    # add with existing branch
 ./scripts/git/worktree_manage.sh add ../part2 feat/part-2 feat/part-1  # new branch starting at another branch (no upstream until first push)
 ./scripts/git/worktree_manage.sh add ../pr feat/from-origin             # branch only on the remote: checked out tracking it
 ./scripts/git/worktree_manage.sh link                            # link CGW tooling into this worktree
 ./scripts/git/worktree_manage.sh remove --execute --non-interactive ../hotfix  # remove (--execute required; --non-interactive skips the confirmation)
+./scripts/git/worktree_manage.sh remove-merged                   # dry-run: clean merged worktrees it would remove
+./scripts/git/worktree_manage.sh remove-merged --execute --non-interactive  # remove them + git branch -d
 ./scripts/git/worktree_manage.sh prune                           # dry-run: show stale admin files
 ./scripts/git/worktree_manage.sh prune --execute                 # remove stale admin files
 ```
@@ -490,9 +493,11 @@ version bump, changelog, rollback plan before tagging; tag CI and asset smoke ch
 | Subcommand | Purpose |
 |------------|---------|
 | `list` | All worktrees via `git worktree list --porcelain` |
+| `list --status [--no-pr]` | One row per linked worktree: branch or `detached`, merged into `<remote>/<default>` (yes/no), changed files, untracked files, commits ahead, PR state when `gh` reaches the GitHub remote, and why `remove-merged` would keep it; ends with the count of safe worktrees |
 | `add <path> [<branch> [<base>]]` | Add linked worktree; creates branch with `-b` if new (from `<base>`, default HEAD, with no upstream until first push; it tracks `<remote>/<branch>` instead when only the remote has the branch or `<base>` is that ref; `--base <ref>` is the flag form; a base for an existing branch is refused); auto-links CGW tooling |
 | `link [<path>]` | Write `scripts/git` shims that forward to the main worktree's scripts (default: current dir); migrates legacy links |
-| `remove [--execute] <path>` | Unlink any legacy CGW tooling link, then remove worktree (dry-run default) |
+| `remove [--execute] <path>` | Unlink any legacy CGW tooling link, then remove worktree (dry-run default); exits 1 when the folder stays after git unregistered the worktree, and names the holding process on Windows when its command line names the folder |
+| `remove-merged [--execute] [--non-interactive]` | Remove every linked worktree that is merged with 0 changed, 0 untracked and 0 ahead (never the main, current or a locked worktree, nor one a process holds), then `git branch -d` its branch (never `-D`); dry-run default, one line per worktree, exit 1 if any selected removal failed |
 | `prune [--execute]` | Remove stale admin files for missing paths (dry-run default) |
 
 `scripts/git/` and `.githooks/` are commonly gitignored, so `git worktree add` doesn't check

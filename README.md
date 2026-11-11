@@ -158,7 +158,7 @@ CGW provides 31 user-facing scripts and 2 internal core modules in `scripts/git/
 | `sync_cgw_tooling.sh` | Refresh a project's vendored CGW scripts, hooks and skill/command copies from a CGW checkout as one `chore: sync CGW git tooling` commit; tracked skill/command copies are discovered via `git ls-files` (`--extra-skill-dst`, `--extra-cmd-dst` only seed a new copy). `--check` is a read-only drift report (exit 1 on drift, no CGW checkout needed, CI-safe; add `--from <cgw>` to also flag staleness) |
 | `undo_last.sh` | Undo last commit (keeps changes staged), unstage files, discard changes, or amend commit message |
 | `recover.sh` | Reflog exploration, dangling-commit discovery (`git fsck`), and safe branch restoration from any SHA |
-| `worktree_manage.sh` | Linked worktree management: list, add, link CGW tooling into worktrees, remove (dry-run default), prune stale metadata |
+| `worktree_manage.sh` | Linked worktree management: list (`--status`: merged / changed / untracked / ahead / PR per worktree), add, link CGW tooling into worktrees, remove (dry-run default), remove-merged (bulk-remove clean merged worktrees and `git branch -d` their branches), prune stale metadata |
 | `check_local_files.sh` | Verify no local-only files (`CLAUDE.md`, `MEMORY.md`, `.env`, logs) are tracked in git (used by CI branch protection) |
 
 **Internal Core Modules**:

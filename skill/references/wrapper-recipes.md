@@ -398,9 +398,12 @@ Parallel branch checkouts:
 
 ```bash
 ./scripts/git/worktree_manage.sh list                          # show all worktrees
+./scripts/git/worktree_manage.sh list --status                 # which worktrees are merged, dirty, untracked or ahead
 ./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent   # add linked worktree
 ./scripts/git/worktree_manage.sh link                          # give this worktree CGW script shims
 ./scripts/git/worktree_manage.sh remove --execute --non-interactive ../hotfix  # remove worktree
+./scripts/git/worktree_manage.sh remove-merged                 # dry-run: clean merged worktrees
+./scripts/git/worktree_manage.sh remove-merged --execute --non-interactive  # remove them + git branch -d
 ./scripts/git/worktree_manage.sh prune                         # dry-run: show stale admin files
 ./scripts/git/worktree_manage.sh prune --execute               # remove stale admin files
 ```
@@ -410,6 +413,10 @@ Parallel branch checkouts:
 confirmation answer it prints `Cancelled` and removes nothing). On Windows, worktrees linked by older CGW versions hold NTFS
 junctions into the main checkout, and git's recursive delete follows them and empties the main
 checkout's gitignored `scripts/git` and `.githooks`.
+
+To clean up many worktrees, use `remove-merged` instead of a hand-written loop: it keeps every
+worktree with changed, untracked or unmerged work, and exits 1 when a folder stays behind (on
+Windows, a process such as an idle Claude session holds it; the error names the folder).
 
 If a hook reports `CGW not found` inside a linked worktree, run `link` — see
 [error-recovery.md](error-recovery.md#cgw-not-found-linked-worktree).
