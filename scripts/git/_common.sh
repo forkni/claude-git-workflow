@@ -31,6 +31,7 @@
 #   cgw_resolve_safe_conflicts() - Auto-resolve DU/DD, emit halt messages; sets CGW_CONFLICT_STATE [_lib_conflict.sh]
 #   cgw_print_conflict_summary() - Print categorised file list from last cgw_classify_conflicts call [_lib_conflict.sh]
 #   cgw_confirm()               - Unified confirmation prompt; handles NI mode, literal tokens, defaults
+#   cgw_same_text_ignoring_cr() - 0 when two files differ at most in CRLF vs LF line endings
 #   cgw_default_branch()        - Echo the repo's default branch (origin/HEAD, falls back to CGW_TARGET_BRANCH) [_lib_remote.sh]
 #   cgw_require_gh()            - Verify gh CLI is installed and authenticated; prints [ERROR] and returns 1 on failure [_lib_remote.sh]
 #   cgw_pr_view()               - Echo one field of a PR via gh pr view --jq, CR-stripped [_lib_remote.sh]
@@ -472,6 +473,15 @@ cgw_backup_file() {
 ' "${src}".bak.* | sort -r | tail -n +$((CGW_BACKUP_KEEP + 1)))
   fi
   return 0
+}
+
+# cgw_same_text_ignoring_cr <a> <b> — 0 when the two files are equal once a CR before each line
+# end is dropped, so a CRLF checkout (core.autocrlf=true) of an LF template still counts as the
+# same file. Byte-identical files take the fast cmp path. Returns 1 when they differ or when
+# either file cannot be read.
+cgw_same_text_ignoring_cr() {
+  cmp -s "$1" "$2" && return 0
+  diff -q --strip-trailing-cr "$1" "$2" >/dev/null 2>&1
 }
 
 # cgw_rebase_in_progress — git-dir/worktree-safe rebase-in-progress check.

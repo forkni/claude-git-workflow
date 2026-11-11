@@ -598,6 +598,57 @@ _run_configure() {
   [[ "$output" == *"Refreshed outdated stock"* ]]
 }
 
+@test "configure.sh reports a CRLF copy of the current template as up to date, no warning, no .bak" {
+  # core.autocrlf=true checks the LF template out with CRLF; that is the same hook.
+  _make_template_repo
+  _make_consumer
+  sed 's/$/\r/' "${TPL_DIR}/hooks/pre-push" > "${PROJ_DIR}/.githooks/pre-push"
+  cp "${PROJ_DIR}/.githooks/pre-push" "${TEST_TMPDIR}/pre-push.crlf"
+  mkdir -p "${PROJ_DIR}/.git/hooks"
+  cp "${TPL_DIR}/hooks/pre-push" "${PROJ_DIR}/.git/hooks/pre-push"
+
+  _run_configure
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *".githooks/pre-push already up to date"* ]]
+  [[ "$output" != *"Preserved locally established .githooks/pre-push"* ]]
+  [[ "$output" != *"differs from the current CGW template"* ]]
+  # The checkout is left as git wrote it.
+  cmp -s "${TEST_TMPDIR}/pre-push.crlf" "${PROJ_DIR}/.githooks/pre-push"
+  [ ! -e "${PROJ_DIR}/.githooks/pre-push.bak" ]
+  # install_hooks.sh copies the CRLF hook over an LF .git/hooks copy without a .bak.
+  [ ! -e "${PROJ_DIR}/.git/hooks/pre-push.bak" ]
+}
+
+@test "configure.sh refreshes a stock pre-push that only a merge commit produced" {
+  # git log --find-object skips merge diffs unless -m is given; a hook version can
+  # exist only as a merge result (the SPDX header reached hooks/pre-commit that way).
+  _make_template_repo
+  local base
+  base="$(git -C "${TPL_DIR}" rev-parse --abbrev-ref HEAD)"
+  git -C "${TPL_DIR}" checkout --quiet -b side
+  echo "side note" > "${TPL_DIR}/SIDE.md"
+  git -C "${TPL_DIR}" add SIDE.md
+  git -C "${TPL_DIR}" commit --quiet -m "docs: side"
+  git -C "${TPL_DIR}" checkout --quiet "${base}"
+  git -C "${TPL_DIR}" merge --quiet --no-ff --no-commit side
+  printf '#!/usr/bin/env bash\n# stock pre-push MERGED\nexit 0\n' > "${TPL_DIR}/hooks/pre-push"
+  cp "${TPL_DIR}/hooks/pre-push" "${TEST_TMPDIR}/pre-push.merged"
+  git -C "${TPL_DIR}" add hooks/pre-push
+  git -C "${TPL_DIR}" commit --quiet -m "Merge side"
+  printf '#!/usr/bin/env bash\n# stock pre-push LATEST\nexit 0\n' > "${TPL_DIR}/hooks/pre-push"
+  git -C "${TPL_DIR}" commit --quiet -am "fix: latest pre-push"
+  _make_consumer
+  cp "${TEST_TMPDIR}/pre-push.merged" "${PROJ_DIR}/.githooks/pre-push"
+
+  _run_configure
+
+  [ "$status" -eq 0 ]
+  grep -qF "stock pre-push LATEST" "${PROJ_DIR}/.githooks/pre-push"
+  [[ "$output" == *"Refreshed outdated stock .githooks/pre-push"* ]]
+  [ ! -e "${PROJ_DIR}/.githooks/pre-push.bak" ]
+}
+
 @test "configure.sh still preserves a customised pre-push and warns" {
   _make_template_repo
   _make_consumer

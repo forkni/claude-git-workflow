@@ -411,13 +411,15 @@ _resolve_template_dir() {
 #   Prints the short sha of the first commit that introduced it and returns 0;
 #   returns 1 when it is not a known stock version -- or when that cannot be
 #   told (template dir is not a git checkout), which falls back to "preserve".
+#   -m: a version can exist only as a merge result (the SPDX header reached hooks/pre-commit
+#   through a merge commit), and plain `git log --find-object` skips merge diffs.
 _hook_stock_version() {
   local template_file="$1" target_file="$2" hook_name="$3"
   local tpl_root blob sha
   tpl_root="$(git -C "$(dirname "${template_file}")" rev-parse --show-toplevel 2>/dev/null)" || return 1
   blob="$(tr -d '\r' <"${target_file}" | git hash-object --no-filters --stdin 2>/dev/null)" || return 1
   [[ -n "${blob}" ]] || return 1
-  sha="$(git -C "${tpl_root}" log --all --format=%h --find-object="${blob}" -- "hooks/${hook_name}" 2>/dev/null | tail -1)"
+  sha="$(git -C "${tpl_root}" log --all -m --format=%h --find-object="${blob}" -- "hooks/${hook_name}" 2>/dev/null | tail -1)"
   [[ -n "${sha}" ]] || return 1
   printf '%s\n' "${sha}"
 }
@@ -436,7 +438,7 @@ _install_single_hook() {
   # Case 1: .githooks/<hook> does not exist yet
   if [[ ! -f "${target_file}" ]]; then
     # If a pre-existing hook is in .git/hooks, back it up so it is never lost
-    if [[ -f "${active_git_hook}" ]] && ! cmp -s "${template_file}" "${active_git_hook}"; then
+    if [[ -f "${active_git_hook}" ]] && ! cgw_same_text_ignoring_cr "${template_file}" "${active_git_hook}"; then
       if _bak="$(cgw_backup_file "${active_git_hook}")"; then
         echo "  [INFO] Backed up pre-existing .git/hooks/${hook_name} -> ${_bak#"${PROJECT_ROOT}"/}"
       else
@@ -449,8 +451,10 @@ _install_single_hook() {
     return 0
   fi
 
-  # Case 2: .githooks/<hook> exists and matches template
-  if cmp -s "${template_file}" "${target_file}"; then
+  # Case 2: .githooks/<hook> exists and matches template. A CRLF checkout of the LF template
+  # (core.autocrlf=true) is the same hook: report it current and leave the file alone, since
+  # git would only check it out with CRLF again.
+  if cgw_same_text_ignoring_cr "${template_file}" "${target_file}"; then
     chmod +x "${target_file}"
     echo "  [OK] .githooks/${hook_name} already up to date"
     return 0

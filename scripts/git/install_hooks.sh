@@ -131,7 +131,7 @@ main() {
       chmod +x "${githooks_src}/pre-commit" >>"$logfile" 2>&1
       echo "  [OK] core.hooksPath=${hooks_dir} — pre-commit already in place" | tee -a "$logfile"
     else
-      if [[ -f "${hooks_dir}/pre-commit" ]] && ! cmp -s "${githooks_src}/pre-commit" "${hooks_dir}/pre-commit"; then
+      if [[ -f "${hooks_dir}/pre-commit" ]] && ! cgw_same_text_ignoring_cr "${githooks_src}/pre-commit" "${hooks_dir}/pre-commit"; then
         if _bak="$(cgw_backup_file "${hooks_dir}/pre-commit")"; then
           echo "  [INFO] Backed up ${hooks_dir}/pre-commit -> ${_bak}" | tee -a "$logfile"
         else
@@ -159,7 +159,7 @@ main() {
       chmod +x "${githooks_src}/pre-push" >>"$logfile" 2>&1
       echo "  [OK] core.hooksPath=${hooks_dir} — pre-push already in place" | tee -a "$logfile"
     else
-      if [[ -f "${hooks_dir}/pre-push" ]] && ! cmp -s "${githooks_src}/pre-push" "${hooks_dir}/pre-push"; then
+      if [[ -f "${hooks_dir}/pre-push" ]] && ! cgw_same_text_ignoring_cr "${githooks_src}/pre-push" "${hooks_dir}/pre-push"; then
         if _bak="$(cgw_backup_file "${hooks_dir}/pre-push")"; then
           echo "  [INFO] Backed up ${hooks_dir}/pre-push -> ${_bak}" | tee -a "$logfile"
         else
@@ -181,7 +181,7 @@ main() {
       chmod +x "${githooks_src}/pre-rebase" >>"$logfile" 2>&1
       echo "  [OK] core.hooksPath=${hooks_dir} — pre-rebase already in place" | tee -a "$logfile"
     else
-      if [[ -f "${hooks_dir}/pre-rebase" ]] && ! cmp -s "${githooks_src}/pre-rebase" "${hooks_dir}/pre-rebase"; then
+      if [[ -f "${hooks_dir}/pre-rebase" ]] && ! cgw_same_text_ignoring_cr "${githooks_src}/pre-rebase" "${hooks_dir}/pre-rebase"; then
         if _bak="$(cgw_backup_file "${hooks_dir}/pre-rebase")"; then
           echo "  [INFO] Backed up ${hooks_dir}/pre-rebase -> ${_bak}" | tee -a "$logfile"
         else
