@@ -402,6 +402,13 @@ never deletes a protected branch (the source, target and default branch, `main`,
 whose content differs from HEAD, because `git worktree remove` would delete it silently. It
 prints one line per worktree and exits 1 when any selected removal failed.
 
+`remove` and `remove-merged` delete the gitignored files in a worktree too (`git worktree
+remove` does not check them), and the status table does not count them. If a worktree can
+hold local-only files (an `.env`, notes), look at `git -C <path> status --ignored` first. The
+holder check matches the folder path up to a space or a quote, so a process on a sibling
+folder whose name continues with a space (`<folder> copy`) also counts as a holder. That
+error only keeps the worktree for a later run.
+
 On Windows, `git worktree remove` can delete a worktree's files and its registration but leave
 the folder, when another process uses that folder as its working folder. `remove` then exits 1
 with `[ERROR] Folder still exists: <path>`, and names the holding process when its command line
