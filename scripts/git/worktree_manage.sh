@@ -11,12 +11,16 @@
 #
 # Subcommands:
 #   list              List all worktrees (main + linked)
+#   list --status [--no-pr]  One row per linked worktree: merged, changed,
+#                            untracked, ahead, PR state; counts the safe ones
 #   add  <path> [<branch> [<base>]]   Add a linked worktree (creates branch if needed,
 #                            from <base> -- default HEAD, with no upstream until first push,
 #                            or tracking <remote>/<branch> when only the remote has it
 #                            or <base> is that ref)
 #   link [<path>]            Link scripts/git and .githooks from the main worktree
 #   remove <path>            Remove a linked worktree (dry-run default)
+#   remove-merged            Remove every merged, clean linked worktree and
+#                            its branch (git branch -d; dry-run default)
 #   prune                    Remove stale administrative files (dry-run default)
 #
 # Globals:
@@ -24,7 +28,8 @@
 #   PROJECT_ROOT   - Auto-detected git repo root (set by _config.sh)
 #   logfile        - Set by init_logging
 # Returns:
-#   0 on success, 1 on failure
+#   0 on success, 1 on failure (remove / remove-merged: also when a folder
+#   stays after git unregistered the worktree)
 
 set -uo pipefail
 
@@ -305,6 +310,28 @@ _cmd_link() {
 # Subcommand: list
 # ---------------------------------------------------------------------------
 _cmd_list() {
+  local status_mode=0 want_pr=1
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --status)
+        status_mode=1
+        shift
+        ;;
+      --no-pr)
+        want_pr=0
+        shift
+        ;;
+      *)
+        echo "[ERROR] Unknown option: $1" >&2
+        exit 1
+        ;;
+    esac
+  done
+  if [[ "${status_mode}" -eq 1 ]]; then
+    _cmd_list_status "${want_pr}"
+    return
+  fi
+
   echo "=== Git Worktrees ==="
   echo ""
 
@@ -350,6 +377,44 @@ _cmd_list() {
     echo "  [!] ${stale} stale administrative file(s) detected."
     echo "      Run: ./scripts/git/worktree_manage.sh prune"
   fi
+}
+
+# list --status: one row per linked worktree, then a count of the ones
+# remove-merged would select. Read-only.
+_cmd_list_status() {
+  local want_pr="${1:-1}"
+  _cgw_wt_collect "${want_pr}" || exit 1
+
+  echo "=== Linked Worktree Status (compared with ${_WT_DEFAULT_REF}) ==="
+  echo ""
+  if [[ "${_WT_N}" -eq 0 ]]; then
+    echo "  (no linked worktrees)"
+    echo ""
+    echo "Safe to remove: 0 of 0 linked worktrees."
+    return 0
+  fi
+
+  local i w_path=4 w_branch=6 safe=0
+  for ((i = 0; i < _WT_N; i++)); do
+    [[ "${#_WT_PATH[i]}" -gt "${w_path}" ]] && w_path="${#_WT_PATH[i]}"
+    [[ "${#_WT_BRANCH[i]}" -gt "${w_branch}" ]] && w_branch="${#_WT_BRANCH[i]}"
+  done
+
+  # The PR cell (with its gap) is empty when gh gave no data.
+  local fmt="  %-*s  %-*s  %-6s  %7s  %9s  %5s  %s%s\n" pr_cell=""
+  [[ "${_WT_PR_OK}" -eq 1 ]] && pr_cell="$(printf '%-12s  ' "PR")"
+  # shellcheck disable=SC2059  # fmt is a fixed format string
+  printf "${fmt}" "${w_path}" "PATH" "${w_branch}" "BRANCH" \
+    "MERGED" "CHANGED" "UNTRACKED" "AHEAD" "${pr_cell}" "REMOVE-MERGED"
+  for ((i = 0; i < _WT_N; i++)); do
+    [[ "${_WT_SAFE[i]}" -eq 1 ]] && safe=$((safe + 1))
+    [[ "${_WT_PR_OK}" -eq 1 ]] && pr_cell="$(printf '%-12s  ' "${_WT_PR[i]}")"
+    # shellcheck disable=SC2059  # fmt is a fixed format string
+    printf "${fmt}" "${w_path}" "${_WT_PATH[i]}" "${w_branch}" "${_WT_BRANCH[i]}" \
+      "${_WT_MERGED[i]}" "${_WT_CHANGED[i]}" "${_WT_UNTRACKED[i]}" "${_WT_AHEAD[i]}" "${pr_cell}" "${_WT_REASON[i]}"
+  done
+  echo ""
+  echo "Safe to remove: ${safe} of ${_WT_N} linked worktrees (./scripts/git/worktree_manage.sh remove-merged)."
 }
 
 # ---------------------------------------------------------------------------
@@ -521,6 +586,222 @@ _cgw_worktree_registered() {
 }
 
 # ---------------------------------------------------------------------------
+# Folder-holder lookup (Windows)
+# ---------------------------------------------------------------------------
+# Windows refuses to delete a folder that a process uses as its working
+# folder: `git worktree remove` then deletes the files and the registration
+# but leaves the folder. The usual holder is an idle Claude desktop session
+# (`claude.exe ... --add-dir=<folder>`) or an editor. Win32_Process gives no
+# working folder, only the command line, so a holder is found only when the
+# folder is on its command line. One powershell.exe call per run (cached;
+# callers that look up holders inside $(...) load the list first, because a
+# subshell's cache dies with it). No powershell.exe (Linux, macOS) means no
+# lookup.
+_CGW_PROC_LIST=""
+_CGW_PROC_LIST_LOADED=0
+
+_cgw_load_proc_list() {
+  [[ "${_CGW_PROC_LIST_LOADED}" -eq 1 ]] && return 0
+  _CGW_PROC_LIST_LOADED=1
+  command -v powershell.exe >/dev/null 2>&1 || return 0
+  # shellcheck disable=SC2016  # PowerShell code: its $ must reach powershell.exe unexpanded
+  local ps_cmd='Get-CimInstance Win32_Process | Where-Object { $_.CommandLine } | ForEach-Object { "$($_.ProcessId)`t$($_.Name)`t$($_.CommandLine)" }'
+  local -a runner=()
+  _cgw_gnu_timeout_available && runner=(timeout 30)
+  _CGW_PROC_LIST="$(${runner[@]+"${runner[@]}"} powershell.exe -NoProfile -NonInteractive -Command "${ps_cmd}" 2>/dev/null | tr -d '\r')" || _CGW_PROC_LIST=""
+}
+
+# _cgw_folder_holders <path>
+#   Prints "<name> (PID <n>)" for each process whose command line names
+#   <path> (or a folder inside it), one per line. Case-insensitive, and both
+#   slash styles match. A longer sibling name (<path>-2) does not match. This
+#   script's own processes and powershell.exe are skipped.
+_cgw_folder_holders() {
+  local p="$1" win=""
+  _cgw_load_proc_list
+  [[ -z "${_CGW_PROC_LIST}" ]] && return 0
+  command -v cygpath >/dev/null 2>&1 && win="$(cygpath -m "${p}" 2>/dev/null)"
+  [[ -z "${win}" ]] && win="${p}"
+  win="${win%/}"
+  printf '%s\n' "${_CGW_PROC_LIST}" | awk -F'\t' -v fwd="${win}" '
+    BEGIN {
+      fwd = tolower(fwd)
+      back = fwd
+      gsub("/", "\\", back)
+    }
+    function hit(s, n,    i, c) {
+      while ((i = index(s, n)) > 0) {
+        c = substr(s, i + length(n), 1)
+        if (c == "" || c !~ /[A-Za-z0-9._-]/) return 1
+        s = substr(s, i + 1)
+      }
+      return 0
+    }
+    {
+      name = $2
+      cl = tolower($0)
+      if (tolower(name) ~ /^powershell/ || cl ~ /worktree_manage/) next
+      if (hit(cl, fwd) || hit(cl, back)) print name " (PID " $1 ")"
+    }'
+}
+
+# ---------------------------------------------------------------------------
+# Worktree classification (list --status, remove-merged)
+# ---------------------------------------------------------------------------
+
+# _cgw_wt_default_ref
+#   Echoes the ref merged-ness is judged against: <remote>/<default branch>,
+#   or the local default branch when the remote-tracking ref is missing.
+_cgw_wt_default_ref() {
+  local def
+  def="$(cgw_default_branch)"
+  [[ -z "${def}" ]] && return 1
+  if git rev-parse --verify --quiet "refs/remotes/${CGW_REMOTE}/${def}" >/dev/null 2>&1; then
+    echo "${CGW_REMOTE}/${def}"
+  elif git rev-parse --verify --quiet "refs/heads/${def}" >/dev/null 2>&1; then
+    echo "${def}"
+  else
+    return 1
+  fi
+}
+
+# _cgw_wt_load_prs
+#   Fills _WT_PR_DATA with "<head branch>\t<STATE>\t<number>" lines (newest PR
+#   first) from one `gh pr list` call. Quietly leaves it empty when gh is
+#   missing, the remote is not on GitHub, or the call fails.
+_WT_PR_DATA=""
+_WT_PR_OK=0
+_cgw_wt_load_prs() {
+  _WT_PR_DATA=""
+  _WT_PR_OK=0
+  command -v gh >/dev/null 2>&1 || return 0
+  local slug
+  slug="$(cgw_remote_owner_repo "${CGW_REMOTE}" 2>/dev/null)" || return 0
+  [[ -z "${slug}" ]] && return 0
+  local -a runner=()
+  _cgw_gnu_timeout_available && runner=(timeout 60)
+  local data
+  if data="$(${runner[@]+"${runner[@]}"} gh pr list -R "${slug}" --state all --limit 1000 \
+    --json number,state,headRefName \
+    --jq '.[] | [.headRefName, .state, (.number | tostring)] | @tsv' 2>/dev/null)"; then
+    _WT_PR_DATA="$(printf '%s' "${data}" | tr -d '\r')"
+    _WT_PR_OK=1
+  fi
+}
+
+# _cgw_wt_pr_for <branch>  -> "STATE #N" for the newest PR from <branch>, or "-".
+_cgw_wt_pr_for() {
+  local b="$1" hit=""
+  if [[ -n "${b}" && -n "${_WT_PR_DATA}" ]]; then
+    hit="$(printf '%s\n' "${_WT_PR_DATA}" | awk -F'\t' -v b="${b}" '$1 == b { print $2 " #" $3; exit }')"
+  fi
+  echo "${hit:--}"
+}
+
+# _cgw_wt_collect [<want_pr>]
+#   Classifies every LINKED worktree (the main worktree is skipped) into the
+#   parallel arrays below. _WT_SAFE[i]=1 when remove-merged may select it:
+#   merged into _WT_DEFAULT_REF, 0 changed, 0 untracked, 0 ahead, folder
+#   present, not locked, not the current worktree. _WT_REASON[i] says why not.
+_cgw_wt_collect() {
+  local want_pr="${1:-0}"
+  _WT_N=0
+  _WT_PATH=()
+  _WT_BRANCH=()
+  _WT_MERGED=()
+  _WT_CHANGED=()
+  _WT_UNTRACKED=()
+  _WT_AHEAD=()
+  _WT_SAFE=()
+  _WT_REASON=()
+  _WT_PR=()
+
+  _WT_DEFAULT_REF="$(_cgw_wt_default_ref)" || {
+    err "Cannot resolve the default branch (${CGW_REMOTE}/$(cgw_default_branch) or a local copy) to compare with."
+    return 1
+  }
+  [[ "${want_pr}" -eq 1 ]] && _cgw_wt_load_prs
+
+  local current raw
+  current="$(git rev-parse --show-toplevel 2>/dev/null)"
+  raw="$(git worktree list --porcelain 2>/dev/null)" || return 1
+
+  local line first=1 path="" head="" branch="" locked=0 prunable=0 bare=0
+  while IFS= read -r line; do
+    case "${line}" in
+      "worktree "*) path="${line#worktree }" ;;
+      "HEAD "*) head="${line#HEAD }" ;;
+      "branch "*) branch="${line#branch refs/heads/}" ;;
+      bare) bare=1 ;;
+      locked | "locked "*) locked=1 ;;
+      prunable | "prunable "*) prunable=1 ;;
+      "")
+        if [[ -n "${path}" ]]; then
+          if [[ "${first}" -eq 1 ]]; then
+            first=0 # the main worktree: never listed, never removed
+          elif [[ "${bare}" -eq 0 ]]; then
+            _cgw_wt_add_row "${path}" "${head}" "${branch}" "${locked}" "${prunable}" "${current}"
+          fi
+        fi
+        path="" head="" branch="" locked=0 prunable=0 bare=0
+        ;;
+    esac
+  done <<<"${raw}"$'\n'
+}
+
+_cgw_wt_add_row() {
+  local path="$1" head="$2" branch="$3" locked="$4" prunable="$5" current="$6"
+  local merged="-" changed="-" untracked="-" ahead="-" st
+  local -a reasons=()
+
+  if [[ "${prunable}" -eq 1 ]] || [[ ! -d "${path}" ]]; then
+    reasons+=("folder missing (run prune)")
+  else
+    if git merge-base --is-ancestor "${head}" "${_WT_DEFAULT_REF}" 2>/dev/null; then
+      merged="yes"
+    else
+      merged="no"
+    fi
+    ahead="$(cgw_rev_count "${_WT_DEFAULT_REF}" "${head}")" || ahead="?"
+    if st="$(git -C "${path}" status --porcelain --untracked-files=all 2>/dev/null)"; then
+      untracked="$(printf '%s' "${st}" | grep -c '^??' || true)"
+      # cgw_tree_dirty_paths also reports skip-worktree / assume-unchanged files
+      # whose disk content diverged: git status (and git worktree remove's own
+      # check) cannot see those, so a removal would delete them silently.
+      changed="$( (cd "${path}" && cgw_tree_dirty_paths) | sort -u | grep -c . || true)"
+    else
+      changed="?" untracked="?"
+      reasons+=("git status failed")
+    fi
+    [[ "${merged}" == "no" ]] && reasons+=("not merged")
+    [[ "${changed}" != "0" && "${changed}" != "?" ]] && reasons+=("${changed} changed")
+    [[ "${untracked}" != "0" && "${untracked}" != "?" ]] && reasons+=("${untracked} untracked")
+    [[ "${ahead}" != "0" ]] && reasons+=("${ahead} ahead")
+  fi
+  [[ "${locked}" -eq 1 ]] && reasons+=("locked")
+  [[ -n "${current}" && "${path}" == "${current}" ]] && reasons+=("current worktree")
+
+  local i="${_WT_N}"
+  _WT_PATH[i]="${path}"
+  _WT_BRANCH[i]="${branch:-detached}"
+  _WT_MERGED[i]="${merged}"
+  _WT_CHANGED[i]="${changed}"
+  _WT_UNTRACKED[i]="${untracked}"
+  _WT_AHEAD[i]="${ahead}"
+  _WT_PR[i]="$(_cgw_wt_pr_for "${branch}")"
+  if [[ "${#reasons[@]}" -eq 0 ]]; then
+    _WT_SAFE[i]=1
+    _WT_REASON[i]="safe"
+  else
+    _WT_SAFE[i]=0
+    local joined="${reasons[0]}" r
+    for r in "${reasons[@]:1}"; do joined+=", ${r}"; done
+    _WT_REASON[i]="${joined}"
+  fi
+  _WT_N=$((i + 1))
+}
+
+# ---------------------------------------------------------------------------
 # Subcommand: remove
 # ---------------------------------------------------------------------------
 _cmd_remove() {
@@ -584,6 +865,19 @@ _cmd_remove() {
     exit 0
   fi
 
+  _cgw_remove_worktree "${path}" || exit 1
+}
+
+# _cgw_remove_worktree <path>
+#   The removal itself, shared by `remove --execute` and `remove-merged
+#   --execute` (no prompt here: callers confirm first). Returns:
+#     0  removed, folder gone
+#     1  not removed (git refused, or the tooling links could not be checked)
+#     2  git removed the files and the registration, but the folder is still
+#        there (on Windows: a process uses it as its working folder)
+_cgw_remove_worktree() {
+  local path="$1"
+
   # Unlink CGW tooling first (A3). scripts/git and .githooks may be NTFS
   # junctions; `git worktree remove`'s recursive delete stats reparse points
   # as ordinary directories, so an unremoved junction could be walked into
@@ -602,7 +896,7 @@ _cmd_remove() {
   if [[ -z "${abs_path}" ]]; then
     err_tee "[ERROR] Could not resolve worktree path '${path}' — refusing to remove without verifying CGW tooling links."
     err_tee "  If the worktree directory is already gone, use: ./scripts/git/worktree_manage.sh prune --execute"
-    exit 1
+    return 1
   fi
   local rel unlink_failed=0
   for rel in "scripts/git" ".githooks"; do
@@ -614,7 +908,7 @@ _cmd_remove() {
     err_tee "  into the MAIN worktree's scripts/git or .githooks and delete it."
     err_tee "  Resolve manually (remove the offending link/directory), then retry:"
     err_tee "    ./scripts/git/worktree_manage.sh remove --execute --non-interactive '${path}'"
-    exit 1
+    return 1
   fi
 
   # The worktree root as git spells it, taken now while it still is one: after
@@ -623,22 +917,9 @@ _cmd_remove() {
   local wt_toplevel
   wt_toplevel="$(git -C "${abs_path}" rev-parse --show-toplevel 2>/dev/null)"
 
-  if git worktree remove "${path}" 2>&1 | tee -a "${logfile}"; then
-    echo ""
-    echo "[OK] Worktree removed: ${path}"
-  elif [[ -n "${wt_toplevel}" ]] && ! _cgw_worktree_registered "${wt_toplevel}"; then
-    # git deleted the worktree's files and its registration, then failed on
-    # the directory itself (on Windows usually a process holding it open). The
-    # worktree IS removed, so this is success with a leftover to clean up.
-    # Reporting a failure here sent callers after files that were never in
-    # the worktree.
-    echo ""
-    echo "[OK] Worktree removed: ${path}"
-    if [[ -d "${path}" ]]; then
-      echo "  git could not delete the now-empty directory. Close any shell, editor or process that"
-      echo "  has it open, then delete the folder by hand (it holds nothing of value): ${path}"
-    fi
-  else
+  local git_ok=0
+  git worktree remove "${path}" 2>&1 | tee -a "${logfile}" && git_ok=1
+  if [[ "${git_ok}" -eq 0 ]] && { [[ -z "${wt_toplevel}" ]] || _cgw_worktree_registered "${wt_toplevel}"; }; then
     err_tee "[ERROR] Failed to remove worktree: ${path}"
     if [[ ! -d "${path}" ]]; then
       :
@@ -654,8 +935,162 @@ _cmd_remove() {
       err_tee "  The directory is no longer a git worktree root, so its contents are not listed."
       err_tee "  Check: git worktree list, then git worktree prune --dry-run."
     fi
+    return 1
+  fi
+
+  # git deleted the files and the registration. On Windows the folder itself
+  # can stay (git may still exit 0): a process that uses it as its working
+  # folder blocks the delete. That is not a clean removal, so say so and fail;
+  # never `git -C` in the leftover folder (it resolves to an enclosing checkout
+  # and lists ITS files).
+  if [[ -e "${path}" ]]; then
+    echo ""
+    err_tee "[ERROR] Folder still exists: ${path}"
+    err_tee "  git no longer registers it as a worktree (its files are removed), but the folder could"
+    err_tee "  not be deleted: a process holds it, for example an idle Claude session or an editor"
+    err_tee "  that uses it as its working folder."
+    local holders line
+    holders="$(_cgw_folder_holders "${wt_toplevel:-${abs_path}}")"
+    if [[ -n "${holders}" ]]; then
+      err_tee "  Held by (command line names the folder):"
+      while IFS= read -r line; do
+        err_tee "    ${line}"
+      done <<<"${holders}"
+    fi
+    err_tee "  Close that process, then delete the folder by hand (nothing of value is left in it)."
+    return 2
+  fi
+
+  echo ""
+  echo "[OK] Worktree removed: ${path}"
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Subcommand: remove-merged
+# ---------------------------------------------------------------------------
+# Selects the linked worktrees that hold nothing of their own: merged into
+# <remote>/<default>, 0 changed, 0 untracked, 0 ahead (list --status's "safe"
+# rows), never the main or the current worktree. A selected folder that a
+# process names on its command line is kept (removing it would leave the folder
+# behind). Dry-run by default; --execute removes each through
+# _cgw_remove_worktree (the `remove` code path) and deletes its branch with
+# `git branch -d` (never -D). Exit 1 when any selected removal failed.
+_cmd_remove_merged() {
+  local dry_run=1
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --execute)
+        dry_run=0
+        shift
+        ;;
+      --dry-run)
+        dry_run=1
+        shift
+        ;;
+      --non-interactive)
+        CGW_NON_INTERACTIVE=1
+        shift
+        ;;
+      *)
+        echo "[ERROR] Unknown option: $1" >&2
+        exit 1
+        ;;
+    esac
+  done
+
+  _cgw_wt_collect 0 || exit 1
+
+  echo "=== Remove Merged Worktrees (compared with ${_WT_DEFAULT_REF}) ==="
+  echo ""
+
+  local i holders kept=0
+  local -a sel=()
+  # Load once here: the lookups below run in $(...) subshells.
+  _cgw_load_proc_list
+  for ((i = 0; i < _WT_N; i++)); do
+    if [[ "${_WT_SAFE[i]}" -ne 1 ]]; then
+      printf "  kept     %s  (%s)\n" "${_WT_PATH[i]}" "${_WT_REASON[i]}"
+      kept=$((kept + 1))
+      continue
+    fi
+    holders="$(_cgw_folder_holders "${_WT_PATH[i]}")"
+    if [[ -n "${holders}" ]]; then
+      printf "  kept     %s  (in use by %s)\n" "${_WT_PATH[i]}" "$(printf '%s\n' "${holders}" | awk 'NR > 1 { printf ", " } { printf "%s", $0 }')"
+      kept=$((kept + 1))
+      continue
+    fi
+    sel+=("${i}")
+  done
+
+  if [[ "${#sel[@]}" -eq 0 ]]; then
+    [[ "${_WT_N}" -gt 0 ]] && echo ""
+    echo "Nothing to remove (${kept} kept)."
+    exit 0
+  fi
+
+  if [[ "${dry_run}" -eq 1 ]]; then
+    for i in "${sel[@]}"; do
+      if [[ "${_WT_BRANCH[i]}" == "detached" ]]; then
+        printf "  would remove  %s  (detached HEAD)\n" "${_WT_PATH[i]}"
+      else
+        printf "  would remove  %s  (branch %s)\n" "${_WT_PATH[i]}" "${_WT_BRANCH[i]}"
+      fi
+    done
+    echo ""
+    echo "--- Dry run: no changes made (use --execute to proceed) ---"
+    echo "Would remove ${#sel[@]} worktree(s) and delete their branches with git branch -d; ${kept} kept."
+    exit 0
+  fi
+
+  if [[ "${CGW_NON_INTERACTIVE:-0}" != "1" ]] && [[ ! -t 0 ]]; then
+    err_tee "[ERROR] worktree_manage.sh remove-merged: needs confirmation and stdin is not a terminal; rerun with --non-interactive"
+    err_tee "  ./scripts/git/worktree_manage.sh remove-merged --execute --non-interactive"
     exit 1
   fi
+  if ! cgw_confirm "Remove ${#sel[@]} merged worktree(s) and delete their branches?" --non-interactive accept; then
+    echo "Cancelled"
+    exit 0
+  fi
+
+  log_section_start "REMOVE MERGED" "${logfile}"
+  local out rc b bout removed=0 failed=0
+  for i in "${sel[@]}"; do
+    b="${_WT_BRANCH[i]}"
+    out="$(_cgw_remove_worktree "${_WT_PATH[i]}" 2>&1)"
+    rc=$?
+    if [[ "${rc}" -eq 1 ]]; then
+      printf "  FAILED   %s  (not removed)\n" "${_WT_PATH[i]}" | tee -a "${logfile}"
+      printf '%s\n' "${out}" | grep -v '^$' | sed 's/^/      /'
+      failed=$((failed + 1))
+      continue
+    fi
+    # The registration is gone in both remaining cases, so the branch is
+    # free to delete.
+    local note=""
+    if [[ "${b}" != "detached" ]]; then
+      if cgw_branch_is_protected "${b}" --policy cleanup; then
+        note="branch ${b} kept: protected"
+      elif bout="$(git branch -d "${b}" 2>&1)"; then
+        note="branch ${b} deleted"
+      else
+        note="[WARN] branch ${b} kept: $(printf '%s' "${bout}" | head -1)"
+      fi
+    fi
+    if [[ "${rc}" -eq 2 ]]; then
+      printf "  FAILED   %s  (folder left: a process holds it%s)\n" "${_WT_PATH[i]}" "${note:+; ${note}}" | tee -a "${logfile}"
+      printf '%s\n' "${out}" | grep '^  Held by\|^    ' | sed 's/^/    /'
+      failed=$((failed + 1))
+    else
+      printf "  removed  %s%s\n" "${_WT_PATH[i]}" "${note:+  (${note})}" | tee -a "${logfile}"
+      removed=$((removed + 1))
+    fi
+  done
+  log_section_end "REMOVE MERGED" "${logfile}" "$([[ "${failed}" -eq 0 ]] && echo 0 || echo 1)"
+
+  echo ""
+  echo "Removed: ${removed}  Kept: ${kept}  Failed: ${failed}"
+  [[ "${failed}" -eq 0 ]] || exit 1
 }
 
 # ---------------------------------------------------------------------------
@@ -726,13 +1161,27 @@ _show_help() {
   echo ""
   echo "Subcommands:"
   echo "  list                      List all worktrees (main + linked)"
+  echo "  list --status [--no-pr]   One row per linked worktree: branch (or detached), merged into"
+  echo "                            <remote>/<default branch>, changed files, untracked files,"
+  echo "                            commits ahead, PR state (when gh can reach the GitHub remote;"
+  echo "                            --no-pr skips it), and why remove-merged would keep it."
+  echo "                            Ends with the count of worktrees that are safe to remove"
   echo "  add  <path> [<branch> [<base>]]"
   echo "                            Add a linked worktree; creates the branch if needed,"
   echo "                            starting from <base> (default HEAD) with no upstream"
   echo "                            until first push; tracks <remote>/<branch> when only"
   echo "                            the remote has it or <base> is that ref"
   echo "  link [<path>]             Link scripts/git and .githooks from the main worktree"
-  echo "  remove [--execute] <path> Remove a linked worktree (dry-run by default)"
+  echo "  remove [--execute] <path> Remove a linked worktree (dry-run by default). Exits 1 when"
+  echo "                            the folder stays after git unregistered the worktree (a process"
+  echo "                            holds it; on Windows the holder is named when its command line"
+  echo "                            names the folder)"
+  echo "  remove-merged [--execute] Remove every linked worktree that is merged, has 0 changed,"
+  echo "                            0 untracked and 0 ahead (a detached one when its HEAD is in the"
+  echo "                            default branch), then git branch -d its branch (never -D)."
+  echo "                            Never the main or current worktree, nor a locked one or one a"
+  echo "                            process names on its command line. Dry-run by default; one line"
+  echo "                            per worktree; exits 1 if any selected removal failed"
   echo "  prune  [--execute]        Remove stale admin files (dry-run by default)"
   echo ""
   echo "Options (add):"
@@ -743,19 +1192,26 @@ _show_help() {
   echo "Options (link):"
   echo "  --dry-run           Preview without linking"
   echo ""
-  echo "Options (remove / prune):"
+  echo "Options (list):"
+  echo "  --status            Show the status table instead of the plain list"
+  echo "  --no-pr             With --status: do not ask gh for PR states"
+  echo ""
+  echo "Options (remove / remove-merged / prune):"
   echo "  --execute           Actually remove (default is dry-run preview)"
   echo "  --dry-run           Explicit dry-run (the default)"
-  echo "  --non-interactive   Skip confirmation (remove only)"
+  echo "  --non-interactive   Skip confirmation (remove and remove-merged)"
   echo ""
   echo "Examples:"
   echo "  ./scripts/git/worktree_manage.sh list"
+  echo "  ./scripts/git/worktree_manage.sh list --status"
   echo "  ./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent-fix"
   echo "  ./scripts/git/worktree_manage.sh add ../pr2 feat/part-2 feat/part-1   # branch off another branch"
   echo "  ./scripts/git/worktree_manage.sh link          # link the current worktree"
   echo "  ./scripts/git/worktree_manage.sh link ../hotfix"
   echo "  ./scripts/git/worktree_manage.sh remove --execute ../hotfix"
   echo "  ./scripts/git/worktree_manage.sh remove --execute --non-interactive ../hotfix   # no terminal (agent, CI)"
+  echo "  ./scripts/git/worktree_manage.sh remove-merged                               # preview"
+  echo "  ./scripts/git/worktree_manage.sh remove-merged --execute --non-interactive    # no terminal (agent, CI)"
   echo "  ./scripts/git/worktree_manage.sh prune --execute"
 }
 
@@ -771,6 +1227,7 @@ main() {
     add) _cmd_add "$@" ;;
     link) _cmd_link "$@" ;;
     remove) _cmd_remove "$@" ;;
+    remove-merged) _cmd_remove_merged "$@" ;;
     prune) _cmd_prune "$@" ;;
     --help | -h | help | "") _show_help ;;
     *)

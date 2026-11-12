@@ -1015,16 +1015,25 @@ cgw_run_typecheck() {
   # shellcheck disable=SC2034  # read via dynamic scope by run_tool_with_logging
   local CGW_TOOL_ERROR_REGEX='^[[:space:]]*[^[:space:]]+[:(][0-9]+[,:)][^[:space:]]*[[:space:]]*(-[[:space:]]+)?error|^ERROR[[:space:]]'
   local status=0
+  # pyrefly baseline: when the baseline file exists, pass it so only
+  # newly-introduced errors are reported. Path override: CGW_TYPECHECK_BASELINE.
+  # Skipped when the project already passes --baseline via CHECK_ARGS/EXCLUDES:
+  # pyrefly rejects a repeated --baseline with a usage error (exit 2).
+  local tc_baseline_arg=""
+  if [[ "${CGW_TYPECHECK_CMD}" == "pyrefly" && -f "${CGW_TYPECHECK_BASELINE:-.pyrefly-baseline.json}" &&
+    "${CGW_TYPECHECK_CHECK_ARGS-check} ${CGW_TYPECHECK_EXCLUDES:-}" != *--baseline* ]]; then
+    tc_baseline_arg="--baseline=${CGW_TYPECHECK_BASELINE:-.pyrefly-baseline.json}"
+  fi
   if [[ $# -gt 0 ]]; then
     local stripped_args
     stripped_args=$(cgw_strip_path_arg "${CGW_TYPECHECK_CHECK_ARGS-check}")
     # shellcheck disable=SC2086  # Word splitting intentional: stripped_args contains multiple flags
-    _cgw_run_pipeline_tool "${mode}" "TYPECHECK" "${logfile:-/dev/null}" "${tc_bin}" ${stripped_args} "$@" || status=$?
+    _cgw_run_pipeline_tool "${mode}" "TYPECHECK" "${logfile:-/dev/null}" "${tc_bin}" ${stripped_args} ${tc_baseline_arg} "$@" || status=$?
   else
     local filled_args
     filled_args=$(cgw_fill_path_placeholder "${CGW_TYPECHECK_CHECK_ARGS-check}")
     # shellcheck disable=SC2086  # Word splitting intentional: filled_args/CGW_TYPECHECK_EXCLUDES contain multiple flags
-    _cgw_run_pipeline_tool "${mode}" "TYPECHECK" "${logfile:-/dev/null}" "${tc_bin}" ${filled_args} ${CGW_TYPECHECK_EXCLUDES:-} || status=$?
+    _cgw_run_pipeline_tool "${mode}" "TYPECHECK" "${logfile:-/dev/null}" "${tc_bin}" ${filled_args} ${tc_baseline_arg} ${CGW_TYPECHECK_EXCLUDES:-} || status=$?
   fi
   local status_str="PASSED"
   [[ ${status} -ne 0 ]] && status_str="FAILED"

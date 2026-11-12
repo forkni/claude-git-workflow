@@ -83,6 +83,8 @@ cp cgw.conf.example .cgw.conf
 | `CGW_TYPECHECK_CMD` | `` | Typecheck tool; set to e.g. `pyrefly` to enable (`""` to disable). Blocking in `check_lint.sh`/`push_validated.sh`, advisory in the pre-commit hook -- see [Typecheck](#typecheck) |
 | `CGW_TYPECHECK_CHECK_ARGS` | `check` | Arguments passed to the typecheck tool |
 | `CGW_TYPECHECK_EXCLUDES` | `` | Exclusion flags appended to the typecheck command |
+| `CGW_TYPECHECK_REQUIRED` | `0` | Set to `1` to make a configured-but-missing typechecker a blocking failure instead of a warn-and-skip |
+| `CGW_TYPECHECK_BASELINE` | `.pyrefly-baseline.json` | pyrefly only: baseline file passed as `--baseline=` when it exists (skipped if `--baseline` is already in `CGW_TYPECHECK_CHECK_ARGS`/`CGW_TYPECHECK_EXCLUDES`) |
 | `CGW_UV_SYNC_ARGS` | `--group dev` | uv projects only: with a typechecker configured, a `uv.lock` and `uv` on PATH, `check_lint.sh` first runs `uv sync --check <args>` and fails (exit 2) with the remedy `uv sync <args>` when `.venv` has drifted from the lock. Skipped by `--skip-typecheck` |
 | `CGW_PUSH_LINT_SCOPE` | `worktree` | What the push gate checks: `worktree` (working tree, uncommitted changes included) or `pushed` (committed snapshot of the pushed branch -- whole-snapshot typecheck, lint/format/markdown on the files the push changes). Per-run override: `push_validated.sh --pushed-only` / `--worktree` |
 | `CGW_ALLOW_STAGED_DIVERGENCE` | `0` | Set to `1` to let a genuine `--staged-only` commit record a staged blob that differs from the validated working tree (the `[3.5]` congruence guard otherwise fails closed); see [ADR-0001](adr/0001-partial-staging-fails-closed.md) |
@@ -238,7 +240,7 @@ Typecheck runs whole-project when `CGW_TYPECHECK_CMD` is set, and is **blocking 
 
 Skip it at runtime with `CGW_SKIP_TYPECHECK=1` (skips the typecheck everywhere it runs: the pre-commit advisory check, `check_lint.sh` and `push_validated.sh`) or `--skip-typecheck` (accepted by `check_lint.sh` and `push_validated.sh`); `--skip-lint` implies it too.
 
-**Upgrading:** if your project already had `CGW_TYPECHECK_CMD` configured before this change, a failing typecheck used to only warn — it now also blocks `check_lint.sh` and `push_validated.sh`. Fix the type errors, or bypass with `CGW_SKIP_TYPECHECK=1` (skips the typecheck at commit and push time alike) or `CGW_TYPECHECK_CMD=""` (turns it off entirely). A configured-but-not-installed checker is treated as an environment gap, not a failure: `check_lint.sh` warns and skips rather than blocking the push.
+**Upgrading:** if your project already had `CGW_TYPECHECK_CMD` configured before this change, a failing typecheck used to only warn — it now also blocks `check_lint.sh` and `push_validated.sh`. Fix the type errors, or bypass with `CGW_SKIP_TYPECHECK=1` (skips the typecheck at commit and push time alike) or `CGW_TYPECHECK_CMD=""` (turns it off entirely). A configured-but-not-installed checker is treated as an environment gap, not a failure: `check_lint.sh` warns and skips rather than blocking the push. Set `CGW_TYPECHECK_REQUIRED=1` to make that case a blocking failure instead, once every dev and CI environment is expected to have the checker.
 
 ### Why typecheck isn't scoped to staged files
 

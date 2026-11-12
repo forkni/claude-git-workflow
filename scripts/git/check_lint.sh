@@ -474,8 +474,15 @@ main() {
       # which reads as "FAILED, 0 errors" and would now BLOCK a push. That is
       # an environment gap, not a type error -- warn and skip instead, the
       # same way an unset CGW_MARKDOWNLINT_CMD is treated as opt-out rather
-      # than failure.
-      echo "[!] Typecheck skipped -- '${CGW_TYPECHECK_CMD}' is configured but not found on PATH or in .venv" | tee -a "$logfile"
+      # than failure -- UNLESS CGW_TYPECHECK_REQUIRED=1 opts into strict mode,
+      # where a missing checker is a hard failure instead of a silent skip.
+      if [[ "${CGW_TYPECHECK_REQUIRED:-0}" == "1" ]]; then
+        echo "[!] Typecheck FAILED -- '${CGW_TYPECHECK_CMD}' is configured but not found on PATH or in .venv (CGW_TYPECHECK_REQUIRED=1: environment gaps are blocking)" | tee -a "$logfile"
+        typecheck_status=1
+        results+=("Typecheck:FAILED:0:0")
+      else
+        echo "[!] Typecheck skipped -- '${CGW_TYPECHECK_CMD}' is configured but not found on PATH or in .venv" | tee -a "$logfile"
+      fi
     elif [[ -n "${CGW_TYPECHECK_CMD}" && -f "${PROJECT_ROOT}/uv.lock" ]] && command -v uv >/dev/null 2>&1 &&
       ! { local -a _uv_args=() && read -ra _uv_args <<<"${CGW_UV_SYNC_ARGS:---group dev}" &&
         (cd "${PROJECT_ROOT}" && uv sync --check "${_uv_args[@]}") >>"$logfile" 2>&1; }; then

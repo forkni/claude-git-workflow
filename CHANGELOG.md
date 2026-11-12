@@ -7,6 +7,33 @@
 - **Standalone Agent Skills for Agensi**: `scripts/dev/build_agensi.sh` builds three portable skill zips from the repo into `dist/agensi/`: `gitignore-and-local-config` and `git-merge-conflict-resolution` (knowledge only, no scripts) and `safe-git-workflow` (the core wrappers: commit, push, merge, rollback, rebase, cherry-pick, stash, undo, recover, sync, branch cleanup, bisect, plus the shared libraries). Each is one `SKILL.md` folder with only `name`/`description` frontmatter and no hooks, slash command or `.claude/` paths, so the same zip works across agents. Sources live in `agensi/` (see `agensi/README.md`). The build rewrites `./scripts/git/` to `<skill-dir>/scripts/`, drops sections for scripts a zip doesn't ship, points other reference links at GitHub, defaults `CGW_MARKDOWNLINT_NPX_FALLBACK` to `0` in the packaged config, and fails on a frontmatter, portability, link, missing-script or syntax problem. 7 tests in `tests/integration/build_agensi.bats`.
 - **`cgw_rm_tmpdir`**: the lint pipeline's two recursive deletes (`cgw_snapshot_tree`'s throwaway index dir in `_lib_lint.sh`, and `check_lint.sh`'s snapshot cleanup) now go through one helper that refuses anything but an existing directory whose name starts with `cgw-`, so an empty or wrong variable can never widen the delete. 3 tests in `tests/unit/common.bats`.
 
+## v0.23.1 (2026-11-11)
+
+> Changes since `v0.23.0`
+
+### Bug Fixes
+
+- **The installer no longer reports a CRLF checkout of the current hook as customised**: in a project with `core.autocrlf=true` and no line-ending rule for `.githooks/`, git checks the LF hook templates out with CRLF, and every `configure.sh` / `cgw-batch-install.cmd` run printed `[!] It differs from the current CGW template` and kept the hook. `configure.sh` now compares hooks with the new `cgw_same_text_ignoring_cr` in `_common.sh`, reports such a hook `already up to date` and leaves the file as git wrote it. The `.git/hooks` backup checks in `configure.sh` and `install_hooks.sh` use the same compare, so a line-ending difference makes no `.bak`.
+- **The stale-stock hook lookup finds versions made by a merge commit**: `_hook_stock_version` ran `git log --find-object` without `-m`, which skips merge diffs. The current `hooks/pre-commit` exists only as the merge result of PR #76, so the lookup did not know it, and any stock version that only a merge produced was kept as a customisation. The lookup now passes `-m`. Two tests in `tests/integration/hook_preservation.bats` (PR #91).
+
+## v0.23.0 (2026-11-11)
+
+> Changes since `v0.22.2`
+
+### Behaviour changes
+
+- **`worktree_manage.sh remove --execute` exits 1 when the folder stays**: when git deletes a worktree's files and its registration but cannot delete the folder (on Windows, a process uses it as its working folder), v0.22.0 printed `[OK] Worktree removed` and exited 0. It now prints `[ERROR] Folder still exists: <path>`, says that git no longer registers the worktree and that a process holds the folder, and exits 1. This also applies when git itself exits 0. On Windows the error names the holding process when its command line names the folder (one `Get-CimInstance Win32_Process` call through `powershell.exe`).
+
+### New Features
+
+- **`worktree_manage.sh list --status [--no-pr]`**: one row per linked worktree with the branch (or `detached`), merged into `<remote>/<default branch>` (yes/no), changed files, untracked files, commits ahead and, when `gh` reaches the GitHub remote, the newest PR state (one `gh pr list` call; `--no-pr` skips it). The last column says why `remove-merged` would keep the worktree, and a summary line counts the safe ones. A diverged skip-worktree or assume-unchanged file counts as changed.
+- **`worktree_manage.sh remove-merged [--execute] [--non-interactive]`**: dry-run by default. It selects the worktrees that are merged, with 0 changed, 0 untracked and 0 ahead (a detached one when its HEAD is in the default branch). It never selects the main, current or a locked worktree, or a worktree whose folder a process names on its command line. With `--execute` it removes each one through the `remove` code path and deletes its branch with `git branch -d` (never `-D`, never a protected branch). One line per worktree; exit 1 if any selected removal failed. Gitignored files in a selected worktree are deleted without a count, like `remove` (see `docs/usage.md`). 14 new tests in `tests/integration/worktree.bats` (PR #89).
+- **pyrefly baseline and a strict typecheck mode**: `cgw_run_typecheck` passes `--baseline=<CGW_TYPECHECK_BASELINE>` (default `.pyrefly-baseline.json`) to pyrefly when the file exists, unless `--baseline` is already in `CGW_TYPECHECK_CHECK_ARGS` or `CGW_TYPECHECK_EXCLUDES`. `CGW_TYPECHECK_REQUIRED=1` makes a configured but missing typechecker a blocking failure instead of a warning. Both keys are in `cgw.conf.example` and `docs/configuration.md`. 4 tests in `tests/integration/check_lint.bats`.
+
+### Documentation
+
+- `docs/usage.md`, `README.md`, `skill/references/script-reference.md` and `skill/references/wrapper-recipes.md` list the new worktree subcommands and their limits.
+
 ## v0.22.2 (2026-11-02)
 
 > Changes since `v0.22.1`. No behaviour change in the shipped scripts: the only edits there are comments and `shfmt` layout. The rest is the test suite and CI.

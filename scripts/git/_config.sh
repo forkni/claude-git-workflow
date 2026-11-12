@@ -226,6 +226,8 @@ CGW_ENFORCE_SUBJECT_LENGTH|1|bool|keep|conf
 CGW_TYPECHECK_CMD||str|keep|conf
 CGW_TYPECHECK_CHECK_ARGS|check|str|keep|conf
 CGW_TYPECHECK_EXCLUDES||str|keep|conf
+CGW_TYPECHECK_REQUIRED|0|bool|keep|conf
+CGW_TYPECHECK_BASELINE|.pyrefly-baseline.json|str|keep|conf
 CGW_UV_SYNC_ARGS|--group dev|str|keep|conf
 CGW_PUSH_LINT_SCOPE|worktree|enum:worktree/pushed|fill|conf
 CGW_MERGE_CONFLICT_STYLE||computed|fill|conf

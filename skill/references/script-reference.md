@@ -477,12 +477,15 @@ version bump, changelog, rollback plan before tagging; tag CI and asset smoke ch
 
 ```bash
 ./scripts/git/worktree_manage.sh list                            # list all worktrees
+./scripts/git/worktree_manage.sh list --status                   # merged / changed / untracked / ahead / PR per linked worktree
 ./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent     # add with new branch
 ./scripts/git/worktree_manage.sh add ../review review-feature    # add with existing branch
 ./scripts/git/worktree_manage.sh add ../part2 feat/part-2 feat/part-1  # new branch starting at another branch (no upstream until first push)
 ./scripts/git/worktree_manage.sh add ../pr feat/from-origin             # branch only on the remote: checked out tracking it
 ./scripts/git/worktree_manage.sh link                            # link CGW tooling into this worktree
 ./scripts/git/worktree_manage.sh remove --execute --non-interactive ../hotfix  # remove (--execute required; --non-interactive skips the confirmation)
+./scripts/git/worktree_manage.sh remove-merged                   # dry-run: clean merged worktrees it would remove
+./scripts/git/worktree_manage.sh remove-merged --execute --non-interactive  # remove them + git branch -d
 ./scripts/git/worktree_manage.sh prune                           # dry-run: show stale admin files
 ./scripts/git/worktree_manage.sh prune --execute                 # remove stale admin files
 ```
@@ -490,9 +493,11 @@ version bump, changelog, rollback plan before tagging; tag CI and asset smoke ch
 | Subcommand | Purpose |
 |------------|---------|
 | `list` | All worktrees via `git worktree list --porcelain` |
+| `list --status [--no-pr]` | One row per linked worktree: branch or `detached`, merged into `<remote>/<default>` (yes/no), changed files, untracked files, commits ahead, PR state when `gh` reaches the GitHub remote, and why `remove-merged` would keep it; ends with the count of safe worktrees |
 | `add <path> [<branch> [<base>]]` | Add linked worktree; creates branch with `-b` if new (from `<base>`, default HEAD, with no upstream until first push; it tracks `<remote>/<branch>` instead when only the remote has the branch or `<base>` is that ref; `--base <ref>` is the flag form; a base for an existing branch is refused); auto-links CGW tooling |
 | `link [<path>]` | Write `scripts/git` shims that forward to the main worktree's scripts (default: current dir); migrates legacy links |
-| `remove [--execute] <path>` | Unlink any legacy CGW tooling link, then remove worktree (dry-run default) |
+| `remove [--execute] <path>` | Unlink any legacy CGW tooling link, then remove worktree (dry-run default); exits 1 when the folder stays after git unregistered the worktree, and names the holding process on Windows when its command line names the folder |
+| `remove-merged [--execute] [--non-interactive]` | Remove every linked worktree that is merged with 0 changed, 0 untracked and 0 ahead (never the main, current or a locked worktree, nor one a process holds), then `git branch -d` its branch (never `-D`, never a protected branch); dry-run default, one line per worktree, exit 1 if any selected removal failed |
 | `prune [--execute]` | Remove stale admin files for missing paths (dry-run default) |
 
 `scripts/git/` and `.githooks/` are commonly gitignored, so `git worktree add` doesn't check
@@ -801,6 +806,8 @@ Computes GitHub-compatible heading slugs locally (offline port of `gh-md-toc` �
 | `CGW_TYPECHECK_CMD=<tool>` | Typecheck tool (`pyrefly`, `pyright`, `mypy`, `tsc`; default: `""` = disabled) |
 | `CGW_TYPECHECK_CHECK_ARGS=<args>` | Arguments for typecheck command (default: `check`) |
 | `CGW_TYPECHECK_EXCLUDES=<flags>` | Exclusion flags appended to typecheck command |
+| `CGW_TYPECHECK_REQUIRED=1` | A configured-but-missing typechecker fails `check_lint.sh` (default: warn and skip) |
+| `CGW_TYPECHECK_BASELINE=<file>` | pyrefly baseline passed as `--baseline=` when the file exists (default `.pyrefly-baseline.json`; skipped if `--baseline` is already in the args/excludes) |
 | `CGW_PUSH_LINT_SCOPE=worktree\|pushed` | What the push gate checks (default `worktree`); `pushed` = committed snapshot, see `--pushed-only` |
 | `CGW_SKIP_TYPECHECK=1` | Skip typecheck step even when `CGW_TYPECHECK_CMD` is set — the runtime equivalent of `--skip-typecheck` on `check_lint.sh` / `push_validated.sh`; this is the escape hatch for the push-blocking gate below |
 
@@ -809,9 +816,10 @@ hook** (failures print a `[WARN]` but never block the commit) and **blocking in 
 (a `Typecheck:FAILED` row fails the overall exit code, same as lint and markdown lint) — which in
 turn makes it blocking for `push_validated.sh`, since that script delegates its pre-push lint
 check to `check_lint.sh`. It does not run under `check_lint.sh --md-only` or `--modified-only`,
-and it does not run at all in `commit_enhanced.sh` (see `docs/configuration.md` for why). A
-typechecker is configured automatically by `configure.sh` based on detected project type (pyrefly
-for Python, tsc for TypeScript).
+and it does not run at all in `commit_enhanced.sh`, which only ever invokes `cgw_run_lint_check`
+and `cgw_run_format_check` against the staged-file list -- a whole-project typecheck has no
+staged-file-scoped equivalent to run per commit. A typechecker is configured automatically by
+`configure.sh` based on detected project type (pyrefly for Python, tsc for TypeScript).
 
 ### CLAUDE_GIT_* (legacy, still supported)
 

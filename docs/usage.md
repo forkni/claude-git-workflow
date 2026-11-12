@@ -367,6 +367,7 @@ Linked worktrees let you check out multiple branches simultaneously in separate 
 
 ```bash
 ./scripts/git/worktree_manage.sh list                            # show all worktrees
+./scripts/git/worktree_manage.sh list --status                   # merged / changed / untracked / ahead / PR per linked worktree
 ./scripts/git/worktree_manage.sh add ../hotfix hotfix/urgent     # add linked worktree (creates branch)
 ./scripts/git/worktree_manage.sh add ../review existing-branch   # check out existing branch
 ./scripts/git/worktree_manage.sh add ../part2 feat/part-2 feat/part-1  # new branch starting at <base> (no upstream until first push)
@@ -374,13 +375,45 @@ Linked worktrees let you check out multiple branches simultaneously in separate 
 ./scripts/git/worktree_manage.sh link                            # link CGW tooling into the current worktree
 ./scripts/git/worktree_manage.sh remove --execute ../hotfix      # remove worktree link (asks to confirm)
 ./scripts/git/worktree_manage.sh remove --execute --non-interactive ../hotfix  # no terminal (agent, CI): skip the prompt
+./scripts/git/worktree_manage.sh remove-merged                   # dry-run: which clean, merged worktrees would go
+./scripts/git/worktree_manage.sh remove-merged --execute --non-interactive  # remove them and git branch -d their branches
 ./scripts/git/worktree_manage.sh prune                           # dry-run: show stale admin files
 ./scripts/git/worktree_manage.sh prune --execute                 # remove stale admin files
 ```
 
-`remove` and `prune` default to dry-run; pass `--execute` to apply. `remove --execute` asks
-for confirmation; with no terminal on stdin it exits 1 and asks for `--non-interactive`
-instead of reporting `Cancelled`.
+`remove`, `remove-merged` and `prune` default to dry-run; pass `--execute` to apply.
+`remove --execute` and `remove-merged --execute` ask for confirmation; with no terminal on
+stdin they exit 1 and ask for `--non-interactive` instead of reporting `Cancelled`.
+
+`list --status` prints one row per linked worktree: the branch (or `detached`), whether its
+HEAD is merged into `<remote>/<default branch>` (`git merge-base --is-ancestor`), the number of
+changed and untracked files, the commits ahead of the default branch and, when `gh` can reach
+the GitHub remote, the newest PR state for the branch (`--no-pr` skips the `gh` call). The last
+column says why `remove-merged` would keep the worktree, and a summary line counts the safe ones.
+
+`remove-merged` selects only the worktrees that are merged, with 0 changed, 0 untracked and 0
+ahead. It never selects the main worktree, the current worktree, a locked worktree, or a
+worktree whose folder a process names on its command line (on Windows, for example an idle
+Claude session started with `--add-dir=<folder>`). A worktree with no commits of its own counts
+as merged. With `--execute` it removes each one through the `remove` code path, then deletes
+its branch with `git branch -d` (never `-D`: a refusal prints `[WARN] branch <b> kept`). It
+never deletes a protected branch (the source, target and default branch, `main`, `master` and
+`CGW_PROTECTED_BRANCHES`). A changed file includes a skip-worktree or assume-unchanged file
+whose content differs from HEAD, because `git worktree remove` would delete it silently. It
+prints one line per worktree and exits 1 when any selected removal failed.
+
+`remove` and `remove-merged` delete the gitignored files in a worktree too (`git worktree
+remove` does not check them), and the status table does not count them. If a worktree can
+hold local-only files (an `.env`, notes), look at `git -C <path> status --ignored` first. The
+holder check matches the folder path up to a space or a quote, so a process on a sibling
+folder whose name continues with a space (`<folder> copy`) also counts as a holder. That
+error only keeps the worktree for a later run.
+
+On Windows, `git worktree remove` can delete a worktree's files and its registration but leave
+the folder, when another process uses that folder as its working folder. `remove` then exits 1
+with `[ERROR] Folder still exists: <path>`, and names the holding process when its command line
+names the folder (one `Get-CimInstance Win32_Process` call through `powershell.exe`). Close
+that process, then delete the folder by hand.
 
 `scripts/git/` and `.githooks/` are commonly gitignored, so `git worktree add` — which only
 checks out tracked content — leaves a linked worktree without CGW's scripts or hooks. Any
