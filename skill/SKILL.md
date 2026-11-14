@@ -1,6 +1,6 @@
 ---
 name: auto-git-workflow
-description: "Use for any git operation in this project that changes state: commits, pushes, merges, rebases, cherry-picks, stashes, tags and releases, branch and worktree changes, undo, recovery and conflict resolution. Routes the work through the scripts/git/*.sh wrappers instead of raw git, so lint validation, local-only file protection, backup tags and force-push guards are never bypassed."
+description: "Use for any git operation in this project other than read-only status, log, diff and show: commits, pushes, pulls and syncs, merges, rebases, cherry-picks, reverts and rollbacks, stashes, tags, releases and changelogs, branch and worktree changes, bisect, undo, amend, recovery and conflict resolution. Routes the work through the scripts/git/*.sh wrappers instead of raw git, so lint validation, local-only file protection, backup tags and force-push guards are never bypassed."
 allowed-tools: "Bash, Read, Grep, Edit"
 user-invocable: false
 ---
