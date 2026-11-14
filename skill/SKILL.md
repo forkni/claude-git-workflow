@@ -1,6 +1,6 @@
 ---
 name: auto-git-workflow
-description: "Use whenever the user asks for a git operation in this project — commit, push, pull, fetch, merge, rebase, cherry-pick, rollback, revert, sync, stash, tag, release, changelog, worktree, recover/restore lost commits, branch (create/rename/delete/cleanup), bisect, undo, amend, or conflict resolution. Routes work through scripts/git/*.sh wrappers (commit_enhanced.sh, push_validated.sh, merge_with_validation.sh, rollback_merge.sh, cherry_pick_commits.sh, rebase_safe.sh, stash_work.sh, branch_cleanup.sh, bisect_helper.sh, changelog_generate.sh, create_release.sh, create_pr.sh, sync_branches.sh, undo_last.sh, recover.sh, worktree_manage.sh, merge_docs.sh, validate_branches.sh) instead of raw git, so lint validation, local-only file protection, backup tags, and force-push guards are never bypassed."
+description: "Use for any git operation in this project other than read-only status, log, diff and show: commits, pushes, pulls and syncs, merges, rebases, cherry-picks, reverts and rollbacks, stashes, tags, releases and changelogs, branch and worktree changes, bisect, undo, amend, recovery and conflict resolution. Routes the work through the scripts/git/*.sh wrappers instead of raw git, so lint validation, local-only file protection, backup tags and force-push guards are never bypassed."
 allowed-tools: "Bash, Read, Grep, Edit"
 user-invocable: false
 ---
