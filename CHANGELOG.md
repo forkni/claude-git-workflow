@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.23.2 (2026-11-13)
+
+> Changes since `v0.23.1`. No change in the shipped scripts: the only edit is the `description` line of the skill.
+
+### Documentation
+
+- **The skill description is 478 characters, down from 802**: the `description` of `skill/SKILL.md` is in the system prompt of every turn in a project that installs the skill. It no longer lists the 18 wrapper scripts by name. Those names are in the skill body, which loads when the skill triggers. The text now covers each git operation other than read-only status, log, diff and show, and it names the operations, bisect and changelog included. It keeps the four guarantees (lint validation, local-only file protection, backup tags, force-push guards). A project gets the new text with `sync_cgw_tooling.sh --from <checkout>`.
+
 ## v0.23.1 (2026-11-11)
 
 > Changes since `v0.23.0`
