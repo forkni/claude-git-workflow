@@ -233,6 +233,134 @@ _run_merge_pr() {
   grep -q "pr merge 42" "${GH_LOG}"
 }
 
+# ── --delete-branch: the local head branch ───────────────────────────────────
+# GitHub merges remotely, so the local main stays behind and `git branch -d` refuses the local
+# head branch (its upstream, often origin/main, does not contain it). merge_pr.sh deletes the
+# local branch itself, but only when its tip is part of the merge commit.
+
+# _setup_remote_merge: feature-a gets one pushed commit, GitHub's merge commit lands on the
+# remote main, and the local main (and origin/main) stay behind. Leaves the checkout on main.
+# Sets FEATURE_SHA and MERGE_SHA and points the gh mock at them.
+_setup_remote_merge() {
+  local r="${TEST_REPO_DIR}" old_main
+  git -C "${r}" checkout --quiet -b feature-a main
+  echo a >"${r}/a.txt"
+  git -C "${r}" add a.txt
+  git -C "${r}" commit --quiet --no-verify -m "feat: a"
+  git -C "${r}" push --quiet -u origin feature-a
+  FEATURE_SHA=$(git -C "${r}" rev-parse feature-a)
+  git -C "${r}" checkout --quiet main
+  old_main=$(git -C "${r}" rev-parse main)
+  git -C "${r}" merge --quiet --no-ff --no-edit feature-a
+  git -C "${r}" push --quiet origin main
+  MERGE_SHA=$(git -C "${r}" rev-parse main)
+  git -C "${r}" reset --quiet --hard "${old_main}"
+  git -C "${r}" update-ref refs/remotes/origin/main "${old_main}"
+  # As in a real checkout: the local branch tracks origin/main, not origin/feature-a.
+  git -C "${r}" branch --quiet --set-upstream-to=origin/main feature-a
+  git -C "${r}" update-ref -d refs/remotes/origin/feature-a
+  export MOCK_GH_PR_42_HEADREFNAME=feature-a
+  export MOCK_GH_PR_HEADREFOID="${FEATURE_SHA}"
+  export MOCK_GH_PR_MERGECOMMIT="${MERGE_SHA}"
+}
+
+@test "--delete-branch also deletes the local head branch that the merge commit contains" {
+  install_mock_gh
+  _setup_remote_merge
+  # the reported symptom: git branch -d refuses it while the local main is behind
+  run git -C "${TEST_REPO_DIR}" branch -d feature-a
+  [ "${status}" -ne 0 ]
+  run _run_merge_pr 42 --delete-branch
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Deleted local branch feature-a"* ]]
+  run git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/feature-a
+  [ "${status}" -ne 0 ]
+}
+
+@test "without --delete-branch the local head branch is kept" {
+  install_mock_gh
+  _setup_remote_merge
+  run _run_merge_pr 42
+  [ "${status}" -eq 0 ]
+  git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/feature-a
+}
+
+@test "--delete-branch keeps a local head branch with commits the merge commit lacks" {
+  install_mock_gh
+  _setup_remote_merge
+  git -C "${TEST_REPO_DIR}" checkout --quiet feature-a
+  echo extra >"${TEST_REPO_DIR}/extra.txt"
+  git -C "${TEST_REPO_DIR}" add extra.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet --no-verify -m "feat: unpushed extra"
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+  run _run_merge_pr 42 --delete-branch --allow-local-changes
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"[WARN] Kept local branch feature-a"* ]]
+  git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/feature-a
+}
+
+@test "--delete-branch keeps a local head branch that is checked out in a linked worktree" {
+  install_mock_gh
+  _setup_remote_merge
+  git -C "${TEST_REPO_DIR}" worktree add --quiet "${TEST_TMPDIR}/wt-feature-a" feature-a
+  run _run_merge_pr 42 --delete-branch
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"[WARN] Kept local branch feature-a"* ]]
+  git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/feature-a
+}
+
+@test "--delete-branch keeps the local branch when the merge commit cannot be found" {
+  install_mock_gh
+  _setup_remote_merge
+  export MOCK_GH_PR_MERGECOMMIT=abc1234def5678
+  run _run_merge_pr 42 --delete-branch
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"[WARN] Kept local branch feature-a"* ]]
+  [[ "${output}" == *"not available locally"* ]]
+  git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/feature-a
+}
+
+@test "--delete-branch never deletes a local branch of the same name from a fork PR" {
+  install_mock_gh
+  _setup_remote_merge
+  export MOCK_GH_PR_HEADREPOSITORY_HEADREPOSITORYOWNER=contributor/claude-git-workflow
+  run _run_merge_pr 42 --delete-branch
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"[WARN] Kept local branch feature-a"* ]]
+  git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/feature-a
+}
+
+@test "--delete-branch never deletes a protected local branch" {
+  install_mock_gh
+  export MOCK_GH_PR_42_HEADREFNAME=development
+  # A configured repo names its source branch; the promotion PR must not delete it locally.
+  export CGW_SOURCE_BRANCH=development
+  MOCK_GH_PR_HEADREFOID=$(git -C "${TEST_REPO_DIR}" rev-parse origin/development)
+  export MOCK_GH_PR_HEADREFOID
+  run _run_merge_pr 42 --delete-branch
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"[WARN] Kept local branch development"* ]]
+  [[ "${output}" == *"protected"* ]]
+  git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/development
+}
+
+@test "--delete-branch without a local head branch prints no local-branch line" {
+  install_mock_gh
+  export MOCK_GH_PR_42_HEADREFNAME=feature-a
+  run _run_merge_pr 42 --delete-branch
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"local branch"* ]]
+}
+
+@test "--dry-run --delete-branch announces the local branch cleanup and deletes nothing" {
+  install_mock_gh
+  _setup_remote_merge
+  run _run_merge_pr 42 --delete-branch --dry-run
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Would delete local branch: feature-a"* ]]
+  git -C "${TEST_REPO_DIR}" rev-parse --verify --quiet refs/heads/feature-a
+}
+
 # ── pre-merge recovery point ──────────────────────────────────────────────────
 
 @test "a pre-merge backup tag is created at the base branch tip before merging" {

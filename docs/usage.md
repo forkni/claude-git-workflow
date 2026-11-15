@@ -144,7 +144,9 @@ Set `CGW_MERGE_MODE="pr"` in `.cgw.conf` to use PRs by default.
 
 `--retarget` is for stacked PRs in repos that don't auto-delete merged branches: it is validated
 before the merge (PR 43's base must be PR 42's head) and run right after it. The head branch is
-never deleted unless you pass `--delete-branch`. Undo a merge with
+never deleted unless you pass `--delete-branch`, which also deletes the local branch of that
+name when its tip is part of the merge commit (otherwise it keeps it and prints a `[WARN]`).
+Undo a merge with
 `./scripts/git/rollback_merge.sh --revert --target <merge-sha>` (the SHA is printed on success).
 
 ### Push
