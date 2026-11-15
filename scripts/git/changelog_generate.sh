@@ -65,7 +65,7 @@ main() {
         echo "  -h, --help       Show this help"
         echo ""
         echo "Commit types recognized (CGW_ALL_PREFIXES):"
-        echo "  feat, fix, docs, chore, test, refactor, style, perf"
+        echo "  feat, fix, docs, chore, test, refactor, style, perf, build, ci, revert"
         echo "  Plus any extras configured via CGW_EXTRA_PREFIXES"
         echo ""
         echo "Examples:"

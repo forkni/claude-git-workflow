@@ -28,6 +28,9 @@ test: add unit tests for parser
 refactor: extract validation logic
 style: fix formatting
 perf: optimize image resizing
+build: bump the packaging backend
+ci: pin the setup-python action
+revert: undo the parser rewrite
 ```
 
 Add project-specific prefixes via `CGW_EXTRA_PREFIXES="cuda|tensorrt"` in `.cgw.conf`. Branches

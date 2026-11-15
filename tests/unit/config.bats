@@ -427,7 +427,7 @@ teardown() {
   result=$(_source_config)
   prefix_line=$(echo "${result}" | grep "^CGW_ALL_PREFIXES=")
   # Should be exactly the base prefixes string
-  [[ "${prefix_line}" == "CGW_ALL_PREFIXES=feat|fix|docs|chore|test|refactor|style|perf" ]]
+  [[ "${prefix_line}" == "CGW_ALL_PREFIXES=feat|fix|docs|chore|test|refactor|style|perf|build|ci|revert" ]]
 }
 
 @test "CGW_ALL_PREFIXES with CGW_EXTRA_PREFIXES appends extras" {
