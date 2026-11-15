@@ -7,6 +7,14 @@
 - **Standalone Agent Skills for Agensi**: `scripts/dev/build_agensi.sh` builds three portable skill zips from the repo into `dist/agensi/`: `gitignore-and-local-config` and `git-merge-conflict-resolution` (knowledge only, no scripts) and `safe-git-workflow` (the core wrappers: commit, push, merge, rollback, rebase, cherry-pick, stash, undo, recover, sync, branch cleanup, bisect, plus the shared libraries). Each is one `SKILL.md` folder with only `name`/`description` frontmatter and no hooks, slash command or `.claude/` paths, so the same zip works across agents. Sources live in `agensi/` (see `agensi/README.md`). The build rewrites `./scripts/git/` to `<skill-dir>/scripts/`, drops sections for scripts a zip doesn't ship, points other reference links at GitHub, defaults `CGW_MARKDOWNLINT_NPX_FALLBACK` to `0` in the packaged config, and fails on a frontmatter, portability, link, missing-script or syntax problem. 7 tests in `tests/integration/build_agensi.bats`.
 - **`cgw_rm_tmpdir`**: the lint pipeline's two recursive deletes (`cgw_snapshot_tree`'s throwaway index dir in `_lib_lint.sh`, and `check_lint.sh`'s snapshot cleanup) now go through one helper that refuses anything but an existing directory whose name starts with `cgw-`, so an empty or wrong variable can never widen the delete. 3 tests in `tests/unit/common.bats`.
 
+## v0.23.2 (2026-11-13)
+
+> Changes since `v0.23.1`. No change in the shipped scripts: the only edit is the `description` line of the skill.
+
+### Documentation
+
+- **The skill description is 478 characters, down from 802**: the `description` of `skill/SKILL.md` is in the system prompt of every turn in a project that installs the skill. It no longer lists the 18 wrapper scripts by name. Those names are in the skill body, which loads when the skill triggers. The text now covers each git operation other than read-only status, log, diff and show, and it names the operations, bisect and changelog included. It keeps the four guarantees (lint validation, local-only file protection, backup tags, force-push guards). A project gets the new text with `sync_cgw_tooling.sh --from <checkout>`.
+
 ## v0.23.1 (2026-11-11)
 
 > Changes since `v0.23.0`
