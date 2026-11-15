@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.23.3 (2026-11-15)
+
+> Changes since `v0.23.2`
+
+### Bug Fixes
+
+- **`commit_enhanced.sh` accepts the commit types `build`, `ci` and `revert`**: the built-in list stopped at `perf`, so `ci(lint): ...` was refused in a project whose branches use the prefix `ci/`. The three types complete the Conventional Commits set. The commit-message check, the pre-push hook, the help texts, `cgw.conf.example`, `docs/usage.md` and the skill table list them. A project that already put one of them in `CGW_EXTRA_PREFIXES` keeps working
+- **`merge_pr.sh --delete-branch` also deletes the local head branch**: it removed only the remote branch. GitHub merges remotely, so the local base branch stays behind and `git branch -d` then refused the local head branch. The script now deletes the local branch when its tip is part of the merge commit. It keeps the branch, prints a `[WARN]` and leaves the exit status unchanged when the branch is protected (the source branch, the target branch or an entry of `CGW_PROTECTED_BRANCHES`), the PR comes from a fork, the branch has commits the merge commit lacks, a worktree has it checked out, or the merge commit is not available locally. `--dry-run` announces the local delete
+
 ## v0.23.2 (2026-11-13)
 
 > Changes since `v0.23.1`. No change in the shipped scripts: the only edit is the `description` line of the skill.
