@@ -354,7 +354,7 @@ fi
 
 # --- Commit message prefixes ---
 # Standard conventional commit prefixes (always included):
-_CGW_BASE_PREFIXES="feat|fix|docs|chore|test|refactor|style|perf"
+_CGW_BASE_PREFIXES="feat|fix|docs|chore|test|refactor|style|perf|build|ci|revert"
 # Project-specific extras (pipe-separated, e.g. "cuda|tensorrt"):
 if [[ -n "${CGW_EXTRA_PREFIXES}" ]]; then
   CGW_ALL_PREFIXES="${_CGW_BASE_PREFIXES}|${CGW_EXTRA_PREFIXES}"

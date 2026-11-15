@@ -316,7 +316,7 @@ _usage() {
   echo "  With CGW_REQUIRE_EXPLICIT_STAGING=1, case 2 refuses: use --only, --staged-only or --all"
   echo ""
   echo "Commit message format: <type>: <message>"
-  echo "  Standard types: feat fix docs chore test refactor style perf"
+  echo "  Standard types: feat fix docs chore test refactor style perf build ci revert"
   echo "  Configure extras via CGW_EXTRA_PREFIXES in .cgw.conf"
   echo ""
   echo "During a merge (MERGE_HEAD present), the message is optional:"
@@ -627,7 +627,7 @@ _step_validate_message() {
     if [[ ${merge_in_progress} -eq 1 ]]; then
       echo "During a merge you may omit it to use git's prepared merge message." >&2
     fi
-    echo "Types: feat fix docs chore test refactor style perf (+ extras in .cgw.conf)" >&2
+    echo "Types: feat fix docs chore test refactor style perf build ci revert (+ extras in .cgw.conf)" >&2
     return 1
   fi
 
