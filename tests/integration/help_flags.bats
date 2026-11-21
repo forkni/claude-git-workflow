@@ -33,6 +33,7 @@ CGW_SCRIPTS=(
   rebase_safe.sh
   branch_diff.sh
   pr_checkout.sh
+  branch_switch.sh
   merge_pr.sh
   md_toc.sh
   sync_cgw_tooling.sh
@@ -301,6 +302,11 @@ setup() {
   [ "${status}" -eq 0 ]
 }
 
+@test "branch_switch.sh --help exits 0" {
+  run run_script branch_switch.sh --help
+  [ "${status}" -eq 0 ]
+}
+
 @test "merge_pr.sh --help exits 0" {
   run run_script merge_pr.sh --help
   [ "${status}" -eq 0 ]
@@ -370,6 +376,11 @@ setup() {
 
 @test "pr_checkout.sh unknown flag exits 1" {
   run run_script pr_checkout.sh --foobar
+  [ "${status}" -eq 1 ]
+}
+
+@test "branch_switch.sh unknown flag exits 1" {
+  run run_script branch_switch.sh --foobar
   [ "${status}" -eq 1 ]
 }
 
