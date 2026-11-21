@@ -55,7 +55,9 @@ _bs_other_worktree() {
     case "${line}" in
       "worktree "*) wt_path="${line#worktree }" ;;
       "branch refs/heads/${branch}")
-        if [[ "${wt_path}" != "${here}" ]]; then
+        # -ef compares the directories themselves, so a case or 8.3 short-name difference
+        # between the two path spellings cannot make the current worktree look foreign.
+        if [[ "${wt_path}" != "${here}" ]] && ! [[ "${wt_path}" -ef "${here}" ]]; then
           echo "${wt_path}"
           return 0
         fi
@@ -63,6 +65,16 @@ _bs_other_worktree() {
     esac
   done < <(git worktree list --porcelain 2>/dev/null)
   return 1
+}
+
+# _bs_log_result <text>
+#   Writes the outcome and an end time to the log, so a run that ends early (dry run,
+#   cancel, already on the branch) is not left looking unfinished.
+_bs_log_result() {
+  {
+    echo "Result: $1"
+    echo "End Time: $(date)"
+  } >>"$logfile"
 }
 
 # _bs_report_carried_changes
@@ -235,6 +247,7 @@ main() {
     if [[ "${branch}" == "${current}" ]]; then
       echo "[OK] Already on '${branch}'" | tee -a "$logfile"
       log_section_end "PRECONDITIONS" "$logfile" "0"
+      _bs_log_result "already on ${branch}, nothing to do"
       exit 0
     fi
     if git rev-parse --verify --quiet "refs/heads/${branch}" >/dev/null 2>&1; then
@@ -250,8 +263,10 @@ main() {
     fi
   fi
 
+  # Only a switch can target a branch another worktree holds: with -c the name is new
+  # (an existing one was refused above), so no worktree can have it.
   local other_wt
-  if other_wt="$(_bs_other_worktree "${branch}")"; then
+  if [[ ${create} -eq 0 ]] && other_wt="$(_bs_other_worktree "${branch}")"; then
     err "Branch '${branch}' is already checked out in another worktree: ${other_wt}"
     log_section_end "PRECONDITIONS" "$logfile" "1"
     exit 1
@@ -268,11 +283,13 @@ main() {
     echo "=== DRY RUN -- branch not changed ===" | tee -a "$logfile"
     echo "" | tee -a "$logfile"
     echo "Would run: git switch ${git_args[*]}" | tee -a "$logfile"
+    _bs_log_result "dry run, branch not changed"
     exit 0
   fi
 
   if ! cgw_confirm "Switch to ${summary}?" --default yes --non-interactive accept; then
-    echo "Cancelled"
+    echo "Cancelled" | tee -a "$logfile"
+    _bs_log_result "cancelled by the user, branch not changed"
     exit 0
   fi
 
@@ -282,11 +299,13 @@ main() {
     log_section_end "GIT SWITCH" "$logfile" "0"
     echo "" | tee -a "$logfile"
     echo "[OK] On branch $(git symbolic-ref -q --short HEAD 2>/dev/null || echo '(detached HEAD)')" | tee -a "$logfile"
+    _bs_log_result "switched to ${summary}"
     echo "Full log: $logfile"
   else
     log_section_end "GIT SWITCH" "$logfile" "1"
     err "Switch failed -- check log: ${logfile}"
     echo "  If a local change would be overwritten, stash first: ./scripts/git/stash_work.sh push" | tee -a "$logfile"
+    _bs_log_result "git switch failed, branch not changed"
     exit 1
   fi
 }
