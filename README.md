@@ -123,7 +123,7 @@ See [Claude Code Integration](docs/claude-code-integration.md) for detailed conf
 
 ## What's Included
 
-CGW provides 31 user-facing scripts and 2 internal core modules in `scripts/git/`:
+CGW provides 34 user-facing scripts and 3 internal core modules in `scripts/git/`:
 
 | Script | Purpose |
 |--------|---------|

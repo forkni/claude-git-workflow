@@ -187,13 +187,16 @@ main() {
   local -a git_args=()
   local summary=""
 
+  # Validate the name in both modes: it rejects HEAD, which would otherwise match the
+  # symbolic ref refs/remotes/<remote>/HEAD below. `git check-ref-format --branch` also
+  # expands @{-N}; reject that form explicitly.
+  if [[ "${branch}" == *"@{"* ]] || ! git check-ref-format --branch "${branch}" >/dev/null 2>&1; then
+    err "Invalid branch name: ${branch}"
+    log_section_end "PRECONDITIONS" "$logfile" "1"
+    exit 1
+  fi
+
   if [[ ${create} -eq 1 ]]; then
-    # `git check-ref-format --branch` also expands @{-N}; reject that form explicitly.
-    if [[ "${branch}" == *"@{"* ]] || ! git check-ref-format --branch "${branch}" >/dev/null 2>&1; then
-      err "Invalid branch name: ${branch}"
-      log_section_end "PRECONDITIONS" "$logfile" "1"
-      exit 1
-    fi
     if git rev-parse --verify --quiet "refs/heads/${branch}" >/dev/null 2>&1; then
       err "Branch '${branch}' already exists -- switch to it without -c"
       log_section_end "PRECONDITIONS" "$logfile" "1"
@@ -214,15 +217,18 @@ main() {
         git_args=(--no-track -c "${branch}" "${base}")
         summary="${branch} (new, from ${base}, no upstream until first push)"
       fi
-    elif git rev-parse --verify --quiet "refs/remotes/${remote}/${branch}" >/dev/null 2>&1; then
-      git_args=(--track -c "${branch}" "${remote}/${branch}")
-      summary="${branch} (new, from ${remote}/${branch}, tracking it)"
     else
+      # No base: always start at HEAD, like `git switch -c`. A leftover or newer
+      # <remote>/<branch> is NOT used silently; the warning names the explicit forms.
       git_args=(--no-track -c "${branch}")
       if [[ -z "${current}" ]]; then
         summary="${branch} (new, from detached HEAD $(git rev-parse --short HEAD 2>/dev/null), no upstream until first push)"
       else
         summary="${branch} (new, from ${current}, no upstream until first push)"
+      fi
+      if git rev-parse --verify --quiet "refs/remotes/${remote}/${branch}" >/dev/null 2>&1; then
+        echo "[WARN] ${remote}/${branch} already exists; the new branch starts at HEAD, not at it." | tee -a "$logfile"
+        echo "       To start from it: branch_switch.sh -c ${branch} ${remote}/${branch}  (or drop -c to track it)" | tee -a "$logfile"
       fi
     fi
   else

@@ -71,6 +71,46 @@ _current_branch() {
   [ "${status}" -ne 0 ]
 }
 
+@test "-c without a base starts at HEAD even when <remote>/<branch> exists, and warns" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b feat/x
+  echo "x" >"${TEST_REPO_DIR}/x.txt"
+  git -C "${TEST_REPO_DIR}" add x.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: x"
+  git -C "${TEST_REPO_DIR}" push --quiet origin feat/x
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+  git -C "${TEST_REPO_DIR}" branch --quiet -D feat/x
+  run _run_branch_switch -c feat/x
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"origin/feat/x already exists"* ]]
+  [ "$(_current_branch)" = "feat/x" ]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "$(git -C "${TEST_REPO_DIR}" rev-parse main)" ]
+  run git -C "${TEST_REPO_DIR}" config --get branch.feat/x.merge
+  [ "${status}" -ne 0 ]
+}
+
+@test "-c <branch> <remote>/<branch> starts at the remote branch and tracks it" {
+  git -C "${TEST_REPO_DIR}" checkout --quiet -b feat/y
+  echo "y" >"${TEST_REPO_DIR}/y.txt"
+  git -C "${TEST_REPO_DIR}" add y.txt
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "feat: y"
+  git -C "${TEST_REPO_DIR}" push --quiet origin feat/y
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+  git -C "${TEST_REPO_DIR}" branch --quiet -D feat/y
+  run _run_branch_switch -c feat/y origin/feat/y
+  [ "${status}" -eq 0 ]
+  [ "$(_current_branch)" = "feat/y" ]
+  [ "$(git -C "${TEST_REPO_DIR}" rev-parse HEAD)" = "$(git -C "${TEST_REPO_DIR}" rev-parse origin/feat/y)" ]
+  [ "$(git -C "${TEST_REPO_DIR}" config --get branch.feat/y.merge)" = "refs/heads/feat/y" ]
+}
+
+@test "a bare HEAD is rejected even when refs/remotes/<remote>/HEAD exists" {
+  git -C "${TEST_REPO_DIR}" remote set-head origin main
+  run _run_branch_switch HEAD
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Invalid branch name"* ]]
+  [ "$(_current_branch)" = "main" ]
+}
+
 @test "-c refuses an existing branch" {
   run _run_branch_switch -c development
   [ "${status}" -eq 1 ]
