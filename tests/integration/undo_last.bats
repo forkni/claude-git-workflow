@@ -202,7 +202,7 @@ teardown() {
   run run_script undo_last.sh amend-message "invalid_prefix: new message" --non-interactive
   # Non-interactive with invalid prefix aborts the confirmation (exit 1)
   [ "${status}" -eq 1 ]
-  [[ "${output}" == *"feat, fix, docs, chore, test, refactor, style, perf"* ]]
+  [[ "${output}" == *"feat, fix, docs, chore, test, refactor, style, perf, build, ci, revert"* ]]
   [[ "${output}" != *"fix|docs"* ]]
 }
 

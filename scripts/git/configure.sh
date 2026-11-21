@@ -1480,7 +1480,7 @@ _step_generate_conf() {
     echo ""
     echo "# Commit message prefix extras (pipe-separated, e.g. \"cuda|tensorrt\")"
     echo "# Options: \"\" (standard prefixes only: feat fix docs chore test refactor"
-    echo "# style perf) or extra words pipe-separated. Not needed for scopes or \"!\""
+    echo "# style perf build ci revert) or extra words pipe-separated. Not needed for scopes or \"!\""
     echo "# -- type(scope)!: is accepted natively."
     echo "CGW_EXTRA_PREFIXES=\"\""
     echo ""

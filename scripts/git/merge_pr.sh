@@ -25,7 +25,10 @@
 #   --retarget-all     Retarget every open PR whose base is this PR's head branch
 #   --delete-branch    Delete this PR's head branch after merge and retarget (never by default).
 #                      Refused while an open PR based on the head branch is not retargeted:
-#                      deleting a PR's base branch through the API closes that PR.
+#                      deleting a PR's base branch through the API closes that PR. Also deletes
+#                      the local branch of that name when its tip is part of the merge commit
+#                      (kept with a [WARN] otherwise: protected, fork PR, extra commits, or
+#                      checked out in a worktree).
 #   --allow-local-changes  Merge although the local checkout of the head or base branch has
 #                      uncommitted changes, or the local head branch has unpushed commits
 #   --wait-checks      Wait for the PR head to match the pushed branch, for checks to appear on
@@ -51,6 +54,48 @@ ensure_no_stale_index_lock || exit 1
 # _pr_view <number> <json-field> <jq-expr> -- cgw_pr_view (_common.sh) against this repo
 _pr_view() {
   cgw_pr_view "${pr_repo}" "$@"
+}
+
+# _delete_local_head_branch <branch> <merge-sha> <base-branch> <head-repo> <pr-repo> <logfile>
+#   Best-effort cleanup after --delete-branch. GitHub merges remotely, so the local base branch
+#   stays behind and `git branch -d` refuses the local head branch (its upstream, often
+#   origin/main, does not contain it). The branch is deleted here only when its tip is part of
+#   the merge commit, which is the proof that `-d` cannot give. Every skip prints a [WARN] with
+#   the reason. The return status is always 0: the remote delete is the contract.
+_delete_local_head_branch() {
+  local branch="$1" merge_sha="$2" base_branch="$3" head_repo="$4" pr_repo="$5" logfile="$6"
+  local local_head reason="" out=""
+  local_head=$(git rev-parse --verify --quiet "refs/heads/${branch}^{commit}") || return 0
+
+  if [[ "${branch}" == "${base_branch}" ]] || cgw_branch_is_protected "${branch}" --policy cleanup; then
+    reason="it is a protected branch"
+  elif [[ "${head_repo,,}" != "${pr_repo,,}" ]]; then
+    # A fork PR's head branch (often "main") says nothing about a local branch of that name.
+    reason="the PR head lives in ${head_repo}, so a local ${branch} may be an unrelated branch"
+  elif [[ -z "${merge_sha}" || "${merge_sha}" == "null" ]]; then
+    reason="the merge commit is unknown"
+  else
+    if ! git cat-file -e "${merge_sha}^{commit}" 2>/dev/null; then
+      cgw_net_git fetch --quiet "${CGW_REMOTE}" "${base_branch}" >>"${logfile}" 2>&1 || true
+    fi
+    if ! git cat-file -e "${merge_sha}^{commit}" 2>/dev/null; then
+      reason="the merge commit ${merge_sha:0:7} is not available locally"
+    elif ! git merge-base --is-ancestor "${local_head}" "${merge_sha}" 2>/dev/null; then
+      reason="its tip ${local_head:0:7} is not part of merge commit ${merge_sha:0:7}"
+    fi
+  fi
+
+  if [[ -z "${reason}" ]]; then
+    # -D is safe here: the ancestry check above is the proof. Git still refuses a branch that is
+    # checked out in any worktree.
+    if out=$(git branch -D "${branch}" 2>&1); then
+      echo "[OK] Deleted local branch ${branch} (${local_head:0:7}, part of ${merge_sha:0:7})" | tee -a "${logfile}"
+      return 0
+    fi
+    reason="git branch -D refused it: ${out//$'\n'/ }"
+  fi
+  echo "[WARN] Kept local branch ${branch}: ${reason}" | tee -a "${logfile}"
+  return 0
 }
 
 main() {
@@ -85,7 +130,8 @@ main() {
         echo "  --retarget <M>     After merging, retarget stacked PR #M onto this PR's base"
         echo "                     branch (its base must be this PR's head). Repeatable."
         echo "  --retarget-all     Retarget every open PR based on this PR's head branch"
-        echo "  --delete-branch    Delete the head branch after merge and retarget"
+        echo "  --delete-branch    Delete the head branch after merge and retarget, and the local"
+        echo "                     branch too when the merge commit contains its tip"
         echo "                     (never deleted by default; refused while an open PR is still"
         echo "                     based on it -- deleting a PR's base closes that PR)"
         echo "  --allow-local-changes"
@@ -531,7 +577,10 @@ main() {
       echo "Would run: gh pr edit ${m} --repo ${pr_repo} --base ${base_branch}" | tee -a "${logfile}"
     done
     [[ ${delete_branch} -eq 1 ]] &&
-      echo "Would delete branch: ${head_branch} in ${head_repo}" | tee -a "${logfile}"
+      {
+        echo "Would delete branch: ${head_branch} in ${head_repo}"
+        echo "Would delete local branch: ${head_branch} (only if the merge commit contains its tip)"
+      } | tee -a "${logfile}"
     exit 0
   fi
 
@@ -611,6 +660,9 @@ main() {
     log_section_end "RETARGET STACKED PRS" "${logfile}" "${failed}"
   fi
 
+  local merge_sha
+  merge_sha=$(_pr_view "${pr_number}" mergeCommit .mergeCommit.oid) || merge_sha=""
+
   if [[ ${delete_branch} -eq 1 ]]; then
     if [[ ${failed} -eq 1 ]]; then
       err_tee "[WARN] Skipping --delete-branch: a stacked PR could still be based on ${head_branch}"
@@ -625,11 +677,12 @@ main() {
         failed=1
         log_section_end "DELETE HEAD BRANCH" "${logfile}" "1"
       fi
+      # The local copy of the head branch: `git branch -d` would refuse it while the local base
+      # branch is behind the remote merge commit.
+      _delete_local_head_branch "${head_branch}" "${merge_sha}" "${base_branch}" "${head_repo}" "${pr_repo}" "${logfile}"
     fi
   fi
 
-  local merge_sha
-  merge_sha=$(_pr_view "${pr_number}" mergeCommit .mergeCommit.oid) || merge_sha=""
   echo "" | tee -a "${logfile}"
   if [[ -n "${merge_sha}" && "${merge_sha}" != "null" ]]; then
     echo "Merge commit: ${merge_sha}" | tee -a "${logfile}"

@@ -7,6 +7,15 @@
 - **Standalone Agent Skills for Agensi**: `scripts/dev/build_agensi.sh` builds three portable skill zips from the repo into `dist/agensi/`: `gitignore-and-local-config` and `git-merge-conflict-resolution` (knowledge only, no scripts) and `safe-git-workflow` (the core wrappers: commit, push, merge, rollback, rebase, cherry-pick, stash, undo, recover, sync, branch cleanup, bisect, plus the shared libraries). Each is one `SKILL.md` folder with only `name`/`description` frontmatter and no hooks, slash command or `.claude/` paths, so the same zip works across agents. Sources live in `agensi/` (see `agensi/README.md`). The build rewrites `./scripts/git/` to `<skill-dir>/scripts/`, drops sections for scripts a zip doesn't ship, points other reference links at GitHub, defaults `CGW_MARKDOWNLINT_NPX_FALLBACK` to `0` in the packaged config, and fails on a frontmatter, portability, link, missing-script or syntax problem. 7 tests in `tests/integration/build_agensi.bats`.
 - **`cgw_rm_tmpdir`**: the lint pipeline's two recursive deletes (`cgw_snapshot_tree`'s throwaway index dir in `_lib_lint.sh`, and `check_lint.sh`'s snapshot cleanup) now go through one helper that refuses anything but an existing directory whose name starts with `cgw-`, so an empty or wrong variable can never widen the delete. 3 tests in `tests/unit/common.bats`.
 
+## v0.23.3 (2026-11-15)
+
+> Changes since `v0.23.2`
+
+### Bug Fixes
+
+- **`commit_enhanced.sh` accepts the commit types `build`, `ci` and `revert`**: the built-in list stopped at `perf`, so `ci(lint): ...` was refused in a project whose branches use the prefix `ci/`. The three types complete the Conventional Commits set. The commit-message check, the pre-push hook, the help texts, `cgw.conf.example`, `docs/usage.md` and the skill table list them. A project that already put one of them in `CGW_EXTRA_PREFIXES` keeps working
+- **`merge_pr.sh --delete-branch` also deletes the local head branch**: it removed only the remote branch. GitHub merges remotely, so the local base branch stays behind and `git branch -d` then refused the local head branch. The script now deletes the local branch when its tip is part of the merge commit. It keeps the branch, prints a `[WARN]` and leaves the exit status unchanged when the branch is protected (the source branch, the target branch or an entry of `CGW_PROTECTED_BRANCHES`), the PR comes from a fork, the branch has commits the merge commit lacks, a worktree has it checked out, or the merge commit is not available locally. `--dry-run` announces the local delete
+
 ## v0.23.2 (2026-11-13)
 
 > Changes since `v0.23.1`. No change in the shipped scripts: the only edit is the `description` line of the skill.

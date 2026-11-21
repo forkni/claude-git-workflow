@@ -203,6 +203,9 @@ Conventional commit format (enforced by `commit_enhanced.sh`):
 | `refactor:` | Code refactoring |
 | `style:` | Code style |
 | `perf:` | Performance |
+| `build:` | Build system or dependencies |
+| `ci:` | CI configuration |
+| `revert:` | Revert of an earlier commit |
 
 Additional project-specific prefixes can be configured via `CGW_EXTRA_PREFIXES` in `.cgw.conf`.
 

@@ -754,8 +754,17 @@ UU b.py
 # ── cgw_validate_commit_message() ─────────────────────────────────────────────
 
 @test "cgw_validate_commit_message accepts all built-in prefixes" {
-  for prefix in feat fix docs chore test refactor style perf; do
+  for prefix in feat fix docs chore test refactor style perf build ci revert; do
     run cgw_validate_commit_message "${prefix}: description"
+    [ "${status}" -eq 0 ]
+  done
+}
+
+@test "cgw_validate_commit_message accepts build, ci and revert with a scope" {
+  for prefix in build ci revert; do
+    run cgw_validate_commit_message "${prefix}(lint): description"
+    [ "${status}" -eq 0 ]
+    run cgw_validate_commit_message "${prefix}(lint)!: description"
     [ "${status}" -eq 0 ]
   done
 }

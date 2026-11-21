@@ -47,7 +47,7 @@ CGW_LOCAL_FILES_EXEMPT=""
 # COMMIT MESSAGE PREFIXES
 # ============================================================================
 # Standard conventional commit prefixes are always included:
-#   feat fix docs chore test refactor style perf
+#   feat fix docs chore test refactor style perf build ci revert
 #
 # Add project-specific extras here (pipe-separated):
 # CGW_EXTRA_PREFIXES="cuda|tensorrt"    # GPU/ML project

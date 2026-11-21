@@ -277,7 +277,7 @@ TABLE
   git -C "${TEST_REPO_DIR}" add README.md
   run _run_commit "\"invalid_prefix: some change\""
   [ "${status}" -eq 1 ]
-  [[ "${output}" == *"feat, fix, docs, chore, test, refactor, style, perf"* ]]
+  [[ "${output}" == *"feat, fix, docs, chore, test, refactor, style, perf, build, ci, revert"* ]]
   [[ "${output}" != *"fix|docs"* ]]
 }
 
