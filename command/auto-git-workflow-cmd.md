@@ -175,7 +175,8 @@ done until `verify_ci.sh` exits `0` (`CI: green`) or `3` (not applicable), per
 | Rebase onto a branch | "Safe rebase" | `rebase_safe.sh --onto <branch>` |
 | Cherry-pick a commit | "Cherry-picking a commit" | `cherry_pick_commits.sh` |
 
-Longer tail reachable via "Other": check out a PR locally (`pr_checkout.sh`), check
+Longer tail reachable via "Other": create or switch a branch in place (`branch_switch.sh`),
+check out a PR locally (`pr_checkout.sh`), check
 branch diff (`branch_diff.sh`), merge docs only (`merge_docs.sh`), branch cleanup
 (`branch_cleanup.sh`), worktree management (`worktree_manage.sh`).
 
