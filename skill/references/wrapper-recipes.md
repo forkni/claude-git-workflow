@@ -464,6 +464,17 @@ Read-only; safe with a dirty working tree. Auto-detects `main` vs `master` vs a 
 
 Wraps `gh pr checkout`. Requires `gh auth login`. Refuses to switch branches over uncommitted tracked changes unless `--force` is passed — stash first with `stash_work.sh push`.
 
+## Creating or switching a branch in place
+
+```bash
+./scripts/git/branch_switch.sh -c feat/new-thing                  # new branch from HEAD, no upstream
+./scripts/git/branch_switch.sh -c fix/bug-12 origin/development   # new branch from a base ref
+./scripts/git/branch_switch.sh development                        # switch to an existing branch
+./scripts/git/branch_switch.sh -c feat/x --dry-run                # preview the git switch command
+```
+
+Wraps `git switch` in the CURRENT worktree. Uncommitted changes are listed and carried over (git's default); the script never passes `--force`, `--discard-changes` or `--merge`. If git refuses because a change would be overwritten, it exits `1` and points to `stash_work.sh push`. It also refuses during a merge, rebase, cherry-pick, revert or bisect, and for a branch that another worktree has checked out. `-c` works from a detached HEAD, so it also saves detached commits. Without `-c`, a branch that exists only as `<remote>/<branch>` becomes a local tracking branch. For a branch in a NEW worktree use `worktree_manage.sh add`.
+
 ## Generating or updating a Markdown Table of Contents
 
 ```bash

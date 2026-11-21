@@ -336,4 +336,5 @@ decides which flags exist.
 | [Project setup & hygiene](references/wrapper-recipes.md#project-setup--hygiene) | `configure.sh`, `repo_health.sh`, `clean_build.sh` | `clean_build.sh` is dry-run by default and skips tracked paths |
 | [Checking what changed](references/wrapper-recipes.md#checking-what-changed-on-your-branch) | `branch_diff.sh` | Read-only |
 | [Reviewing a PR locally](references/wrapper-recipes.md#reviewing-a-pr-locally) | `pr_checkout.sh` | Refuses over uncommitted tracked changes unless `--force`; stash first |
+| [Creating or switching a branch in place](references/wrapper-recipes.md#creating-or-switching-a-branch-in-place) | `branch_switch.sh` | Never raw `git switch` / `git checkout -b`; carries uncommitted work over, never forces; a new worktree uses `worktree_manage.sh add` |
 | [Markdown TOC](references/wrapper-recipes.md#generating-or-updating-a-markdown-table-of-contents) | `md_toc.sh` | `--insert` edits in place; `--check` is the CI form |
