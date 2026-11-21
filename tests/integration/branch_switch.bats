@@ -231,6 +231,16 @@ _current_branch() {
 
 # ── Dry run ───────────────────────────────────────────────────────────────────
 
+@test "an early exit still writes a result line to the log" {
+  run _run_branch_switch -c feat/logged --dry-run
+  [ "${status}" -eq 0 ]
+  # One run in a fresh repo leaves exactly one log.
+  local logs=("${TEST_REPO_DIR}"/logs/branch_switch_*.log)
+  [ "${#logs[@]}" -eq 1 ]
+  grep -q "^Result: dry run, branch not changed" "${logs[0]}"
+  grep -q "^End Time:" "${logs[0]}"
+}
+
 @test "--dry-run prints the command and changes nothing" {
   run _run_branch_switch -c feat/dry --dry-run
   [ "${status}" -eq 0 ]

@@ -123,7 +123,7 @@ See [Claude Code Integration](docs/claude-code-integration.md) for detailed conf
 
 ## What's Included
 
-CGW provides 34 user-facing scripts and 3 internal core modules in `scripts/git/`:
+CGW provides 34 user-facing scripts and 6 internal core modules in `scripts/git/`:
 
 | Script | Purpose |
 |--------|---------|
@@ -167,6 +167,9 @@ CGW provides 34 user-facing scripts and 3 internal core modules in `scripts/git/
 - `_common.sh`: Shared utilities, logging, platform shims, backup-tag registry, interactive confirmation prompts (`cgw_confirm`), sourced by every script.
 - `_config.sh`: Three-tier configuration loader, repository root auto-detection, and centralized settings registry.
 - `_lib_remote.sh`: Remote and network helpers (`cgw_net_git` timeout wrapper, remote reachability and branch probes, `gh` helpers), sourced by `_common.sh`. If it is missing, `_common.sh` returns 1 and the hooks block.
+- `_lib_conflict.sh`: Conflict classification (`cgw_classify_conflicts`) and safe auto-resolution for the merge and rebase wrappers, sourced by `_common.sh`.
+- `_lib_lint.sh`: Lint, format, markdownlint and typecheck pipeline shared by the commit, push and lint scripts, sourced by `_common.sh`.
+- `_lib_lock.sh`: Index-lock helpers (`ensure_no_stale_index_lock`, `cgw_run_with_lock_retry`), sourced by `_common.sh`.
 
 ### Project-specific hook logic (`.githooks/<hook>.local`)
 
