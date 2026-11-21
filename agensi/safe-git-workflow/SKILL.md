@@ -118,9 +118,10 @@ non-interactively must get the user's word before passing the confirming flag or
 ## Commit message format
 
 Conventional Commits, enforced by `commit_enhanced.sh`: `feat:`, `fix:`, `docs:`, `chore:`,
-`test:`, `refactor:`, `style:`, `perf:`. Scopes and the breaking-change marker are accepted:
-`fix(parser): ...`, `feat!: ...`, `feat(api)!: ...`. Keep them intact, and put breaking-change
-detail in a `BREAKING CHANGE:` paragraph in the body. Extra prefix words for a project go in
+`test:`, `refactor:`, `style:`, `perf:`, `build:`, `ci:`, `revert:`. Scopes and the
+breaking-change marker are accepted: `fix(parser): ...`, `feat!: ...`, `feat(api)!: ...`. Keep
+them intact, and put breaking-change detail in a `BREAKING CHANGE:` paragraph in the body.
+Extra prefix words for a project go in
 `CGW_EXTRA_PREFIXES`.
 
 - Keep the subject after the prefix to about 50 characters. Past 72 the commit is blocked, and
