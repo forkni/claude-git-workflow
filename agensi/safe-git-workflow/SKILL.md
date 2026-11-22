@@ -163,6 +163,7 @@ only. Typecheck runs in `check_lint.sh` and `push_validated.sh`, never in the co
 | [Branch cleanup](references/wrapper-recipes.md#branch-cleanup) | `branch_cleanup.sh` | Dry run by default; `--execute` deletes |
 | [Bisect](references/wrapper-recipes.md#bisecting-a-bug) | `bisect_helper.sh` | `--run "<cmd>"` automates; `--abort` ends a stuck session |
 | [What changed on this branch](references/wrapper-recipes.md#checking-what-changed-on-your-branch) | `branch_diff.sh` | Read-only |
+| [Create or switch a branch](references/wrapper-recipes.md#creating-or-switching-a-branch-in-place) | `branch_switch.sh` | Never raw `git switch` or `git checkout -b`; carries uncommitted work over and never forces |
 | Check for tracked local-only files | `check_local_files.sh` | Read-only; exit 1 when one is tracked |
 
 When a merge or rebase stops on a conflict that needs a decision (`UU`, `AA`, `AU`, `UA`, `DU`,

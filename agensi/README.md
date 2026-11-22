@@ -11,7 +11,7 @@ carry none of the Claude Code-only parts of the main install: no hooks, no slash
 |---|---|---|
 | `gitignore-and-local-config` | `SKILL.md`, 2 references | portable copies in this folder |
 | `git-merge-conflict-resolution` | `SKILL.md`, 2 references | portable copies in this folder |
-| `safe-git-workflow` | `SKILL.md`, 5 references, 24 scripts, `assets/cgw.conf.example` | `SKILL.md` here; references, scripts and config copied from the repo at build time |
+| `safe-git-workflow` | `SKILL.md`, 5 references, 25 scripts, `assets/cgw.conf.example` | `SKILL.md` here; references, scripts and config copied from the repo at build time |
 
 ## Build
 

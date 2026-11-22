@@ -35,7 +35,7 @@ BASE_SCRIPTS=(_common.sh _config.sh _lib_conflict.sh _lib_lint.sh _lib_lock.sh _
 SAFE_SCRIPTS=(commit_enhanced.sh check_lint.sh fix_lint.sh check_local_files.sh push_validated.sh
   validate_branches.sh merge_with_validation.sh rollback_merge.sh rebase_safe.sh
   cherry_pick_commits.sh stash_work.sh undo_last.sh recover.sh sync_branches.sh
-  branch_cleanup.sh branch_diff.sh repo_state.sh bisect_helper.sh)
+  branch_cleanup.sh branch_diff.sh repo_state.sh bisect_helper.sh branch_switch.sh)
 SAFE_REFERENCES=(wrapper-recipes.md script-reference.md branch-and-merge-rules.md
   error-recovery.md resolving-merge-conflicts.md)
 # H2 sections dropped from the shipped references: operations whose scripts are not in the zip,
