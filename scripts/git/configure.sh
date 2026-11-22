@@ -849,6 +849,27 @@ _guardrail_is_registered() {
   [[ -n "${lines}" ]]
 }
 
+# _agy_registered_cmd_resolves <json_file>
+#   True when the registered agy-block-dangerous-git command in <json_file>
+#   points to a script file that exists on this machine (expanding leading ~/
+#   to $HOME/ and stripping a leading "bash " token). Catches a tracked
+#   .agents/hooks.json pulled from another machine/drive (e.g. F:/... on D:/).
+_agy_registered_cmd_resolves() {
+  local json="$1" cmd probe
+  [[ -f "${json}" ]] || return 1
+  if command -v jq &>/dev/null; then
+    cmd="$(jq -r '[."cgw-git-guardrail".PreToolUse[]?.hooks[]?.command | strings | select(contains("agy-block-dangerous-git"))][0] // empty' "${json}" 2>/dev/null)"
+  else
+    cmd="$(grep -F "agy-block-dangerous-git" "${json}" 2>/dev/null | sed -E 's/.*"command"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' | head -n 1)"
+  fi
+  [[ -n "${cmd}" ]] || return 1
+  probe="${cmd#bash }"
+  probe="${probe#\"}"
+  probe="${probe%\"}"
+  probe="${probe/#\~\//${HOME}/}"
+  [[ -f "${probe}" ]]
+}
+
 # _register_guardrail <host> <json_file> <hook_cmd>
 #   Modifier: registers <hook_cmd> as the host's PreToolUse guardrail. Removes
 #   every stale CGW entry (anything naming the marker), keeps all other
@@ -1238,7 +1259,7 @@ _install_agy_guardrail() {
     cp "${guardrail_cmd_src}" "${hook_cmd_dst}"
   fi
 
-  if _guardrail_is_registered agy "${hooks_json}"; then
+  if _guardrail_is_registered agy "${hooks_json}" && _agy_registered_cmd_resolves "${hooks_json}"; then
     echo "  [OK] Antigravity PreToolUse guardrail already registered in ${hooks_json}"
     return 0
   fi
