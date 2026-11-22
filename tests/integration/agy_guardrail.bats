@@ -379,3 +379,61 @@ JSON_EOF
   [ "$(jq -r '."cgw-git-guardrail".PreToolUse[0].hooks[0].command' "${f}")" == "bash /opt/other-audit.sh" ]
   [ "$(jq -r '."cgw-git-guardrail".PreToolUse[1].hooks[0].command' "${f}")" == "bash /p/.agents/hooks/agy-block-dangerous-git.sh" ]
 }
+
+@test "configure.sh replaces a registered Antigravity guardrail command whose script path does not exist on this machine" {
+  _require_jq
+  mkdir -p "${TEST_REPO_DIR}/.agents"
+  cat >"${TEST_REPO_DIR}/.agents/hooks.json" <<'JSON_EOF'
+{
+  "cgw-git-guardrail": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "Z:/nonexistent/workstation/repo/.agents/hooks/agy-block-dangerous-git.cmd"
+          }
+        ]
+      }
+    ]
+  }
+}
+JSON_EOF
+  run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  local registered_cmd
+  registered_cmd="$(jq -r '."cgw-git-guardrail".PreToolUse[0].hooks[0].command' "${TEST_REPO_DIR}/.agents/hooks.json")"
+  [[ "${registered_cmd}" != *"Z:/nonexistent"* ]]
+  [[ "${registered_cmd}" == *"agy-block-dangerous-git"* ]]
+}
+
+@test "configure.sh preserves a drive-agnostic ~/.gemini Antigravity guardrail command when target exists" {
+  _require_jq
+  mkdir -p "${TEST_REPO_DIR}/.agents" "${HOME}/.gemini/config/hooks"
+  cp "${CGW_PROJECT_ROOT}/hooks/agy-block-dangerous-git.cmd" "${HOME}/.gemini/config/hooks/agy-block-dangerous-git.cmd"
+  cat >"${TEST_REPO_DIR}/.agents/hooks.json" <<'JSON_EOF'
+{
+  "cgw-git-guardrail": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.gemini/config/hooks/agy-block-dangerous-git.cmd",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+JSON_EOF
+  run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"already registered"* ]]
+  local registered_cmd
+  registered_cmd="$(jq -r '."cgw-git-guardrail".PreToolUse[0].hooks[0].command' "${TEST_REPO_DIR}/.agents/hooks.json")"
+  [ "${registered_cmd}" = "~/.gemini/config/hooks/agy-block-dangerous-git.cmd" ]
+}

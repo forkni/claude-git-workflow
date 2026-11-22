@@ -303,6 +303,12 @@ main() {
     name="$(basename "${f}")"
     [[ -f "${src}/scripts/git/${name}" ]] || echo "  [!] ${name} exists here but not in the CGW source (left in place)"
   done
+  if [[ -f "${src}/cgw.conf.example" && -f "${PROJECT_ROOT}/cgw.conf.example" ]]; then
+    if ! cmp -s "${src}/cgw.conf.example" "${PROJECT_ROOT}/cgw.conf.example"; then
+      cp -p "${src}/cgw.conf.example" "${PROJECT_ROOT}/cgw.conf.example"
+      echo "  [OK] cgw.conf.example: updated"
+    fi
+  fi
 
   # 5. Hooks, skill/command twins and guardrails from the same source. Prefer the copy of
   #    configure.sh that was just refreshed.
