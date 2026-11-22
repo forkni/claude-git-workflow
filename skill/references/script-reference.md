@@ -665,6 +665,25 @@ Read-only; safe with a dirty working tree. Default branch resolves via `${CGW_RE
 
 Wraps `gh pr checkout`. Requires `gh` CLI authenticated (`gh auth login`). Refuses to switch branches with uncommitted tracked changes unless `--force` is given — stash first with `./scripts/git/stash_work.sh push`.
 
+**`branch_switch.sh`** — Create a branch or switch branches in the current worktree
+
+```bash
+./scripts/git/branch_switch.sh -c feat/new-thing
+./scripts/git/branch_switch.sh -c fix/bug-12 origin/development
+./scripts/git/branch_switch.sh development
+./scripts/git/branch_switch.sh -c feat/x --dry-run
+```
+
+| Flag | Purpose |
+|------|---------|
+| `<branch>` | Branch to switch to, or to create with `-c` |
+| `<base>` | Start point for a new branch (only with `-c`; default HEAD) |
+| `-c`, `--create` | Create `<branch>` and switch to it |
+| `--dry-run` | Print the resolved `git switch` command without running it |
+| `--non-interactive` | Accept all defaults, no prompts |
+
+Wraps `git switch`. Uncommitted tracked changes are listed and carried over; the switch is never forced. It exits `1` when git would overwrite a change (stash first with `./scripts/git/stash_work.sh push`), when a merge, rebase, cherry-pick, revert or bisect is in progress, when the branch is checked out in another worktree, when `-c` names an existing branch or an invalid name, and when a base ref does not resolve. A new branch has no upstream unless the start point is `<remote>/<branch>` itself (`CGW_REMOTE`, default `origin`). `-c <branch>` with no base always starts at HEAD; when `<remote>/<branch>` already exists it prints a `[WARN]` naming `-c <branch> <remote>/<branch>` (start from it) and the form without `-c` (track it). It warns about skip-worktree / assume-unchanged paths among the carried changes. No backup tag: nothing is rewritten.
+
 **`merge_pr.sh`** — Merge a GitHub PR with a merge commit; optionally retarget stacked PRs
 
 ```bash

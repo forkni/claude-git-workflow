@@ -7,6 +7,22 @@
 - **Standalone Agent Skills for Agensi**: `scripts/dev/build_agensi.sh` builds three portable skill zips from the repo into `dist/agensi/`: `gitignore-and-local-config` and `git-merge-conflict-resolution` (knowledge only, no scripts) and `safe-git-workflow` (the core wrappers: commit, push, merge, rollback, rebase, cherry-pick, stash, undo, recover, sync, branch cleanup, bisect, plus the shared libraries). Each is one `SKILL.md` folder with only `name`/`description` frontmatter and no hooks, slash command or `.claude/` paths, so the same zip works across agents. Sources live in `agensi/` (see `agensi/README.md`). The build rewrites `./scripts/git/` to `<skill-dir>/scripts/`, drops sections for scripts a zip doesn't ship, points other reference links at GitHub, defaults `CGW_MARKDOWNLINT_NPX_FALLBACK` to `0` in the packaged config, and fails on a frontmatter, portability, link, missing-script or syntax problem. 7 tests in `tests/integration/build_agensi.bats`.
 - **`cgw_rm_tmpdir`**: the lint pipeline's two recursive deletes (`cgw_snapshot_tree`'s throwaway index dir in `_lib_lint.sh`, and `check_lint.sh`'s snapshot cleanup) now go through one helper that refuses anything but an existing directory whose name starts with `cgw-`, so an empty or wrong variable can never widen the delete. 3 tests in `tests/unit/common.bats`.
 
+## v0.24.0 (2026-11-21)
+
+> Changes since `v0.23.3`
+
+### New Features
+
+- **`branch_switch.sh [-c] <branch> [<base>]`**: creates a branch or switches branches in the current worktree through `git switch`. No wrapper did this before: `worktree_manage.sh add` makes a branch only in a new worktree, and `pr_checkout.sh` only checks out PRs, so a session with uncommitted changes fell back to a raw `git switch -c`. `-c` creates the branch at `<base>` (default HEAD) with no upstream, unless `<base>` is `<remote>/<branch>` itself. Without `-c`, a local branch is switched to, and a branch that exists only on the remote becomes a local tracking branch. Uncommitted changes are listed and carried over. The script never passes `--force`, `--discard-changes` or `--merge`: when git would overwrite a change it exits `1` and points to `stash_work.sh push`. It also refuses during a merge, rebase, cherry-pick, revert or bisect, for a branch that another worktree has checked out, and for an existing or invalid branch name (`HEAD` included). It warns about skip-worktree and assume-unchanged paths among the carried changes. `-c` works from a detached HEAD, so it saves detached commits. `--dry-run` prints the `git switch` command. Every exit writes a `Result` line to the log. The installers and `sync_cgw_tooling.sh` copy `scripts/git/*.sh`, so a project gets it with its next update.
+
+### Documentation
+
+- `README.md`, `docs/usage.md`, `skill/SKILL.md`, `skill/references/wrapper-recipes.md`, `skill/references/script-reference.md` and `command/auto-git-workflow-cmd.md` describe `branch_switch.sh`. The `README.md` script and module counts now match the lists (34 scripts, 6 core modules).
+
+### Tests
+
+- `tests/integration/branch_switch.bats` (23 tests) and the `help_flags.bats` entries cover the new script. `skill/evals/auto-git-workflow-benchmark.json` gains `branchswitch-001-create-dirty-tree`, which fails an agent that runs raw `git switch` or `git checkout -b`.
+
 ## v0.23.3 (2026-11-15)
 
 > Changes since `v0.23.2`

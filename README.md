@@ -123,7 +123,7 @@ See [Claude Code Integration](docs/claude-code-integration.md) for detailed conf
 
 ## What's Included
 
-CGW provides 31 user-facing scripts and 2 internal core modules in `scripts/git/`:
+CGW provides 34 user-facing scripts and 6 internal core modules in `scripts/git/`:
 
 | Script | Purpose |
 |--------|---------|
@@ -143,6 +143,7 @@ CGW provides 31 user-facing scripts and 2 internal core modules in `scripts/git/
 | `merge_pr.sh` | Guarded, logged wrapper around `gh pr merge --merge` with an explicit `--repo`; refuses non-OPEN PRs and non-green PR checks on the PR's current head (`--wait-checks`, `--skip-checks`; merge pinned with `--match-head-commit`), `--retarget <M>` for stacked PRs, `--squash`/`--rebase` need `--allow-non-merge` (`--delete-branch` also removes the local head branch once the merge commit contains it, `--dry-run`) |
 | `verify_ci.sh` | Post-push CI gate: waits for the GitHub Actions runs a push triggered and prints one verdict (`--branch <name>` or `--pr <N>`, `--sha`, `--timeout`, `--poll`); exit `0` green, `1` red, `2` unverified, `3` not applicable |
 | `pr_checkout.sh` | Guarded, logged wrapper around `gh pr checkout <N>` for reviewing PRs locally (`--branch`, `--force`, `--detach`, `--dry-run`) |
+| `branch_switch.sh` | Guarded, logged wrapper around `git switch` for creating or changing a branch in the current worktree (`-c`, `--dry-run`); carries uncommitted work over, never forces |
 | `install_hooks.sh` | Install git hooks (`pre-commit`, `pre-push`, `pre-rebase`) into `.githooks/` and `.git/hooks/` |
 | `setup_attributes.sh` | Generate `.gitattributes` for binary, text, and asset handling (Python, TouchDesigner, GLSL, LF line endings) |
 | `clean_build.sh` | Safe cleanup of build artifacts; previews by default (`--dry-run`), deletes only with `--execute` |
@@ -166,6 +167,9 @@ CGW provides 31 user-facing scripts and 2 internal core modules in `scripts/git/
 - `_common.sh`: Shared utilities, logging, platform shims, backup-tag registry, interactive confirmation prompts (`cgw_confirm`), sourced by every script.
 - `_config.sh`: Three-tier configuration loader, repository root auto-detection, and centralized settings registry.
 - `_lib_remote.sh`: Remote and network helpers (`cgw_net_git` timeout wrapper, remote reachability and branch probes, `gh` helpers), sourced by `_common.sh`. If it is missing, `_common.sh` returns 1 and the hooks block.
+- `_lib_conflict.sh`: Conflict classification (`cgw_classify_conflicts`) and safe auto-resolution for the merge and rebase wrappers, sourced by `_common.sh`.
+- `_lib_lint.sh`: Lint, format, markdownlint and typecheck pipeline shared by the commit, push and lint scripts, sourced by `_common.sh`.
+- `_lib_lock.sh`: Index-lock helpers (`ensure_no_stale_index_lock`, `cgw_run_with_lock_retry`), sourced by `_common.sh`.
 
 ### Project-specific hook logic (`.githooks/<hook>.local`)
 

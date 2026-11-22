@@ -1062,6 +1062,32 @@
       ]
     },
     {
+      "id": "branchswitch-001-create-dirty-tree",
+      "prompt": "I have uncommitted changes in tracked files and need a new branch feat/new-thing in this same worktree, not in a new worktree. State the exact command.",
+      "category": "branch-switch",
+      "split": "train",
+      "source": "SKILL.md Quick Decision Tree -- Creating or switching a branch in place / references/script-reference.md -- branch_switch.sh -c",
+      "checks": [
+        {
+          "type": "must_include",
+          "patterns": [
+            "branch_switch\\.sh",
+            "(-c|--create)\\s+feat/new-thing"
+          ],
+          "regex": true
+        },
+        {
+          "type": "must_not_include",
+          "patterns": [
+            "git\\s+switch",
+            "git\\s+checkout\\s+-b"
+          ],
+          "regex": true,
+          "target": "trajectory"
+        }
+      ]
+    },
+    {
       "id": "mdtoc-001-check-ci",
       "prompt": "In CI, verify that the table of contents in docs/usage.md is not stale (fail the build if it is). State the exact command.",
       "category": "md-toc",

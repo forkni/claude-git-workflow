@@ -472,6 +472,17 @@ Read-only — safe to run with a dirty working tree. Uses triple-dot diff (`<bas
 
 Wraps `gh pr checkout`; requires `gh auth login`. Refuses to switch branches over uncommitted tracked changes unless `--force` is passed.
 
+### Create or switch a branch in place
+
+```bash
+./scripts/git/branch_switch.sh -c feat/new-thing                  # new branch from HEAD
+./scripts/git/branch_switch.sh -c fix/bug-12 origin/development   # new branch from a base ref
+./scripts/git/branch_switch.sh development                        # switch to an existing branch
+./scripts/git/branch_switch.sh -c feat/x --dry-run                # preview the git switch command
+```
+
+Wraps `git switch` in the current worktree. Uncommitted changes (for example a modified `.toe` file) are listed and carried over to the target branch; the script never forces the switch. If git would overwrite a change it stops and points to `stash_work.sh push`. For a branch in a new worktree use `worktree_manage.sh add`.
+
 ### Generate or update a Markdown Table of Contents
 
 ```bash
