@@ -48,6 +48,7 @@ ensure_no_stale_index_lock() {
   local now mtime age
   now="$(date +%s)"
   mtime="$(stat -c %Y "${lock_file}" 2>/dev/null || stat -f %m "${lock_file}" 2>/dev/null)" || {
+    [[ -f "${lock_file}" ]] || return 0 # released between the check and the stat
     err_tee "[cgw-lock] Could not stat ${lock_file}"
     return 1
   }
@@ -69,7 +70,10 @@ ensure_no_stale_index_lock() {
     done
     # Re-compute age after waiting
     now="$(date +%s)"
-    mtime="$(stat -c %Y "${lock_file}" 2>/dev/null || stat -f %m "${lock_file}" 2>/dev/null)" || mtime="${now}"
+    mtime="$(stat -c %Y "${lock_file}" 2>/dev/null || stat -f %m "${lock_file}" 2>/dev/null)" || {
+      [[ -f "${lock_file}" ]] || return 0 # released during the wait
+      mtime="${now}"
+    }
     age=$((now - mtime))
     ((age < 0)) && age=0
     if ((age < max_age)); then
