@@ -22,6 +22,8 @@
 #   --skip-md-lint     Skip markdown lint only (CGW_MARKDOWNLINT_CMD step)
 #   --strict-untracked Refuse to commit while untracked (non-ignored) files are left out
 #   --no-untracked-check  Do not warn about untracked files left out of the commit
+#   --body <text>      Add a body paragraph after the subject (repeatable, kept in order)
+#   --body-file <path> Add the file's text as body (`-` reads stdin); repeatable with --body
 #   -h, --help         Show help
 #
 # Staging behavior (non-interactive):
@@ -286,6 +288,47 @@ _untracked_notice() {
   return 0
 }
 
+# Print the text of a --body-file argument (`-` = stdin) with its trailing newlines
+# dropped. Returns 1, after an [ERROR] on stderr, when the file cannot be read or
+# holds only whitespace: a body the caller asked for must not vanish silently.
+#   _read_body_file <path|->
+_read_body_file() {
+  local path="$1" text
+  if [[ "${path}" == "-" ]]; then
+    text="$(cat)" || {
+      echo "[ERROR] --body-file -: could not read stdin" >&2
+      return 1
+    }
+  else
+    if [[ ! -f "${path}" ]] || [[ ! -r "${path}" ]]; then
+      echo "[ERROR] --body-file: cannot read '${path}'" >&2
+      return 1
+    fi
+    text="$(<"${path}")"
+  fi
+  # A CRLF file (a Windows editor) would hand CGW_FREEFORM_MESSAGE_CHECK lines
+  # that end in CR. git strips them from the commit, so drop them here too.
+  text="${text//$'\r'/}"
+  if [[ -z "${text//[[:space:]]/}" ]]; then
+    echo "[ERROR] --body-file ${path}: the body is empty" >&2
+    return 1
+  fi
+  printf '%s' "${text}"
+}
+
+# Join the body paragraphs with one blank line between them and print the result.
+#   _join_body <paragraph>...
+_join_body() {
+  local joined="" part
+  for part in "$@"; do
+    if [[ -n "${joined}" ]]; then
+      joined+=$'\n\n'
+    fi
+    joined+="${part}"
+  done
+  printf '%s' "${joined}"
+}
+
 # Print the usage text for --help.
 _usage() {
   echo "Usage: ./scripts/git/commit_enhanced.sh [OPTIONS] \"commit message\""
@@ -306,6 +349,10 @@ _usage() {
   echo "  --no-untracked-check  Do not warn about untracked files left out of the commit"
   echo "  --sign              GPG/SSH-sign the commit (git commit -S)"
   echo "  --no-sign           Disable signing even if CGW_SIGN_COMMITS=1"
+  echo "  --body <text>       Add <text> as a body paragraph after the subject (repeatable;"
+  echo "                      paragraphs are kept in order, separated by a blank line)"
+  echo "  --body-file <path>  Add the text of <path> as body (\`-\` reads stdin); repeatable,"
+  echo "                      and mixes with --body in the order given"
   echo "  -h, --help          Show this help"
   echo ""
   echo "Staging defaults (non-interactive):"
@@ -318,6 +365,15 @@ _usage() {
   echo "Commit message format: <type>: <message>"
   echo "  Standard types: feat fix docs chore test refactor style perf build ci revert"
   echo "  Configure extras via CGW_EXTRA_PREFIXES in .cgw.conf"
+  echo ""
+  echo "Commit message body:"
+  echo "  The positional message is the subject (it may hold a body after a newline too)."
+  echo "  The format check and the length caps read the subject line only. --body and"
+  echo "  --body-file add the body after one blank line; line breaks stay as given, so a"
+  echo "  last paragraph of trailer lines stays a git trailer block:"
+  echo "    ./scripts/git/commit_enhanced.sh --only src/a.py \"fix: guard nil response\" \\"
+  echo "      --body \"Timeouts return nil; treat them as a failed request.\" \\"
+  echo "      --body \"Co-Authored-By: Name <name@example.com>\""
   echo ""
   echo "During a merge (MERGE_HEAD present), the message is optional:"
   echo "  with none, uses git's prepared merge message (comments stripped)."
@@ -704,7 +760,17 @@ _step_validate_message() {
       echo "[!] Subject after prefix is ${_summary_len} chars, over the ${CGW_COMMIT_SUBJECT_HARD_LEN}-char hard cap (Pro Git recommends ~${CGW_COMMIT_SUBJECT_SOFT_LEN})"
       echo "  Move detail into the commit body instead of a long summary line."
       if [[ "${CGW_ENFORCE_SUBJECT_LENGTH}" == "1" ]]; then
-        if ! cgw_confirm "Commit with an oversized subject line anyway?" --non-interactive abort; then
+        # Non-interactive: refuse with its own [ERROR] on stderr. cgw_confirm's
+        # generic abort line ("requires confirmation -- run the command in your
+        # own terminal") did not say that no commit was made or why, and agents
+        # read the stop as a silent failure.
+        if [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]]; then
+          err_tee "[ERROR] No commit made: the subject after the prefix is ${_summary_len} chars, over the ${CGW_COMMIT_SUBJECT_HARD_LEN}-char hard cap"
+          err_tee "  Shorten the subject and put the detail in the body (--body <text> or --body-file <path>),"
+          err_tee "  or set CGW_ENFORCE_SUBJECT_LENGTH=0 to make the cap advisory."
+          return 1
+        fi
+        if ! cgw_confirm "Commit with an oversized subject line anyway?"; then
           echo "Commit cancelled"
           return 2
         fi
@@ -727,6 +793,9 @@ main() {
   local all_flag=0
   local only_paths=()
   local commit_msg_param=""
+  # Body paragraphs from --body / --body-file, in the order given.
+  local -a body_parts=()
+  local _body_text body_from_stdin=0
   # Signing: -1 = unset (use CGW_SIGN_COMMITS), 0 = off, 1 = on
   local sign_flag=-1
   local untracked_check=1
@@ -812,6 +881,39 @@ main() {
         sign_flag=0
         shift
         ;;
+      --body)
+        # A value that looks like a flag is refused like --only does: in
+        # `--body --only x "msg"` the flag would otherwise become the body.
+        # A paragraph that really starts with -- goes through --body-file.
+        if [[ $# -lt 2 ]] || [[ "${2:0:2}" == "--" ]]; then
+          echo "[ERROR] --body requires a text argument" >&2
+          exit 1
+        fi
+        if [[ -z "${2//[[:space:]]/}" ]]; then
+          echo "[ERROR] --body text is empty" >&2
+          exit 1
+        fi
+        body_parts+=("$2")
+        shift 2
+        ;;
+      --body-file)
+        if [[ $# -lt 2 ]] || [[ -z "$2" ]] || [[ "${2:0:2}" == "--" ]]; then
+          echo "[ERROR] --body-file requires a path argument (- reads stdin)" >&2
+          exit 1
+        fi
+        if [[ "$2" == "-" ]]; then
+          # stdin can be read one time only: a second `-` would read nothing
+          # and fail as "the body is empty", which hides the real cause.
+          if [[ ${body_from_stdin} -eq 1 ]]; then
+            echo "[ERROR] --body-file - given twice: stdin is read one time only" >&2
+            exit 1
+          fi
+          body_from_stdin=1
+        fi
+        _body_text="$(_read_body_file "$2")" || exit 1
+        body_parts+=("${_body_text}")
+        shift 2
+        ;;
       --*)
         echo "[ERROR] Unknown flag: $1" >&2
         exit 1
@@ -823,6 +925,7 @@ main() {
         # with advice about --only that does not apply.
         echo "[ERROR] there is no -m flag: pass the message as the one quoted positional argument" >&2
         echo "  e.g. ./scripts/git/commit_enhanced.sh \"feat: msg\"" >&2
+        echo "  For a body (a second git -m), use --body <text> or --body-file <path>" >&2
         exit 1
         ;;
       *)
@@ -843,6 +946,14 @@ main() {
         ;;
     esac
   done
+
+  # --body-file - drains stdin during parsing, so in an interactive run every
+  # later cgw_confirm prompt would read EOF, deny, and cancel the commit.
+  if [[ ${body_from_stdin} -eq 1 ]] && [[ "${CGW_NON_INTERACTIVE:-0}" != "1" ]]; then
+    echo "[ERROR] --body-file - reads stdin, which an interactive run needs for its prompts" >&2
+    echo "  Use --body-file <path>, or run with --non-interactive" >&2
+    exit 1
+  fi
 
   init_logging "commit_enhanced"
   ensure_no_stale_index_lock || exit 1
@@ -901,6 +1012,15 @@ main() {
   local merge_head_path merge_in_progress=0
   merge_head_path="$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)"
   [[ -n "${merge_head_path}" && -f "${merge_head_path}" ]] && merge_in_progress=1
+
+  # A body with no subject is known now, outside a merge: refuse it before the
+  # staging and lint steps run. (In a merge the body follows git's prepared
+  # merge message.)
+  if [[ ${#body_parts[@]} -gt 0 ]] && [[ -z "${commit_msg_param}" ]] && [[ ${merge_in_progress} -eq 0 ]]; then
+    err "--body / --body-file add a body only: the subject is still the positional message"
+    echo "Usage: ./scripts/git/commit_enhanced.sh \"feat: Your message\" --body \"Detail.\"" >&2
+    exit 1
+  fi
 
   if [[ ${has_unstaged} -eq 0 ]] && [[ ${has_staged} -eq 0 ]]; then
     if [[ ${merge_in_progress} -eq 1 ]]; then
@@ -1023,6 +1143,19 @@ main() {
     commit_msg="$(_merge_prepared_message)"
     if [[ -n "${commit_msg}" ]]; then
       echo "  [i] Merge in progress; using git's prepared merge message"
+    fi
+  fi
+
+  # --body / --body-file: append the body after one blank line. The checks in
+  # _step_validate_message read the subject line only (format and length), and
+  # CGW_FREEFORM_MESSAGE_CHECK gets the whole message, as a commit-msg hook does.
+  # git commit -m keeps the line breaks; its whitespace cleanup only drops
+  # trailing spaces and collapses repeated blank lines.
+  if [[ ${#body_parts[@]} -gt 0 ]]; then
+    if [[ -z "${commit_msg}" ]]; then
+      err "--body / --body-file add a body only: the subject is still the positional message"
+    else
+      commit_msg+=$'\n\n'"$(_join_body "${body_parts[@]}")"
     fi
   fi
 

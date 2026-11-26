@@ -237,10 +237,13 @@ prints an advisory tip between 50–72 chars and **blocks the commit** past 72 c
 extra detail in the commit body, not a long subject line. Tune via `CGW_COMMIT_SUBJECT_SOFT_LEN`
 / `CGW_COMMIT_SUBJECT_HARD_LEN` / `CGW_ENFORCE_SUBJECT_LENGTH` in `.cgw.conf`.
 
-**Commit body (Git for Teams — "Constructing the Perfect Commit"):** `commit_enhanced.sh`
-takes the full multi-line message as its one positional argument (there is no `-m` flag); only
-the first line is length-checked (72 chars). Build it with `"$(cat <<'EOF' ... EOF)"`, and use
-the body for anything the subject can't carry. A good body covers, as needed:
+**Commit body (Git for Teams — "Constructing the Perfect Commit"):** the positional argument
+of `commit_enhanced.sh` is the subject (there is no `-m` flag). Add the body with `--body <text>`
+(repeatable, one paragraph each, one blank line between them) or `--body-file <path>` (`-` reads
+stdin). Line breaks stay as given, so a last paragraph of trailer lines such as
+`Co-Authored-By: <model> <noreply@anthropic.com>` stays a git trailer. Only the subject line is
+format- and length-checked (72 chars). A full multi-line positional message still works too.
+Use the body for anything the subject can't carry. A good body covers, as needed:
 
 - **Why** the current code is a problem — not a restatement of what the diff shows.
 - The **rationale** for this approach and a high-level **how**.
@@ -275,7 +278,7 @@ script with `--help` to confirm rather than inventing it.
 
 | Script | Accepted flags |
 |---|---|
-| `commit_enhanced.sh` | `--non-interactive`, `--interactive`, `--staged-only`, `--all`, `--only <path>` (repeatable), `--skip-lint`, `--skip-md-lint`, `--no-venv`, `--sign`, `--no-sign`, `--strict-untracked`, `--no-untracked-check` |
+| `commit_enhanced.sh` | `--non-interactive`, `--interactive`, `--staged-only`, `--all`, `--only <path>` (repeatable), `--skip-lint`, `--skip-md-lint`, `--no-venv`, `--sign`, `--no-sign`, `--strict-untracked`, `--no-untracked-check`, `--body <text>` (repeatable), `--body-file <path>` |
 | `check_lint.sh` | `--no-venv`, `--modified-only`, `--skip-lint`, `--skip-md-lint`, `--skip-typecheck`, `--md-only`, `--ref <rev>`, `--base <rev>`, `--unpushed` |
 | `fix_lint.sh` | `--non-interactive`, `--no-venv`, `--modified-only`, `--skip-md-lint`, `--md-only` — **no `--skip-lint`** |
 | `push_validated.sh` | `--non-interactive`, `--dry-run`, `--skip-lint`, `--skip-md-lint`, `--skip-typecheck`, `--pushed-only`, `--worktree`, `--no-venv`, `--force`, `--branch <name>` |
