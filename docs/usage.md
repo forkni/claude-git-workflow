@@ -187,7 +187,7 @@ calls `check_lint.sh --ref <rev> [--base <rev> | --unpushed]`, which you can als
 Every push is followed by `verify_ci.sh`, which waits for the GitHub Actions runs the push triggered and prints one verdict line (`CGW_CI_VERIFY=0` disables it):
 
 ```bash
-./scripts/git/verify_ci.sh --branch development        # exit 0 green, 1 red, 2 unverified, 3 not applicable
+./scripts/git/verify_ci.sh --branch development        # exit 0 green, 1 red, 2 unverified, 3 not applicable, 4 usage error
 ./scripts/git/verify_ci.sh --pr 42 --sha <head-sha>    # a PR's checks, bound to the pushed head
 ```
 

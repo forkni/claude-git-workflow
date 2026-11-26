@@ -105,9 +105,6 @@ main() {
   local create=0
   local dry_run=0
 
-  # Auto-detect non-interactive mode when no TTY (matches pr_checkout.sh)
-  [[ ! -t 0 ]] && CGW_NON_INTERACTIVE=1
-
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --help | -h)

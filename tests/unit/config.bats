@@ -128,9 +128,21 @@ teardown() {
   [[ "${result}" == *"CGW_MERGE_MODE=direct"* ]]
 }
 
-@test "CGW_NON_INTERACTIVE defaults to '0'" {
-  result=$(_source_config)
+# ADR-0008: _config.sh owns no-TTY detection. bats stdin is never a terminal, so the
+# "0 at a terminal" default has no seam here (it would need a pty).
+@test "CGW_NON_INTERACTIVE resolves to 1 when unset and stdin is not a terminal" {
+  result=$(_source_config "unset CGW_NON_INTERACTIVE CLAUDE_GIT_NON_INTERACTIVE" </dev/null)
+  [[ "${result}" == *"CGW_NON_INTERACTIVE=1"* ]]
+}
+
+@test "an explicit CGW_NON_INTERACTIVE=0 in the environment wins over no TTY" {
+  result=$(_source_config "export CGW_NON_INTERACTIVE=0" </dev/null)
   [[ "${result}" == *"CGW_NON_INTERACTIVE=0"* ]]
+}
+
+@test "an empty CGW_NON_INTERACTIVE counts as unset (no TTY resolves it to 1)" {
+  result=$(_source_config "export CGW_NON_INTERACTIVE=" </dev/null)
+  [[ "${result}" == *"CGW_NON_INTERACTIVE=1"* ]]
 }
 
 @test "CGW_LOCAL_FILES_EXEMPT defaults to empty" {
@@ -711,6 +723,21 @@ EOF
   [[ "${output}" == *"GIT_EDITOR=:"* ]]
   [[ "${output}" == *"GIT_SEQUENCE_EDITOR=:"* ]]
   [[ "${output}" == *"GIT_OPTIONAL_LOCKS=0"* ]]
+}
+
+@test "no TTY and no CGW_NON_INTERACTIVE still exports the non-interactive git environment" {
+  mkdir -p "${TEST_REPO_DIR}/scripts/git"
+  run bash -c "
+    cd '${TEST_REPO_DIR}'
+    export SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
+    unset CGW_NON_INTERACTIVE CLAUDE_GIT_NON_INTERACTIVE GIT_EDITOR GIT_TERMINAL_PROMPT
+    source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh'
+    echo \"GIT_TERMINAL_PROMPT=\${GIT_TERMINAL_PROMPT}\"
+    echo \"GIT_EDITOR=\${GIT_EDITOR}\"
+  " </dev/null
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"GIT_TERMINAL_PROMPT=0"* ]]
+  [[ "${output}" == *"GIT_EDITOR=:"* ]]
 }
 
 @test "CGW_ICASE_PATHSPECS=0 suppresses GIT_ICASE_PATHSPECS export" {

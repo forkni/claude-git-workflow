@@ -734,12 +734,12 @@ Wraps `gh pr merge --merge`. Requires `gh` CLI authenticated. Passes an explicit
 |------|---------|
 | `--branch <name>` | Branch (or tag) just pushed; its SHA is resolved from `CGW_REMOTE`, never from `HEAD` |
 | `--pr <N>` | Judge a PR's checks instead; waits for the PR head to equal the pushed SHA first (mutually exclusive with `--branch`) |
-| `--sha <sha>` | Pin the commit to judge (40-hex); in PR mode use `create_pr.sh`'s `Head SHA:` line |
+| `--sha <sha>` | Pin the commit to judge: a full 40-hex SHA as-is, or a short SHA / tag / `HEAD` that resolves locally; in PR mode use `create_pr.sh`'s `Head SHA:` line |
 | `--timeout <s>` | Override `CGW_CI_TIMEOUT_SECONDS` for this call |
 | `--poll <s>` | Override `CGW_CI_POLL_INTERVAL` for this call |
 | `--non-interactive` | Accepted for uniformity; the script never prompts |
 
-Exit `0` = `CI: green <sha>`; `1` = `CI: red <workflow> <url>` per failed run (or a usage error, which prints `[ERROR]` and no `CI:` line); `2` = `CI: unverified -- <reason>` (registration lag, timeout, required workflow missing, PR head lagging/moved, `gh` failure); `3` = `CI: not applicable (...)` / `CI: no workflow triggered (...)`. stdout carries only the `CI:` line(s); progress goes to stderr and `logs/verify_ci_*.log`. Reads `CGW_CI_VERIFY`, `CGW_CI_TIMEOUT_SECONDS`, `CGW_CI_POLL_INTERVAL` and `CGW_CI_REQUIRED_WORKFLOWS` (comma-separated; when set, only those workflows are judged and all must register). Requires `gh` authenticated and a `github.com` remote (`--repo` resolved from `CGW_REMOTE`'s URL). The default timeout exceeds the Bash tool's 600s cap: run it in the background or pass `--timeout`.
+Exit `0` = `CI: green <sha>`; `1` = `CI: red <workflow> <url>` per failed run; `2` = `CI: unverified -- <reason>` (registration lag, timeout, required workflow missing, PR head lagging/moved, `gh` failure); `3` = `CI: not applicable (...)` / `CI: no workflow triggered (...)`; `4` = `CI: usage error -- <reason>` (bad or missing flag, or a `--sha` that does not resolve locally; `gh` is not called). stdout carries only the `CI:` line(s); progress goes to stderr and `logs/verify_ci_*.log`. Reads `CGW_CI_VERIFY`, `CGW_CI_TIMEOUT_SECONDS`, `CGW_CI_POLL_INTERVAL` and `CGW_CI_REQUIRED_WORKFLOWS` (comma-separated; when set, only those workflows are judged and all must register). Requires `gh` authenticated and a `github.com` remote (`--repo` resolved from `CGW_REMOTE`'s URL). The default timeout exceeds the Bash tool's 600s cap: run it in the background or pass `--timeout`.
 
 **`md_toc.sh`** â€” Generate/insert a Markdown Table of Contents
 
@@ -767,7 +767,7 @@ Computes GitHub-compatible heading slugs locally (offline port of `gh-md-toc` â€
 
 | Variable | Effect |
 |----------|--------|
-| `CGW_NON_INTERACTIVE=1` | Force non-interactive mode (all scripts) |
+| `CGW_NON_INTERACTIVE=1` | Force non-interactive mode (all scripts). Automatic when stdin is not a terminal; `CGW_NON_INTERACTIVE=0` forces prompts |
 | `CGW_NO_VENV=1` | Use system lint tool without .venv |
 | `CGW_STAGED_ONLY=1` | Use pre-staged files only (`commit_enhanced.sh`) |
 | `CGW_ALL=1` | Force bulk-stage all tracked changes, overriding pre-stage respect (`commit_enhanced.sh`) |
