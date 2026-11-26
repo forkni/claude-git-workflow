@@ -188,3 +188,15 @@ _seed_copies() {
   run run_script sync_cgw_tooling.sh --check --from "${FAKE_SRC}"
   [ "${status}" -eq 0 ]
 }
+
+@test "sync refreshes cgw.conf.example when present in project root" {
+  printf '# old example\n' >"${TEST_REPO_DIR}/cgw.conf.example"
+  git -C "${TEST_REPO_DIR}" add cgw.conf.example
+  git -C "${TEST_REPO_DIR}" commit --quiet -m "chore: add cgw.conf.example"
+  printf '# updated example\n' >"${FAKE_SRC}/cgw.conf.example"
+  git -C "${FAKE_SRC}" add cgw.conf.example
+  git -C "${FAKE_SRC}" commit --quiet -m "chore: update cgw.conf.example"
+  run run_script sync_cgw_tooling.sh --from "${FAKE_SRC}" --no-pull
+  [ "${status}" -eq 0 ]
+  [ "$(cat "${TEST_REPO_DIR}/cgw.conf.example")" = "# updated example" ]
+}

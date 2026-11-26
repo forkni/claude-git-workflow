@@ -214,6 +214,21 @@ EOF
   [ ! -e "${marker}" ]
 }
 
+@test "cgw_run_with_lock_retry: runs the command when the lock is released between the lock check and its stat" {
+  local git_dir marker="${TEST_TMPDIR}/ran"
+  git_dir="$(git -C "${TEST_REPO_DIR}" rev-parse --absolute-git-dir)"
+  : >"${git_dir}/index.lock"
+  # The lock's owner finishes right after the existence check, before the stat.
+  stat() {
+    rm -f "${git_dir}/index.lock"
+    return 1
+  }
+
+  CGW_INDEX_LOCK_WAIT_SECONDS=0 run cgw_run_with_lock_retry touch "${marker}"
+  [ "${status}" -eq 0 ]
+  [ -e "${marker}" ]
+}
+
 @test "run_git_with_logging: a refused lock sets GIT_EXIT_CODE to CGW_RC_INDEX_LOCKED" {
   local git_dir
   git_dir="$(git -C "${TEST_REPO_DIR}" rev-parse --absolute-git-dir)"

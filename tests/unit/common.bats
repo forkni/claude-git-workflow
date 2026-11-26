@@ -422,6 +422,57 @@ _make_fresh_lock() {
   rm -rf "${TEST_REPO_DIR}/.git/rebase-merge"
 }
 
+# A lock released by its owner between the existence check and the stat must
+# count as cleared, silently. `stat` is overridden by a shell function, which
+# the $(...) in the helper inherits; Bats runs each test in its own process, so
+# the override cannot leak into other tests.
+
+@test "ensure_no_stale_index_lock: returns 0 silently when the lock is released before the first stat" {
+  cd "${TEST_REPO_DIR}"
+  PROJECT_ROOT="${TEST_REPO_DIR}"
+  _make_fresh_lock
+  stat() {
+    rm -f "${TEST_REPO_DIR}/.git/index.lock"
+    return 1
+  }
+  CGW_INDEX_LOCK_WAIT_SECONDS=0 run ensure_no_stale_index_lock
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"Could not stat"* ]]
+  [[ "${output}" != *"[cgw-lock]"* ]]
+}
+
+@test "ensure_no_stale_index_lock: returns 0 silently when the lock is released during the wait" {
+  cd "${TEST_REPO_DIR}"
+  PROJECT_ROOT="${TEST_REPO_DIR}"
+  _make_fresh_lock
+  local seen="${BATS_TEST_TMPDIR}/stat_seen"
+  stat() {
+    # First call (age check) passes through; later calls (after the wait)
+    # release the lock and fail. A file, not a counter: $(...) is a subshell.
+    if [[ ! -e "${seen}" ]]; then
+      : >"${seen}"
+      command stat "$@"
+      return
+    fi
+    rm -f "${TEST_REPO_DIR}/.git/index.lock"
+    return 1
+  }
+  CGW_INDEX_LOCK_MAX_AGE_SECONDS=999 CGW_INDEX_LOCK_WAIT_SECONDS=1 run ensure_no_stale_index_lock
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"still present"* ]]
+}
+
+@test "ensure_no_stale_index_lock: still returns 1 with 'Could not stat' when stat fails on a lock that remains" {
+  cd "${TEST_REPO_DIR}"
+  PROJECT_ROOT="${TEST_REPO_DIR}"
+  _make_fresh_lock
+  stat() { return 1; }
+  CGW_INDEX_LOCK_WAIT_SECONDS=0 run ensure_no_stale_index_lock
+  [ "${status}" -eq 1 ]
+  [ -f "${TEST_REPO_DIR}/.git/index.lock" ]
+  [[ "${output}" == *"Could not stat"* ]]
+}
+
 # ── cgw_create_backup_tag() ──────────────────────────────────────────────────
 
 @test "cgw_create_backup_tag: sets CGW_BACKUP_TAG to pre-<op>-<ts>-<pid> format" {
