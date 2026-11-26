@@ -72,9 +72,6 @@ main() {
     exit 1
   }
 
-  # Auto-detect non-interactive mode when no TTY (matches commit_enhanced.sh)
-  [[ ! -t 0 ]] && CGW_NON_INTERACTIVE=1
-
   case "${command}" in
     push | save)
       local message=""

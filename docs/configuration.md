@@ -124,7 +124,7 @@ cp cgw.conf.example .cgw.conf
 | `CGW_NET_TIMEOUT` | `120` | Seconds a network git call (fetch, push, pull, ls-remote, remote prune) may run before CGW kills it and exits `124`; `0` = no limit. Needs GNU `timeout` on PATH, else the call runs unbounded. In non-interactive mode `GIT_TERMINAL_PROMPT=0` is also set. `git pull` time includes the local merge |
 | `CGW_ICASE_PATHSPECS` | `1` | Auto-enable case-insensitive pathspecs on Windows (set to `0` to disable) |
 | `CGW_REFLOG_PREFIX` | `cgw` | Prefix prepended to `GIT_REFLOG_ACTION` for reflog auditability and recovery |
-| `CGW_NON_INTERACTIVE` | `0` | Set to `1` to suppress all prompts (CI mode) |
+| `CGW_NON_INTERACTIVE` | `0` | `1` = no prompts: each prompt takes its declared non-interactive answer. Set automatically when stdin is not a terminal (agents, CI). Set `0` in the environment to force prompts. See [ADR-0008](adr/0008-no-tty-means-non-interactive.md) |
 | `CGW_NO_VENV` | `0` | Set to `1` to skip virtual environment detection |
 | `CGW_CI_VERIFY` | `1` | Set to `0` to disable the post-push CI verification gate (`verify_ci.sh` exits `3`; see [`skill/references/ci-verification.md`](../skill/references/ci-verification.md)) |
 | `CGW_CI_TIMEOUT_SECONDS` | `900` | Max seconds `verify_ci.sh` waits for all resolved runs to reach a terminal state (`--timeout` overrides per call) |

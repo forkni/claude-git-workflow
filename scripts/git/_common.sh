@@ -940,8 +940,8 @@ cgw_run_staged_checks() {
 #
 #   --default yes|no         Empty or unrecognized input maps to yes/no; omit for no default.
 #   --literal-token TOKEN    Require exact uppercase token (e.g. FORCE, ROLLBACK). Case-sensitive.
-#   --non-interactive <pol>  Policy when CGW_NON_INTERACTIVE=1 (callers set from --non-interactive flag
-#                            or [[ ! -t 0 ]] check):
+#   --non-interactive <pol>  Policy when CGW_NON_INTERACTIVE=1 (resolved by _config.sh: the
+#                            --non-interactive flag, the env, or no TTY on stdin -- ADR-0008):
 #                              abort  (default) — exit 1 with error message
 #                              accept            — return 0 silently
 #                              deny              — return 1 silently
@@ -977,7 +977,8 @@ cgw_confirm() {
     esac
   done
 
-  # Non-interactive: env var (set by callers from --non-interactive flag or [[ ! -t 0 ]] check)
+  # Non-interactive: resolved by _config.sh (--non-interactive flag, env, or no TTY; ADR-0008).
+  # cgw_confirm never tests the TTY itself.
   if [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]]; then
     case "${ni_policy}" in
       accept) return 0 ;;
@@ -989,9 +990,14 @@ cgw_confirm() {
     esac
   fi
 
-  # Interactive prompt
+  # Interactive prompt. EOF with no answer (stdin closed while prompts were forced with
+  # CGW_NON_INTERACTIVE=0) is a "no" that says so, never a silent deny or a silent default.
+  local response=""
   if [[ -n "${literal_token}" ]]; then
-    read -r -p "${prompt} " response
+    if ! read -r -p "${prompt} " response && [[ -z "${response}" ]]; then
+      echo "[WARN] no answer on stdin (not a terminal) -- treated as no" >&2
+      return 1
+    fi
     [[ "${response}" == "${literal_token}" ]] && return 0 || return 1
   else
     local hint
@@ -1000,7 +1006,10 @@ cgw_confirm() {
       no) hint=" [no]" ;;
       *) hint="" ;;
     esac
-    read -r -p "${prompt} (yes/no)${hint}: " response
+    if ! read -r -p "${prompt} (yes/no)${hint}: " response && [[ -z "${response}" ]]; then
+      echo "[WARN] no answer on stdin (not a terminal) -- treated as no" >&2
+      return 1
+    fi
     if [[ -z "${response}" ]]; then
       [[ "${default}" == "yes" ]] && return 0 || return 1
     fi

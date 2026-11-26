@@ -801,11 +801,7 @@ main() {
   local untracked_check=1
   local strict_untracked=0
 
-  # Auto-detect non-interactive mode when no TTY
-  if [[ ! -t 0 ]]; then
-    non_interactive=1
-    CGW_NON_INTERACTIVE=1
-  fi
+  # No TTY on stdin already set CGW_NON_INTERACTIVE=1 in _config.sh (ADR-0008).
 
   # CGW_* environment variable overrides
   [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
@@ -838,8 +834,8 @@ main() {
         shift
         ;;
       --interactive)
-        # Undo the no-TTY auto-detection above for cgw_confirm too, not just
-        # this script's own read -p prompts.
+        # Undo _config.sh's no-TTY auto-detection (ADR-0008) for cgw_confirm too,
+        # not just this script's own read -p prompts.
         non_interactive=0
         CGW_NON_INTERACTIVE=0
         shift

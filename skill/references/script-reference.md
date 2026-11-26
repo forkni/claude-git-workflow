@@ -767,7 +767,7 @@ Computes GitHub-compatible heading slugs locally (offline port of `gh-md-toc` â€
 
 | Variable | Effect |
 |----------|--------|
-| `CGW_NON_INTERACTIVE=1` | Force non-interactive mode (all scripts) |
+| `CGW_NON_INTERACTIVE=1` | Force non-interactive mode (all scripts). Automatic when stdin is not a terminal; `CGW_NON_INTERACTIVE=0` forces prompts |
 | `CGW_NO_VENV=1` | Use system lint tool without .venv |
 | `CGW_STAGED_ONLY=1` | Use pre-staged files only (`commit_enhanced.sh`) |
 | `CGW_ALL=1` | Force bulk-stage all tracked changes, overriding pre-stage respect (`commit_enhanced.sh`) |

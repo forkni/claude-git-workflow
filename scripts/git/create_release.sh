@@ -47,10 +47,6 @@ main() {
   # Signing: -1 = unset (use CGW_SIGN_TAGS), 0 = off, 1 = on
   local sign_flag=-1
 
-  # Auto-detect non-interactive mode when no TTY (matches merge_pr.sh): without this,
-  # cgw_confirm's read hits EOF, the prompt is denied and no tag is made.
-  [[ ! -t 0 ]] && CGW_NON_INTERACTIVE=1
-
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --help | -h)

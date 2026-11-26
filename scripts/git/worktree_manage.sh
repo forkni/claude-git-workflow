@@ -851,15 +851,6 @@ _cmd_remove() {
     exit 0
   fi
 
-  # With no terminal to answer, the prompt below would read EOF and report
-  # "Cancelled" with exit 0, which a caller (an agent, a script) takes for a
-  # successful remove. Refuse loudly instead.
-  if [[ "${CGW_NON_INTERACTIVE:-0}" != "1" ]] && [[ ! -t 0 ]]; then
-    err_tee "[ERROR] worktree_manage.sh remove: needs confirmation and stdin is not a terminal; rerun with --non-interactive"
-    err_tee "  ./scripts/git/worktree_manage.sh remove --execute --non-interactive '${path}'"
-    exit 1
-  fi
-
   if ! cgw_confirm "Remove worktree '${path}'?" --non-interactive accept; then
     echo "Cancelled"
     exit 0
@@ -1043,11 +1034,6 @@ _cmd_remove_merged() {
     exit 0
   fi
 
-  if [[ "${CGW_NON_INTERACTIVE:-0}" != "1" ]] && [[ ! -t 0 ]]; then
-    err_tee "[ERROR] worktree_manage.sh remove-merged: needs confirmation and stdin is not a terminal; rerun with --non-interactive"
-    err_tee "  ./scripts/git/worktree_manage.sh remove-merged --execute --non-interactive"
-    exit 1
-  fi
   if ! cgw_confirm "Remove ${#sel[@]} merged worktree(s) and delete their branches?" --non-interactive accept; then
     echo "Cancelled"
     exit 0

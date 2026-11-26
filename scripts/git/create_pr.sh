@@ -57,11 +57,7 @@ main() {
   local tgt_branch="${CGW_TARGET_BRANCH}"
   local base_remote=""
 
-  # Auto-detect non-interactive mode when no TTY
-  if [[ ! -t 0 ]]; then
-    non_interactive=1
-    CGW_NON_INTERACTIVE=1
-  fi
+  # No TTY on stdin already set CGW_NON_INTERACTIVE=1 in _config.sh (ADR-0008).
 
   [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
 

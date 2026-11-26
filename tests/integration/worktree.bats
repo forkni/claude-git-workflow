@@ -218,12 +218,18 @@ _install_hook_direct() {
 
 # ── remove with no terminal ────────────────────────────────────────────────
 
-@test "remove: no terminal and no --non-interactive exits 1 and keeps the worktree" {
+# ADR-0008: no terminal means non-interactive, so the prompt takes its accept policy.
+@test "remove: no terminal and no --non-interactive removes the worktree (accept policy)" {
+  unset CGW_NON_INTERACTIVE
   run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove --execute "${TEST_WORKTREE_DIR}" </dev/null
-  [ "${status}" -eq 1 ]
+  [ "${status}" -eq 0 ]
+  [ ! -d "${TEST_WORKTREE_DIR}" ]
+}
+
+@test "remove: forced prompts (CGW_NON_INTERACTIVE=0) with no input warn and keep the worktree" {
+  CGW_NON_INTERACTIVE=0 run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove --execute "${TEST_WORKTREE_DIR}" </dev/null
   [ -d "${TEST_WORKTREE_DIR}" ]
-  [[ "${output}" == *"--non-interactive"* ]]
-  [[ "${output}" != *"Cancelled"* ]]
+  [[ "${output}" == *"[WARN] no answer on stdin (not a terminal) -- treated as no"* ]]
 }
 
 @test "remove: no terminal with --non-interactive removes the worktree" {
@@ -780,12 +786,13 @@ _assert_row() {
   grep -q "local only" "${TEST_TMPDIR}/wt-merged/README.md"
 }
 
-@test "remove-merged: no terminal and no --non-interactive exits 1 and removes nothing" {
+@test "remove-merged: no terminal and no --non-interactive removes the safe worktrees (accept policy)" {
   load '../helpers/mocks'
   _status_fixture
   _install_no_powershell
+  unset CGW_NON_INTERACTIVE
   run run_script_at "${TEST_REPO_DIR}" worktree_manage.sh remove-merged --execute </dev/null
-  [ "${status}" -eq 1 ]
-  [[ "${output}" == *"--non-interactive"* ]]
-  [ -d "${TEST_TMPDIR}/wt-merged" ]
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"Removed: 2  Kept: 6  Failed: 0"* ]]
+  [ ! -e "${TEST_TMPDIR}/wt-merged" ]
 }

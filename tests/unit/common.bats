@@ -1146,15 +1146,15 @@ UU b.py
   git checkout HEAD -- README.md
 }
 
-@test "cgw_require_clean_tree: --on-dirty confirm-stash aborts when non-interactive refuses" {
+@test "cgw_require_clean_tree: --on-dirty confirm-stash aborts when the user answers no" {
   cd "${TEST_REPO_DIR}"
   echo "dirty" >> README.md
-  # Simulate non-interactive denial by running with a mock or echo "n" | ...
-  # When input is empty in interactive mode without accept policy, or echo n:
+  # A typed "n" at a forced prompt (CGW_NON_INTERACTIVE=0): with no TTY and no flag the
+  # prompt would take its accept policy and stash instead (ADR-0008).
   run bash -c "
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
     cd '${TEST_REPO_DIR}'
-    echo 'n' | cgw_require_clean_tree --on-dirty confirm-stash --reason 'sync test'
+    echo 'n' | CGW_NON_INTERACTIVE=0 cgw_require_clean_tree --on-dirty confirm-stash --reason 'sync test'
   "
   git checkout HEAD -- README.md
   [ "${status}" -eq 1 ]
@@ -2596,11 +2596,60 @@ extend-exclude = ["gen"]
 
 # ── cgw_confirm() ─────────────────────────────────────────────────────────────
 
+# ADR-0008 regression: with stdin closed and no flag, cgw_confirm read EOF and returned 1
+# for every policy (accept, abort, literal-token accept): a silent no-op.
+_confirm_no_tty() {
+  run --separate-stderr bash -c "
+    unset CGW_NON_INTERACTIVE CLAUDE_GIT_NON_INTERACTIVE
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_confirm 'Do X?' $*
+  " </dev/null
+}
+
+@test "cgw_confirm: no TTY, no flag, policy accept returns 0" {
+  _confirm_no_tty --non-interactive accept
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_confirm: no TTY, no flag, policy abort exits 1 with the non-interactive message" {
+  _confirm_no_tty --non-interactive abort
+  [ "${status}" -eq 1 ]
+  [[ "${stderr}" == *"[!] non-interactive: 'Do X?' requires confirmation"* ]]
+}
+
+@test "cgw_confirm: no TTY, no flag, literal-token accept returns 0" {
+  _confirm_no_tty --literal-token ROLLBACK --non-interactive accept
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_confirm: no TTY, no flag, policy deny returns 1" {
+  _confirm_no_tty --non-interactive deny
+  [ "${status}" -eq 1 ]
+  [[ "${stderr}" != *"[WARN]"* ]]
+}
+
+@test "cgw_confirm: forced prompts (CGW_NON_INTERACTIVE=0) warn on EOF and return 1" {
+  run --separate-stderr bash -c "
+    export CGW_NON_INTERACTIVE=0
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    cgw_confirm 'Do X?' --default yes --non-interactive accept
+  " </dev/null
+  [ "${status}" -eq 1 ]
+  [[ "${stderr}" == *"[WARN] no answer on stdin (not a terminal) -- treated as no"* ]]
+}
+
+@test "no-TTY detection lives only in _config.sh (ADR-0008)" {
+  run grep -l -e '! -t 0' -e '-t 0 \]\]' "${CGW_PROJECT_ROOT}"/scripts/git/*.sh
+  [ "${output}" == "${CGW_PROJECT_ROOT}/scripts/git/_config.sh" ]
+}
+
 @test "cgw_confirm: 'yes' returns 0" {
   run bash -c "
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
-    echo 'yes' | cgw_confirm 'Continue?'
+    echo 'yes' | CGW_NON_INTERACTIVE=0 cgw_confirm 'Continue?'
   "
   [ "${status}" -eq 0 ]
 }
@@ -2609,7 +2658,7 @@ extend-exclude = ["gen"]
   run bash -c "
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
-    echo 'no' | cgw_confirm 'Continue?'
+    echo 'no' | CGW_NON_INTERACTIVE=0 cgw_confirm 'Continue?'
   "
   [ "${status}" -eq 1 ]
 }
@@ -2618,7 +2667,7 @@ extend-exclude = ["gen"]
   run bash -c "
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
-    echo 'y' | cgw_confirm 'Continue?'
+    echo 'y' | CGW_NON_INTERACTIVE=0 cgw_confirm 'Continue?'
   "
   [ "${status}" -eq 0 ]
 }
@@ -2627,7 +2676,7 @@ extend-exclude = ["gen"]
   run bash -c "
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
-    echo 'Y' | cgw_confirm 'Continue?'
+    echo 'Y' | CGW_NON_INTERACTIVE=0 cgw_confirm 'Continue?'
   "
   [ "${status}" -eq 0 ]
 }
@@ -2636,7 +2685,7 @@ extend-exclude = ["gen"]
   run bash -c "
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
-    echo 'YES' | cgw_confirm 'Continue?'
+    echo 'YES' | CGW_NON_INTERACTIVE=0 cgw_confirm 'Continue?'
   "
   [ "${status}" -eq 0 ]
 }
@@ -2645,7 +2694,7 @@ extend-exclude = ["gen"]
   run bash -c "
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
-    echo 'Yes' | cgw_confirm 'Continue?'
+    echo 'Yes' | CGW_NON_INTERACTIVE=0 cgw_confirm 'Continue?'
   "
   [ "${status}" -eq 0 ]
 }
@@ -2654,7 +2703,7 @@ extend-exclude = ["gen"]
   run bash -c "
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
-    echo 'n' | cgw_confirm 'Continue?'
+    echo 'n' | CGW_NON_INTERACTIVE=0 cgw_confirm 'Continue?'
   "
   [ "${status}" -eq 1 ]
 }
@@ -2663,7 +2712,7 @@ extend-exclude = ["gen"]
   run bash -c "
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
-    echo 'N' | cgw_confirm 'Continue?'
+    echo 'N' | CGW_NON_INTERACTIVE=0 cgw_confirm 'Continue?'
   "
   [ "${status}" -eq 1 ]
 }
@@ -2672,7 +2721,7 @@ extend-exclude = ["gen"]
   run bash -c "
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
-    echo 'NO' | cgw_confirm 'Continue?'
+    echo 'NO' | CGW_NON_INTERACTIVE=0 cgw_confirm 'Continue?'
   "
   [ "${status}" -eq 1 ]
 }
@@ -2681,7 +2730,7 @@ extend-exclude = ["gen"]
   run bash -c "
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
-    echo 'maybe' | cgw_confirm 'Continue?' --default yes
+    echo 'maybe' | CGW_NON_INTERACTIVE=0 cgw_confirm 'Continue?' --default yes
   "
   [ "${status}" -eq 0 ]
 }
@@ -2690,7 +2739,7 @@ extend-exclude = ["gen"]
   run bash -c "
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
-    echo 'maybe' | cgw_confirm 'Continue?' --default no
+    echo 'maybe' | CGW_NON_INTERACTIVE=0 cgw_confirm 'Continue?' --default no
   "
   [ "${status}" -eq 1 ]
 }
@@ -2699,7 +2748,7 @@ extend-exclude = ["gen"]
   run bash -c "
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
-    echo '' | cgw_confirm 'Continue?' --default yes
+    echo '' | CGW_NON_INTERACTIVE=0 cgw_confirm 'Continue?' --default yes
   "
   [ "${status}" -eq 0 ]
 }
@@ -2708,7 +2757,7 @@ extend-exclude = ["gen"]
   run bash -c "
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
-    echo '' | cgw_confirm 'Continue?' --default no
+    echo '' | CGW_NON_INTERACTIVE=0 cgw_confirm 'Continue?' --default no
   "
   [ "${status}" -eq 1 ]
 }
@@ -2717,7 +2766,7 @@ extend-exclude = ["gen"]
   run bash -c "
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
-    echo 'FORCE' | cgw_confirm \"Type 'FORCE' to confirm\" --literal-token FORCE
+    echo 'FORCE' | CGW_NON_INTERACTIVE=0 cgw_confirm \"Type 'FORCE' to confirm\" --literal-token FORCE
   "
   [ "${status}" -eq 0 ]
 }
@@ -2726,7 +2775,7 @@ extend-exclude = ["gen"]
   run bash -c "
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
-    echo 'force' | cgw_confirm \"Type 'FORCE' to confirm\" --literal-token FORCE
+    echo 'force' | CGW_NON_INTERACTIVE=0 cgw_confirm \"Type 'FORCE' to confirm\" --literal-token FORCE
   "
   [ "${status}" -eq 1 ]
 }

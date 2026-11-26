@@ -53,6 +53,9 @@ _registry() { _in_config cgw_config_registry; }
   local name default kind empty scope got bad=""
   while IFS='|' read -r name default kind empty scope; do
     [[ "${kind}" == computed ]] && continue
+    # Its registry default is the at-a-terminal value; bats has no TTY, so _config.sh
+    # resolves it to 1 (ADR-0008, covered in config.bats).
+    [[ "${name}" == CGW_NON_INTERACTIVE ]] && continue
     got="$(_in_config "printf '%s' \"\${${name}}\"")"
     [ "${got}" == "${default}" ] || bad+="${name}: got [${got}], registry [${default}]"$'\n'
   done < <(_registry)
@@ -63,6 +66,7 @@ _registry() { _in_config cgw_config_registry; }
   local name default kind empty scope got bad=""
   while IFS='|' read -r name default kind empty scope; do
     [[ "${kind}" == computed || "${kind}" == int ]] && continue
+    [[ "${name}" == CGW_NON_INTERACTIVE ]] && continue # no TTY in bats (ADR-0008, config.bats)
     got="$(cd "${TEST_REPO_DIR}" && env -i PATH="${PATH}" HOME="${HOME}" "${name}=" bash -c "
       SCRIPT_DIR='${TEST_REPO_DIR}/scripts/git'
       source '${CGW_PROJECT_ROOT}/scripts/git/_config.sh' 2>/dev/null

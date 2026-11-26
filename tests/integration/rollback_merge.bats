@@ -188,6 +188,19 @@ _two_merge_history() {
   [[ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" == "Revert \"Merge feature-2\""* ]]
 }
 
+# ADR-0008: with no TTY and no flag, _config.sh resolves CGW_NON_INTERACTIVE=1, so the
+# script takes the non-interactive path instead of reading EOF at its option menu.
+@test "--revert with no TTY and no --non-interactive takes the non-interactive path" {
+  _two_merge_history
+  unset CGW_NON_INTERACTIVE
+
+  run run_script rollback_merge.sh --revert </dev/null
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"[Non-interactive] Reverting the merge at HEAD"* ]]
+  [[ "${output}" != *"Select option"* ]]
+  [ ! -f "${TEST_REPO_DIR}/feature2.txt" ]
+}
+
 @test "--revert --non-interactive refuses when HEAD is not a merge and no --target (R3)" {
   _two_merge_history
   echo "plain" >"${TEST_REPO_DIR}/plain.txt"

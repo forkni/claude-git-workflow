@@ -72,8 +72,7 @@ main() {
   local non_interactive=0
   local dry_run=0
 
-  # Auto-detect non-interactive mode when no TTY (matches commit_enhanced.sh, stash_work.sh)
-  [[ ! -t 0 ]] && CGW_NON_INTERACTIVE=1
+  # No TTY on stdin already set CGW_NON_INTERACTIVE=1 in _config.sh (ADR-0008).
   [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]] && non_interactive=1
 
   # Pre-scan remaining args for global flags

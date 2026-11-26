@@ -319,6 +319,10 @@ _cgw_apply_registry_defaults() {
   if [[ "${CLAUDE_GIT_NON_INTERACTIVE:-0}" == "1" ]]; then CGW_NON_INTERACTIVE=1; fi
   if [[ "${CLAUDE_GIT_NO_VENV:-0}" == "1" ]]; then CGW_NO_VENV=1; fi
   if [[ "${CLAUDE_GIT_STAGED_ONLY:-0}" == "1" ]]; then CGW_STAGED_ONLY=1; fi
+  # No-TTY detection lives here and only here (ADR-0008): a non-empty explicit value
+  # wins; otherwise no terminal on stdin means non-interactive. Scripts and cgw_confirm
+  # only read the flag, so a script can no longer miss the check.
+  if [[ -z "${CGW_NON_INTERACTIVE:-}" ]] && [[ ! -t 0 ]]; then CGW_NON_INTERACTIVE=1; fi
 }
 _cgw_apply_registry_defaults
 
