@@ -306,6 +306,9 @@ _read_body_file() {
     fi
     text="$(<"${path}")"
   fi
+  # A CRLF file (a Windows editor) would hand CGW_FREEFORM_MESSAGE_CHECK lines
+  # that end in CR. git strips them from the commit, so drop them here too.
+  text="${text//$'\r'/}"
   if [[ -z "${text//[[:space:]]/}" ]]; then
     echo "[ERROR] --body-file ${path}: the body is empty" >&2
     return 1
@@ -792,7 +795,7 @@ main() {
   local commit_msg_param=""
   # Body paragraphs from --body / --body-file, in the order given.
   local -a body_parts=()
-  local _body_text
+  local _body_text body_from_stdin=0
   # Signing: -1 = unset (use CGW_SIGN_COMMITS), 0 = off, 1 = on
   local sign_flag=-1
   local untracked_check=1
@@ -898,6 +901,15 @@ main() {
           echo "[ERROR] --body-file requires a path argument (- reads stdin)" >&2
           exit 1
         fi
+        if [[ "$2" == "-" ]]; then
+          # stdin can be read one time only: a second `-` would read nothing
+          # and fail as "the body is empty", which hides the real cause.
+          if [[ ${body_from_stdin} -eq 1 ]]; then
+            echo "[ERROR] --body-file - given twice: stdin is read one time only" >&2
+            exit 1
+          fi
+          body_from_stdin=1
+        fi
         _body_text="$(_read_body_file "$2")" || exit 1
         body_parts+=("${_body_text}")
         shift 2
@@ -934,6 +946,14 @@ main() {
         ;;
     esac
   done
+
+  # --body-file - drains stdin during parsing, so in an interactive run every
+  # later cgw_confirm prompt would read EOF, deny, and cancel the commit.
+  if [[ ${body_from_stdin} -eq 1 ]] && [[ "${CGW_NON_INTERACTIVE:-0}" != "1" ]]; then
+    echo "[ERROR] --body-file - reads stdin, which an interactive run needs for its prompts" >&2
+    echo "  Use --body-file <path>, or run with --non-interactive" >&2
+    exit 1
+  fi
 
   init_logging "commit_enhanced"
   ensure_no_stale_index_lock || exit 1
@@ -992,6 +1012,15 @@ main() {
   local merge_head_path merge_in_progress=0
   merge_head_path="$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)"
   [[ -n "${merge_head_path}" && -f "${merge_head_path}" ]] && merge_in_progress=1
+
+  # A body with no subject is known now, outside a merge: refuse it before the
+  # staging and lint steps run. (In a merge the body follows git's prepared
+  # merge message.)
+  if [[ ${#body_parts[@]} -gt 0 ]] && [[ -z "${commit_msg_param}" ]] && [[ ${merge_in_progress} -eq 0 ]]; then
+    err "--body / --body-file add a body only: the subject is still the positional message"
+    echo "Usage: ./scripts/git/commit_enhanced.sh \"feat: Your message\" --body \"Detail.\"" >&2
+    exit 1
+  fi
 
   if [[ ${has_unstaged} -eq 0 ]] && [[ ${has_staged} -eq 0 ]]; then
     if [[ ${merge_in_progress} -eq 1 ]]; then

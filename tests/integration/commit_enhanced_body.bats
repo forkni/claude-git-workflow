@@ -184,10 +184,31 @@ _last_message() {
   [[ "${output}" == *"the body is empty"* ]]
 }
 
-@test "--body without a subject exits 1 and names the positional subject" {
+@test "--body without a subject exits 1 before the lint step and names the positional subject" {
   _stage body_no_subject.txt
   run _run_commit_args --only body_no_subject.txt --body "Only a body"
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"the subject is still the positional message"* ]]
-  [[ "${output}" == *"Commit message required"* ]]
+  [[ "${output}" != *"[5/6]"* ]]
+}
+
+@test "--body-file - given twice exits 1 and names stdin" {
+  run _run_commit_args "feat: x" --body-file - --body-file - <<<"text"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"given twice: stdin is read one time only"* ]]
+}
+
+@test "--body-file - with --interactive exits 1 instead of starving the prompts" {
+  run _run_commit_args --interactive "feat: x" --body-file - <<<"text"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"an interactive run needs for its prompts"* ]]
+}
+
+@test "a CRLF --body-file commits LF lines and keeps the trailer" {
+  _stage body_crlf.txt
+  printf 'Line one\r\n\r\nCo-Authored-By: E <e@example.com>\r\n' >"${BATS_TEST_TMPDIR}/crlf.txt"
+  run _run_commit_args --only body_crlf.txt "feat: crlf body" --body-file "${BATS_TEST_TMPDIR}/crlf.txt"
+  [ "${status}" -eq 0 ]
+  [ "$(_last_message)" = $'feat: crlf body\n\nLine one\n\nCo-Authored-By: E <e@example.com>' ]
+  [[ "${output}" != *$'e@example.com>\r'* ]]
 }
