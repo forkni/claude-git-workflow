@@ -262,7 +262,7 @@ main() {
   # PR (fork -> upstream) may use one branch name on both sides.
   [[ -z "${base_remote}" ]] && base_remote="${CGW_REMOTE}"
   if ! git remote get-url "${base_remote}" >/dev/null 2>&1; then
-    err "--base-remote: no remote named '${base_remote}' (list them with: git remote -v)"
+    err "No remote named '${base_remote}' (list them with: git remote -v)"
     log_section_end "BRANCH VALIDATION" "$logfile" "1"
     exit 1
   fi
@@ -289,8 +289,19 @@ main() {
     fi
     # GitHub owner and repo names are case-insensitive.
     if [[ "${head_repo,,}" != "${pr_repo,,}" ]]; then
+      # <owner>:<branch> names the head by owner only. When the fork and the
+      # base repo share an owner, GitHub needs the head repo as well, which
+      # gh pr create does not send: the head could resolve to the base repo's
+      # own branch. Refuse until that case is supported.
+      local head_owner="${head_repo%%/*}" base_owner="${pr_repo%%/*}"
+      if [[ "${head_owner,,}" == "${base_owner,,}" ]]; then
+        err_tee "[ERROR] ${head_repo} and ${pr_repo} have the same owner: --head ${head_owner}:${src_branch} cannot name the fork."
+        err_tee "[ERROR] Cross-repo PRs between two repos of one owner are not supported; open this PR on GitHub."
+        log_section_end "BRANCH VALIDATION" "$logfile" "1"
+        exit 1
+      fi
       cross_repo=1
-      head_ref="${head_repo%%/*}:${src_branch}"
+      head_ref="${head_owner}:${src_branch}"
     fi
   fi
   if [[ ${cross_repo} -eq 1 ]]; then
@@ -362,7 +373,7 @@ main() {
   fi
 
   if [[ "${commits_ahead}" == "0" ]]; then
-    echo "[!] No commits ahead of ${tgt_branch} -- nothing to PR" | tee -a "$logfile"
+    echo "[!] No commits ahead of ${base_remote}/${tgt_branch} -- nothing to PR" | tee -a "$logfile"
     log_section_end "BRANCH VALIDATION" "$logfile" "1"
     exit 1
   fi
@@ -385,6 +396,8 @@ main() {
     else
       # Multiple commits: generic merge title
       pr_title="merge: ${src_branch} -> ${tgt_branch}"
+      # Cross-repo with one name on both sides would read "merge: main -> main".
+      [[ ${cross_repo} -eq 1 ]] && pr_title="merge: ${head_ref} -> ${pr_repo%%/*}:${tgt_branch}"
     fi
   fi
 
@@ -394,13 +407,15 @@ main() {
   # shellcheck disable=SC2001  # sed required: prepend '- ' to every line; no bash equivalent
   formatted_log=$(echo "${commit_log}" | sed 's/^/- /')
 
+  local branch_line="\`${src_branch}\` -> \`${tgt_branch}\`"
+  [[ ${cross_repo} -eq 1 ]] && branch_line="\`${head_ref}\` -> \`${pr_repo%%/*}:${tgt_branch}\`"
   pr_body="## Changes
 
 ${formatted_log}
 
 ## Branch
 
-\`${src_branch}\` -> \`${tgt_branch}\`"
+${branch_line}"
 
   # A caller-supplied body replaces the generated one verbatim.
   [[ -n "${body_source}" ]] && pr_body="${body_text}"
@@ -485,7 +500,11 @@ ${formatted_log}
     fi
     # The PR's checks run in the base repo, which verify_ci.sh reads from CGW_REMOTE.
     if [[ ${cross_repo} -eq 1 ]] && [[ -n "${pr_num}" ]]; then
-      echo "CI gate: CGW_REMOTE=${base_remote} ./scripts/git/verify_ci.sh --pr ${pr_num} --sha ${pushed_sha:-<head sha>}" | tee -a "$logfile"
+      if [[ -n "${pushed_sha}" ]]; then
+        echo "CI gate: CGW_REMOTE=${base_remote} ./scripts/git/verify_ci.sh --pr ${pr_num} --sha ${pushed_sha}" | tee -a "$logfile"
+      else
+        echo "CI gate: CGW_REMOTE=${base_remote} ./scripts/git/verify_ci.sh --pr ${pr_num}" | tee -a "$logfile"
+      fi
     fi
     echo "" | tee -a "$logfile"
     if [[ ${draft} -eq 0 ]]; then

@@ -3299,6 +3299,7 @@ extend-exclude = ["gen"]
     "hyphenated owner, underscored repo|my-org/my_repo.v2|git@github.com:my-org/my_repo.v2.git|"
     "dotfile repo name|owner/.github|https://github.com/owner/.github|"
     "pushurl takes precedence over url|owner/repo|https://gitlab.com/other/mirror.git|https://github.com/owner/repo.git"
+    "placeholder pushurl (no_push) falls back to url|owner/repo|https://github.com/owner/repo.git|no_push"
     "deep path is not a repo, not silently truncated|FAIL|https://github.com/owner/repo/pull/5|"
     "empty owner segment|FAIL|https://github.com//repo.git|"
     "owner starts with hyphen (argv-injection guard)|FAIL|https://github.com/-evil/repo|"

@@ -452,7 +452,7 @@ _use_fake_github_origin() {
 # checks. So the PR either opened inside the fork or failed the source check.
 
 _add_fake_upstream() {
-  local fake_url="https://github.com/upstream-owner/claude-git-workflow.git"
+  local fake_url="${1:-https://github.com/upstream-owner/claude-git-workflow.git}"
   UPSTREAM_DIR="${TEST_TMPDIR}/upstream.git"
   create_bare_remote "${UPSTREAM_DIR}"
   git -C "${TEST_REPO_DIR}" remote add upstream "${fake_url}"
@@ -546,4 +546,76 @@ _add_fake_upstream() {
   run _run_create_pr --source main --target main
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"Source and target branch are the same"* ]]
+}
+
+@test "cross-repo: an upstream with a no_push pushurl resolves from its fetch url" {
+  install_mock_gh
+  _add_fake_upstream
+  git -C "${TEST_REPO_DIR}" config remote.upstream.pushurl no_push
+  run _run_create_pr --base-remote upstream
+  [ "${status}" -eq 0 ]
+  grep -q -- "--repo upstream-owner/claude-git-workflow" "${MOCK_BIN_DIR}/gh.log"
+  grep -q -- "--head forkni:development" "${MOCK_BIN_DIR}/gh.log"
+}
+
+@test "cross-repo: a head remote whose owner does not resolve exits 1 and creates no PR" {
+  install_mock_gh
+  _add_fake_upstream
+  # origin keeps working as a git remote but has no github.com URL.
+  git -C "${TEST_REPO_DIR}" config remote.origin.url "${TEST_REMOTE_DIR}"
+  run _run_create_pr --base-remote upstream
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Could not determine origin's owner/repo"* ]]
+  if [ -f "${MOCK_BIN_DIR}/gh.log" ]; then
+    ! grep -q "pr create" "${MOCK_BIN_DIR}/gh.log"
+  fi
+}
+
+@test "cross-repo: a second remote name for the same repo is not cross-repo" {
+  install_mock_gh
+  git -C "${TEST_REPO_DIR}" remote add origin2 "https://github.com/forkni/claude-git-workflow.git"
+  run _run_create_pr --base-remote origin2
+  [ "${status}" -eq 0 ]
+  grep -q -- "--repo forkni/claude-git-workflow" "${MOCK_BIN_DIR}/gh.log"
+  grep -q -- "--head development " "${MOCK_BIN_DIR}/gh.log"
+  [[ "${output}" != *"CI gate: CGW_REMOTE="* ]]
+}
+
+@test "cross-repo: a second remote name for the same repo still refuses the same branch name" {
+  install_mock_gh
+  git -C "${TEST_REPO_DIR}" remote add origin2 "https://github.com/forkni/claude-git-workflow.git"
+  run _run_create_pr --base-remote origin2 --source main --target main
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"Source and target branch are the same"* ]]
+}
+
+@test "cross-repo: a fork and base repo with the same owner are refused" {
+  install_mock_gh
+  _add_fake_upstream "https://github.com/forkni/tool-upstream.git"
+  run _run_create_pr --base-remote upstream
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"have the same owner"* ]]
+  if [ -f "${MOCK_BIN_DIR}/gh.log" ]; then
+    ! grep -q "pr create" "${MOCK_BIN_DIR}/gh.log"
+  fi
+}
+
+@test "a missing CGW_REMOTE is reported without blaming --base-remote" {
+  install_mock_gh
+  CGW_REMOTE=nosuch run _run_create_pr
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"No remote named 'nosuch'"* ]]
+  [[ "${output}" != *"--base-remote:"* ]]
+}
+
+@test "cross-repo: a same-name multi-commit PR title names both owners" {
+  install_mock_gh
+  _add_fake_upstream
+  git -C "${TEST_REPO_DIR}" checkout --quiet main
+  git -C "${TEST_REPO_DIR}" commit --quiet --allow-empty -m "fix: fork-only change 1"
+  git -C "${TEST_REPO_DIR}" commit --quiet --allow-empty -m "fix: fork-only change 2"
+  git -C "${TEST_REPO_DIR}" push --quiet origin main
+  run _run_create_pr --base-remote upstream --source main --target main
+  [ "${status}" -eq 0 ]
+  grep -q -- "--title merge: forkni:main -> upstream-owner:main" "${MOCK_BIN_DIR}/gh.log"
 }
