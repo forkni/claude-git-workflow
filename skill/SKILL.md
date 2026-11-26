@@ -317,7 +317,7 @@ decides which flags exist.
 | [Committing code](references/wrapper-recipes.md#committing-code) | `commit_enhanced.sh` | `--only <path>` for specific files; typecheck is blocking in `check_lint.sh`/`push_validated.sh`, not in the commit |
 | [Merging to target branch](references/wrapper-recipes.md#merging-to-target-branch) | `merge_with_validation.sh` | A conflicted merge concludes with `commit_enhanced.sh`; there is no `--continue`, and the wrapper is not re-run |
 | [Pushing to remote](references/wrapper-recipes.md#pushing-to-remote) | `push_validated.sh` | Rule 6: finish with a green `verify_ci.sh` verdict |
-| [Creating a PR](references/wrapper-recipes.md#creating-a-pr) | `create_pr.sh` | Pass `--body-file` at creation; never raw `gh pr create` on a fork remote; Rule 6 with `--pr N --sha` |
+| [Creating a PR](references/wrapper-recipes.md#creating-a-pr) | `create_pr.sh` | Pass `--body-file` at creation; never raw `gh pr create` on a fork remote (fork → upstream: `--base-remote <remote>`); Rule 6 with `--pr N --sha` |
 | [Merging a PR](references/wrapper-recipes.md#merging-a-pr) | `merge_pr.sh` | Only when the user asks |
 | [Syncing with remote](references/wrapper-recipes.md#syncing-with-remote) | `sync_branches.sh` | Fetch + rebase; it auto-stashes a dirty tree |
 | [Rollback a merge](references/wrapper-recipes.md#rollback-a-merge) | `rollback_merge.sh` | After a `--revert` rollback, revert the revert before re-merging |

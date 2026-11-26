@@ -165,6 +165,26 @@ project only gets these two variables if added to its `.cgw.conf` by hand, or vi
 
 ---
 
+## head remote
+
+The remote that holds the source branch of a PR. It is always `CGW_REMOTE`. For a fork, it is
+the fork itself.
+
+## base remote
+
+The remote of the repo that receives a PR. By default it is the [[head remote]]. A caller names a
+different one for each PR; it is never a project-wide setting, because one fork opens PRs both
+into itself and into its upstream.
+
+## cross-repo PR
+
+A PR whose [[base remote]] and [[head remote]] resolve to different GitHub repos, such as a
+fork's `up/*` branch going to the upstream project. Its head is named `<head-owner>:<branch>`,
+so the source and target may share a branch name. Its checks run in the base repo, where a
+maintainer can hold them, so "no CI verdict" is an expected outcome and not a fault of the fork.
+
+---
+
 ## config registry
 
 The single list of `CGW_*` settings and their facts: `name|default|kind|empty|scope`, where *kind* is `str`, `bool`, `int`, `enum:a/b`, or `computed` (default derived from the repo or other settings — target branch, markdownlint detection, protected branches, merge-conflict style); *empty* is `keep` (an explicit `CGW_X=""` is honoured, e.g. to disable a tool) or `fill` (empty falls back to the default); *scope* is `conf` (persistent — `.cgw.conf`, `cgw.conf.example`, docs table) or `env` (per-run switch — docs table only).

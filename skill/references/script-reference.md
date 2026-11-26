@@ -319,6 +319,7 @@ conflict-free if untouched).
 ```bash
 ./scripts/git/create_pr.sh [--non-interactive] [--dry-run] [--title <title>] [--task <id>] [--body <text>] [--body-file <path>] [--draft]
 ./scripts/git/create_pr.sh --source feature/hotfix --target release/1.2 --dry-run
+./scripts/git/create_pr.sh --base-remote upstream --source up/fix-x --target main   # fork -> upstream
 ```
 
 | Flag | Purpose |
@@ -332,10 +333,13 @@ conflict-free if untouched).
 | `--draft` | Open PR as draft (not ready for review) |
 | `--source <branch>` | Override source (head) branch for this invocation |
 | `--target <branch>` | Override target (base) branch for this invocation |
+| `--base-remote <name>` | Remote of the repo that receives the PR (default: `CGW_REMOTE`). A remote that resolves to a different repo makes a cross-repo PR: `--head <head-owner>:<branch>`, target branch checked on `<name>`, and a `CI gate:` line for `verify_ci.sh`. No config variable: pass it on each call |
 
 Requires `gh` CLI authenticated (`gh auth login`). Checks ahead/behind status, then opens a PR. The body reaches `gh` on stdin (`--body-file -`), so long bodies hit no command-line limit; `--dry-run` prints the body that would be sent.
 
-Passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own `github.com` URL (checks `pushurl` first, then `url`). Without this, `gh pr create` resolves its own target repo and — when `CGW_REMOTE` is a fork — defaults to the fork's parent/upstream repo instead of `CGW_REMOTE` itself. Aborts with an error if the remote isn't a recognizable `github.com` URL, rather than falling back to gh's own (unsafe) resolution.
+Passes `gh` an explicit `--repo <owner>/<repo>` resolved from the base remote's own `github.com` URL (`--base-remote`, else `CGW_REMOTE`; checks `pushurl` first, then `url`). Without this, `gh pr create` resolves its own target repo and — when `CGW_REMOTE` is a fork — defaults to the fork's parent/upstream repo instead of `CGW_REMOTE` itself. Aborts with an error if the remote isn't a recognizable `github.com` URL, rather than falling back to gh's own (unsafe) resolution.
+
+**Cross-repo PR (fork → upstream).** `CGW_REMOTE` stays the head remote: the source branch must be pushed there. `--base-remote` names the remote of the repo that receives the PR. When the two remotes resolve to different repos, the script passes `--head <head-owner>:<branch>`, checks and fetches the target branch on the base remote, counts commits as `<base-remote>/<target>..<CGW_REMOTE>/<source>`, and allows the same branch name on both sides (`forkni:main` → `upstream-owner:main`). An unknown base remote, or a head remote whose owner does not resolve, exits 1 before `gh` runs. After the `Head SHA:` line it prints `CI gate: CGW_REMOTE=<base-remote> ./scripts/git/verify_ci.sh --pr <N> --sha <sha>`: the PR's checks run in the base repo (see [ci-verification.md](ci-verification.md#cross-repo-pr)).
 
 ---
 

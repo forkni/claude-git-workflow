@@ -18,6 +18,12 @@
 # fork's parent/upstream repo instead of CGW_REMOTE itself. If CGW_REMOTE's
 # URL isn't a resolvable github.com URL, this script aborts rather than
 # falling back to gh's own (unsafe) resolution.
+#
+# Cross-repo PR (fork -> upstream): --base-remote <name> names the remote whose
+# repo receives the PR. CGW_REMOTE stays the head remote (where the source
+# branch lives). When the two remotes resolve to different repos, --head is
+# owner-qualified (<head-owner>:<branch>), the target branch is checked on the
+# base remote, and the source and target may share a name.
 # Arguments:
 #   --title <title>        Override auto-generated PR title
 #   --task <id>            Append " [<id>]" to the title (tracker id such as TZ-123,
@@ -29,6 +35,7 @@
 #   --dry-run              Preview PR details without creating
 #   --source <branch>      Override source (head) branch for this invocation
 #   --target <branch>      Override target (base) branch for this invocation
+#   --base-remote <name>   Remote of the repo that receives the PR (default: CGW_REMOTE)
 #   -h, --help             Show help
 # Returns:
 #   0 on successful PR creation, 1 on failure
@@ -48,6 +55,7 @@ main() {
   local dry_run=0
   local src_branch="${CGW_SOURCE_BRANCH}"
   local tgt_branch="${CGW_TARGET_BRANCH}"
+  local base_remote=""
 
   # Auto-detect non-interactive mode when no TTY
   if [[ ! -t 0 ]]; then
@@ -76,6 +84,10 @@ main() {
         echo "  --dry-run           Preview PR details without creating"
         echo "  --source <branch>   Override source (head) branch for this invocation"
         echo "  --target <branch>   Override target (base) branch for this invocation"
+        echo "  --base-remote <name>"
+        echo "                      Remote of the repo that receives the PR (default: \${CGW_REMOTE})."
+        echo "                      A fork's upstream remote here opens a cross-repo PR with"
+        echo "                      --head <fork-owner>:<branch>"
         echo "  -h, --help          Show this help"
         echo ""
         echo "Branches:"
@@ -94,6 +106,7 @@ main() {
         echo "Note:"
         echo "  Passes gh an explicit --repo resolved from \${CGW_REMOTE}'s URL, so a fork"
         echo "  remote targets itself instead of gh's default (the fork's parent repo)."
+        echo "  To open the PR in the parent repo instead, pass --base-remote <its remote>."
         exit 0
         ;;
       --title)
@@ -183,6 +196,14 @@ main() {
         fi
         shift 2
         ;;
+      --base-remote)
+        if [[ $# -lt 2 ]] || [[ -z "${2:-}" ]]; then
+          err "--base-remote requires a remote name"
+          exit 1
+        fi
+        base_remote="${2}"
+        shift 2
+        ;;
       *)
         err "Unknown flag: $1"
         exit 1
@@ -237,7 +258,48 @@ main() {
     exit 1
   fi
 
-  if [[ "${src_branch}" == "${tgt_branch}" ]]; then
+  # Resolve both sides of the PR before the same-name check below: a cross-repo
+  # PR (fork -> upstream) may use one branch name on both sides.
+  [[ -z "${base_remote}" ]] && base_remote="${CGW_REMOTE}"
+  if ! git remote get-url "${base_remote}" >/dev/null 2>&1; then
+    err "--base-remote: no remote named '${base_remote}' (list them with: git remote -v)"
+    log_section_end "BRANCH VALIDATION" "$logfile" "1"
+    exit 1
+  fi
+
+  # Resolve an explicit --repo for gh from the base remote's own URL. Without
+  # it, `gh pr create` resolves the target repo itself and -- when the remote
+  # is a fork -- defaults to the fork's parent/upstream repo, opening (or
+  # failing to open) the PR against the wrong repository.
+  local pr_repo="" head_repo="" cross_repo=0 head_ref="${src_branch}"
+  if ! pr_repo=$(cgw_remote_owner_repo "${base_remote}"); then
+    err_tee "[ERROR] Could not determine ${base_remote}'s owner/repo from its configured URL (checked pushurl, then url)."
+    err_tee "[ERROR] Refusing to run 'gh pr create' without an explicit --repo -- gh's own"
+    err_tee "[ERROR] resolution defaults to the parent/upstream repo when ${base_remote} is a fork."
+    err_tee "[ERROR] Fix: run 'git remote -v' and confirm ${base_remote} is a github.com SSH/HTTPS URL."
+    log_section_end "BRANCH VALIDATION" "$logfile" "1"
+    exit 1
+  fi
+  if [[ "${base_remote}" != "${CGW_REMOTE}" ]]; then
+    if ! head_repo=$(cgw_remote_owner_repo "${CGW_REMOTE}"); then
+      err_tee "[ERROR] Could not determine ${CGW_REMOTE}'s owner/repo from its configured URL (checked pushurl, then url)."
+      err_tee "[ERROR] A PR into ${pr_repo} needs it for the owner-qualified --head <owner>:${src_branch}."
+      log_section_end "BRANCH VALIDATION" "$logfile" "1"
+      exit 1
+    fi
+    # GitHub owner and repo names are case-insensitive.
+    if [[ "${head_repo,,}" != "${pr_repo,,}" ]]; then
+      cross_repo=1
+      head_ref="${head_repo%%/*}:${src_branch}"
+    fi
+  fi
+  if [[ ${cross_repo} -eq 1 ]]; then
+    echo "Repo: ${pr_repo} (cross-repo PR: head ${head_ref} from ${CGW_REMOTE} = ${head_repo})" | tee -a "$logfile"
+  else
+    echo "Repo: ${pr_repo} (explicit -- avoids gh defaulting to a parent repo if ${base_remote} is a fork)" | tee -a "$logfile"
+  fi
+
+  if [[ ${cross_repo} -eq 0 ]] && [[ "${src_branch}" == "${tgt_branch}" ]]; then
     err "Source and target branch are the same: ${src_branch}"
     log_section_end "BRANCH VALIDATION" "$logfile" "1"
     exit 1
@@ -258,16 +320,27 @@ main() {
     exit 1
   fi
 
-  # Verify target branch exists on remote
-  if ! cgw_remote_branch_exists "${CGW_REMOTE}" "${tgt_branch}"; then
-    err "Target branch '${tgt_branch}' does not exist on ${CGW_REMOTE}"
-    echo "  Create it with: ./scripts/git/push_validated.sh --branch ${tgt_branch}" >&2
+  # Verify target branch exists on the base remote
+  if ! cgw_remote_branch_exists "${base_remote}" "${tgt_branch}"; then
+    err "Target branch '${tgt_branch}' does not exist on ${base_remote}"
+    if [[ "${base_remote}" == "${CGW_REMOTE}" ]]; then
+      echo "  Create it with: ./scripts/git/push_validated.sh --branch ${tgt_branch}" >&2
+    else
+      echo "  Check the branch name with: git ls-remote --heads ${base_remote}" >&2
+    fi
     log_section_end "BRANCH VALIDATION" "$logfile" "1"
     exit 1
   fi
 
   # Fetch latest remote refs so comparisons below use current state
-  if ! cgw_net_git fetch "${CGW_REMOTE}" "${src_branch}" "${tgt_branch}" 2>/dev/null; then
+  local fetch_ok=1
+  if [[ "${base_remote}" == "${CGW_REMOTE}" ]]; then
+    cgw_net_git fetch "${CGW_REMOTE}" "${src_branch}" "${tgt_branch}" 2>/dev/null || fetch_ok=0
+  else
+    cgw_net_git fetch "${CGW_REMOTE}" "${src_branch}" 2>/dev/null || fetch_ok=0
+    cgw_net_git fetch "${base_remote}" "${tgt_branch}" 2>/dev/null || fetch_ok=0
+  fi
+  if [[ ${fetch_ok} -eq 0 ]]; then
     echo "[!] WARNING: git fetch failed -- comparisons may use stale refs" | tee -a "$logfile"
   fi
 
@@ -282,8 +355,8 @@ main() {
 
   # Check for commits ahead of target
   local commits_ahead
-  if ! commits_ahead=$(cgw_rev_count "${CGW_REMOTE}/${tgt_branch}" "${CGW_REMOTE}/${src_branch}"); then
-    err "Cannot determine commit distance between ${CGW_REMOTE}/${tgt_branch} and ${CGW_REMOTE}/${src_branch}"
+  if ! commits_ahead=$(cgw_rev_count "${base_remote}/${tgt_branch}" "${CGW_REMOTE}/${src_branch}"); then
+    err "Cannot determine commit distance between ${base_remote}/${tgt_branch} and ${CGW_REMOTE}/${src_branch}"
     log_section_end "BRANCH VALIDATION" "$logfile" "1"
     exit 1
   fi
@@ -302,7 +375,7 @@ main() {
   log_section_start "PR CONTENT" "$logfile"
 
   local commit_log
-  commit_log=$(git log --oneline "${CGW_REMOTE}/${tgt_branch}..${CGW_REMOTE}/${src_branch}" 2>/dev/null)
+  commit_log=$(git log --oneline "${base_remote}/${tgt_branch}..${CGW_REMOTE}/${src_branch}" 2>/dev/null)
 
   # Auto-generate title if not provided
   if [[ -z "${pr_title}" ]]; then
@@ -356,21 +429,6 @@ ${formatted_log}
   log_section_end "PR CONTENT" "$logfile" "0"
   echo "" | tee -a "$logfile"
 
-  # Resolve an explicit --repo for gh from ${CGW_REMOTE}'s own URL. Without
-  # it, `gh pr create` resolves the target repo itself and -- when the remote
-  # is a fork -- defaults to the fork's parent/upstream repo, opening (or
-  # failing to open) the PR against the wrong repository.
-  local pr_repo=""
-  if pr_repo=$(cgw_remote_owner_repo "${CGW_REMOTE}"); then
-    echo "Repo: ${pr_repo} (explicit -- avoids gh defaulting to a parent repo if ${CGW_REMOTE} is a fork)" | tee -a "$logfile"
-  else
-    err_tee "[ERROR] Could not determine ${CGW_REMOTE}'s owner/repo from its configured URL (checked pushurl, then url)."
-    err_tee "[ERROR] Refusing to run 'gh pr create' without an explicit --repo -- gh's own"
-    err_tee "[ERROR] resolution defaults to the parent/upstream repo when ${CGW_REMOTE} is a fork."
-    err_tee "[ERROR] Fix: run 'git remote -v' and confirm ${CGW_REMOTE} is a github.com SSH/HTTPS URL."
-    exit 1
-  fi
-
   # [4/4] Create PR
   if [[ ${dry_run} -eq 1 ]]; then
     echo "=== DRY RUN -- PR not created ===" | tee -a "$logfile"
@@ -378,7 +436,7 @@ ${formatted_log}
     echo "Would create:" | tee -a "$logfile"
     [[ -n "${pr_repo}" ]] && echo "  Repo:   ${pr_repo}" | tee -a "$logfile"
     echo "  Title:  ${pr_title}" | tee -a "$logfile"
-    echo "  Head:   ${src_branch}" | tee -a "$logfile"
+    echo "  Head:   ${head_ref}" | tee -a "$logfile"
     echo "  Base:   ${tgt_branch}" | tee -a "$logfile"
     echo "  Draft:  $([[ ${draft} -eq 1 ]] && echo yes || echo no)" | tee -a "$logfile"
     case "${body_source}" in
@@ -396,7 +454,7 @@ ${formatted_log}
   local gh_flags=()
   [[ -n "${pr_repo}" ]] && gh_flags+=(--repo "${pr_repo}")
   gh_flags+=(--base "${tgt_branch}")
-  gh_flags+=(--head "${src_branch}")
+  gh_flags+=(--head "${head_ref}")
   gh_flags+=(--title "${pr_title}")
   # Body goes on stdin: no command-line length limit, and no MSYS path
   # conversion of a file argument handed to a native gh.exe.
@@ -424,6 +482,10 @@ ${formatted_log}
       echo "Head SHA: ${pushed_sha}" | tee -a "$logfile"
     else
       err_tee "[WARN] Could not read ${CGW_REMOTE}/${src_branch}'s SHA via git ls-remote -- the CI gate must resolve it itself"
+    fi
+    # The PR's checks run in the base repo, which verify_ci.sh reads from CGW_REMOTE.
+    if [[ ${cross_repo} -eq 1 ]] && [[ -n "${pr_num}" ]]; then
+      echo "CI gate: CGW_REMOTE=${base_remote} ./scripts/git/verify_ci.sh --pr ${pr_num} --sha ${pushed_sha:-<head sha>}" | tee -a "$logfile"
     fi
     echo "" | tee -a "$logfile"
     if [[ ${draft} -eq 0 ]]; then

@@ -60,6 +60,22 @@ the usual cause), or raise `--timeout`. A `paths:` filter that legitimately did 
 the only benign cause of "no run registered", and you can confirm it from the workflow's
 `on:` block.
 
+### Cross-repo PR
+
+A PR that `create_pr.sh --base-remote <remote>` opened from a fork into its upstream runs its
+checks in the upstream repo, which `verify_ci.sh` reads from `CGW_REMOTE`. Run the `CI gate:`
+line that `create_pr.sh` printed:
+
+```bash
+CGW_REMOTE=upstream ./scripts/git/verify_ci.sh --pr 42 --sha <sha>   # create_pr.sh's CI gate: line
+```
+
+Run it one time. Exit `0` is green. Exit `1` starts the *Fix Loop* (push the fix to the fork,
+then run the gate again with the new head SHA). Exit `2` or `3` is not a fault on the fork's
+side: GitHub can hold a fork PR's workflows until an upstream maintainer approves them, and the
+upstream repo can have no workflows. Report "upstream CI not run (approval needed or no
+workflows)" with the `CI:` line, and stop. Do not re-run the gate in a loop for this case.
+
 ---
 
 ## Fix Loop
