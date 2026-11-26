@@ -124,6 +124,11 @@ them intact, and put breaking-change detail in a `BREAKING CHANGE:` paragraph in
 Extra prefix words for a project go in
 `CGW_EXTRA_PREFIXES`.
 
+The positional argument is the subject (there is no `-m` flag). Add the body with `--body <text>`
+(repeatable, one paragraph each) or `--body-file <path>` (`-` reads stdin); line breaks stay as
+given, so a last paragraph of trailer lines stays a git trailer. A full multi-line positional
+message still works, and only the subject line is format- and length-checked.
+
 - Keep the subject after the prefix to about 50 characters. Past 72 the commit is blocked, and
   `undo_last.sh amend-message` applies the same cap.
 - The whole message is the one positional argument (there is no `-m`). For a body, build it with
@@ -136,7 +141,7 @@ Extra prefix words for a project go in
 
 | Script | Accepted flags |
 |---|---|
-| `commit_enhanced.sh` | `--non-interactive`, `--interactive`, `--staged-only`, `--all`, `--only <path>` (repeatable), `--skip-lint`, `--skip-md-lint`, `--no-venv`, `--sign`, `--no-sign`, `--strict-untracked`, `--no-untracked-check` |
+| `commit_enhanced.sh` | `--non-interactive`, `--interactive`, `--staged-only`, `--all`, `--only <path>` (repeatable), `--skip-lint`, `--skip-md-lint`, `--no-venv`, `--sign`, `--no-sign`, `--strict-untracked`, `--no-untracked-check`, `--body <text>` (repeatable), `--body-file <path>` |
 | `check_lint.sh` | `--no-venv`, `--modified-only`, `--skip-lint`, `--skip-md-lint`, `--skip-typecheck`, `--md-only`, `--ref <rev>`, `--base <rev>`, `--unpushed` |
 | `fix_lint.sh` | `--non-interactive`, `--no-venv`, `--modified-only`, `--skip-md-lint`, `--md-only` (no `--skip-lint`) |
 | `push_validated.sh` | `--non-interactive`, `--dry-run`, `--skip-lint`, `--skip-md-lint`, `--skip-typecheck`, `--pushed-only`, `--worktree`, `--no-venv`, `--force`, `--branch <name>` |
