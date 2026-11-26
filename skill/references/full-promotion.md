@@ -80,7 +80,8 @@ SKILL.md Rule 6 is a hard gate here, not a courtesy. Run (in the background — 
 
 Only continue to Phase 4 on exit `0` (`CI: green`) or `3` (not applicable: no `gh`/auth/remote,
 `CGW_CI_VERIFY=0`, or no workflow). Exit `2` (`CI: unverified`) is not green: re-run after a
-moment, and stop and report if it persists.
+moment, and stop and report if it persists. Exit `4` (`CI: usage error`) means the command was
+wrong, not CI: fix it and run it again.
 
 Red and unfixable within `CGW_CI_MAX_FIX_ROUNDS` → **stop here, do not enter Phase 4.** This
 is what stops a broken commit from ever reaching `CGW_TARGET_BRANCH`. Report the failing

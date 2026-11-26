@@ -99,6 +99,7 @@ Every push performed through `/auto-git-workflow-cmd` (or via `push_validated.sh
 - Exit `0` (`CI: green`) or `3` (not applicable) completes the step.
 - Exit `1` (`CI: red <workflow> <url>`): the agent inspects the failure logs, attempts a fix, re-commits, re-pushes, and re-runs the gate (up to `CGW_CI_MAX_FIX_ROUNDS=3`).
 - Exit `2` (`CI: unverified`) is reported as unverified, never as green.
+- Exit `4` (`CI: usage error`) is not a CI result: the agent fixes the command and runs it again.
 - See [CI Setup](ci-setup.md#ci-verification-gate) for details.
 
 ---

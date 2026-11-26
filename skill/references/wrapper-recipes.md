@@ -17,6 +17,11 @@ Committing specific files only?
 └─ No  → Commit all tracked changes: ./scripts/git/commit_enhanced.sh --all --no-venv "feat: ..."
           OR pre-stage nothing, let script auto-stage everything (same as --all)
 
+Does the message need a body or trailers (Co-Authored-By:, Signed-off-by:)?
+├─ Yes → positional = subject; add --body <text> per paragraph (or --body-file <path>, - = stdin)
+│         ./scripts/git/commit_enhanced.sh --only src/a.py "fix: ..." --body "Why." --body "Co-Authored-By: Name <email>"
+└─ No  → subject only
+
 Did you pre-stage some files but have other unstaged changes?
 ├─ Yes → Script commits pre-staged ONLY (safe default). Run --all to include everything.
 └─ No  → Proceed normally
@@ -110,7 +115,7 @@ For `CGW_MERGE_MODE="pr"`:
 Creates a GitHub PR from source → target via `gh` CLI. Requires `gh auth login`. Reviewers and workflows see the PR as soon as it opens, so pass a written body at creation with `--body-file` (or `--body`) rather than following up with `gh pr edit`: the PR would otherwise open with the generated commit list. It prints `PR number: N` and `Head SHA: <sha>` — Rule 6 applies here too.
 Run `./scripts/git/verify_ci.sh --pr N --sha <sha>` with those two values. The script waits for the PR's head to equal that SHA before judging its checks (`gh pr checks` has no SHA and would otherwise report the previous head), per ci-verification.md → *PR mode*.
 
-Always passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own URL — bare `gh pr create` resolves its own target repo and, when `CGW_REMOTE` is a fork, defaults to the fork's parent/upstream repo instead. If `CGW_REMOTE`'s URL can't be resolved to a `github.com` owner/repo, the script aborts rather than falling back to gh's own resolution. If this script ever fails or is unavailable, do not drop to raw `gh pr create` without `--repo`: it silently targets the wrong repo on a fork remote.
+Always passes `gh` an explicit `--repo <owner>/<repo>` resolved from the base remote's own URL (`--base-remote`, else `CGW_REMOTE`) — bare `gh pr create` resolves its own target repo and, when `CGW_REMOTE` is a fork, defaults to the fork's parent/upstream repo instead. If `CGW_REMOTE`'s URL can't be resolved to a `github.com` owner/repo, the script aborts rather than falling back to gh's own resolution. If this script ever fails or is unavailable, do not drop to raw `gh pr create` without `--repo`: it silently targets the wrong repo on a fork remote.
 
 **Cross-repo PR (fork → upstream).** To open the PR in the fork's upstream repo, push the branch to the fork (`CGW_REMOTE`) and pass `--base-remote <upstream remote>`. The script sends `--repo <upstream owner/repo>` and `--head <fork-owner>:<branch>`, and checks the target branch on the upstream remote. Do not use raw `gh pr create --repo … --head …` for this. After the `Head SHA:` line it prints a `CI gate:` line: run that command (`CGW_REMOTE=<upstream remote> ./scripts/git/verify_ci.sh --pr N --sha <sha>`) one time, per ci-verification.md → *Cross-repo PR*.
 

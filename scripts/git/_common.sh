@@ -713,18 +713,20 @@ source "$(dirname "${BASH_SOURCE[0]}")/_lib_lint.sh" || {
 # Validates commit messages against the conventional-commit prefix grammar.
 #
 # cgw_validate_commit_message <msg>
-#   Returns 0 if msg matches ^(<CGW_ALL_PREFIXES>): grammar, 1 otherwise.
+#   Returns 0 if the first line of msg matches ^(<CGW_ALL_PREFIXES>): grammar,
+#   1 otherwise. Only the subject line counts: grep over the whole message
+#   accepted "Some subject\n\nfix: ..." because a body line had the prefix.
 #   Pure predicate — no stdout/stderr output. Caller owns all user-facing
 #   messages and merge-commit skipping (parent-count check).
 
 cgw_validate_commit_message() {
-  local msg="$1"
+  local subject="${1%%$'\n'*}"
   # Conventional-commits prefix with an optional scope and optional breaking-
   # change marker: "type:", "type(scope):", "type!:", "type(scope)!:". The
   # bare "type:"-only pattern rejected valid scoped prefixes (fix(pyccsl):)
   # with a generic warning, sending agents into the wrapper source to find
   # this regex and then stripping the scope to get through.
-  echo "${msg}" | grep -qE "^(${CGW_ALL_PREFIXES})(\([A-Za-z0-9._/-]+\))?!?:"
+  printf '%s\n' "${subject}" | grep -qE "^(${CGW_ALL_PREFIXES})(\([A-Za-z0-9._/-]+\))?!?:"
 }
 
 # cgw_branch_matches_freeform_glob <branch>

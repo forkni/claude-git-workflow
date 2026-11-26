@@ -43,7 +43,9 @@ protected branch are never exempted this way, even by a glob as broad as `"*"`.
 `commit_enhanced.sh` enforces Pro Git commit guidelines on the subject line (the text following the prefix):
 
 - **Soft length (50 characters)**: Subjects exceeding `CGW_COMMIT_SUBJECT_SOFT_LEN=50` display an advisory tip.
-- **Hard length (72 characters)**: Subjects exceeding `CGW_COMMIT_SUBJECT_HARD_LEN=72` block the commit (prompting confirmation in interactive mode or aborting non-interactively) when `CGW_ENFORCE_SUBJECT_LENGTH=1`. Set `CGW_ENFORCE_SUBJECT_LENGTH=0` to make this advisory-only.
+- **Hard length (72 characters)**: Subjects exceeding `CGW_COMMIT_SUBJECT_HARD_LEN=72` block the commit (prompting confirmation in interactive mode; non-interactively, exit `1` with `[ERROR] No commit made: ...` on stderr) when `CGW_ENFORCE_SUBJECT_LENGTH=1`. Set `CGW_ENFORCE_SUBJECT_LENGTH=0` to make this advisory-only.
+
+Both rules read the subject line only. Put the detail in the commit body with `--body <text>` (repeatable, one paragraph each) or `--body-file <path>` (`-` reads stdin). The body keeps its line breaks, and a last paragraph of `Co-Authored-By:` lines stays a git trailer.
 
 ---
 
@@ -78,6 +80,14 @@ protected branch are never exempted this way, even by a glob as broad as `"*"`.
 
 # Force interactive mode even without a TTY
 ./scripts/git/commit_enhanced.sh --interactive "feat: review before commit"
+
+# Subject plus a body: one paragraph per --body, the last one a trailer
+./scripts/git/commit_enhanced.sh --only src/foo.py "fix: guard nil response" \
+  --body "Timeouts return nil; treat them as a failed request." \
+  --body "Co-Authored-By: Name <name@example.com>"
+
+# Body from a file (or --body-file - to read stdin)
+./scripts/git/commit_enhanced.sh --only src/foo.py "fix: guard nil response" --body-file msg-body.txt
 ```
 
 **Staging behaviour (non-interactive):**
@@ -177,7 +187,7 @@ calls `check_lint.sh --ref <rev> [--base <rev> | --unpushed]`, which you can als
 Every push is followed by `verify_ci.sh`, which waits for the GitHub Actions runs the push triggered and prints one verdict line (`CGW_CI_VERIFY=0` disables it):
 
 ```bash
-./scripts/git/verify_ci.sh --branch development        # exit 0 green, 1 red, 2 unverified, 3 not applicable
+./scripts/git/verify_ci.sh --branch development        # exit 0 green, 1 red, 2 unverified, 3 not applicable, 4 usage error
 ./scripts/git/verify_ci.sh --pr 42 --sha <head-sha>    # a PR's checks, bound to the pushed head
 ```
 
