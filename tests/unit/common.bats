@@ -845,6 +845,14 @@ UU b.py
   [ "${status}" -eq 1 ]
 }
 
+# Regression: grep over the whole message accepted a body line with the prefix.
+@test "cgw_validate_commit_message reads the subject line only" {
+  run cgw_validate_commit_message $'feat: subject\n\nbody text\n\nCo-Authored-By: A <a@example.com>'
+  [ "${status}" -eq 0 ]
+  run cgw_validate_commit_message $'Add a thing\n\nfix: a body line with a prefix'
+  [ "${status}" -eq 1 ]
+}
+
 # Regression: the bare "type:" pattern rejected valid conventional-commits
 # scoped prefixes (fix(pyccsl):) with a generic warning; agents then grepped
 # the wrapper source for the regex and stripped the scope to get through.

@@ -17,6 +17,11 @@ Committing specific files only?
 └─ No  → Commit all tracked changes: ./scripts/git/commit_enhanced.sh --all --no-venv "feat: ..."
           OR pre-stage nothing, let script auto-stage everything (same as --all)
 
+Does the message need a body or trailers (Co-Authored-By:, Signed-off-by:)?
+├─ Yes → positional = subject; add --body <text> per paragraph (or --body-file <path>, - = stdin)
+│         ./scripts/git/commit_enhanced.sh --only src/a.py "fix: ..." --body "Why." --body "Co-Authored-By: Name <email>"
+└─ No  → subject only
+
 Did you pre-stage some files but have other unstaged changes?
 ├─ Yes → Script commits pre-staged ONLY (safe default). Run --all to include everything.
 └─ No  → Proceed normally

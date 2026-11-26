@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### New Features
+
+- **`commit_enhanced.sh --body <text>` and `--body-file <path>` add a commit message body**: the positional argument is the subject. The wrapper had no flag for a body, and an agent that must end each commit with a `Co-Authored-By:` trailer could not do that through the wrapper. In a project whose guardrail blocks raw `git commit`, those commits lost the trailer. `--body` adds one paragraph and can repeat. `--body-file` adds the text of a file, and `-` reads stdin. The two mix in the order given, with one blank line between paragraphs. The body keeps its line breaks, so a last paragraph of trailer lines stays a git trailer block. The conventional-format check and the 50/72 length caps read the subject line only. `CGW_FREEFORM_MESSAGE_CHECK` gets the whole message, the same as a `commit-msg` hook. A missing or empty body, a `--body` value that starts with `--`, and a body with no subject exit `1`. A subject-only call commits the subject alone, as before.
+
+### Bug Fixes
+
+- **A subject over the hard cap prints an `[ERROR]` in non-interactive mode**: an 84-character subject stopped the commit with exit `1`, a reason on stdout and only the generic `cgw_confirm` abort line on stderr ("requires confirmation ... run the command in your own terminal"). Agents read this as a stop with no error. The wrapper now writes `[ERROR] No commit made: the subject after the prefix is N chars, over the 72-char hard cap` to stderr and the log, with the fix (`--body`, or `CGW_ENFORCE_SUBJECT_LENGTH=0`).
+- **`cgw_validate_commit_message` reads the subject line only**: `grep` over the whole message accepted `Add a thing` as a subject when a body line started with `fix:`.
+
+### Documentation
+
+- `skill/SKILL.md`, `skill/references/script-reference.md`, `skill/references/wrapper-recipes.md`, `docs/usage.md` and `README.md` describe `--body` and `--body-file`.
+
+### Tests
+
+- `tests/integration/commit_enhanced_body.bats` (18 tests) and a `tests/unit/common.bats` test cover the body options, the trailer, the `[ERROR]` line and the subject-only format check.
+
 ## v0.25.0 (2026-11-26)
 
 > Changes since `v0.24.0`

@@ -157,6 +157,12 @@ Passing a message still works and overrides git's prepared one.
 | `--no-sign` | Unsigned commit even if `CGW_SIGN_COMMITS=1` | Skip signing for a single commit |
 | `--strict-untracked` | Refuse (exit `1`, nothing committed) when untracked files would be left out; mirrors `CGW_STRICT_UNTRACKED=1` | Shared repos where a forgotten new file breaks the build |
 | `--no-untracked-check` | Skip the untracked-file warning and the strict refusal; mirrors `CGW_UNTRACKED_CHECK=0` | Scratch files you know are staying out |
+| `--body <text>` | Add `<text>` as a body paragraph after the subject (repeatable; one blank line between paragraphs). A value that starts with `--` is refused | Why/how paragraphs and trailers such as `Co-Authored-By:` |
+| `--body-file <path>` | Add the text of `<path>` as body (`-` reads stdin); repeatable, and mixes with `--body` in the order given. A missing or empty file exits `1` | A long body, or one written by another tool |
+
+**Commit body**: the positional message is the subject. `--body` and `--body-file` add the body after one blank line and keep its line breaks, so a last paragraph of trailer lines (`Co-Authored-By: Name <email>`) stays a git trailer block. The conventional-format check and the 50/72 length caps read the subject line only. `CGW_FREEFORM_MESSAGE_CHECK` gets the whole message, the same as a `commit-msg` hook. A `--body` without a positional subject exits `1`. A subject-only call commits the subject alone, as before.
+
+**Subject over the hard cap**: in non-interactive mode `commit_enhanced.sh` exits `1` with `[ERROR] No commit made: the subject after the prefix is N chars, over the 72-char hard cap` on stderr (and in the log). Shorten the subject and move the detail into `--body`, or set `CGW_ENFORCE_SUBJECT_LENGTH=0`.
 
 **Auto-detection**: When no TTY (Claude Code context), script automatically enables `--non-interactive`.
 

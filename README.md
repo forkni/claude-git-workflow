@@ -128,7 +128,7 @@ CGW provides 34 user-facing scripts and 6 internal core modules in `scripts/git/
 | Script | Purpose |
 |--------|---------|
 | `configure.sh` | One-time setup — scans project, generates `.cgw.conf`, installs hooks, and configures agent skills/guardrails |
-| `commit_enhanced.sh` | Working-tree lint/format validation, staged-blob congruence check, local-only file protection, Pro Git 50/72 commit check (`--only`, `--all`, `--staged-only`, `--sign`) |
+| `commit_enhanced.sh` | Working-tree lint/format validation, staged-blob congruence check, local-only file protection, Pro Git 50/72 commit check (`--only`, `--all`, `--staged-only`, `--sign`, `--body`, `--body-file`) |
 | `merge_with_validation.sh` | Safe source→target merge: creates backup tag, auto-resolves DD conflicts, stops on DU/UU, supports `diff3`/`zdiff3` conflict style and `rerere` (`--source`, `--target`, `--dry-run`) |
 | `rollback_merge.sh` | Emergency rollback to pre-merge backup tag (`--revert` for safe history-preserving rollback) |
 | `cherry_pick_commits.sh` | Cherry-pick with source branch validation, dev-only file warnings, and backup tag (`--only <pathspec>` for partial picks) |
