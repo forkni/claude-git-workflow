@@ -7,6 +7,24 @@
 - **Standalone Agent Skills for Agensi**: `scripts/dev/build_agensi.sh` builds three portable skill zips from the repo into `dist/agensi/`: `gitignore-and-local-config` and `git-merge-conflict-resolution` (knowledge only, no scripts) and `safe-git-workflow` (the core wrappers: commit, push, merge, rollback, rebase, cherry-pick, stash, undo, recover, sync, branch cleanup, bisect, plus the shared libraries). Each is one `SKILL.md` folder with only `name`/`description` frontmatter and no hooks, slash command or `.claude/` paths, so the same zip works across agents. Sources live in `agensi/` (see `agensi/README.md`). The build rewrites `./scripts/git/` to `<skill-dir>/scripts/`, drops sections for scripts a zip doesn't ship, points other reference links at GitHub, defaults `CGW_MARKDOWNLINT_NPX_FALLBACK` to `0` in the packaged config, and fails on a frontmatter, portability, link, missing-script or syntax problem. 7 tests in `tests/integration/build_agensi.bats`.
 - **`cgw_rm_tmpdir`**: the lint pipeline's two recursive deletes (`cgw_snapshot_tree`'s throwaway index dir in `_lib_lint.sh`, and `check_lint.sh`'s snapshot cleanup) now go through one helper that refuses anything but an existing directory whose name starts with `cgw-`, so an empty or wrong variable can never widen the delete. 3 tests in `tests/unit/common.bats`.
 
+## v0.25.0 (2026-11-26)
+
+> Changes since `v0.24.0`
+
+### New Features
+
+- **`create_pr.sh --base-remote <name>` opens a cross-repo PR (fork → upstream)**: the script used one remote, `CGW_REMOTE`, for every role of a PR: the repo that receives it (`--repo`), a bare `--head`, both branch checks and the commit range. A fork could not open a PR into its upstream: `CGW_REMOTE=upstream` failed the source-branch check, and `CGW_REMOTE=origin` opened the PR inside the fork. Agents then used raw `gh pr create`. `--base-remote` names the remote of the repo that receives the PR, and `CGW_REMOTE` stays the remote of the source branch. When the two remotes resolve to different repos, the script passes `--head <fork-owner>:<branch>`, checks the target branch on the base remote, allows the same branch name on both sides and prints a `CI gate:` line that runs `verify_ci.sh` against the upstream repo. An unknown base remote, or a fork owner that does not resolve, exits `1` before `gh` runs. There is no config variable, because one fork opens PRs both into itself and into its upstream (PR #100).
+
+### Bug Fixes
+
+- **A lock released during the `index.lock` check counts as cleared**: `ensure_no_stale_index_lock` in `_lib_lock.sh` ran `stat` on a lock that another git process had just removed. After the fast-path check, this returned `1` ("Could not stat"), so `cgw_run_with_lock_retry` gave up without running git. After the wait for a fresh lock, it reported "Lock still present ... Stopping" for a lock that was gone. A missing lock now returns `0`. A lock that is present but cannot be read still returns `1`.
+- **`sync_cgw_tooling.sh` refreshes a tracked `cgw.conf.example`**: the sync updated scripts, hooks and guardrails but left `cgw.conf.example` stale. It now copies the file from the CGW source when both copies exist and differ.
+- **`configure.sh` registers the agy guardrail again when the registered path does not resolve**: a tracked `.agents/hooks.json` from another machine or drive (for example `F:/...` on a `D:/` checkout) named a script that does not exist here, and the installer reported the guardrail as already registered. It now checks that the registered command is a file before it skips registration.
+
+### Documentation
+
+- `skill/SKILL.md`, `skill/references/wrapper-recipes.md`, `skill/references/script-reference.md` and `skill/references/ci-verification.md` describe `--base-remote`. `ci-verification.md` runs the upstream CI gate one time: exit `2` or `3` (a maintainer must approve fork workflows, or the upstream has none) is reported, not retried. `CONTEXT.md` defines **head remote**, **base remote** and **cross-repo PR**.
+
 ## v0.24.0 (2026-11-21)
 
 > Changes since `v0.23.3`
