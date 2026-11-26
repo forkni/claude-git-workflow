@@ -181,6 +181,7 @@ terminal state and prints one `CI:` line on stdout. Act on its exit code:
 | `1` | `CI: red <workflow> <url>` | Fix loop: diagnose, fix on the source branch, re-push through the wrappers, re-run; bounded by `CGW_CI_MAX_FIX_ROUNDS` |
 | `2` | `CI: unverified -- <reason>` | Report it as unverified, never as green (registration lag, timeout, PR head lagging or moved) |
 | `3` | `CI: not applicable (...)` / `CI: no workflow triggered` | Done (no gate for this push) |
+| `4` | `CI: usage error -- <reason>` | Not a CI result: fix the command (flag, or a `--sha` that is not a local commit) and run it again |
 
 Its default timeout is 900s, longer than the Bash tool's 600s cap, so run it with
 `run_in_background: true` (or pass `--timeout`). Never report a push/merge/promotion

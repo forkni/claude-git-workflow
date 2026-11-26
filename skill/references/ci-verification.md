@@ -44,8 +44,10 @@ run set to register and settle, watches to a terminal state, and prints exactly 
 | `1` | `CI: red <workflow> <url>` (one per red run) | A run concluded `failure`, `cancelled`, `timed_out`, `startup_failure` or `action_required` → *Fix Loop* |
 | `2` | `CI: unverified -- <reason>` | No verdict: runs never registered while workflows are active, `CGW_CI_TIMEOUT_SECONDS` elapsed, a required workflow is missing, the PR head lags or moved, or `gh` failed mid-watch. Report it as unverified, never as green |
 | `3` | `CI: not applicable (<why>)` / `CI: no workflow triggered (...)` | `CGW_CI_VERIFY=0`, no `gh`, no auth, a non-GitHub remote, or the repo has no active workflow |
+| `4` | `CI: usage error -- <reason>` | A bad or missing flag, or a `--sha` that does not resolve to a local commit. `gh` is not called. Fix the command and run it again. This is not a CI result |
 
-A usage error also exits `1` but prints `[ERROR]` and no `CI:` line.
+`--sha` takes a full 40-hex SHA as-is (it can name a commit that is only on the remote or a
+fork). A short SHA, a tag or `HEAD` is resolved with `git rev-parse` and must exist locally.
 
 **Run it in the background.** The default `CGW_CI_TIMEOUT_SECONDS=900` exceeds the Bash
 tool's 600s maximum, and a full `branch-protection.yml` run regularly takes longer than the

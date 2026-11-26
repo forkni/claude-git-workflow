@@ -64,36 +64,72 @@ _push_feature_head() {
 
 # ── Usage ─────────────────────────────────────────────────────────────────────
 
-@test "neither --branch nor --pr is a usage error: exit 1, no CI: line" {
+# A usage error exits 4, never 1: a caller that drops stderr must not read it as "CI red".
+@test "neither --branch nor --pr is a usage error: exit 4 with a CI: usage error line" {
   install_mock_gh
   run --separate-stderr _run_verify_ci
-  [ "${status}" -eq 1 ]
-  [[ "${output}" != *"CI:"* ]]
+  [ "${status}" -eq 4 ]
+  [ "${output}" == "CI: usage error -- One of --branch <name> or --pr <N> is required" ]
   [[ "${stderr}" == *"[ERROR] One of --branch"* ]]
+  [ ! -f "${GH_LOG}" ]
 }
 
-@test "--branch and --pr together is a usage error" {
+@test "--branch and --pr together is a usage error: exit 4" {
   install_mock_gh
   run --separate-stderr _run_verify_ci --branch development --pr 42
-  [ "${status}" -eq 1 ]
-  [[ "${output}" != *"CI:"* ]]
+  [ "${status}" -eq 4 ]
+  [[ "${output}" == "CI: usage error -- "*"mutually exclusive"* ]]
   [[ "${stderr}" == *"mutually exclusive"* ]]
 }
 
-@test "--pr, --sha, --timeout and --poll validate their values" {
+@test "--pr, --sha, --timeout and --poll validate their values: exit 4" {
   install_mock_gh
   run --separate-stderr _run_verify_ci --pr abc
-  [ "${status}" -eq 1 ]
-  [[ "${stderr}" == *"--pr requires a PR number"* ]]
-  run --separate-stderr _run_verify_ci --branch development --sha abc123
-  [ "${status}" -eq 1 ]
-  [[ "${stderr}" == *"--sha requires a full 40-hex"* ]]
+  [ "${status}" -eq 4 ]
+  [[ "${output}" == "CI: usage error -- --pr requires a PR number" ]]
+  run --separate-stderr _run_verify_ci --branch development --sha
+  [ "${status}" -eq 4 ]
+  [[ "${output}" == "CI: usage error -- --sha requires a commit"* ]]
   run --separate-stderr _run_verify_ci --branch development --timeout soon
-  [ "${status}" -eq 1 ]
-  [[ "${stderr}" == *"--timeout requires"* ]]
+  [ "${status}" -eq 4 ]
+  [[ "${output}" == "CI: usage error -- --timeout requires"* ]]
   run --separate-stderr _run_verify_ci --branch development --poll x
-  [ "${status}" -eq 1 ]
-  [[ "${stderr}" == *"--poll requires"* ]]
+  [ "${status}" -eq 4 ]
+  [[ "${output}" == "CI: usage error -- --poll requires"* ]]
+  run --separate-stderr _run_verify_ci --branch development --bogus
+  [ "${status}" -eq 4 ]
+  [[ "${output}" == "CI: usage error -- Unknown flag: --bogus" ]]
+}
+
+# Regression (2026-11-26): `--sha fb8dbbd` exited 1 -- the "red" code -- while CI was still
+# running, and with 2>/dev/null the caller saw only a red verdict.
+@test "--sha <short sha> is expanded to the full commit SHA" {
+  install_mock_gh
+  export MOCK_GH_RUNS="${RUN_BP_OK}"
+  run --separate-stderr _run_verify_ci --branch development --sha "${DEV_SHA:0:7}"
+  [ "${status}" -eq 0 ]
+  [ "${output}" == "CI: green ${DEV_SHA}" ]
+  grep -q -- "--commit ${DEV_SHA} --branch development" "${GH_LOG}"
+}
+
+@test "--sha accepts any local commit-ish (tag, HEAD)" {
+  install_mock_gh
+  export MOCK_GH_RUNS="${RUN_BP_OK}"
+  git -C "${TEST_REPO_DIR}" tag -a v9.9.9 -m "release v9.9.9" development
+  run --separate-stderr _run_verify_ci --branch development --sha v9.9.9
+  [ "${status}" -eq 0 ]
+  [ "${output}" == "CI: green ${DEV_SHA}" ]
+  run --separate-stderr _run_verify_ci --branch development --sha HEAD
+  [ "${status}" -eq 0 ]
+  [ "${output}" == "CI: green ${DEV_SHA}" ]
+}
+
+@test "--sha that does not resolve locally is a usage error: exit 4, gh never called" {
+  install_mock_gh
+  run --separate-stderr _run_verify_ci --branch development --sha abc1234
+  [ "${status}" -eq 4 ]
+  [[ "${output}" == "CI: usage error -- --sha abc1234 is not a local commit"* ]]
+  [ ! -f "${GH_LOG}" ]
 }
 
 # ── Applicability probe (exit 3) ──────────────────────────────────────────────

@@ -15,7 +15,7 @@
 #   <version>           Version string: v1.2.3 or 1.2.3 (v prefix auto-added)
 #   --message <msg>     Tag annotation message (default: "Release <version>")
 #   --allow-non-semver  Accept any valid tag name (archive/snapshot tags); no v prefix added
-#   --non-interactive   Skip prompts
+#   --non-interactive   Skip prompts (automatic when stdin is not a TTY)
 #   --dry-run           Show what would happen without tagging
 #   --push              Push the tag to origin after creation
 #   -h, --help          Show help
@@ -47,6 +47,10 @@ main() {
   # Signing: -1 = unset (use CGW_SIGN_TAGS), 0 = off, 1 = on
   local sign_flag=-1
 
+  # Auto-detect non-interactive mode when no TTY (matches merge_pr.sh): without this,
+  # cgw_confirm's read hits EOF, the prompt is denied and no tag is made.
+  [[ ! -t 0 ]] && CGW_NON_INTERACTIVE=1
+
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --help | -h)
@@ -66,7 +70,7 @@ main() {
         echo "  --allow-non-semver  Accept any valid tag name (e.g. archive/old-api) instead of"
         echo "                      semver; the v prefix is not added and release.yml (v* only)"
         echo "                      will not fire"
-        echo "  --non-interactive   Skip confirmation prompt"
+        echo "  --non-interactive   Skip confirmation prompt (automatic when stdin is not a TTY)"
         echo "  --dry-run           Preview without creating tag"
         echo "  -h, --help          Show this help"
         echo ""
@@ -211,8 +215,8 @@ main() {
   # Confirm
   local _confirm_label="Create ${sign_label} tag '${version}'?"
   if ! cgw_confirm "${_confirm_label}" --non-interactive accept; then
-    echo "Cancelled"
-    exit 0
+    echo "[ERROR] Cancelled: no tag created" >&2
+    exit 1
   fi
 
   # Create annotated (or signed annotated) tag

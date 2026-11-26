@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Bug Fixes
+
+- **`create_release.sh` makes the tag when stdin is not a TTY**: the script set `CGW_NON_INTERACTIVE=1` only from `--non-interactive`. With no TTY and no flag, `cgw_confirm` read EOF and denied the prompt, so the script printed "Cancelled", exited `0` and made no tag (seen in the v0.25.0 release run from an agent). The script now detects a missing TTY the same way as `merge_pr.sh`. A prompt that is denied prints `[ERROR] Cancelled: no tag created` and exits `1`, so a caller can see that no tag was made. Known gap: 12 other wrappers that prompt (`rollback_merge.sh`, `rebase_safe.sh`, `cherry_pick_commits.sh`, `branch_cleanup.sh`, `push_validated.sh`, `merge_with_validation.sh`, `merge_docs.sh`, `bisect_helper.sh`, `recover.sh`, `setup_attributes.sh`, and the interactive `configure.sh` and `_config.sh`) also have no TTY check. A follow-up PR handles them.
+- **`verify_ci.sh --sha` takes a short SHA, a tag or `HEAD`, and a usage error exits `4`**: `--sha fb8dbbd` was refused as "not 40-hex" with exit `1`, the same code as "CI red". A caller that dropped stderr (as `/auto-git-workflow-cmd` allows) saw a red verdict while CI was still running. A full 40-hex SHA is still taken as-is. Any other value is resolved with `git rev-parse` and must be a local commit. Every usage error now exits `4` and prints `CI: usage error -- <reason>` on stdout, and `gh` is not called. `ci-verification.md`, `SKILL.md`, `script-reference.md`, `full-promotion.md`, `README.md`, `CLAUDE.md` and the docs list the new exit code.
+
 ## v0.25.0 (2026-11-26)
 
 > Changes since `v0.24.0`

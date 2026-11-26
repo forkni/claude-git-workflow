@@ -135,6 +135,18 @@ teardown() {
   git -C "${TEST_REPO_DIR}" cat-file -t "v1.1.0" | grep -q "tag"
 }
 
+# ── no-TTY auto-detection ─────────────────────────────────────────────────────
+
+# Regression (2026-11-26): with no TTY and no --non-interactive, cgw_confirm read EOF and
+# denied, so the script printed "Cancelled", exited 0 and made no tag.
+@test "no TTY and no --non-interactive still creates the tag" {
+  unset CGW_NON_INTERACTIVE
+  run run_script create_release.sh v1.2.3 </dev/null
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"Cancelled"* ]]
+  git -C "${TEST_REPO_DIR}" rev-parse -q --verify "refs/tags/v1.2.3" >/dev/null
+}
+
 # ── untracked files guard (bug #C2 — fixed in working-tree-state refactor) ───
 
 @test "untracked source files rejected when tagging release" {

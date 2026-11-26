@@ -25,7 +25,8 @@
 # Arguments:
 #   --branch <name>    Judge the runs triggered by the push to <name> (its remote tip, or --sha)
 #   --pr <N>           Judge the checks on PR #N's head (waits for the head to match the pushed branch)
-#   --sha <sha>        Commit to judge instead of the remote tip (40 hex chars; e.g. a tag's commit)
+#   --sha <sha>        Commit to judge instead of the remote tip: a full 40-hex SHA is used as-is;
+#                      a short SHA, tag or HEAD is resolved with git rev-parse (must be local)
 #   --timeout <s>      Override CGW_CI_TIMEOUT_SECONDS
 #   --poll <s>         Override CGW_CI_POLL_INTERVAL
 #   --non-interactive  Accepted for uniformity; the script never prompts
@@ -33,12 +34,13 @@
 # Returns:
 #   0  green: every judged run/check passed (or was skipped)     -> "CI: green <sha>"
 #   1  red: at least one run/check failed, one "CI: red <workflow> <url>" line per failure
-#      (also returned for a usage error, which prints [ERROR] and no CI: line)
 #   2  unverified: timeout, gh failing mid-watch, PR head lagging or moving, required
 #      workflow never registering, no run registering while workflows are active
 #      -> "CI: unverified -- <reason>"
 #   3  not applicable: CGW_CI_VERIFY=0, no gh/auth, non-GitHub remote, or no active workflow
 #      -> "CI: not applicable (<why>)" / "CI: no workflow triggered"
+#   4  usage error: bad or missing flag, or a --sha that does not resolve; gh is not called
+#      -> "CI: usage error -- <reason>" (plus [ERROR] on stderr)
 #
 # Prerequisites:
 #   gh CLI installed and authenticated (gh auth login); otherwise exit 3
@@ -78,6 +80,15 @@ _ci_note() {
 # _ci_out <text>   -- a verdict line: stdout + log
 _ci_out() {
   echo "$*" | tee -a "${logfile}"
+}
+
+# _ci_usage <reason> -- a usage error: [ERROR] on stderr, a "CI: usage error" line on stdout
+# (seen even when the caller drops stderr), exit 4. Exit 1 is reserved for "CI red".
+_ci_usage() {
+  err "$*"
+  echo "CI: usage error -- $*"
+  [[ -n "${logfile:-}" ]] && echo "CI: usage error -- $*" >>"${logfile}"
+  exit 4
 }
 
 # _pr_view <number> <json-field> <jq-expr> -- cgw_pr_view (_common.sh) against this repo
@@ -413,8 +424,8 @@ main() {
         echo "  --branch <name>    Judge the runs triggered by the push to <name> (its remote tip)"
         echo "  --pr <N>           Judge the checks on PR #N's head (waits for the head to match"
         echo "                     the pushed branch, then for checks to appear and settle)"
-        echo "  --sha <sha>        Commit to judge instead of the remote tip (40 hex; e.g. the commit"
-        echo "                     a release tag points at)"
+        echo "  --sha <sha>        Commit to judge instead of the remote tip: a full 40-hex SHA is"
+        echo "                     used as-is; a short SHA, tag or HEAD must resolve locally"
         echo "  --timeout <s>      Override CGW_CI_TIMEOUT_SECONDS (default 900)"
         echo "  --poll <s>         Override CGW_CI_POLL_INTERVAL (default 15)"
         echo "  --non-interactive  Accepted for uniformity (the script never prompts)"
@@ -427,11 +438,13 @@ main() {
         echo "                     missing, nothing ran while workflows are active -> CI: unverified -- <reason>"
         echo "  3  not applicable  CGW_CI_VERIFY=0, no gh/auth, non-GitHub remote, no active workflow"
         echo "                     -> CI: not applicable (<why>)"
+        echo "  4  usage error     bad/missing flag, or --sha does not resolve (gh not called)"
+        echo "                     -> CI: usage error -- <reason>"
         echo ""
         echo "Examples:"
         echo "  ./scripts/git/verify_ci.sh --branch development"
         echo "  ./scripts/git/verify_ci.sh --pr 42"
-        echo "  ./scripts/git/verify_ci.sh --branch main --sha \$(git rev-parse v1.2.0^{commit})"
+        echo "  ./scripts/git/verify_ci.sh --branch main --sha v1.2.0"
         echo ""
         echo "Notes:"
         echo "  Config: CGW_CI_VERIFY, CGW_CI_TIMEOUT_SECONDS, CGW_CI_POLL_INTERVAL,"
@@ -447,64 +460,41 @@ main() {
         ;;
       --branch)
         branch="${2:-}"
-        if [[ -z "${branch}" ]]; then
-          err "--branch requires a branch name"
-          exit 1
-        fi
+        [[ -z "${branch}" ]] && _ci_usage "--branch requires a branch name"
         shift
         ;;
       --pr)
         pr="${2:-}"
-        if [[ -z "${pr}" ]] || ! [[ "${pr}" =~ ^[0-9]+$ ]]; then
-          err "--pr requires a PR number"
-          exit 1
-        fi
+        [[ "${pr}" =~ ^[0-9]+$ ]] || _ci_usage "--pr requires a PR number"
         shift
         ;;
       --sha)
         sha="${2:-}"
-        if [[ ! "${sha}" =~ ^[0-9a-f]{40}$ ]]; then
-          err "--sha requires a full 40-hex commit SHA"
-          exit 1
-        fi
+        [[ -z "${sha}" ]] && _ci_usage "--sha requires a commit (40-hex SHA, short SHA, tag or HEAD)"
         shift
         ;;
       --timeout)
         timeout="${2:-}"
-        if [[ ! "${timeout}" =~ ^[0-9]+$ ]]; then
-          err "--timeout requires a number of seconds"
-          exit 1
-        fi
+        [[ "${timeout}" =~ ^[0-9]+$ ]] || _ci_usage "--timeout requires a number of seconds"
         shift
         ;;
       --poll)
         poll="${2:-}"
-        if [[ ! "${poll}" =~ ^[0-9]+$ ]]; then
-          err "--poll requires a number of seconds"
-          exit 1
-        fi
+        [[ "${poll}" =~ ^[0-9]+$ ]] || _ci_usage "--poll requires a number of seconds"
         shift
         ;;
       --non-interactive) CGW_NON_INTERACTIVE=1 ;;
-      -*)
-        err "Unknown flag: ${1}"
-        exit 1
-        ;;
-      *)
-        err "Unexpected argument: ${1}"
-        exit 1
-        ;;
+      -*) _ci_usage "Unknown flag: ${1}" ;;
+      *) _ci_usage "Unexpected argument: ${1}" ;;
     esac
     shift
   done
 
   if [[ -n "${branch}" && -n "${pr}" ]]; then
-    err "--branch and --pr are mutually exclusive"
-    exit 1
+    _ci_usage "--branch and --pr are mutually exclusive"
   fi
   if [[ -z "${branch}" && -z "${pr}" ]]; then
-    err "One of --branch <name> or --pr <N> is required"
-    exit 1
+    _ci_usage "One of --branch <name> or --pr <N> is required"
   fi
   [[ -n "${timeout}" ]] && CGW_CI_TIMEOUT_SECONDS="${timeout}"
   [[ -n "${poll}" ]] && CGW_CI_POLL_INTERVAL="${poll}"
@@ -522,6 +512,17 @@ main() {
     err "Cannot find project root"
     exit 1
   }
+
+  # --sha: a full lowercase 40-hex SHA is taken as-is (it may name a commit that exists only
+  # on the remote or a fork). Anything else (short SHA, tag, HEAD) must resolve to a local
+  # commit; an unresolvable value is a usage error, never a "red" verdict.
+  if [[ -n "${sha}" && ! "${sha}" =~ ^[0-9a-f]{40}$ ]]; then
+    local resolved
+    resolved=$(git rev-parse --verify --quiet "${sha}^{commit}" 2>/dev/null) ||
+      _ci_usage "--sha ${sha} is not a local commit (pass the full 40-hex SHA, or fetch first)"
+    _ci_note "Resolved --sha ${sha} -> ${resolved}"
+    sha="${resolved}"
+  fi
 
   # gh must never block on a prompt or decorate its output.
   export GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 NO_COLOR=1

@@ -141,7 +141,7 @@ CGW provides 34 user-facing scripts and 6 internal core modules in `scripts/git/
 | `fix_lint.sh` | Auto-fix code lint, code formatting, and Markdown issues (`--modified-only`, `--md-only`, `--skip-md-lint`) |
 | `create_pr.sh` | Create GitHub PR from source to target branch via `gh` CLI (triggers GitHub Actions) |
 | `merge_pr.sh` | Guarded, logged wrapper around `gh pr merge --merge` with an explicit `--repo`; refuses non-OPEN PRs and non-green PR checks on the PR's current head (`--wait-checks`, `--skip-checks`; merge pinned with `--match-head-commit`), `--retarget <M>` for stacked PRs, `--squash`/`--rebase` need `--allow-non-merge` (`--delete-branch` also removes the local head branch once the merge commit contains it, `--dry-run`) |
-| `verify_ci.sh` | Post-push CI gate: waits for the GitHub Actions runs a push triggered and prints one verdict (`--branch <name>` or `--pr <N>`, `--sha`, `--timeout`, `--poll`); exit `0` green, `1` red, `2` unverified, `3` not applicable |
+| `verify_ci.sh` | Post-push CI gate: waits for the GitHub Actions runs a push triggered and prints one verdict (`--branch <name>` or `--pr <N>`, `--sha`, `--timeout`, `--poll`); exit `0` green, `1` red, `2` unverified, `3` not applicable, `4` usage error |
 | `pr_checkout.sh` | Guarded, logged wrapper around `gh pr checkout <N>` for reviewing PRs locally (`--branch`, `--force`, `--detach`, `--dry-run`) |
 | `branch_switch.sh` | Guarded, logged wrapper around `git switch` for creating or changing a branch in the current worktree (`-c`, `--dry-run`); carries uncommitted work over, never forces |
 | `install_hooks.sh` | Install git hooks (`pre-commit`, `pre-push`, `pre-rebase`) into `.githooks/` and `.git/hooks/` |
