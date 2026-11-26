@@ -157,6 +157,12 @@ Passing a message still works and overrides git's prepared one.
 | `--no-sign` | Unsigned commit even if `CGW_SIGN_COMMITS=1` | Skip signing for a single commit |
 | `--strict-untracked` | Refuse (exit `1`, nothing committed) when untracked files would be left out; mirrors `CGW_STRICT_UNTRACKED=1` | Shared repos where a forgotten new file breaks the build |
 | `--no-untracked-check` | Skip the untracked-file warning and the strict refusal; mirrors `CGW_UNTRACKED_CHECK=0` | Scratch files you know are staying out |
+| `--body <text>` | Add `<text>` as a body paragraph after the subject (repeatable; one blank line between paragraphs). A value that starts with `--` is refused | Why/how paragraphs and trailers such as `Co-Authored-By:` |
+| `--body-file <path>` | Add the text of `<path>` as body (`-` reads stdin); repeatable, and mixes with `--body` in the order given. A missing or empty file exits `1` | A long body, or one written by another tool |
+
+**Commit body**: the positional message is the subject. `--body` and `--body-file` add the body after one blank line and keep its line breaks, so a last paragraph of trailer lines (`Co-Authored-By: Name <email>`) stays a git trailer block. The conventional-format check and the 50/72 length caps read the subject line only. `CGW_FREEFORM_MESSAGE_CHECK` gets the whole message, the same as a `commit-msg` hook. Outside a merge, a `--body` without a positional subject exits `1` before the staging and lint steps. During a merge, the body follows git's prepared merge message. `--body-file -` needs a non-interactive run (the prompts need stdin) and can be given one time only. A CRLF body file is read as LF. A subject-only call commits the subject alone, as before. If your git config sets `commit.cleanup=strip`, git drops the body lines that start with `#`.
+
+**Subject over the hard cap**: in non-interactive mode `commit_enhanced.sh` exits `1` with `[ERROR] No commit made: the subject after the prefix is N chars, over the 72-char hard cap` on stderr (and in the log). Shorten the subject and move the detail into `--body`, or set `CGW_ENFORCE_SUBJECT_LENGTH=0`.
 
 **Auto-detection**: When no TTY (Claude Code context), script automatically enables `--non-interactive`.
 
@@ -319,6 +325,7 @@ conflict-free if untouched).
 ```bash
 ./scripts/git/create_pr.sh [--non-interactive] [--dry-run] [--title <title>] [--task <id>] [--body <text>] [--body-file <path>] [--draft]
 ./scripts/git/create_pr.sh --source feature/hotfix --target release/1.2 --dry-run
+./scripts/git/create_pr.sh --base-remote upstream --source up/fix-x --target main   # fork -> upstream
 ```
 
 | Flag | Purpose |
@@ -332,10 +339,13 @@ conflict-free if untouched).
 | `--draft` | Open PR as draft (not ready for review) |
 | `--source <branch>` | Override source (head) branch for this invocation |
 | `--target <branch>` | Override target (base) branch for this invocation |
+| `--base-remote <name>` | Remote of the repo that receives the PR (default: `CGW_REMOTE`). A remote that resolves to a different repo makes a cross-repo PR: `--head <head-owner>:<branch>`, target branch checked on `<name>`, and a `CI gate:` line for `verify_ci.sh`. No config variable: pass it on each call |
 
 Requires `gh` CLI authenticated (`gh auth login`). Checks ahead/behind status, then opens a PR. The body reaches `gh` on stdin (`--body-file -`), so long bodies hit no command-line limit; `--dry-run` prints the body that would be sent.
 
-Passes `gh` an explicit `--repo <owner>/<repo>` resolved from `CGW_REMOTE`'s own `github.com` URL (checks `pushurl` first, then `url`). Without this, `gh pr create` resolves its own target repo and — when `CGW_REMOTE` is a fork — defaults to the fork's parent/upstream repo instead of `CGW_REMOTE` itself. Aborts with an error if the remote isn't a recognizable `github.com` URL, rather than falling back to gh's own (unsafe) resolution.
+Passes `gh` an explicit `--repo <owner>/<repo>` resolved from the base remote's own `github.com` URL (`--base-remote`, else `CGW_REMOTE`; checks `pushurl` first, then `url`). Without this, `gh pr create` resolves its own target repo and — when `CGW_REMOTE` is a fork — defaults to the fork's parent/upstream repo instead of `CGW_REMOTE` itself. Aborts with an error if the remote isn't a recognizable `github.com` URL, rather than falling back to gh's own (unsafe) resolution.
+
+**Cross-repo PR (fork → upstream).** `CGW_REMOTE` stays the head remote: the source branch must be pushed there. `--base-remote` names the remote of the repo that receives the PR. When the two remotes resolve to different repos, the script passes `--head <head-owner>:<branch>`, checks and fetches the target branch on the base remote, counts commits as `<base-remote>/<target>..<CGW_REMOTE>/<source>`, and allows the same branch name on both sides (`forkni:main` → `upstream-owner:main`). An unknown base remote, or a head remote whose owner does not resolve, exits 1 before `gh` runs. A fork and base repo with the same owner (`org/tool-fork` → `org/tool`) also exit 1: `<owner>:<branch>` cannot name the fork there. A cross-repo PR's generated title and Branch line name both owners (`merge: forkni:main -> upstream-owner:main`). A remote whose `pushurl` is a placeholder with no `:` (`git remote set-url --push upstream no_push`) resolves from its fetch `url`. After the `Head SHA:` line it prints `CI gate: CGW_REMOTE=<base-remote> ./scripts/git/verify_ci.sh --pr <N> --sha <sha>`: the PR's checks run in the base repo (see [ci-verification.md](ci-verification.md#cross-repo-pr)).
 
 ---
 

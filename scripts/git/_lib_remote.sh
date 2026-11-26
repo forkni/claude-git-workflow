@@ -151,6 +151,10 @@ cgw_remote_owner_repo() {
   local remote="$1"
   local url
   url=$(git config --get "remote.${remote}.pushurl" 2>/dev/null) || url=""
+  # A pushurl with no ':' is a push-disabling placeholder (`git remote set-url
+  # --push upstream no_push`, common on a fork's upstream remote), not a URL:
+  # the remote's identity is then its fetch url.
+  [[ "${url}" != *:* ]] && url=""
   if [[ -z "${url}" ]]; then
     url=$(git config --get "remote.${remote}.url" 2>/dev/null) || return 1
   fi

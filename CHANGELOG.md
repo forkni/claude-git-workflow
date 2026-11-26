@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.25.0 (2026-11-26)
+
+> Changes since `v0.24.0`
+
+### New Features
+
+- **`create_pr.sh --base-remote <name>` opens a cross-repo PR (fork → upstream)**: the script used one remote, `CGW_REMOTE`, for every role of a PR: the repo that receives it (`--repo`), a bare `--head`, both branch checks and the commit range. A fork could not open a PR into its upstream: `CGW_REMOTE=upstream` failed the source-branch check, and `CGW_REMOTE=origin` opened the PR inside the fork. Agents then used raw `gh pr create`. `--base-remote` names the remote of the repo that receives the PR, and `CGW_REMOTE` stays the remote of the source branch. When the two remotes resolve to different repos, the script passes `--head <fork-owner>:<branch>`, checks the target branch on the base remote, allows the same branch name on both sides and prints a `CI gate:` line that runs `verify_ci.sh` against the upstream repo. An unknown base remote, a fork owner that does not resolve, or a fork with the same owner as its upstream exits `1` before `gh` runs. An upstream remote whose push URL is disabled (`git remote set-url --push upstream no_push`) resolves from its fetch URL, in `create_pr.sh` and in `verify_ci.sh`. There is no config variable, because one fork opens PRs both into itself and into its upstream (PR #100).
+- **`commit_enhanced.sh --body <text>` and `--body-file <path>` add a commit message body**: the positional argument is the subject. The wrapper had no flag for a body, and an agent that must end each commit with a `Co-Authored-By:` trailer could not do that through the wrapper. In a project whose guardrail blocks raw `git commit`, those commits lost the trailer. `--body` adds one paragraph and can repeat. `--body-file` adds the text of a file, and `-` reads stdin. The two mix in the order given, with one blank line between paragraphs. The body keeps its line breaks, so a last paragraph of trailer lines stays a git trailer block. The conventional-format check and the 50/72 length caps read the subject line only. `CGW_FREEFORM_MESSAGE_CHECK` gets the whole message, the same as a `commit-msg` hook. A missing or empty body, a `--body` value that starts with `--`, and a body with no subject (outside a merge, checked before the staging and lint steps) exit `1`. During a merge, the body follows git's prepared merge message. `--body-file -` exits `1` in an interactive run, where the prompts need stdin, and when it is given twice. A CRLF body file is read as LF. A subject-only call commits the subject alone, as before (PR #101).
+
+### Bug Fixes
+
+- **A lock released during the `index.lock` check counts as cleared**: `ensure_no_stale_index_lock` in `_lib_lock.sh` ran `stat` on a lock that another git process had just removed. After the fast-path check, this returned `1` ("Could not stat"), so `cgw_run_with_lock_retry` gave up without running git. After the wait for a fresh lock, it reported "Lock still present ... Stopping" for a lock that was gone. A missing lock now returns `0`. A lock that is present but cannot be read still returns `1`.
+- **`sync_cgw_tooling.sh` refreshes a tracked `cgw.conf.example`**: the sync updated scripts, hooks and guardrails but left `cgw.conf.example` stale. It now copies the file from the CGW source when both copies exist and differ.
+- **`configure.sh` registers the agy guardrail again when the registered path does not resolve**: a tracked `.agents/hooks.json` from another machine or drive (for example `F:/...` on a `D:/` checkout) named a script that does not exist here, and the installer reported the guardrail as already registered. It now checks that the registered command is a file before it skips registration.
+- **A subject over the hard cap prints an `[ERROR]` in non-interactive mode**: an 84-character subject stopped the commit with exit `1`, a reason on stdout and only the generic `cgw_confirm` abort line on stderr ("requires confirmation ... run the command in your own terminal"). Agents read this as a stop with no error. The wrapper now writes `[ERROR] No commit made: the subject after the prefix is N chars, over the 72-char hard cap` to stderr and the log, with the fix (`--body`, or `CGW_ENFORCE_SUBJECT_LENGTH=0`) (PR #101).
+- **`cgw_validate_commit_message` reads the subject line only**: `grep` over the whole message accepted `Add a thing` as a subject when a body line started with `fix:` (PR #101).
+
+### Documentation
+
+- `skill/SKILL.md`, `skill/references/wrapper-recipes.md`, `skill/references/script-reference.md` and `skill/references/ci-verification.md` describe `--base-remote`. `ci-verification.md` runs the upstream CI gate one time: exit `2` or `3` (a maintainer must approve fork workflows, or the upstream has none) is reported, not retried. `CONTEXT.md` defines **head remote**, **base remote** and **cross-repo PR**.
+- `skill/SKILL.md`, `skill/references/script-reference.md`, `skill/references/wrapper-recipes.md`, `docs/usage.md` and `README.md` describe `--body` and `--body-file` (PR #101).
+
+### Tests
+
+- `tests/integration/commit_enhanced_body.bats` (21 tests) and a `tests/unit/common.bats` test cover the body options, the stdin and CRLF cases, the trailer, the `[ERROR]` line and the subject-only format check (PR #101).
+
 ## v0.24.0 (2026-11-21)
 
 > Changes since `v0.23.3`
