@@ -16,3 +16,6 @@ SESSION_LOG.md
 docs/progit.txt
 docs/progit.pdf
 docs/SHELL_STYLE_GUIDE.md
+
+# Built Agensi skill zips (scripts/dev/build_agensi.sh)
+dist/
