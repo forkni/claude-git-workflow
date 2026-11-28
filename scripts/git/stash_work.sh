@@ -49,6 +49,7 @@ usage() {
   echo "Options (for drop/clear):"
   echo "  --yes / --non-interactive / -y   Skip confirmation prompt (auto-proceed)."
   echo "  Also auto-detected: if stdin is not a TTY, drop/clear proceed without prompting."
+  echo "  Piped answers are ignored then; set CGW_NON_INTERACTIVE=0 to read them from stdin."
   echo ""
   echo "Examples:"
   echo "  ./scripts/git/stash_work.sh push 'wip: half-done refactor'"

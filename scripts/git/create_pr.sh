@@ -92,6 +92,7 @@ main() {
         echo ""
         echo "Environment:"
         echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
+        echo "  CGW_NON_INTERACTIVE=0   Read answers from stdin (piped answers are ignored otherwise)"
         echo "  CGW_SOURCE_BRANCH       Default source branch"
         echo "  CGW_TARGET_BRANCH       Default target branch"
         echo "  CGW_REMOTE              Remote name (default: origin)"

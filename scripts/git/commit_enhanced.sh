@@ -382,6 +382,7 @@ _usage() {
   echo ""
   echo "Environment:"
   echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
+  echo "  CGW_NON_INTERACTIVE=0   Read answers from stdin (piped answers are ignored otherwise)"
   echo "  CGW_STAGED_ONLY=1       Same as --staged-only"
   echo "  CGW_ALL=1               Same as --all"
   echo "  CGW_NO_VENV=1           Same as --no-venv"
@@ -950,6 +951,10 @@ main() {
     echo "  Use --body-file <path>, or run with --non-interactive" >&2
     exit 1
   fi
+  # The pipe held the commit body, not answers: cgw_confirm must not report one as
+  # ignored (_CGW_NI_NO_TTY is set by _config.sh, ADR-0008).
+  # shellcheck disable=SC2034 # read by cgw_confirm in _common.sh
+  [[ ${body_from_stdin} -eq 1 ]] && _CGW_NI_NO_TTY=0
 
   init_logging "commit_enhanced"
   ensure_no_stale_index_lock || exit 1

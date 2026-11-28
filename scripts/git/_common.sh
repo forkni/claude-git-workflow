@@ -31,6 +31,7 @@
 #   cgw_resolve_safe_conflicts() - Auto-resolve DU/DD, emit halt messages; sets CGW_CONFLICT_STATE [_lib_conflict.sh]
 #   cgw_print_conflict_summary() - Print categorised file list from last cgw_classify_conflicts call [_lib_conflict.sh]
 #   cgw_confirm()               - Unified confirmation prompt; handles NI mode, literal tokens, defaults
+#   cgw_commit_subject()        - Echo the subject git would store (leading blank lines dropped)
 #   cgw_same_text_ignoring_cr() - 0 when two files differ at most in CRLF vs LF line endings
 #   cgw_default_branch()        - Echo the repo's default branch (origin/HEAD, falls back to CGW_TARGET_BRANCH) [_lib_remote.sh]
 #   cgw_require_gh()            - Verify gh CLI is installed and authenticated; prints [ERROR] and returns 1 on failure [_lib_remote.sh]
@@ -719,8 +720,24 @@ source "$(dirname "${BASH_SOURCE[0]}")/_lib_lint.sh" || {
 #   Pure predicate — no stdout/stderr output. Caller owns all user-facing
 #   messages and merge-commit skipping (parent-count check).
 
+# cgw_commit_subject <msg>
+#   Prints the subject line git would store: leading lines that hold only
+#   whitespace (CR included) are dropped first, as git's default cleanup does,
+#   then the first remaining line. Leading spaces on the subject line itself stay,
+#   because git keeps them. Splitting first gave $'\nfix: a' an empty subject.
+cgw_commit_subject() {
+  local msg="$1" line
+  while [[ "${msg}" == *$'\n'* ]]; do
+    line="${msg%%$'\n'*}"
+    [[ "${line}" =~ ^[[:space:]]*$ ]] || break
+    msg="${msg#*$'\n'}"
+  done
+  printf '%s\n' "${msg%%$'\n'*}"
+}
+
 cgw_validate_commit_message() {
-  local subject="${1%%$'\n'*}"
+  local subject
+  subject="$(cgw_commit_subject "$1")"
   # Conventional-commits prefix with an optional scope and optional breaking-
   # change marker: "type:", "type(scope):", "type!:", "type(scope)!:". The
   # bare "type:"-only pattern rejected valid scoped prefixes (fix(pyccsl):)
@@ -862,7 +879,8 @@ cgw_check_commit_message() {
 #               Y") and there is no "type:" prefix to strip.
 cgw_commit_subject_length() {
   local msg="$1" scope="$2"
-  local subject="${msg%%$'\n'*}"
+  local subject
+  subject="$(cgw_commit_subject "${msg}")"
   if [[ "${scope}" == "prefixed" ]]; then
     subject="${subject#*:}"
     subject="${subject# }"
@@ -943,8 +961,11 @@ cgw_run_staged_checks() {
 #   --non-interactive <pol>  Policy when CGW_NON_INTERACTIVE=1 (resolved by _config.sh: the
 #                            --non-interactive flag, the env, or no TTY on stdin -- ADR-0008):
 #                              abort  (default) — exit 1 with error message
-#                              accept            — return 0 silently
-#                              deny              — return 1 silently
+#                              accept            — return 0
+#                              deny              — return 1
+#                            accept/deny are silent, except when the no-TTY rule set the
+#                            flag and stdin is a pipe or file: then one [INFO] line on
+#                            stderr says the piped answer was ignored.
 #
 #   Standard mode accepts case-insensitive y/yes (→ 0) and n/no (→ 1).
 #   Unrecognized input falls back to --default (deny if no default set).
@@ -980,6 +1001,19 @@ cgw_confirm() {
   # Non-interactive: resolved by _config.sh (--non-interactive flag, env, or no TTY; ADR-0008).
   # cgw_confirm never tests the TTY itself.
   if [[ "${CGW_NON_INTERACTIVE:-0}" == "1" ]]; then
+    # The no-TTY rule set the flag and stdin holds piped or file input: that input
+    # may be an answer, and it is ignored. Say so. Agent shells (stdin on /dev/null)
+    # and an explicit env value stay silent.
+    if [[ "${_CGW_NI_NO_TTY:-0}" == "1" ]] && [[ -p /dev/stdin || -f /dev/stdin ]]; then
+      local outcome=""
+      case "${ni_policy}" in
+        accept) outcome="proceeding" ;;
+        deny) outcome="declined" ;;
+      esac
+      if [[ -n "${outcome}" ]]; then
+        echo "[INFO] stdin is not a terminal: piped answer ignored, ${outcome} (${prompt}) -- set CGW_NON_INTERACTIVE=0 to answer from stdin" >&2
+      fi
+    fi
     case "${ni_policy}" in
       accept) return 0 ;;
       deny) return 1 ;;

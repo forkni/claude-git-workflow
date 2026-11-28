@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Bug Fixes
+
+- **`cgw_confirm` reports a piped answer that it ignores**: with no terminal on stdin, `_config.sh` sets `CGW_NON_INTERACTIVE=1` (ADR-0008), so `printf 'no\n' | rollback_merge.sh` took the `accept` policy and never read the `no`. Nothing said so. When the no-TTY rule (not the environment) set the flag and stdin is a pipe or a file, each `accept` or `deny` prompt now prints `[INFO] stdin is not a terminal: piped answer ignored, proceeding|declined (<prompt>) -- set CGW_NON_INTERACTIVE=0 to answer from stdin` on stderr. Agent shells (stdin on `/dev/null`) and `commit_enhanced.sh --body-file -` print nothing. ADR-0008 and the `--help` of the prompting scripts name `CGW_NON_INTERACTIVE=0`. In `stash_work.sh`, piped answers were already ignored before v0.26.0.
+- **A commit message that starts with a blank line passes the subject checks**: `cgw_validate_commit_message` and `cgw_commit_subject_length` took the text before the first newline, so `$'\nfix: a'` got an empty subject. It was rejected, and the length caps measured 0. Git drops leading blank lines, so the stored subject was valid. The new `cgw_commit_subject` drops leading lines that hold only whitespace first.
+
 ## v0.26.0 (2026-11-26)
 
 > Changes since `v0.25.0`

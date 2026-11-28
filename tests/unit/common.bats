@@ -853,6 +853,20 @@ UU b.py
   [ "${status}" -eq 1 ]
 }
 
+# Regression: the subject split ran before leading blank lines were dropped, so
+# $'\nfix: a' got an empty subject. Git strips leading blank lines on commit.
+@test "cgw_validate_commit_message skips leading blank and whitespace-only lines" {
+  run cgw_validate_commit_message $'\nfix: a'
+  [ "${status}" -eq 0 ]
+  run cgw_validate_commit_message $'\n \r\n\t\nfix: a'
+  [ "${status}" -eq 0 ]
+}
+
+@test "cgw_validate_commit_message keeps leading spaces on the subject line" {
+  run cgw_validate_commit_message $'\n  fix: a'
+  [ "${status}" -eq 1 ]
+}
+
 # Regression: the bare "type:" pattern rejected valid conventional-commits
 # scoped prefixes (fix(pyccsl):) with a generic warning; agents then grepped
 # the wrapper source for the regex and stripped the scope to get through.
@@ -1335,6 +1349,13 @@ UU b.py
 
 @test "cgw_commit_subject_length: whole measures the first line only" {
   run cgw_commit_subject_length $'abcde\nsecond line' whole
+  [ "${output}" = "5" ]
+}
+
+@test "cgw_commit_subject_length: skips leading blank lines" {
+  run cgw_commit_subject_length $'\n\nfix: abcde\n\nbody' prefixed
+  [ "${output}" = "5" ]
+  run cgw_commit_subject_length $'\n \nabcde' whole
   [ "${output}" = "5" ]
 }
 
@@ -2638,6 +2659,46 @@ _confirm_no_tty() {
   " </dev/null
   [ "${status}" -eq 1 ]
   [[ "${stderr}" == *"[WARN] no answer on stdin (not a terminal) -- treated as no"* ]]
+}
+
+# A piped answer is ignored when the no-TTY rule set the flag; cgw_confirm says so
+# on stderr. Agent shells (stdin on /dev/null) and an env-set flag stay silent.
+# $1 = value for CGW_NON_INTERACTIVE ("" = unset); the rest = cgw_confirm options.
+_confirm_piped() {
+  local ni="$1"
+  shift
+  run --separate-stderr bash -c "
+    unset CGW_NON_INTERACTIVE CLAUDE_GIT_NON_INTERACTIVE
+    [[ -n '${ni}' ]] && export CGW_NON_INTERACTIVE='${ni}'
+    export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
+    source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
+    printf 'no\n' | cgw_confirm 'Do X?' $*
+  "
+}
+
+@test "cgw_confirm: piped answer with no TTY, accept policy, prints the ignored notice" {
+  _confirm_piped "" --non-interactive accept
+  [ "${status}" -eq 0 ]
+  [[ "${stderr}" == *"[INFO] stdin is not a terminal: piped answer ignored, proceeding (Do X?)"* ]]
+  [[ "${stderr}" == *"CGW_NON_INTERACTIVE=0"* ]]
+}
+
+@test "cgw_confirm: piped answer with no TTY, deny policy, prints the declined notice" {
+  _confirm_piped "" --non-interactive deny
+  [ "${status}" -eq 1 ]
+  [[ "${stderr}" == *"[INFO] stdin is not a terminal: piped answer ignored, declined (Do X?)"* ]]
+}
+
+@test "cgw_confirm: stdin on /dev/null with no TTY prints no notice (agent shells)" {
+  _confirm_no_tty --non-interactive accept
+  [ "${status}" -eq 0 ]
+  [[ "${stderr}" != *"piped answer ignored"* ]]
+}
+
+@test "cgw_confirm: piped answer with CGW_NON_INTERACTIVE=1 from the env prints no notice" {
+  _confirm_piped 1 --non-interactive accept
+  [ "${status}" -eq 0 ]
+  [[ "${stderr}" != *"piped answer ignored"* ]]
 }
 
 @test "no-TTY detection lives only in _config.sh (ADR-0008)" {

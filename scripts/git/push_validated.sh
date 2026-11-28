@@ -89,6 +89,7 @@ main() {
         echo ""
         echo "Environment:"
         echo "  CGW_NON_INTERACTIVE=1         Same as --non-interactive"
+        echo "  CGW_NON_INTERACTIVE=0         Read answers from stdin (piped answers are ignored otherwise)"
         echo "  CGW_REMOTE                    Remote name (default: origin)"
         echo "  CGW_PROTECTED_BRANCHES=<list> Space-separated protected branch names"
         echo "  CGW_PUSH_LINT_SCOPE=<s>       Pre-push lint scope: worktree (default) or pushed"
