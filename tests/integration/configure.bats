@@ -439,7 +439,7 @@ EOF
   local fields="label dir cmd_layout skill_dst:local skill_dst:global cmd_dst:local cmd_dst:global
     guardrail_dst:local guardrail_dst:global settings_json:local settings_json:global
     skill_hint:local skill_hint:global skill_global_note guardrail_hint:local guardrail_hint:global
-    skill_blurb guardrail_blurb summary_skill summary_guardrail"
+    skill_blurb guardrail_blurb summary_skill summary_guardrail retire_reason"
   run bash -c "
     PROJECT_ROOT=/p HOME=/h
     $(guardrail_installer_functions)

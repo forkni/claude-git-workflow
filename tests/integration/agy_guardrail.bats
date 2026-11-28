@@ -437,3 +437,105 @@ JSON_EOF
   registered_cmd="$(jq -r '."cgw-git-guardrail".PreToolUse[0].hooks[0].command' "${TEST_REPO_DIR}/.agents/hooks.json")"
   [ "${registered_cmd}" = "~/.gemini/config/hooks/agy-block-dangerous-git.cmd" ]
 }
+
+# ── The stdlib-Python guardrail supersedes the legacy Antigravity hook ────────
+
+# Helper: a fake HOME where ~/.claude/tools/git_guardrail.py serves Antigravity
+# through the global ~/.gemini/config/hooks.json, as a claude-dotfiles
+# install.ps1 deploys it. $1=wired (hooks.json names the script, the default),
+# unwired (script only) or noscript (hooks.json only). Echoes the home path.
+_pyguard_home() {
+  local kind="${1:-wired}"
+  local h="${TEST_TMPDIR}/pyguardhome-${kind}"
+  mkdir -p "${h}/.claude/tools" "${h}/.gemini/config"
+  [[ "${kind}" == "noscript" ]] || echo "# stub" >"${h}/.claude/tools/git_guardrail.py"
+  if [[ "${kind}" != "unwired" ]]; then
+    printf '{"cgw-git-guardrail":{"PreToolUse":[{"matcher":"run_command","hooks":[{"type":"command","command":"python \\"%s/.claude/tools/git_guardrail.py\\"","timeout":10}]}]}}\n' \
+      "${h}" >"${h}/.gemini/config/hooks.json"
+  fi
+  echo "${h}"
+}
+
+@test "python guardrail active: legacy Antigravity guardrail is not installed" {
+  mkdir -p "${TEST_REPO_DIR}/.agents"
+  HOME="$(_pyguard_home wired)" run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  [ -f "${TEST_REPO_DIR}/.agents/skills/auto-git-workflow/SKILL.md" ]
+  [ ! -e "${TEST_REPO_DIR}/.agents/hooks.json" ]
+  [ ! -e "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.sh" ]
+  [ ! -e "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.cmd" ]
+  [ ! -e "${TEST_REPO_DIR}/.agents/hooks/_guardrail_core.sh" ]
+}
+
+@test "python guardrail script without a global registration: legacy guardrail is still installed" {
+  mkdir -p "${TEST_REPO_DIR}/.agents"
+  HOME="$(_pyguard_home unwired)" run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  [ -f "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.sh" ]
+  grep -q "agy-block-dangerous-git" "${TEST_REPO_DIR}/.agents/hooks.json"
+}
+
+@test "python guardrail registered but its script is missing: legacy guardrail is still installed" {
+  mkdir -p "${TEST_REPO_DIR}/.agents"
+  HOME="$(_pyguard_home noscript)" run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  [ -f "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.sh" ]
+  grep -q "agy-block-dangerous-git" "${TEST_REPO_DIR}/.agents/hooks.json"
+}
+
+@test "python guardrail active: an existing legacy install is retired, foreign hooks kept" {
+  _require_jq
+  mkdir -p "${TEST_REPO_DIR}/.agents"
+  _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.sh" ]
+  local j="${TEST_REPO_DIR}/.agents/hooks.json" tmp
+  tmp="$(mktemp)"
+  jq '."cgw-git-guardrail".PreToolUse += [{"matcher":"run_command","hooks":[{"type":"command","command":"keep-me.sh"}]}]' "${j}" >"${tmp}"
+  mv "${tmp}" "${j}"
+
+  local h
+  h="$(_pyguard_home wired)"
+  HOME="${h}" run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  [ ! -e "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.sh" ]
+  [ ! -e "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.cmd" ]
+  [ ! -e "${TEST_REPO_DIR}/.agents/hooks/_guardrail_core.sh" ]
+  run ! grep -q "agy-block-dangerous-git" "${j}"
+  grep -q "keep-me.sh" "${j}"
+  jq -e . "${j}" >/dev/null
+  # The global registration of the Python guardrail is left alone
+  grep -q "git_guardrail.py" "${h}/.gemini/config/hooks.json"
+}
+
+@test "python guardrail active: a project hooks.json left empty by the retire is removed" {
+  mkdir -p "${TEST_REPO_DIR}/.agents"
+  _run_configure "--non-interactive"
+  [ -f "${TEST_REPO_DIR}/.agents/hooks.json" ]
+  HOME="$(_pyguard_home wired)" run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  [ ! -e "${TEST_REPO_DIR}/.agents/hooks.json" ]
+}
+
+@test "python guardrail active: a customised legacy .cmd is kept with a warning" {
+  mkdir -p "${TEST_REPO_DIR}/.agents"
+  _run_configure "--non-interactive"
+  echo "rem local tweak" >>"${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.cmd"
+  HOME="$(_pyguard_home wired)" run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  [ -f "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.cmd" ]
+  [[ "${output}" == *"differs from the stock CGW copy"* ]]
+  # The stock siblings are still retired
+  [ ! -e "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.sh" ]
+  [ ! -e "${TEST_REPO_DIR}/.agents/hooks/_guardrail_core.sh" ]
+  [ ! -e "${TEST_REPO_DIR}/.agents/hooks.json" ]
+}
+
+@test "python guardrail active and nothing installed: a project-owned .cmd shim is left alone, quietly" {
+  mkdir -p "${TEST_REPO_DIR}/.agents/hooks"
+  echo "@echo off" >"${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.cmd"
+  HOME="$(_pyguard_home wired)" run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
+  [ "$(cat "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.cmd")" = "@echo off" ]
+  [[ "${output}" != *"retiring the legacy"* ]]
+  [[ "${output}" != *"differs from the stock CGW copy"* ]]
+}
