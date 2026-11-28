@@ -822,7 +822,7 @@ main() {
         ;;
       --non-interactive)
         non_interactive=1
-        CGW_NON_INTERACTIVE=1
+        cgw_set_non_interactive
         shift
         ;;
       --skip-lint)
@@ -1016,8 +1016,9 @@ main() {
 
   # A body with no subject is known now, outside a merge: refuse it before the
   # staging and lint steps run. (In a merge the body follows git's prepared
-  # merge message.)
-  if [[ ${#body_parts[@]} -gt 0 ]] && [[ -z "${commit_msg_param}" ]] && [[ ${merge_in_progress} -eq 0 ]]; then
+  # merge message.) A whitespace-only subject counts as none: git drops its blank
+  # lines, and the first body line would become the subject.
+  if [[ ${#body_parts[@]} -gt 0 ]] && [[ -z "${commit_msg_param//[[:space:]]/}" ]] && [[ ${merge_in_progress} -eq 0 ]]; then
     err "--body / --body-file add a body only: the subject is still the positional message"
     echo "Usage: ./scripts/git/commit_enhanced.sh \"feat: Your message\" --body \"Detail.\"" >&2
     exit 1
@@ -1153,7 +1154,7 @@ main() {
   # git commit -m keeps the line breaks; its whitespace cleanup only drops
   # trailing spaces and collapses repeated blank lines.
   if [[ ${#body_parts[@]} -gt 0 ]]; then
-    if [[ -z "${commit_msg}" ]]; then
+    if [[ -z "${commit_msg//[[:space:]]/}" ]]; then
       err "--body / --body-file add a body only: the subject is still the positional message"
     else
       commit_msg+=$'\n\n'"$(_join_body "${body_parts[@]}")"

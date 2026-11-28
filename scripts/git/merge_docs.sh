@@ -78,7 +78,7 @@ main() {
         exit 0
         ;;
       --non-interactive)
-        CGW_NON_INTERACTIVE=1
+        cgw_set_non_interactive
         ;;
       --source)
         src_branch="${2:-}"

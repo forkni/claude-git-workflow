@@ -483,7 +483,7 @@ main() {
         [[ "${poll}" =~ ^[0-9]+$ ]] || _ci_usage "--poll requires a number of seconds"
         shift
         ;;
-      --non-interactive) CGW_NON_INTERACTIVE=1 ;;
+      --non-interactive) cgw_set_non_interactive ;;
       -*) _ci_usage "Unknown flag: ${1}" ;;
       *) _ci_usage "Unexpected argument: ${1}" ;;
     esac

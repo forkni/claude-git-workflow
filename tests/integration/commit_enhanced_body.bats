@@ -207,6 +207,16 @@ _last_message() {
   [[ "${output}" != *"[5/6]"* ]]
 }
 
+# Regression: once leading blank lines were skipped, a whitespace-only subject let
+# the first body line become the subject.
+@test "a whitespace-only subject with --body exits 1" {
+  _stage body_ws_subject.txt
+  run _run_commit_args --only body_ws_subject.txt "   " --body "feat: detail"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"add a body only: the subject is still the positional message"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" != "feat: detail" ]
+}
+
 @test "--body-file - given twice exits 1 and names stdin" {
   run _run_commit_args "feat: x" --body-file - --body-file - <<<"text"
   [ "${status}" -eq 1 ]

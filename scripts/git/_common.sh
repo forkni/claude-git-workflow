@@ -723,8 +723,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/_lib_lint.sh" || {
 # cgw_commit_subject <msg>
 #   Prints the subject line git would store: leading lines that hold only
 #   whitespace (CR included) are dropped first, as git's default cleanup does,
-#   then the first remaining line. Leading spaces on the subject line itself stay,
-#   because git keeps them. Splitting first gave $'\nfix: a' an empty subject.
+#   then the first remaining line, with its trailing whitespace (a CR included)
+#   trimmed, as git's stripspace does. A message of only whitespace gives an empty
+#   subject. Leading spaces on the subject line itself stay, because git keeps them.
+#   Splitting first gave $'\nfix: a' an empty subject.
 cgw_commit_subject() {
   local msg="$1" line
   while [[ "${msg}" == *$'\n'* ]]; do
@@ -732,7 +734,8 @@ cgw_commit_subject() {
     [[ "${line}" =~ ^[[:space:]]*$ ]] || break
     msg="${msg#*$'\n'}"
   done
-  printf '%s\n' "${msg%%$'\n'*}"
+  line="${msg%%$'\n'*}"
+  printf '%s\n' "${line%"${line##*[![:space:]]}"}"
 }
 
 cgw_validate_commit_message() {
@@ -969,6 +972,18 @@ cgw_run_staged_checks() {
 #
 #   Standard mode accepts case-insensitive y/yes (→ 0) and n/no (→ 1).
 #   Unrecognized input falls back to --default (deny if no default set).
+
+# cgw_set_non_interactive
+#   The one way a script's --non-interactive / --yes / -y flag turns on
+#   non-interactive mode. Besides CGW_NON_INTERACTIVE=1 it clears _CGW_NI_NO_TTY,
+#   so an explicit flag is as quiet as CGW_NON_INTERACTIVE=1 from the environment:
+#   cgw_confirm reports an ignored piped answer only when nothing explicit chose
+#   non-interactive mode (stdin in `while read ...; do <script> --yes; done < list`
+#   is loop data, not answers).
+cgw_set_non_interactive() {
+  CGW_NON_INTERACTIVE=1
+  _CGW_NI_NO_TTY=0
+}
 
 cgw_confirm() {
   local prompt="$1"

@@ -1352,6 +1352,20 @@ UU b.py
   [ "${output}" = "5" ]
 }
 
+@test "cgw_commit_subject: a whitespace-only message gives an empty subject" {
+  run cgw_commit_subject $'\n   '
+  [ "${output}" = "" ]
+  run cgw_commit_subject "   "
+  [ "${output}" = "" ]
+}
+
+@test "cgw_commit_subject: trims trailing whitespace and a CR, keeps leading spaces" {
+  run cgw_commit_subject $'\r\nfix: abcde \r\n\r\nbody'
+  [ "${output}" = "fix: abcde" ]
+  run cgw_commit_subject $'  fix: a'
+  [ "${output}" = "  fix: a" ]
+}
+
 @test "cgw_commit_subject_length: skips leading blank lines" {
   run cgw_commit_subject_length $'\n\nfix: abcde\n\nbody' prefixed
   [ "${output}" = "5" ]
@@ -2663,16 +2677,25 @@ _confirm_no_tty() {
 
 # A piped answer is ignored when the no-TTY rule set the flag; cgw_confirm says so
 # on stderr. Agent shells (stdin on /dev/null) and an env-set flag stay silent.
-# $1 = value for CGW_NON_INTERACTIVE ("" = unset); the rest = cgw_confirm options.
+# The answer is piped into the bash process itself, so _config.sh sees the pipe
+# when it is sourced, as in a real run (and the bats terminal does not leak in).
+# $1 = "" (CGW_NON_INTERACTIVE unset), "1" (set in the env) or "flag" (the
+# script's --non-interactive flag, via cgw_set_non_interactive); the rest =
+# cgw_confirm options.
+_pipe_answer_into_bash() {
+  printf 'no\n' | bash -c "$1"
+}
+
 _confirm_piped() {
   local ni="$1"
   shift
-  run --separate-stderr bash -c "
+  run --separate-stderr _pipe_answer_into_bash "
     unset CGW_NON_INTERACTIVE CLAUDE_GIT_NON_INTERACTIVE
-    [[ -n '${ni}' ]] && export CGW_NON_INTERACTIVE='${ni}'
+    [[ '${ni}' == 1 ]] && export CGW_NON_INTERACTIVE=1
     export SCRIPT_DIR='${CGW_PROJECT_ROOT}/scripts/git'
     source '${CGW_PROJECT_ROOT}/scripts/git/_common.sh'
-    printf 'no\n' | cgw_confirm 'Do X?' $*
+    [[ '${ni}' == flag ]] && cgw_set_non_interactive
+    cgw_confirm 'Do X?' $*
   "
 }
 
@@ -2699,6 +2722,21 @@ _confirm_piped() {
   _confirm_piped 1 --non-interactive accept
   [ "${status}" -eq 0 ]
   [[ "${stderr}" != *"piped answer ignored"* ]]
+}
+
+# stdin in `while read ...; do <script> --yes; done < list` is loop data: an
+# explicit flag is as quiet as the env value.
+@test "cgw_confirm: piped answer with an explicit --non-interactive flag prints no notice" {
+  _confirm_piped flag --non-interactive accept
+  [ "${status}" -eq 0 ]
+  [[ "${stderr}" != *"piped answer ignored"* ]]
+}
+
+@test "flag parsers turn on non-interactive mode only through cgw_set_non_interactive" {
+  run grep -n -E '(^[[:space:]]*|\)[[:space:]]+)CGW_NON_INTERACTIVE=1([[:space:]]*;;|[[:space:]]*$)' \
+    "${CGW_PROJECT_ROOT}"/scripts/git/*.sh
+  # _config.sh (legacy env mapping, no-TTY rule) and the helper itself are the only ones.
+  [[ "$(printf '%s\n' "${output}" | grep -v -e '/_config.sh:' -e '/_common.sh:')" == "" ]]
 }
 
 @test "no-TTY detection lives only in _config.sh (ADR-0008)" {

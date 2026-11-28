@@ -342,7 +342,7 @@ main() {
       --dry-run) dry_run=1 ;;
       --prune) prune=1 ;;
       --non-interactive | --yes | -y)
-        CGW_NON_INTERACTIVE=1
+        cgw_set_non_interactive
         ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2

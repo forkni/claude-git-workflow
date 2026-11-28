@@ -195,7 +195,7 @@ main() {
       local ref=""
       while [[ $# -gt 0 ]]; do
         case "$1" in
-          --yes | --non-interactive | -y) CGW_NON_INTERACTIVE=1 ;;
+          --yes | --non-interactive | -y) cgw_set_non_interactive ;;
           *) ref="$1" ;;
         esac
         shift
@@ -234,7 +234,7 @@ main() {
     clear)
       while [[ $# -gt 0 ]]; do
         case "$1" in
-          --yes | --non-interactive | -y) CGW_NON_INTERACTIVE=1 ;;
+          --yes | --non-interactive | -y) cgw_set_non_interactive ;;
         esac
         shift
       done

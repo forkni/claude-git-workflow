@@ -170,7 +170,7 @@ main() {
         ;;
       --non-interactive)
         non_interactive=1
-        CGW_NON_INTERACTIVE=1
+        cgw_set_non_interactive
         shift
         ;;
       --dry-run)

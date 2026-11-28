@@ -223,7 +223,7 @@ _cmd_restore() {
         shift 2
         ;;
       --non-interactive)
-        CGW_NON_INTERACTIVE=1
+        cgw_set_non_interactive
         shift
         ;;
       --dry-run)
