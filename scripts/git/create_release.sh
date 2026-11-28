@@ -91,7 +91,7 @@ main() {
       --sign) sign_flag=1 ;;
       --no-sign) sign_flag=0 ;;
       --allow-non-semver) allow_non_semver=1 ;;
-      --non-interactive) CGW_NON_INTERACTIVE=1 ;;
+      --non-interactive) cgw_set_non_interactive ;;
       --dry-run) dry_run=1 ;;
       -*)
         echo "[ERROR] Unknown flag: $1" >&2

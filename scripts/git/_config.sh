@@ -322,7 +322,14 @@ _cgw_apply_registry_defaults() {
   # No-TTY detection lives here and only here (ADR-0008): a non-empty explicit value
   # wins; otherwise no terminal on stdin means non-interactive. Scripts and cgw_confirm
   # only read the flag, so a script can no longer miss the check.
-  if [[ -z "${CGW_NON_INTERACTIVE:-}" ]] && [[ ! -t 0 ]]; then CGW_NON_INTERACTIVE=1; fi
+  # _CGW_NI_NO_TTY records that this rule (not the env) set the flag, so cgw_confirm
+  # can report a piped answer it ignores. It is not exported: a child script re-runs
+  # this rule against its own stdin.
+  _CGW_NI_NO_TTY=0
+  if [[ -z "${CGW_NON_INTERACTIVE:-}" ]] && [[ ! -t 0 ]]; then
+    CGW_NON_INTERACTIVE=1
+    _CGW_NI_NO_TTY=1
+  fi
 }
 _cgw_apply_registry_defaults
 

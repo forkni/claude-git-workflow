@@ -49,6 +49,7 @@ usage() {
   echo "Options (for drop/clear):"
   echo "  --yes / --non-interactive / -y   Skip confirmation prompt (auto-proceed)."
   echo "  Also auto-detected: if stdin is not a TTY, drop/clear proceed without prompting."
+  echo "  Piped answers are ignored then; set CGW_NON_INTERACTIVE=0 to read them from stdin."
   echo ""
   echo "Examples:"
   echo "  ./scripts/git/stash_work.sh push 'wip: half-done refactor'"
@@ -194,7 +195,7 @@ main() {
       local ref=""
       while [[ $# -gt 0 ]]; do
         case "$1" in
-          --yes | --non-interactive | -y) CGW_NON_INTERACTIVE=1 ;;
+          --yes | --non-interactive | -y) cgw_set_non_interactive ;;
           *) ref="$1" ;;
         esac
         shift
@@ -233,7 +234,7 @@ main() {
     clear)
       while [[ $# -gt 0 ]]; do
         case "$1" in
-          --yes | --non-interactive | -y) CGW_NON_INTERACTIVE=1 ;;
+          --yes | --non-interactive | -y) cgw_set_non_interactive ;;
         esac
         shift
       done

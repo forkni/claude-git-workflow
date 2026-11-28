@@ -92,6 +92,7 @@ _usage() {
   echo ""
   echo "Environment:"
   echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
+  echo "  CGW_NON_INTERACTIVE=0   Read answers from stdin (piped answers are ignored otherwise)"
 }
 
 # [2/6] Record the current branch in _cp_original_branch and check out the target.
@@ -367,7 +368,7 @@ main() {
         ;;
       --non-interactive)
         non_interactive=1
-        CGW_NON_INTERACTIVE=1
+        cgw_set_non_interactive
         ;;
       --dry-run) dry_run=1 ;;
       --no-x) record_origin=0 ;;

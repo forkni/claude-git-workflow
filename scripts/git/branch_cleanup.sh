@@ -87,7 +87,7 @@ main() {
         shift
         ;;
       --non-interactive)
-        CGW_NON_INTERACTIVE=1
+        cgw_set_non_interactive
         ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2

@@ -208,7 +208,7 @@ main() {
         ;;
       --extra-cmd-dst=*) cmd_dsts+=("${1#*=}") ;;
       --no-pull) do_pull=0 ;;
-      --non-interactive) CGW_NON_INTERACTIVE=1 ;;
+      --non-interactive) cgw_set_non_interactive ;;
       *)
         echo "[ERROR] Unknown flag: $1" >&2
         return 1

@@ -426,7 +426,7 @@ _cmd_add() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --non-interactive)
-        CGW_NON_INTERACTIVE=1
+        cgw_set_non_interactive
         shift
         ;;
       --dry-run)
@@ -814,7 +814,7 @@ _cmd_remove() {
         shift
         ;;
       --non-interactive)
-        CGW_NON_INTERACTIVE=1
+        cgw_set_non_interactive
         shift
         ;;
       --dry-run)
@@ -980,7 +980,7 @@ _cmd_remove_merged() {
         shift
         ;;
       --non-interactive)
-        CGW_NON_INTERACTIVE=1
+        cgw_set_non_interactive
         shift
         ;;
       *)

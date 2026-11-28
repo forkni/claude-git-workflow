@@ -134,7 +134,7 @@ main() {
         ;;
       -c | --create) create=1 ;;
       --dry-run) dry_run=1 ;;
-      --non-interactive) CGW_NON_INTERACTIVE=1 ;;
+      --non-interactive) cgw_set_non_interactive ;;
       -*)
         err "Unknown flag: $1"
         exit 1

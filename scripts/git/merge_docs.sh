@@ -71,13 +71,14 @@ main() {
         echo ""
         echo "Environment:"
         echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
+        echo "  CGW_NON_INTERACTIVE=0   Read answers from stdin (piped answers are ignored otherwise)"
         echo ""
         echo "WARNING: Replaces entire docs/ on target with docs/ from source."
         echo "         Any docs-only changes on target not in source will be lost."
         exit 0
         ;;
       --non-interactive)
-        CGW_NON_INTERACTIVE=1
+        cgw_set_non_interactive
         ;;
       --source)
         src_branch="${2:-}"

@@ -104,6 +104,7 @@ main() {
         echo ""
         echo "Environment:"
         echo "  CGW_NON_INTERACTIVE=1   Same as --non-interactive"
+        echo "  CGW_NON_INTERACTIVE=0   Read answers from stdin (piped answers are ignored otherwise)"
         echo "  CGW_REMOTE              Remote name (default: origin)"
         echo ""
         echo "CAUTION: Without --revert, this rewrites branch history. Force-push required after."
@@ -112,7 +113,7 @@ main() {
         ;;
       --non-interactive)
         non_interactive=1
-        CGW_NON_INTERACTIVE=1
+        cgw_set_non_interactive
         ;;
       --dry-run) dry_run=1 ;;
       --revert) use_revert=1 ;;

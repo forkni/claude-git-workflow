@@ -84,6 +84,21 @@ _last_message() {
   [ "$(_last_message)" = $'feat: from stdin\n\nRead from stdin.\n\nCo-Authored-By: C <c@example.com>' ]
 }
 
+# The pipe held the body, not answers: the no-TTY prompts must not report a piped
+# answer as ignored (the flag here comes from the no-TTY rule, not the env).
+@test "--body-file - with no TTY prints no piped-answer notice" {
+  _stage body_stdin_notice.txt
+  run bash -c '
+    unset CGW_NON_INTERACTIVE CLAUDE_GIT_NON_INTERACTIVE
+    cd "$1" || exit 1
+    export SCRIPT_DIR="$2/scripts/git" PROJECT_ROOT="$1" CGW_LINT_CMD=ruff CGW_FORMAT_CMD=""
+    printf "Body.\n" | bash "$2/scripts/git/commit_enhanced.sh" --only body_stdin_notice.txt "feat: notice" --body-file -
+  ' _ "${TEST_REPO_DIR}" "${CGW_PROJECT_ROOT}"
+  [ "${status}" -eq 0 ]
+  [ "$(_last_message)" = $'feat: notice\n\nBody.' ]
+  [[ "${output}" != *"piped answer ignored"* ]]
+}
+
 @test "--body and --body-file mix in the order given" {
   _stage body_mixed.txt
   printf 'Middle\n' >"${BATS_TEST_TMPDIR}/middle.txt"
@@ -190,6 +205,16 @@ _last_message() {
   [ "${status}" -eq 1 ]
   [[ "${output}" == *"the subject is still the positional message"* ]]
   [[ "${output}" != *"[5/6]"* ]]
+}
+
+# Regression: once leading blank lines were skipped, a whitespace-only subject let
+# the first body line become the subject.
+@test "a whitespace-only subject with --body exits 1" {
+  _stage body_ws_subject.txt
+  run _run_commit_args --only body_ws_subject.txt "   " --body "feat: detail"
+  [ "${status}" -eq 1 ]
+  [[ "${output}" == *"add a body only: the subject is still the positional message"* ]]
+  [ "$(git -C "${TEST_REPO_DIR}" log -1 --format=%s)" != "feat: detail" ]
 }
 
 @test "--body-file - given twice exits 1 and names stdin" {

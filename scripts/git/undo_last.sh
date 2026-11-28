@@ -81,7 +81,7 @@ main() {
     case "$1" in
       --non-interactive)
         non_interactive=1
-        CGW_NON_INTERACTIVE=1
+        cgw_set_non_interactive
         ;;
       --dry-run) dry_run=1 ;;
       --help | -h)
