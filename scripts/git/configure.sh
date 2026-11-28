@@ -1114,7 +1114,7 @@ _retire_guardrail() {
   _unregister_guardrail "${host}" "${settings_json}" || return 1
   # Antigravity's project hooks.json exists only for the CGW guardrail: drop it
   # once the retire leaves it empty. Claude Code's settings.json is never removed.
-  if [[ "${host}" == "agy" && -f "${settings_json}" ]] &&
+  if [[ "${host}" == "agy" && "${install_mode}" == "local" && -f "${settings_json}" ]] &&
     [[ "$(tr -d '[:space:]' <"${settings_json}" 2>/dev/null)" == "{}" ]]; then
     rm -f "${settings_json}"
     echo "  [OK] Removed ${settings_json} (empty after the retire)"

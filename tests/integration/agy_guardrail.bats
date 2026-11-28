@@ -521,8 +521,13 @@ _pyguard_home() {
   _run_configure "--non-interactive"
   echo "rem local tweak" >>"${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.cmd"
   HOME="$(_pyguard_home wired)" run _run_configure "--non-interactive"
+  [ "${status}" -eq 0 ]
   [ -f "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.cmd" ]
   [[ "${output}" == *"differs from the stock CGW copy"* ]]
+  # The stock siblings are still retired
+  [ ! -e "${TEST_REPO_DIR}/.agents/hooks/agy-block-dangerous-git.sh" ]
+  [ ! -e "${TEST_REPO_DIR}/.agents/hooks/_guardrail_core.sh" ]
+  [ ! -e "${TEST_REPO_DIR}/.agents/hooks.json" ]
 }
 
 @test "python guardrail active and nothing installed: a project-owned .cmd shim is left alone, quietly" {
