@@ -587,6 +587,7 @@ _harness_spec() {
       ;;
     cc:summary_skill) echo "Claude skill:" ;;
     cc:summary_guardrail) echo "Claude guard:" ;;
+    cc:retire_reason) echo "git-guardrail mod" ;;
 
     agy:label) echo "Antigravity" ;;
     agy:dir) echo ".agents" ;;
@@ -616,6 +617,7 @@ _harness_spec() {
       ;;
     agy:summary_skill) echo "Antigravity:" ;;
     agy:summary_guardrail) echo "AGY guard:" ;;
+    agy:retire_reason) echo "Python git guardrail (~/.gemini/config/hooks.json)" ;;
     *) return 1 ;;
   esac
 }
@@ -689,10 +691,11 @@ _offer_harness_install() {
   local mode="local"
   [[ ${global} -eq 1 ]] && mode="global"
 
-  # The git-guardrail mod replaces the legacy Claude Code shell hook: retire it
+  # A machine-wide guardrail (the git-guardrail mod for Claude Code, the Python
+  # guardrail for Antigravity) replaces the legacy shell hook: retire it
   # (idempotent, quiet when already gone) rather than offering to install it.
-  if [[ "${host}" == "cc" && "${what}" == "guardrail" ]] && _cc_guard_mod_active; then
-    _retire_cc_guardrail "${mode}"
+  if [[ "${what}" == "guardrail" ]] && _guard_superseded "${host}"; then
+    _retire_guardrail "${host}" "${mode}"
     return 0
   fi
 
@@ -984,6 +987,28 @@ _cc_guard_mod_active() {
     "${HOME}/.claude/settings.json" 2>/dev/null
 }
 
+# _agy_guard_py_active
+#   True when the stdlib-Python git guardrail serves Antigravity on this
+#   machine: ~/.claude/tools/git_guardrail.py exists AND the global
+#   ~/.gemini/config/hooks.json registers a command that names it (the layout a
+#   claude-dotfiles install.ps1 deploys). Both are required, as for
+#   _cc_guard_mod_active, so a script that nothing runs cannot cost a project
+#   its only Antigravity guardrail.
+_agy_guard_py_active() {
+  [[ -f "${HOME}/.claude/tools/git_guardrail.py" ]] || return 1
+  grep -qF "git_guardrail.py" "$(_harness_spec agy settings_json:global)" 2>/dev/null
+}
+
+# _guard_superseded <host>
+#   True when a machine-wide guardrail replaces the host's legacy shell hook.
+_guard_superseded() {
+  case "$1" in
+    cc) _cc_guard_mod_active ;;
+    agy) _agy_guard_py_active ;;
+    *) return 1 ;;
+  esac
+}
+
 # _unregister_guardrail <host> <json_file>
 #   Modifier, inverse of _register_guardrail: strips every command naming the
 #   host's marker from the PreToolUse array, drops entries and containers left
@@ -1066,24 +1091,38 @@ _remove_if_stock() {
   fi
 }
 
-# _retire_cc_guardrail <local|global>
-#   The git-guardrail mod supersedes the legacy shell hook: unregister it and
-#   remove its stock scripts instead of installing it. The adapter goes first;
+# _retire_guardrail <host> <local|global>
+#   A machine-wide guardrail (see _guard_superseded) supersedes the host's
+#   legacy shell hook: unregister it and remove its stock scripts instead of
+#   installing it. Quiet no-op when neither the adapter nor a registration is
+#   there, so a project-owned file next to it (e.g. a tracked .cmd shim) is never
+#   touched. The adapter (and its Windows .cmd runner) goes first;
 #   _guardrail_core.sh follows only when nothing left in the directory sources it.
-_retire_cc_guardrail() {
-  local install_mode="${1:-local}"
-  local hook_dst settings_json hook_dir hooks_src="" f
-  hook_dst="$(_harness_spec cc "guardrail_dst:${install_mode}")"
-  settings_json="$(_harness_spec cc "settings_json:${install_mode}")"
+_retire_guardrail() {
+  local host="$1" install_mode="${2:-local}"
+  local hook_dst settings_json hook_dir hooks_src="" marker f
+  hook_dst="$(_harness_spec "${host}" "guardrail_dst:${install_mode}")"
+  settings_json="$(_harness_spec "${host}" "settings_json:${install_mode}")"
+  marker="$(_guardrail_spec "${host}" marker)"
   hook_dir="$(dirname "${hook_dst}")"
   hooks_src="$(_resolve_template_dir hooks 2>/dev/null)" || hooks_src=""
 
-  [[ -f "${hook_dst}" ]] || grep -qF -- "cc-block-dangerous-git" "${settings_json}" 2>/dev/null || return 0
+  [[ -f "${hook_dst}" ]] || grep -qF -- "${marker}" "${settings_json}" 2>/dev/null || return 0
 
   echo ""
-  echo "git-guardrail mod detected -- retiring the legacy Claude Code guardrail..."
-  _unregister_guardrail cc "${settings_json}" || return 1
-  _remove_if_stock "${hook_dst}" "${hooks_src:+${hooks_src}/cc-block-dangerous-git.sh}"
+  echo "$(_harness_spec "${host}" retire_reason) detected -- retiring the legacy $(_harness_spec "${host}" label) guardrail..."
+  _unregister_guardrail "${host}" "${settings_json}" || return 1
+  # Antigravity's project hooks.json exists only for the CGW guardrail: drop it
+  # once the retire leaves it empty. Claude Code's settings.json is never removed.
+  if [[ "${host}" == "agy" && -f "${settings_json}" ]] &&
+    [[ "$(tr -d '[:space:]' <"${settings_json}" 2>/dev/null)" == "{}" ]]; then
+    rm -f "${settings_json}"
+    echo "  [OK] Removed ${settings_json} (empty after the retire)"
+  fi
+  _remove_if_stock "${hook_dst}" "${hooks_src:+${hooks_src}/$(basename "${hook_dst}")}"
+  if [[ -f "${hook_dst%.sh}.cmd" ]]; then
+    _remove_if_stock "${hook_dst%.sh}.cmd" "${hooks_src:+${hooks_src}/$(basename "${hook_dst%.sh}").cmd}"
+  fi
   if [[ -f "${hook_dir}/_guardrail_core.sh" ]]; then
     for f in "${hook_dir}"/*; do
       [[ "${f}" == "${hook_dir}/_guardrail_core.sh" || ! -f "${f}" ]] && continue
